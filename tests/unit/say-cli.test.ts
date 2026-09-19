@@ -2,13 +2,16 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
-import { saveEngineEnv } from "../helpers/fake-engine";
+import { deviceOutRefusal, sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
+import { setColorEnabled } from "../../src/log";
+import { describeJson, saveEngineEnv } from "../helpers/fake-engine";
+
+// picocolors turns colour on under CI, and this harness captures the raw stderr bytes.
+setColorEnabled(false);
 
 describe("say CLI input guard (#324 P1)", () => {
   test("rejects missing text only when stdin is a TTY", () => {
     expect(shouldRejectMissingSayText(undefined, true)).toBe(true);
-    expect(shouldRejectMissingSayText("", true)).toBe(true);
   });
 
   test("allows piped stdin when text is omitted", () => {
@@ -18,6 +21,39 @@ describe("say CLI input guard (#324 P1)", () => {
 
   test("allows explicit positional text even from a TTY", () => {
     expect(shouldRejectMissingSayText("Hello", true)).toBe(false);
+  });
+
+  // T1-2: an explicit "" is text the user gave, so it is E_TEXT_EMPTY rather than a reason to read stdin.
+  test("an explicitly empty positional is not the missing-text case, on a TTY or off it", () => {
+    expect(shouldRejectMissingSayText("", true)).toBe(false);
+    expect(shouldRejectMissingSayText("", false)).toBe(false);
+  });
+});
+
+// T1-15: `--out /dev/stdout` reported `Saved` and exit 0 while delivering zero bytes.
+describe("say --out destinations (T1-15)", () => {
+  test("a regular file and a FIFO are accepted", () => {
+    if (process.platform === "win32") return;
+    const dir = mkdtempSync(join(tmpdir(), "kesha-say-out-dest-"));
+    cleanups.push(() => rmSync(dir, { recursive: true, force: true }));
+    const file = join(dir, "note.wav");
+    writeFileSync(file, "");
+    const fifo = join(dir, "note.fifo");
+    expect(Bun.spawnSync(["mkfifo", fifo]).exitCode).toBe(0);
+
+    expect(deviceOutRefusal(file)).toBeNull();
+    expect(deviceOutRefusal(fifo)).toBeNull();
+    expect(deviceOutRefusal(join(dir, "not-created-yet.wav"))).toBeNull();
+    expect(deviceOutRefusal(undefined)).toBeNull();
+  });
+
+  test("a character device is refused, naming the plain-stdout default", () => {
+    if (process.platform === "win32") return;
+    for (const path of ["/dev/stdout", "/dev/stderr", "/dev/fd/1", "/dev/null"]) {
+      const refusal = deviceOutRefusal(path);
+      expect(refusal).toContain(`--out ${path} is a character device`);
+      expect(refusal).toContain("omit --out to write it to stdout");
+    }
   });
 });
 
@@ -39,13 +75,13 @@ function tempDir(prefix: string): string {
   return dir;
 }
 
-/** A stub engine whose `say` fails the way the real one does: an `error [CODE]:` line and a status. */
-function failingEngine(exitCode: number, stderrLine: string): string {
+/** A stub engine whose `say` fails the way the real one does: a protocol 4 error event and a status. */
+function failingEngine(exitCode: number, code: string, message: string): string {
   const dir = tempDir("kesha-say-fail-");
   const binPath = join(dir, "kesha-engine");
   writeFileSync(
     binPath,
-    `#!/bin/sh\ncat > /dev/null\nprintf '%s\\n' '${stderrLine}' >&2\nexit ${exitCode}\n`,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ncat > /dev/null\nprintf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\nexit ${exitCode}\n`,
   );
   chmodSync(binPath, 0o755);
   cleanups.push(saveEngineEnv());
@@ -53,27 +89,37 @@ function failingEngine(exitCode: number, stderrLine: string): string {
   return binPath;
 }
 
-/** Runs `kesha say` in-process and returns the status it exits with plus everything it wrote to stderr. */
-async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number; stderr: string }> {
+/** Runs `kesha say` in-process and returns the status it exits with plus everything it wrote to stderr/stdout. */
+async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number; stderr: string; stdout: string }> {
   const savedExit = process.exit;
   const savedWrite = process.stderr.write;
+  const savedBunWrite = Bun.write;
   let stderr = "";
+  let stdout = "";
   process.stderr.write = ((chunk: unknown) => {
     stderr += String(chunk);
     return true;
   }) as typeof process.stderr.write;
+  Bun.write = (async (dest: unknown, data: unknown) => {
+    if (dest === Bun.stdout) {
+      stdout += String(data);
+      return String(data).length;
+    }
+    return savedBunWrite(dest as never, data as never);
+  }) as typeof Bun.write;
   process.exit = ((code?: number) => {
     throw new ExitCalled(code ?? 0);
   }) as typeof process.exit;
   try {
-    await sayCommand.run?.({ args } as never);
-    return { exitCode: 0, stderr };
+    await sayCommand.run?.({ args, rawArgs: [] } as never);
+    return { exitCode: 0, stderr, stdout };
   } catch (err) {
-    if (err instanceof ExitCalled) return { exitCode: err.code, stderr };
+    if (err instanceof ExitCalled) return { exitCode: err.code, stderr, stdout };
     throw err;
   } finally {
     process.exit = savedExit;
     process.stderr.write = savedWrite;
+    Bun.write = savedBunWrite;
   }
 }
 
@@ -83,7 +129,7 @@ const skipOnWin32 = process.platform === "win32" ? test.skip : test;
 // so a failure flattened into "exit 1, generic message" would have gone unnoticed.
 describe("kesha say relays an engine failure", () => {
   skipOnWin32("exits with the engine's own status and prints its stderr", async () => {
-    failingEngine(3, "error [E_VOICE_NOT_FOUND]: voice zz-nobody is not installed");
+    failingEngine(3, "E_VOICE_NOT_FOUND", "voice zz-nobody is not installed");
 
     const { exitCode, stderr } = await runSay({
       text: "Hello",
@@ -98,11 +144,225 @@ describe("kesha say relays an engine failure", () => {
   });
 
   skipOnWin32("does not swallow a failure into a success exit", async () => {
-    failingEngine(1, "error [E_INTERNAL]: synthesis aborted");
+    failingEngine(1, "E_INTERNAL", "synthesis aborted");
 
     const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain("synthesis aborted");
+  });
+});
+
+describe("kesha say with an explicitly empty positional (T1-2)", () => {
+  skipOnWin32("is E_TEXT_EMPTY exit 2 and never reaches the engine", async () => {
+    failingEngine(3, "E_VOICE_NOT_FOUND", "the engine must not have been asked");
+    const { exitCode, stderr, stdout } = await runSay({ text: "", rate: "1.0" });
+    expect(exitCode).toBe(2);
+    expect(stderr.trim()).toBe("error [E_TEXT_EMPTY]: text is empty");
+    expect(stdout).toBe("");
+  });
+
+  skipOnWin32("does not announce synthesis to an --out file it will never write", async () => {
+    failingEngine(3, "E_VOICE_NOT_FOUND", "the engine must not have been asked");
+    const out = join(tempDir("kesha-say-empty-out-"), "e.wav");
+    const { exitCode, stderr } = await runSay({ text: "", out, rate: "1.0" });
+    expect(exitCode).toBe(2);
+    expect(stderr).not.toContain("Synthesizing");
+  });
+});
+
+// T1-14: a FluidAudio line quoted the user's whole input, and the transcript then echoed it again.
+describe("kesha say reports a non-event engine line once, bounded", () => {
+  skipOnWin32("quotes at most 200 characters of it and does not echo the input again", async () => {
+    const token = "x".repeat(400);
+    const dir = tempDir("kesha-say-rawline-");
+    const binPath = join(dir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ncat > /dev/null\nprintf '[WARN] G2P failed on word %s\\n' "${token}" >&2\nexit 4\n`,
+    );
+    chmodSync(binPath, 0o755);
+    cleanups.push(saveEngineEnv());
+    process.env.KESHA_ENGINE_BIN = binPath;
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+
+    expect(exitCode).toBe(4);
+    expect(stderr).toContain("error [E_INTERNAL]: kesha-engine say wrote a line that is not a protocol event:");
+    expect(stderr).toContain("…");
+    expect(stderr).not.toContain(token);
+    expect(stderr.split("[WARN] G2P failed on word")).toHaveLength(2);
+  });
+});
+
+/** A stub engine whose `say --list-voices` fails with a protocol 4 error event and a status, after answering `describe`. */
+function failingListVoicesEngine(exitCode: number, code: string, message: string): string {
+  const dir = tempDir("kesha-say-listfail-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\n  exit ${exitCode}\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+/** A stub engine whose `say --list-voices` succeeds but writes untrimmed ids with a blank line, after answering `describe`. */
+function untrimmedListVoicesEngine(): string {
+  const dir = tempDir("kesha-say-listuntrim-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '  en-am_adam  \\n\\nru-vosk-m02\\n'\n  exit 0\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+/** A stub engine whose `say --list-voices` reports a genuine error event on stderr, still prints voice ids on stdout, and exits 0 — the well-formed-error-but-exit-0 case Greptile flagged on #1162. */
+function listVoicesErrorEventExitsZero(code: string, message: string): string {
+  const dir = tempDir("kesha-say-listerr0-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ] && [ "$2" = "--list-voices" ]; then\n  printf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\n  printf 'en-am_michael\\nru-vosk-m02\\n'\n  exit 0\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+/** A stub engine that answers `describe` with the given features and refuses anything else. */
+function engineAdvertising(features: string[]): string {
+  const dir = tempDir("kesha-say-describe-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features })}'\n  exit 0\nfi\necho "unexpected invocation: $@" >&2\nexit 9\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+/** A stub engine that fails `describe` outright, the way an engine predating protocol 4 would. */
+function engineWithoutDescribe(exitCode: number): string {
+  const dir = tempDir("kesha-say-nodescribe-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(binPath, `#!/bin/sh\nexit ${exitCode}\n`);
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+/** A stub engine whose `describe` answers with a genuine protocol 4 error event, not just a bad exit status. */
+function engineDescribeReportsError(exitCode: number, code: string, message: string): string {
+  const dir = tempDir("kesha-say-describe-err-");
+  const binPath = join(dir, "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '{"kind":"error","code":"${code}","message":"${message}"}' >&2\n  exit ${exitCode}\nfi\necho "unexpected invocation: $*" >&2\nexit 99\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+/** Points `KESHA_ENGINE_BIN` at a path with nothing there, the way an unfinished install would. */
+function missingEngine(): string {
+  const dir = tempDir("kesha-say-missing-");
+  const binPath = join(dir, "kesha-engine");
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+  return binPath;
+}
+
+// getDescribe()/validateArgv() throw a bare KeshaError, not SayError — must not flatten to E_INTERNAL/exit 4.
+describe("kesha say relays a bare KeshaError from the describe/validateArgv preflight", () => {
+  skipOnWin32("an ungated flag reports E_INVALID_ARG and exits 2, never spawning `say`", async () => {
+    engineAdvertising(["tts"]);
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.2" });
+
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("error [E_INVALID_ARG]:");
+    expect(stderr).not.toContain("unexpected invocation");
+  });
+
+  skipOnWin32("an engine that fails `describe` reports E_ENGINE_PROTOCOL and exits 1, not the probe's own status", async () => {
+    engineWithoutDescribe(2);
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(stderr).toContain("kesha install");
+  });
+
+  skipOnWin32("a missing/unspawnable engine reports E_ENGINE_SPAWN and exits 1", async () => {
+    missingEngine();
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_SPAWN]:");
+    expect(stderr).toContain("kesha install");
+  });
+});
+
+describe("kesha say --list-voices speaks protocol 4", () => {
+  skipOnWin32("an engine that fails the listing exits with its status and prints the coded line", async () => {
+    failingListVoicesEngine(3, "E_MODEL_MISSING", "no voices installed");
+    const { exitCode, stderr } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(3);
+    expect(stderr).toContain("error [E_MODEL_MISSING]: no voices installed");
+  });
+
+  skipOnWin32("a build without tts is refused before any spawn", async () => {
+    // No tts feature means no `say` subcommand at all (describe.rs's `("say", _) => TTS_BUILD`), not a gated flag.
+    engineAdvertising([]);
+    const { exitCode, stderr } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("error [E_INVALID_ARG]:");
+    expect(stderr).toContain("kesha-engine has no `say` subcommand");
+    expect(stderr).not.toContain("unexpected invocation");
+  });
+
+  skipOnWin32("an engine that fails `describe` is E_ENGINE_PROTOCOL, exit 1", async () => {
+    engineWithoutDescribe(3);
+    const { exitCode, stderr } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(stderr).toContain("kesha install");
+  });
+
+  skipOnWin32("an engine whose describe reports an error event exits with its own status, not 4", async () => {
+    engineDescribeReportsError(1, "E_MODEL_MISSING", "the TTS bundle is missing");
+    const { exitCode, stderr } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
+  });
+
+  skipOnWin32("trims each id and drops blank lines before printing them", async () => {
+    untrimmedListVoicesEngine();
+    const { exitCode, stdout } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe("en-am_adam\nru-vosk-m02\n");
+  });
+
+  skipOnWin32("an error event fails the listing even though the engine exits 0, and no ids reach stdout", async () => {
+    listVoicesErrorEventExitsZero("E_MODEL_MISSING", "the TTS bundle is missing");
+    const { exitCode, stderr, stdout } = await runSay({ "list-voices": true });
+    expect(exitCode).toBe(4);
+    expect(stderr).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
+    expect(stdout).toBe("");
   });
 });

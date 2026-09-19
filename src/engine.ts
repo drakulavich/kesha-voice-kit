@@ -1,18 +1,25 @@
 import { existsSync, statSync } from "fs";
 import { errorMessage } from "./error-utils";
-import { TS_NATIVE_CODES } from "./error-codes";
 import { join } from "path";
 import { installHint } from "./install-hint";
 import { log } from "./log";
+import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
-import { engineAbortError, registerProcessTree } from "./process-tree";
+import { abortOnSignal, engineAbortError, interruptedRun, pendingInterruption, registerProcessTree } from "./process-tree";
+import { resolveStatePaths } from "./state-paths";
+import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
+import {
+  describeToCapabilities,
+  parseDescribe,
+  protocolMismatch,
+  validateArgv,
+  type DescribeDocument,
+  type EngineCapabilities,
+  type TtsLanguageCapability,
+  PROTOCOL_VERSION,
+} from "./engine/describe";
 
-/**
- * Capability-flag string surfaced via `kesha-engine --capabilities-json`. Single
- * source of truth so the engine, the TS CLI gate, and the integration tests
- * can't drift. Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_SEGMENTS_FEATURE`.
- */
-export const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
+export type { EngineCapabilities, TtsLanguageCapability };
 
 /**
  * Capability-flag string for speaker diarization. Engine advertises this only
@@ -20,25 +27,6 @@ export const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
  * Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_DIARIZE_FEATURE`.
  */
 export const TRANSCRIBE_DIARIZE_FEATURE = "transcribe.diarize";
-/** Mirrors `rust/src/record.rs::RECORD_LIVE_FEATURE`. */
-export const RECORD_LIVE_FEATURE = "record.live";
-/** Mirrors `rust/src/record.rs::RECORD_LIVE_AUTO_STOP_FEATURE`. */
-export const RECORD_LIVE_AUTO_STOP_FEATURE = "record.live.auto-stop";
-
-/**
- * Capability-flag string for the opt-in written-form (ITN) pass. Every engine
- * built since #710 advertises it regardless of backend, so a missing entry
- * means the installed engine predates the feature.
- * Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_ITN_FEATURE`.
- */
-export const TRANSCRIBE_ITN_FEATURE = "transcribe.itn";
-
-/**
- * Capability-flag string for per-word timings inside timestamped segments.
- * Backend-gated: ONNX builds advertise it, CoreML builds don't (#720).
- * Mirrors `rust/src/transcribe/mod.rs::TRANSCRIBE_WORDS_FEATURE`.
- */
-export const TRANSCRIBE_WORDS_FEATURE = "transcribe.words";
 
 export interface LangDetectResult {
   code: string;
@@ -87,160 +75,178 @@ export function isEngineInstalled(): boolean {
   return existsSync(getEngineBinPath());
 }
 
-/** A Bun.spawn `stdio` array entry: per-fd action or inherit-by-number. */
-type SpawnStdioEntry = "inherit" | "pipe" | "ignore" | number;
+type SpawnStdioEntry = "inherit" | "pipe" | "ignore";
+export type SpawnStdio = [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry];
 
-/** #323 Greptile P2: index-addressed stdio array — cap to POSIX RLIMIT_NOFILE default to guard against DoS via huge fd values. */
-const MAX_FORWARDED_FD = 1024;
+/** The env for a spawn whose stderr is parsed as protocol 4 events. */
+export function protocolEnv(): Record<string, string | undefined> {
+  return { ...process.env, KESHA_PROTOCOL: String(PROTOCOL_VERSION) };
+}
 
-/**
- * Build a `stdio` array for `Bun.spawn`, forwarding `KESHA_DEBUG_FD` (#321 F19).
- *
- * Bun.spawn closes non-stdio fds in the child by default, so the env var alone
- * isn't enough — we must pass fd N explicitly via `stdio[N] = N`.
- * Exported so `synth.ts` can share this without duplicating the env-parse.
- */
-export function spawnStdioWithDebugFd(
-  base: [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry],
-): [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry, ...SpawnStdioEntry[]] {
-  const envFd = process.env.KESHA_DEBUG_FD;
-  if (!envFd) return base;
-  const fd = Number(envFd);
-  if (!Number.isInteger(fd) || fd < 3 || fd > MAX_FORWARDED_FD) return base;
-  const out: SpawnStdioEntry[] = [...base];
-  while (out.length < fd) out.push("ignore");
-  out[fd] = fd;
-  return out as [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry, ...SpawnStdioEntry[]];
+function spawnHint(): string {
+  return process.env.KESHA_ENGINE_BIN
+    ? "KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`"
+    : "run `kesha install`";
+}
+
+/** The engine reads only `KESHA_CACHE_DIR`; it gets the root the CLI resolved whenever that differs from the raw value. */
+function withResolvedCacheDir(env: Record<string, string | undefined>): Record<string, string | undefined> {
+  const cache = resolveStatePaths(env).cacheDir;
+  const raw = env.KESHA_CACHE_DIR;
+  if (cache.source === "default") {
+    if (raw === undefined) return env;
+    const { KESHA_CACHE_DIR: _empty, ...rest } = env;
+    return rest;
+  }
+  return raw === cache.path ? env : { ...env, KESHA_CACHE_DIR: cache.path };
+}
+
+/** `Bun.spawn` throws synchronously on ENOENT/EACCES; every launch failure becomes `E_ENGINE_SPAWN`. */
+export function spawnEngineProcess(
+  binPath: string,
+  args: string[],
+  stdio: SpawnStdio,
+  env: Record<string, string | undefined> = process.env,
+): ReturnType<typeof Bun.spawn> {
+  const interrupted = pendingInterruption();
+  if (interrupted) throw interrupted;
+  try {
+    // `env` is passed explicitly: Bun snapshots process.env at startup otherwise (#874).
+    return Bun.spawn([binPath, ...args], { detached: true, stdio, env: withResolvedCacheDir(env) });
+  } catch (err) {
+    throw new KeshaError("E_ENGINE_SPAWN", `failed to launch kesha-engine at ${binPath}: ${errorMessage(err)}`, {
+      hint: spawnHint(),
+    });
+  }
 }
 
 export interface RunEngineOptions {
   signal?: AbortSignal;
+  /** Text for the subprocess's stdin. Nothing a user typed may become an argv element: a NUL byte or a megabyte of it makes the spawn itself fail (#T1-1). */
+  stdin?: string;
   /** Receives each progress line as the engine writes it, rather than once the run is
    *  over (#1002). Progress the caller takes delivery of this way is dropped from the
    *  returned `stderr`, so it is never shown a second time in the failure report. */
   onProgressLine?: (line: string) => void;
 }
 
-/**
- * Whether `line` is the engine reporting on work in flight rather than on its outcome.
- *
- * Diarization is the only phase slow enough to need it: its CoreML model load alone
- * costs ~100 s on a first run and ~5 s warm, and it prefixes every line it emits
- * (#443/#721). Errors carry no such prefix, so they stay with the failure report.
- */
-function isProgressLine(line: string): boolean {
-  return line.startsWith("diarize: ");
+interface EngineRun {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+  error: ErrorEvent | null;
+  invalid: string[];
 }
 
-/** Reads `stream` to EOF, handing progress lines to `onProgress` as they arrive and
- *  returning everything else. */
-async function partitionProgress(
-  stream: ReadableStream<Uint8Array>,
-  onProgress: (line: string) => void,
-): Promise<string> {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let rest = "";
-  let pending = "";
-  const take = (line: string) => {
-    if (isProgressLine(line)) onProgress(line);
-    else rest += `${line}\n`;
-  };
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    pending += decoder.decode(value, { stream: true });
-    let nl = pending.indexOf("\n");
-    while (nl !== -1) {
-      take(pending.slice(0, nl));
-      pending = pending.slice(nl + 1);
-      nl = pending.indexOf("\n");
-    }
-  }
-  pending += decoder.decode();
-  if (pending.length > 0) take(pending);
-  return rest;
-}
-
-/**
- * `Bun.spawn` throws synchronously on any spawn failure (ENOENT, EACCES, …)
- * instead of failing async, so a missing/non-executable binary would
- * otherwise surface as a raw runtime stack trace. Re-throw every such
- * failure through the same `E_ENGINE_SPAWN` code `src/synth.ts` uses
- * (docs/errors.md).
- */
-export function spawnEngineProcess(
-  binPath: string,
-  args: string[],
-  stdio: ReturnType<typeof spawnStdioWithDebugFd>,
-): ReturnType<typeof Bun.spawn> {
+/** An engine that refuses the run before reading closes the pipe; that EPIPE is its answer, reported by the exit status and stderr below. */
+async function writeEngineStdin(proc: ReturnType<typeof Bun.spawn>, text: string): Promise<void> {
+  const sink = proc.stdin as Bun.FileSink;
   try {
-    // Bun snapshots `process.env` at startup unless `env` is passed, so anything the CLI
-    // resolves at runtime — `NO_COLOR` from `--no-color`, a `KESHA_*` override — reached the
-    // parent and not the engine (#874).
-    return Bun.spawn([binPath, ...args], { detached: true, stdio, env: process.env });
+    sink.write(text);
+    await sink.end();
   } catch (err) {
-    throw new Error(
-      `error [${TS_NATIVE_CODES.ENGINE_SPAWN}]: failed to launch kesha-engine at ${binPath}: ` +
-        `${errorMessage(err)}. Run \`kesha install\` (or set KESHA_ENGINE_BIN).`,
-    );
+    log.debug(`stdin write failed: ${errorMessage(err)}`);
   }
 }
 
-async function runEngine(
-  args: string[],
-  opts: RunEngineOptions = {},
-): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<EngineRun> {
   if (opts.signal?.aborted) throw engineAbortError();
   const binPath = getEngineBinPath();
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  const proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]));
+  const stdio: SpawnStdio = [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"];
+  const proc = spawnEngineProcess(binPath, args, stdio, protocolEnv());
   const tree = registerProcessTree(proc);
-  let aborted = false;
-  let forceKillTimer: Timer | undefined;
-  const abort = () => {
-    aborted = true;
-    tree.terminate("SIGTERM");
-    forceKillTimer ??= tree.forceKillAfterGrace();
-  };
-  opts.signal?.addEventListener("abort", abort, { once: true });
-  // `stdio: [...]` widens stdout/stderr into a union; indices 1/2 are
-  // pinned to "pipe" by the helper, so the narrow ReadableStream type
-  // is correct. Cast to drop the spurious `number` arm.
-  const stdoutStream = proc.stdout as ReadableStream<Uint8Array>;
-  const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
-
+  const cancel = abortOnSignal(tree, opts.signal);
+  if (opts.stdin !== undefined) await writeEngineStdin(proc, opts.stdin);
   let stdout: string;
-  let stderr: string;
+  let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
   try {
-    const onProgress = opts.onProgressLine;
-    [stdout, stderr, exitCode] = await Promise.all([
-      new Response(stdoutStream).text(),
-      onProgress
-        ? partitionProgress(stderrStream, onProgress)
-        : new Response(stderrStream).text(),
+    [stdout, events, exitCode] = await Promise.all([
+      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
+      readEvents(proc.stderr as ReadableStream<Uint8Array>, { onProgress: opts.onProgressLine }),
       proc.exited,
     ]);
   } finally {
-    opts.signal?.removeEventListener("abort", abort);
+    cancel.dispose();
     tree.dispose();
-    if (!aborted && forceKillTimer) clearTimeout(forceKillTimer);
   }
-
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
-  if (aborted) {
+  if (cancel.aborted) {
     log.debug(`aborted args=${JSON.stringify(args)}`);
     throw engineAbortError();
   }
+  const interrupted = interruptedRun(exitCode);
+  if (interrupted) throw interrupted;
+  const stderr = events.stderr.trim();
+  // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
+  if (exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
+    process.stderr.write(`${stderr}\n`);
+  return { stdout: stdout.trim(), stderr, exitCode, error: events.error, invalid: events.invalid };
+}
 
-  // #275 D4: forward engine warnings (hints, mirror notices, KESHA_DEBUG lines) on success;
-  // on failure, leave stderr for callers to fold into the thrown Error (avoids duplicate output).
-  if (exitCode === 0 && stderr.length > 0) {
-    process.stderr.write(stderr.endsWith("\n") ? stderr : stderr + "\n");
+/** The run failed and said so: a non-zero status, or an error event whatever the status. */
+function reportedFailure(run: EngineRun): boolean {
+  return run.exitCode !== 0 || run.error !== null;
+}
+
+/** `reportedFailure` plus a line that is not a protocol event — the strict form, for paths that throw. */
+function failed(run: EngineRun): boolean {
+  return reportedFailure(run) || run.invalid.length > 0;
+}
+
+let cachedDescribe: { binPath: string; mtime: number; doc: DescribeDocument } | null = null;
+
+/** The describe document of the installed engine, cached until the binary changes (#248). */
+export async function getDescribe(opts: RunEngineOptions = {}): Promise<DescribeDocument> {
+  const binPath = getEngineBinPath();
+  let mtime: number;
+  try {
+    mtime = statSync(binPath).mtimeMs;
+  } catch (err) {
+    throw new KeshaError("E_ENGINE_SPAWN", `kesha-engine not found at ${binPath}: ${errorMessage(err)}`, {
+      hint: spawnHint(),
+    });
   }
-  return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
+  if (cachedDescribe?.binPath === binPath && cachedDescribe.mtime === mtime) return cachedDescribe.doc;
+  const run = await runEngine(["describe"], opts);
+  let doc: DescribeDocument | null = null;
+  if (run.exitCode === 0) {
+    try {
+      doc = parseDescribe(JSON.parse(run.stdout));
+    } catch {
+      doc = null;
+    }
+  }
+  // An error event names the engine-side cause even when a document parsed alongside it (#1163).
+  if (run.error) throw engineFailure("describe", run, run.exitCode);
+  if (!doc) {
+    throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\``, {
+      hint: "run `kesha install` to fetch the engine this CLI expects",
+    });
+  }
+  const mismatch = protocolMismatch(doc, binPath);
+  if (mismatch) throw mismatch;
+  if (run.invalid.length > 0) throw engineFailure("describe", run, undefined);
+  cachedDescribe = { binPath, mtime, doc };
+  return doc;
+}
+
+/** Capabilities view for the screens that predate `describe`; null when the engine cannot be read. */
+export async function getEngineCapabilities(opts: RunEngineOptions = {}): Promise<EngineCapabilities | null> {
+  try {
+    return describeToCapabilities(await getDescribe(opts));
+  } catch (err) {
+    if (err instanceof KeshaError) return null;
+    throw err;
+  }
+}
+
+async function validatedArgs(args: string[], opts: RunEngineOptions): Promise<string[]> {
+  const { argv, warnings } = validateArgv(args, await getDescribe(opts));
+  for (const warning of warnings) log.warn(warning);
+  return argv;
 }
 
 /** VAD preprocessing selector.
@@ -263,19 +269,6 @@ export interface TranscribeEngineOptions {
   onProgressLine?: (line: string) => void;
 }
 
-/** #768: speakers force VAD windowing, so `vad: "off"` is an invalid pair. Callers
- * must run this before any capability or model resolution — an invalid request
- * has to read as invalid whatever happens to be installed. */
-export function assertSpeakersVadCompatible(opts: TranscribeEngineOptions): void {
-  if (!opts.speakers || opts.vad !== "off") return;
-  throw new Error(
-    `error [${TS_NATIVE_CODES.INVALID_ARG}]: speakers cannot be combined with vad: "off": ` +
-      "speaker labels attach to VAD-windowed speech segments, and disabling VAD leaves the " +
-      'whole file as one segment with nothing to label. Drop vad: "off" (VAD engages ' +
-      "automatically for speakers), or drop speakers.",
-  );
-}
-
 function defaultDiarizeModelPath(): string {
   return join(keshaCacheDir(), "models", "diarize", "SortformerNvidiaLow_v2.mlpackage");
 }
@@ -293,16 +286,19 @@ function assertDiarizeModelInstalled(): void {
   const envPath = process.env.KESHA_DIARIZE_MODEL_PATH;
   if (envPath !== undefined) {
     if (existsSync(envPath)) return;
-    throw new Error(
-      `speaker diarization requires a model path\n\nCaused by:\n    KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`,
+    throw new KeshaError(
+      "E_MODEL_MISSING",
+      `speaker diarization requires a model path: KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`,
+      { hint: `point KESHA_DIARIZE_MODEL_PATH at the model, or unset it and run \`${installHint("--diarize")}\`` },
     );
   }
 
   const modelPath = defaultDiarizeModelPath();
   if (hasDiarizeModelLayout(modelPath)) return;
-  throw new Error(
-    `speaker diarization requires a model path\n\nCaused by:\n    diarization model not found at ${modelPath}. ` +
-      `Run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH).`,
+  throw new KeshaError(
+    "E_MODEL_MISSING",
+    `speaker diarization requires a model path: diarization model not found at ${modelPath}`,
+    { hint: `run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH)` },
   );
 }
 
@@ -310,64 +306,17 @@ function assertDiarizeModelInstalled(): void {
 function assertVadModelInstalled(): void {
   const modelPath = join(keshaCacheDir(), "models", "silero-vad", "silero_vad.onnx");
   if (existsSync(modelPath)) return;
-  throw new Error(
-    "speaker diarization requires the VAD model: --speakers windows the audio with Silero VAD " +
-      `so each speech span can be labeled.\n\nCaused by:\n    VAD model not found at ${modelPath}. ` +
-      `Run \`${installHint("--vad")}\`.`,
+  throw new KeshaError(
+    "E_MODEL_MISSING",
+    `speaker diarization requires the VAD model: --speakers windows the audio with Silero VAD so each speech span can be labeled; VAD model not found at ${modelPath}`,
+    { hint: `run \`${installHint("--vad")}\`` },
   );
 }
 
-/**
- * Gate `--itn` on the engine advertising it, per the "don't blindly forward
- * flags" rule. Unlike `--speakers` this is not a platform gate — every backend
- * supports the pass — so a missing capability means the installed engine is
- * older than the CLI asking for it.
- */
-export function assertItnSupported(caps: EngineCapabilities | null): void {
-  if (!caps?.features.includes(TRANSCRIBE_ITN_FEATURE)) {
-    throw new Error(
-      "--itn requires a newer kesha-engine: the installed engine does not advertise " +
-        `${TRANSCRIBE_ITN_FEATURE}.\n\n` +
-        "Upgrade Kesha Voice Kit, then replace the engine:\n\n" +
-        "    bun add -g @drakulavich/kesha-voice-kit@latest\n" +
-        `    ${installHint()}`,
-    );
-  }
-}
-
-export async function preflightTranscribeEngineItn(
-  opts: TranscribeEngineOptions = {},
-): Promise<void> {
-  if (!opts.itn) return;
-  assertItnSupported(await getEngineCapabilities());
-}
-
-export async function preflightTranscribeEngineWithSegments(
-  opts: TranscribeEngineOptions = {},
-): Promise<void> {
-  assertSpeakersVadCompatible(opts);
-
-  const caps = await getEngineCapabilities();
-  if (!caps?.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
-    throw new Error(
-      "Timestamped segments require a newer kesha-engine. Run `kesha install` after upgrading Kesha Voice Kit.",
-    );
-  }
-
-  if (!opts.speakers) return;
-
-  assertSpeakersSupported(caps);
+/** Model files the engine will look for; the argv itself was already checked against the schema. */
+export function assertSpeakerModelsInstalled(): void {
   assertDiarizeModelInstalled();
   assertVadModelInstalled();
-}
-
-export function assertSpeakersSupported(caps: EngineCapabilities | null): void {
-  if (!caps?.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
-    throw new Error(
-      "speaker diarization is currently darwin-arm64 only " +
-        "(see https://github.com/drakulavich/kesha-voice-kit/issues/199)",
-    );
-  }
 }
 
 function vadArg(vad: VadMode | undefined): string[] {
@@ -388,21 +337,11 @@ export function buildTranscribeArgs(
   return args;
 }
 
-export async function transcribeEngine(
-  audioPath: string,
-  opts: TranscribeEngineOptions = {},
-): Promise<string> {
-  await preflightTranscribeEngineItn(opts);
-
-  const args = buildTranscribeArgs(audioPath, opts);
-  const { stdout, stderr, exitCode } = await runEngine(args, {
-    signal: opts.signal,
-    onProgressLine: opts.onProgressLine,
-  });
-  if (exitCode !== 0) {
-    throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
-  }
-  return stdout;
+export async function transcribeEngine(audioPath: string, opts: TranscribeEngineOptions = {}): Promise<string> {
+  const args = await validatedArgs(buildTranscribeArgs(audioPath, opts), { signal: opts.signal });
+  const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
+  if (failed(run)) throw engineFailure(args[0] ?? "", run, run.exitCode);
+  return run.stdout;
 }
 
 /**
@@ -430,7 +369,7 @@ function parseWordTimings(raw: unknown): WordTiming[] | undefined {
 export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
   const parsed = JSON.parse(stdout);
   if (typeof parsed?.text !== "string" || !Array.isArray(parsed?.segments)) {
-    throw new Error("Invalid transcription JSON returned by kesha-engine");
+    throw new KeshaError("E_INTERNAL", "Invalid transcription JSON returned by kesha-engine");
   }
 
   const segments = parsed.segments.map((segment: unknown) => {
@@ -440,7 +379,7 @@ export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
       typeof s.end !== "number" ||
       typeof s.text !== "string"
     ) {
-      throw new Error("Invalid transcription segment returned by kesha-engine");
+      throw new KeshaError("E_INTERNAL", "Invalid transcription segment returned by kesha-engine");
     }
     const out: TranscriptionSegment = { start: s.start, end: s.end, text: s.text };
     if (typeof s.speaker === "number") out.speaker = s.speaker;
@@ -456,51 +395,15 @@ export async function transcribeEngineWithSegments(
   audioPath: string,
   opts: TranscribeEngineOptions = {},
 ): Promise<TranscriptionOutput> {
-  await preflightTranscribeEngineItn(opts);
-  await preflightTranscribeEngineWithSegments(opts);
-
-  const args = buildTranscribeArgs(audioPath, opts, true);
-  const { stdout, stderr, exitCode } = await runEngine(args, {
-    signal: opts.signal,
-    onProgressLine: opts.onProgressLine,
-  });
-  if (exitCode !== 0) {
-    throw new Error(stderr || `kesha-engine exited with code ${exitCode}`);
-  }
+  const args = await validatedArgs(buildTranscribeArgs(audioPath, opts, true), { signal: opts.signal });
+  if (opts.speakers) assertSpeakerModelsInstalled();
+  const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
+  if (failed(run)) throw engineFailure(args[0] ?? "", run, run.exitCode);
   try {
-    return parseTranscriptionOutput(stdout);
+    return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
-    const message = errorMessage(err);
-    throw new Error(`${message}: ${stdout}`);
-  }
-}
-
-/** Live transcription needs the Engine's streaming ASR session, which only the
- * CoreML backend on Apple Silicon compiles. Refuses here rather than letting the
- * Engine answer with `E_UNSUPPORTED_PLATFORM` after the spawn. */
-export async function preflightRecordLive(autoStop = false): Promise<void> {
-  const caps = await getEngineCapabilities().catch(() => null);
-  if (caps === null) {
-    throw new Error(
-      "could not read kesha-engine's capabilities, so --live cannot be verified.\n\n" +
-        "The engine binary failed to answer `--capabilities-json` — it may be missing, " +
-        "truncated, or blocked from running.\n\n" +
-        `Reinstall it and retry:\n\n    ${installHint()}`,
-    );
-  }
-  if (!caps.features.includes(RECORD_LIVE_FEATURE)) {
-    throw new Error(
-      "live transcription requires a CoreML engine on Apple Silicon.\n\n" +
-        "On this platform, record and transcribe in two steps:\n\n" +
-        "    kesha record --out note.wav\n" +
-        "    kesha note.wav",
-    );
-  }
-  if (autoStop && !caps.features.includes(RECORD_LIVE_AUTO_STOP_FEATURE)) {
-    throw new Error(
-      "live auto-stop requires a newer CoreML engine with Silero VAD endpointing.\n\n" +
-        `Install the matching engine and retry:\n\n    ${installHint()}`,
-    );
+    const message = err instanceof Error ? err.message : String(err);
+    throw new KeshaError(err instanceof KeshaError ? err.code : "E_INTERNAL", `${message}: ${run.stdout}`);
   }
 }
 
@@ -523,41 +426,109 @@ export type RecordTarget =
  */
 const SIGNALLED_LIVE_EXIT_CODES = new Set([130, 143]);
 
+export function buildRecordArgs(target: RecordTarget, maxSeconds: number): string[] {
+  if (!target.live) return ["record", "--out", target.out, "--max-seconds", String(maxSeconds)];
+  const args = ["record", "--live", "--max-seconds", String(maxSeconds)];
+  if (target.autoStop) {
+    args.push(
+      "--auto-stop",
+      "--auto-stop-silence-ms",
+      String(target.autoStop.silenceMs),
+      "--auto-stop-threshold",
+      String(target.autoStop.threshold),
+      "--auto-stop-min-speech-ms",
+      String(target.autoStop.minSpeechMs),
+    );
+  }
+  return args;
+}
+
+/** Refuses a record argv the installed engine cannot serve before anything is spawned. */
+export async function validateRecordRequest(target: RecordTarget, maxSeconds: number): Promise<void> {
+  validateArgv(buildRecordArgs(target, maxSeconds), await getDescribe());
+}
+
+/**
+ * Relays the engine's stdout byte for byte, ending any open status row first so a transcript cannot
+ * land inside it. When the reader leaves (EPIPE), `onReaderLeft` fires once and the relay keeps
+ * draining without writing, so the engine never blocks on a full pipe while it is being stopped.
+ */
+async function forwardStdout(stream: ReadableStream<Uint8Array>, status: { clear(): void }, onReaderLeft: () => void): Promise<void> {
+  const reader = stream.getReader();
+  let readerLeft = false;
+  // Bun reports a stdout EPIPE through the write callback, never as a throw (#1001); the global guard swallows the event.
+  const onWritten = (err?: Error | null) => {
+    if (readerLeft || (err as NodeJS.ErrnoException | null)?.code !== "EPIPE") return;
+    readerLeft = true;
+    onReaderLeft();
+  };
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    if (readerLeft) continue;
+    status.clear();
+    process.stdout.write(value, onWritten);
+  }
+}
+
+/**
+ * The elapsed-second ticker, the one record event that repeats: it repaints a row rather than
+ * stacking a line per second. Every other record progress event is announced once and must stay.
+ * Deliberately matched on its rendered form — record's events carry no phase to key on, so a
+ * reworded ticker degrades to one line per second rather than breaking (`recordTicksInPlace`).
+ */
+const RECORD_TICK = /^Listening\.\.\. \d+s$/;
+/** The recording's outcome arrives as progress too; it is the result, so `--quiet` must not drop it (Exploratory S3-F2). */
+const RECORD_OUTCOME = /^(Recorded .+ \(\d+ Hz, \d+ channels?, \d+ frames\)|No speech detected\.)$/;
+
 export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
   const binPath = getEngineBinPath();
-  const args = target.live
-    ? [
-        "record",
-        "--live",
-        "--max-seconds",
-        String(maxSeconds),
-        ...(target.autoStop
-          ? [
-              "--auto-stop",
-              "--auto-stop-silence-ms",
-              String(target.autoStop.silenceMs),
-              "--auto-stop-threshold",
-              String(target.autoStop.threshold),
-              "--auto-stop-min-speech-ms",
-              String(target.autoStop.minSpeechMs),
-            ]
-          : []),
-      ]
-    : ["record", "--out", target.out, "--max-seconds", String(maxSeconds)];
+  const args = buildRecordArgs(target, maxSeconds);
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  const proc = spawnEngineProcess(binPath, args, spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]));
+  // stdout is piped rather than inherited so the row can be closed before the engine's transcript
+  // lands: the engine owned both streams and closed its own row until #1181 deleted the painter.
+  const proc = spawnEngineProcess(binPath, args, ["inherit", "pipe", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
+  const status = createLiveStatus();
+  let events: Awaited<ReturnType<typeof readEvents>>;
   let exitCode: number;
   try {
-    exitCode = await proc.exited;
+    [, events, exitCode] = await Promise.all([
+      forwardStdout(proc.stdout as ReadableStream<Uint8Array>, status, () => {
+        // Nobody is reading the transcript any more, so the microphone has no reason to stay open (#1187).
+        log.debug("stdout closed by the reader; stopping the recording");
+        proc.kill("SIGTERM");
+      }),
+      readEvents(proc.stderr as ReadableStream<Uint8Array>, {
+        onProgress: (line) => {
+          if (RECORD_TICK.test(line)) {
+            status.update(line);
+            return;
+          }
+          status.clear();
+          if (RECORD_OUTCOME.test(line)) log.notice(line);
+          else log.progress(line);
+        },
+        onWarn: (line) => {
+          status.clear();
+          log.warn(line);
+        },
+      }),
+      proc.exited,
+    ]);
   } finally {
+    status.clear();
     tree.dispose();
   }
   log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
-  if (exitCode !== 0 && !(target.live && SIGNALLED_LIVE_EXIT_CODES.has(exitCode))) {
-    throw new Error(`kesha-engine record exited with code ${exitCode}`);
-  }
+  // An interrupt is how a live recording normally ends, so its status is success and its stderr is not a failure.
+  const signalled = target.live && SIGNALLED_LIVE_EXIT_CODES.has(exitCode);
+  // A clean interrupt delivers the transcript and exits 128+signal saying nothing (rust/src/cli/record.rs:82),
+  // so an error event beside that status is a real failure the signal must not excuse.
+  if (events.error || events.invalid.length > 0) throw engineFailure("record", events, exitCode);
+  // A silent non-zero exit named nothing, so it stays the operational 1 it has been since #1167.
+  if (!signalled && exitCode !== 0) throw new Error(`kesha-engine record exited with code ${exitCode}`);
 }
 
 export function parseLangResult(stdout: string): LangDetectResult | null {
@@ -577,9 +548,10 @@ export async function detectAudioLanguageEngine(
   opts: RunEngineOptions = {},
 ): Promise<LangDetectResult | null> {
   if (!isEngineInstalled()) return null;
-  const { stdout, exitCode } = await runEngine(["detect-lang", audioPath], opts);
-  if (exitCode !== 0) return null;
-  return parseLangResult(stdout);
+  const run = await runEngine(["detect-lang", audioPath], opts);
+  // The tolerant form: a noisy onnxruntime warning must not blind a best-effort guess.
+  if (reportedFailure(run)) return null;
+  return parseLangResult(run.stdout);
 }
 
 export async function detectTextLanguageEngine(
@@ -588,13 +560,13 @@ export async function detectTextLanguageEngine(
 ): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
-  const { stdout, stderr, exitCode } = await runEngine(["detect-text-lang", text], opts);
-  if (exitCode !== 0) {
-    const warning = textLangFailureWarning(stderr);
+  const run = await runEngine(["detect-text-lang"], { ...opts, stdin: text });
+  if (reportedFailure(run)) {
+    const warning = textLangFailureWarning(run.stderr);
     if (warning) log.warn(warning);
     return null;
   }
-  return parseLangResult(stdout);
+  return parseLangResult(run.stdout);
 }
 
 /**
@@ -614,84 +586,3 @@ export function textLangFailureWarning(
   );
 }
 
-export interface TtsLanguageCapability {
-  code: string;
-  engines: string[];
-}
-
-export interface EngineCapabilities {
-  protocolVersion: number;
-  backend: string;
-  features: string[];
-  tts?: { languages: TtsLanguageCapability[] };
-}
-
-let cachedEngineCapabilities:
-  | { binPath: string; mtime: number; capabilities: EngineCapabilities }
-  | null = null;
-
-export async function getEngineCapabilities(
-  opts: RunEngineOptions = {},
-): Promise<EngineCapabilities | null> {
-  const binPath = getEngineBinPath();
-  // #248: include mtimeMs so an in-place `kesha install` overwite invalidates the cache.
-  // statSync throws on missing file — catch returns null, no separate isEngineInstalled() needed.
-  let mtime: number;
-  try {
-    mtime = statSync(binPath).mtimeMs;
-  } catch {
-    return null;
-  }
-  if (
-    cachedEngineCapabilities?.binPath === binPath &&
-    cachedEngineCapabilities.mtime === mtime
-  ) {
-    return cachedEngineCapabilities.capabilities;
-  }
-  const { stdout, exitCode } = await runEngine(["--capabilities-json"], opts);
-  if (exitCode !== 0) return null;
-  try {
-    const capabilities = parseCapabilities(JSON.parse(stdout));
-    if (!capabilities) return null;
-    cachedEngineCapabilities = { binPath, mtime, capabilities };
-    return capabilities;
-  } catch {
-    return null;
-  }
-}
-
-function parseTtsLanguages(raw: unknown): TtsLanguageCapability[] | null {
-  const languages = (raw as { languages?: unknown } | null | undefined)?.languages;
-  if (!Array.isArray(languages)) return null;
-  const out: TtsLanguageCapability[] = [];
-  for (const entry of languages) {
-    const l = entry as Record<string, unknown> | null;
-    if (typeof l?.code !== "string") return null;
-    if (!Array.isArray(l.engines) || l.engines.some((e) => typeof e !== "string")) return null;
-    out.push({ code: l.code, engines: l.engines as string[] });
-  }
-  return out;
-}
-
-// A non-null return must mean "it described itself" — callers reach straight for `.features.join()` (#647)
-// and `.tts.languages.map()`, so every field is checked and rebuilt rather than cast. A `tts` key that is
-// present and malformed is an engine that failed to describe itself, not one without TTS (#928): the
-// engine omits the key entirely when the feature is absent, so dropping it would forge that answer.
-function parseCapabilities(parsed: unknown): EngineCapabilities | null {
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-  const { protocolVersion, backend, features, tts } = parsed as Record<string, unknown>;
-  if (typeof protocolVersion !== "number") return null;
-  if (typeof backend !== "string") return null;
-  if (!Array.isArray(features) || features.some((f) => typeof f !== "string")) return null;
-  const capabilities: EngineCapabilities = {
-    protocolVersion,
-    backend,
-    features: features as string[],
-  };
-  if (tts !== undefined) {
-    const languages = parseTtsLanguages(tts);
-    if (!languages) return null;
-    capabilities.tts = { languages };
-  }
-  return capabilities;
-}

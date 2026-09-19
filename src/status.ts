@@ -1,6 +1,4 @@
-import { readdirSync, statSync } from "fs";
 import { join } from "path";
-import modelPlan from "../model-plan.json" with { type: "json" };
 import {
   isEngineInstalled,
   getEngineBinPath,
@@ -25,7 +23,22 @@ import {
   type FluidExternalRoot,
 } from "./fluid-roots";
 import { dirSizeBytes } from "./diagnostic-paths";
+import { resolveStatePaths, type StatePath } from "./state-paths";
+import { installedVoiceIds } from "./voice-inventory";
 import pc from "picocolors";
+
+/** Where this process writes, each with the rule that decided it (openspec `state-directories`). */
+export interface StatusPaths {
+  cache: StatePath;
+  logs: StatePath;
+  stats: StatePath;
+  mcpAudio: StatePath;
+}
+
+export function collectStatusPaths(): StatusPaths {
+  const p = resolveStatePaths();
+  return { cache: p.cacheDir, logs: p.logDir, stats: p.statsDbPath, mcpAudio: p.mcpAudioDir };
+}
 
 export function formatStatusLine(
   label: string,
@@ -78,6 +91,7 @@ export interface StatusReport {
   voices: string[];
   runtime: { bun: string; platform: string; arch: string };
   modelMirror: string | null;
+  paths: StatusPaths;
   hint: string | null;
   disk: StatusDiskUsage | null;
 }
@@ -91,10 +105,11 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
   return {
     cliVersion: packageVersion,
     engine: { installed, path, capabilities },
-    voices: installed ? listInstalledVoices() : [],
+    voices: await installedVoiceIds(),
     runtime: { bun: Bun.version, platform: process.platform, arch: process.arch },
     modelMirror: activeModelMirror(),
-    hint: engineHint(path, health.status),
+    paths: collectStatusPaths(),
+    hint: engineHint(path, health),
     // Absent engine means no disk walk, matching the human path (#647).
     disk:
       installed && options.disk
@@ -104,14 +119,16 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
 }
 
 /** An engine that runs but describes nothing needs the same repair as a missing one (#801). */
-function engineHint(path: string, health: EngineFunctionalHealth["status"]): string | null {
-  switch (health) {
+function engineHint(path: string, health: EngineFunctionalHealth): string | null {
+  switch (health.status) {
     case "missing":
       return `Run \`${installHint()}\` to download the engine and models.`;
     case "mute":
       return `Engine at ${path} is ${NOT_FUNCTIONAL_STATE}`;
     case "unusable":
       return `Engine at ${path} is ${CORRUPT_STATE}`;
+    case "protocol":
+      return health.detail;
     default:
       return null;
   }
@@ -154,6 +171,9 @@ export function renderStatus(report: StatusReport): void {
   if (report.modelMirror) {
     log.info(formatStatusLine("Mirror", report.modelMirror, true));
   }
+  for (const [label, entry] of Object.entries(report.paths)) {
+    if (entry.source !== "default") log.info(formatStatusLine(pathLabel(label), `${entry.path} (${entry.source})`, true));
+  }
   log.info("");
 
   if (installed) {
@@ -166,6 +186,19 @@ export function renderStatus(report: StatusReport): void {
   }
 }
 
+
+function pathLabel(key: string): string {
+  switch (key) {
+    case "cache":
+      return "Cache";
+    case "logs":
+      return "Logs";
+    case "stats":
+      return "Stats DB";
+    default:
+      return "MCP audio";
+  }
+}
 
 function logDiskRows(rows: StatusDiskComponent[], total: number, componentTotal: number): void {
   const labelWidth = Math.max(...rows.map((r) => r.label.length), "Total".length);
@@ -244,27 +277,4 @@ export function activeModelMirror(): string | null {
   const raw = process.env.KESHA_MODEL_MIRROR ?? "";
   const trimmed = raw.trim().replace(/\/+$/, "");
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function listInstalledVoices(): string[] {
-  const cache = keshaCacheDir();
-  const voices: string[] = [];
-  try {
-    const kokoro = readdirSync(join(cache, "models", "kokoro-82m", "voices"));
-    for (const f of kokoro) {
-      if (f.endsWith(".bin")) voices.push(`en-${f.replace(/\.bin$/, "")}`);
-    }
-  } catch {
-    /* Kokoro not installed */
-  }
-  try {
-    // Joined to `models/manifest.rs::VOSK_RU_FILES` through the plan, so a sixth entry needs no edit here (#1132).
-    for (const { relPath } of modelPlan.voskRu) statSync(join(cache, relPath));
-    for (const id of ["f01", "f02", "f03", "m01", "m02"]) {
-      voices.push(`ru-vosk-${id}`);
-    }
-  } catch {
-    /* Vosk not installed */
-  }
-  return voices.sort();
 }

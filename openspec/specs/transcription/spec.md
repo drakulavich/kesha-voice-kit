@@ -51,12 +51,13 @@ FLAC, AAC, OGG/Vorbis, Opus, AIFF, …); audio is mixed to mono and resampled to
 
 #### Scenario: No input files given
 
-- WHEN Ira runs `kesha` with no arguments
-- THEN a usage summary is printed to stderr
-- AND the process exits 1
+- WHEN Ira runs `kesha` with no arguments, or `kesha --json` with no files
+- THEN stderr carries `error [E_INVALID_ARG]: no input file` followed by the usage summary
+- AND stdout is empty
+- AND the process exits 2
 
 > *Technical Note — sources: `src/cli/main.ts` (default command),
-> `src/format.ts:3` (text format), `rust/src/audio.rs` (decode + resample),
+> `src/format.ts::formatTextOutput`, `rust/src/audio.rs` (decode + resample),
 > `rust/src/cli/transcribe.rs`. Audio decode errors use messages like
 > `unsupported audio format: <path>` / `no supported audio tracks in: <path>`.*
 
@@ -88,8 +89,9 @@ The CLI SHALL provide JSON (`--json` / `--format json`) and TOON (`--toon` /
 (`file`, `text`, `lang`, and detection/timing fields), with TOON losslessly
 round-tripping to the same data as JSON. The CLI SHALL also provide
 `--format transcript` (text plus a `[lang: <code>, confidence: <n>]` trailer)
-and `--verbose` (adds detection details and STT time to stderr-adjacent text
-output).
+and `--verbose`, which prints detection details and STT time to stderr for
+every output format; stdout carries the result alone, so a redirected
+`--verbose` run leaves a file holding nothing but the transcript.
 
 #### Scenario: Sona requests JSON
 
@@ -113,6 +115,13 @@ output).
   for `b.ogg` carries a stable error code, TOON encoding the same envelope
 - AND without `--include-errors` stdout would be the plain results array
   holding only `a.ogg`
+
+#### Scenario: Maks redirects a verbose run to a file
+
+- WHEN Maks runs `kesha --verbose note.ogg > note.txt`
+- THEN `note.txt` holds the transcript and nothing else
+- AND the `Audio language`, `Text language` and `STT time` lines appear on
+  stderr
 
 ### Requirement: A batch that produced no results writes nothing to stdout
 
@@ -152,7 +161,8 @@ is the opt-in that still reports those failures on stdout.
 ### Requirement: Conflicting or incomplete flag combinations are rejected
 
 The CLI SHALL validate flag combinations before starting the Engine and exit 2
-with a stderr message when the request is contradictory.
+with one stderr line of the form `error [E_INVALID_ARG]: <message>` when the
+request is contradictory.
 
 The rejected combinations are: `--json` with `--toon`; `--format transcript`
 combined with `--json` or `--toon`; `--timestamps` or `--speakers` without
@@ -162,13 +172,13 @@ combined with `--json` or `--toon`; `--timestamps` or `--speakers` without
 #### Scenario: Both JSON and TOON requested
 
 - WHEN Ira runs `kesha --json --toon call.ogg`
-- THEN an error explaining the flags are mutually exclusive is printed to stderr
+- THEN stderr contains `error [E_INVALID_ARG]: --json and --toon are mutually exclusive`
 - AND the process exits 2 without spawning the Engine
 
 #### Scenario: Timestamps in plain-text mode
 
 - WHEN Maks runs `kesha --timestamps call.ogg`
-- THEN the CLI exits 2 telling him `--timestamps` requires `--json` or `--toon`
+- THEN the CLI exits 2 telling him `--timestamps` requires `--json` or `--toon`, on a line carrying the `E_INVALID_ARG` code
 
 ### Requirement: Segment timestamps on demand
 
@@ -199,8 +209,9 @@ The CLI SHALL transcribe audio of any length: with VAD installed, audio of
 120 seconds or longer is automatically split on speech boundaries (auto mode);
 `--vad` forces splitting (and fails if the VAD model is not installed);
 `--no-vad` forces a single pass and SHALL fail rather than truncate when the
-file exceeds the single-pass ceiling (24 minutes). Without VAD installed, long
-audio falls back to fixed overlapping windows with boundary deduplication.
+file exceeds the single-pass ceiling (24 minutes), reporting the refusal as the
+Error code `E_INVALID_ARG` before any model is required. Without VAD installed,
+long audio falls back to fixed overlapping windows with boundary deduplication.
 
 #### Scenario: Hour-long recording with VAD installed
 
@@ -221,12 +232,17 @@ audio falls back to fixed overlapping windows with boundary deduplication.
 - WHEN Ira runs `kesha --no-vad marathon.mp3` on a 30-minute file
 - THEN the run fails early explaining the single-pass limit instead of
   returning a truncated transcript
+- AND the Error code is `E_INVALID_ARG`, because the flag is the caller's
+  choice and dropping it is the remedy, not a bug report
+- AND the refusal does not depend on the ASR model being installed
 
 > *Technical Note — VAD auto mode triggers at ≥120 s duration (and file size
 > >200 KB); single-pass ceiling `FULL_FILE_SINGLE_PASS_MAX_SECONDS` = 24 min;
 > fixed-window fallback uses 10-minute windows with 5-second overlap and
-> ≥8-char boundary dedup. Sources: `rust/src/transcribe/mod.rs`,
-> `rust/src/vad.rs`, `src/cli/main.ts` (VAD flag plumbing).*
+> ≥8-char boundary dedup. `validate_plain_transcribe_safety` runs before
+> `ensure_asr_installed` and codes its refusal `ErrorCode::InvalidArg`. Sources:
+> `rust/src/transcribe/mod.rs`, `rust/src/vad.rs`, `src/cli/main.ts` (VAD flag
+> plumbing).*
 
 ### Requirement: Transcription offers an opt-in written-form pass
 
@@ -257,7 +273,7 @@ The pass is never applied by default, on any platform or Backend.
 
 > *Technical Note — the pass is `text_processing_rs::normalize_sentence`, a pure-Rust port of
 > NVIDIA NeMo text processing, called from a new `rust/src/transcribe/itn.rs` at the tail of
-> `transcribe_with_options` (`rust/src/transcribe/mod.rs:174`). It ships taggers for
+> `transcribe_with_options` (`rust/src/transcribe/mod.rs::finalize_output`). It ships taggers for
 > `de/en/es/fr/hi/ja/zh` and none for `ru`, which is why Russian is inert rather than
 > guarded — see the change's design D1 and D4. The `fluidaudio-rs` `itn_normalize` binding
 > named in #710 is a `dlsym` shim over a `libnemo_text_processing` that kesha does not link,
@@ -297,13 +313,23 @@ The pass rewrites text inside a Segment; it never splits, merges, drops or re-ti
 ### Requirement: Exit codes distinguish success, runtime failure, and bad usage
 
 The CLI SHALL exit 0 when every input file transcribed successfully, 1 when any
-file failed at runtime, and 2 for argument-validation errors.
+file failed at runtime, and 2 for argument-validation errors — those the CLI
+raises before any Engine work, whether for the whole invocation (a flag conflict,
+no input) or for one file of a batch (a directory positional, a flag the
+installed Engine's `describe` does not list).
 
 #### Scenario: Exit-code contract in a script
 
 - GIVEN a shell script that branches on `$?`
 - WHEN it runs `kesha good.ogg` / `kesha missing.ogg` / `kesha --json --toon x.ogg`
 - THEN it observes exit codes 0, 1, and 2 respectively
+
+#### Scenario: A per-file argument rejection is still a usage error
+
+- GIVEN the installed Engine does not support `--itn`
+- WHEN Ira runs `kesha --itn call.ogg`
+- THEN stderr carries `error [E_INVALID_ARG]:` naming `--itn`
+- AND the process exits 2, not 1, without any progress output
 
 ## Open Issues
 

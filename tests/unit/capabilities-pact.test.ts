@@ -7,44 +7,53 @@
  * by the target it emits them at — that matrix is observable only from the real binaries,
  * which until now only the model-downloading lanes ever saw.
  *
- * These tests read `tests/fixtures/capabilities/<target>.json` — recordings of
- * `--capabilities-json` from the published binaries — and drive the production seams against
- * them. No engine, no models, no network. `.github/workflows/capability-pact.yml` re-records
+ * These tests read `tests/fixtures/capabilities/<target>.json` — the published binaries' own
+ * `describe` documents — and drive the production seams against them, so flag routing is gated
+ * by the table the real binary publishes rather than by the fake engine's mirror of it. No
+ * engine, no models, no network. `.github/workflows/capability-pact.yml` re-records
  * from the real artifacts and fails on drift, which is what stops a pact from rotting into a
  * false green; it also owns the pinned-version check, which cannot live here because a release
  * PR bumps `keshaEngine.version` before the tag it names exists.
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 import {
   pactPath,
   provenancePath,
   type PactProvenance,
 } from "../../.github/scripts/record-capability-pacts";
-import {
-  assertItnSupported,
-  assertSpeakersSupported,
-  buildTranscribeArgs,
-  RECORD_LIVE_FEATURE,
-  TRANSCRIBE_DIARIZE_FEATURE,
-  TRANSCRIBE_ITN_FEATURE,
-  TRANSCRIBE_SEGMENTS_FEATURE,
-  textLangFailureWarning,
-  type EngineCapabilities,
-} from "../../src/engine";
-import { buildEngineInstallArgs, validateDiarize } from "../../src/engine-install";
+import { buildRecordArgs, buildTranscribeArgs, TRANSCRIBE_DIARIZE_FEATURE, textLangFailureWarning } from "../../src/engine";
+import { parseDescribe, protocolMismatch, validateArgv, type DescribeDocument } from "../../src/engine/describe";
+import { KeshaError } from "../../src/engine/events";
+import { buildEngineInstallArgs } from "../../src/engine-install";
 import { engineTarget, engineTargetEntries, targetKey } from "../../src/engine-targets";
-import { buildSayArgs, type SayOptions } from "../../src/synth";
 import { pickVoiceForLang } from "../../src/voice-routing";
+import { buildSayArgs, type SayOptions } from "../../src/synth";
 import { readRepoFile, repoPath } from "../helpers/repo";
+
+interface TaxonomyEntry {
+  code: string;
+  title: string;
+}
+
+interface ErrorEntry extends TaxonomyEntry {
+  category: string;
+  retryable: boolean;
+  origin: string;
+}
+
+/** The recorded document, including the two sections `parseDescribe` drops because the CLI reads neither. */
+interface RecordedDocument extends DescribeDocument {
+  errors: ErrorEntry[];
+  warnings: TaxonomyEntry[];
+}
 
 interface PactTarget {
   key: string;
   platform: NodeJS.Platform;
   arch: NodeJS.Architecture;
   backend: "coreml" | "onnx";
-  pact: EngineCapabilities;
+  pact: RecordedDocument;
   provenance: PactProvenance;
 }
 
@@ -61,81 +70,37 @@ for (const { platform, arch, target } of engineTargetEntries()) {
     platform: platform as NodeJS.Platform,
     arch: arch as NodeJS.Architecture,
     backend: target.backend,
-    pact: JSON.parse(readRepoFile(pactPath(key))) as EngineCapabilities,
+    pact: JSON.parse(readRepoFile(pactPath(key))) as RecordedDocument,
     provenance: JSON.parse(readRepoFile(provenancePath(key))) as PactProvenance,
   });
 }
 
-/**
- * Every flag the three pure argv builders emit, and the capabilities that make a target accept
- * it — an empty list means clap defines it on every published build. A flag added to a builder
- * with no row here fails `classifies every flag the say, install and transcribe builders emit`.
- * Subcommands with no pure builder (`record`, `say --list-voices`) are outside this view.
- */
-const FLAG_CAPABILITIES: Record<string, string[]> = {
-  "--voice": ["tts"],
-  "--lang": ["tts"],
-  "--out": ["tts"],
-  "--rate": ["tts"],
-  "--ssml": ["tts"],
-  "--format": ["tts"],
-  "--bitrate": ["tts"],
-  "--sample-rate": ["tts"],
-  "--no-expand-abbrev": ["tts.ru_acronym_expansion", "tts.en_acronym_expansion"],
-  "--no-cache": [],
-  "--tts": ["tts"],
-  "--vad": ["vad"],
-  "--no-vad": ["vad"],
-  "--diarize": [TRANSCRIBE_DIARIZE_FEATURE],
-  "--json": [TRANSCRIBE_SEGMENTS_FEATURE],
-  "--itn": [TRANSCRIBE_ITN_FEATURE],
-  "--speakers": [TRANSCRIBE_DIARIZE_FEATURE],
-};
-
-/**
- * Guards that must refuse a flag before it reaches an engine whose pact lacks its capability.
- * `buildSayArgs` guards itself by taking capabilities and dropping the flag; the transcribe
- * and install builders are capability-blind, so their gated flags need an entry here.
- */
-const FLAG_GUARDS: Record<string, (caps: EngineCapabilities) => void> = {
-  "--diarize": validateDiarize,
-  "--speakers": assertSpeakersSupported,
-  "--itn": assertItnSupported,
-};
-
-/** Maximal option sets, so the builders emit every flag they are capable of emitting. */
 const EVERY_SAY_OPTION: SayOptions = {
-  text: "hello",
-  voice: "en-am_michael",
-  lang: "en",
-  out: "out.wav",
-  rate: 1.5,
-  ssml: true,
-  format: "ogg-opus",
-  bitrate: 32_000,
-  sampleRate: 24_000,
-  noExpandAbbrev: true,
-};
-const EVERY_INSTALL_OPTION = { noCache: true, ttsLangs: ["en"], vad: true, diarize: true };
-
-/** A hypothetical engine advertising everything, so a builder emits every flag it can. */
-const EVERY_CAPABILITY: EngineCapabilities = {
-  protocolVersion: 3,
-  backend: "onnx",
-  features: Object.values(FLAG_CAPABILITIES).flat(),
+  text: "hi", voice: "en-am_michael", lang: "en", out: "x.wav", rate: 1.2, ssml: true,
+  format: "ogg-opus", bitrate: 32000, sampleRate: 24000, noExpandAbbrev: true,
 };
 
-const flagsIn = (argv: string[]): string[] => argv.filter((arg) => arg.startsWith("--"));
+/** The argument text of the call whose opening paren precedes `start`; SayError takes its code fourth, on any line. */
+function callArguments(text: string, start: number): string {
+  let depth = 1;
+  let i = start;
+  while (i < text.length && depth > 0) {
+    if (text[i] === "(") depth++;
+    else if (text[i] === ")") depth--;
+    i++;
+  }
+  return text.slice(start, i);
+}
 
-const satisfies = (pact: EngineCapabilities, capabilities: string[]): boolean =>
-  capabilities.length === 0 || capabilities.some((c) => pact.features.includes(c));
-
-/** Everything the TS side can put on the wire that no capability check filters first. */
-const capabilityBlindFlags = (): string[] => [
-  ...flagsIn(buildEngineInstallArgs(EVERY_INSTALL_OPTION)),
-  ...flagsIn(buildTranscribeArgs("a.wav", { vad: "on", itn: true, speakers: true }, true)),
-  ...flagsIn(buildTranscribeArgs("a.wav", { vad: "off" })),
-];
+function rejection(fn: () => unknown): KeshaError | null {
+  try {
+    fn();
+    return null;
+  } catch (err) {
+    if (err instanceof KeshaError) return err;
+    throw err;
+  }
+}
 
 describe("capability pact — recordings", () => {
   it("records a pact for every published engine target", () => {
@@ -166,42 +131,109 @@ describe("capability pact — recordings", () => {
 
   // Point 4 of #798: an in-process test structurally cannot see a bump that lands on one
   // target only, and the wire format the TS parser reads is shared across all of them.
-  it("speaks one protocol version across every target", () => {
-    expect([...new Set(TARGETS.map((t) => t.pact.protocolVersion))]).toHaveLength(1);
+  for (const { key, pact } of TARGETS) {
+    it(`${key} publishes a document this CLI would accept`, () => {
+      const doc = parseDescribe(pact);
+      expect(doc).not.toBeNull();
+      expect(protocolMismatch(doc!, "kesha-engine")).toBeNull();
+    });
+  }
+
+  // Only a cross-target recording can see the compiled-in taxonomy drift on one platform.
+  it("publishes one error and warning taxonomy across every target", () => {
+    for (const t of TARGETS) {
+      expect(t.pact.errors.length).toBeGreaterThan(20);
+      expect(t.pact.warnings.length).toBeGreaterThan(0);
+    }
+    const shapes = new Set(TARGETS.map((t) => JSON.stringify({ errors: t.pact.errors, warnings: t.pact.warnings })));
+    expect(shapes.size).toBe(1);
+  });
+
+  it("publishes each error code with the category and retryability docs/errors.md prints for it", () => {
+    const rows = new Map(
+      [...readRepoFile("docs/errors.md").matchAll(/^\| `(E_[A-Z0-9_]+)` \| (\w+) \| (yes|no) \|/gm)].map((m) => [
+        m[1]!,
+        { category: m[2]!, retryable: m[3] === "yes" },
+      ]),
+    );
+    const mismatched = TARGETS.flatMap((t) =>
+      t.pact.errors
+        .filter((e) => {
+          const row = rows.get(e.code);
+          return !row || row.category !== e.category || row.retryable !== e.retryable;
+        })
+        .map((e) => `${t.key} ${e.code}`),
+    );
+    expect(mismatched).toEqual([]);
+    expect(rows.size).toBeGreaterThan(20);
+  });
+
+  it("publishes every code the CLI raises as cli or both, and nothing else as cli", async () => {
+    const raised = new Set<string>();
+    for await (const file of new Bun.Glob("src/**/*.ts").scan(repoPath("."))) {
+      if (file.includes("__tests__") || file.endsWith(".test.ts")) continue;
+      const text = readRepoFile(file);
+      for (const m of text.matchAll(/new (?:Kesha|Say)Error\(/g)) {
+        const code = /"(E_[A-Z0-9_]+)"/.exec(callArguments(text, m.index + m[0].length))?.[1];
+        if (code) raised.add(code);
+      }
+    }
+    expect(raised.size).toBeGreaterThan(8);
+    const cliOnly = ["E_ENGINE_PROTOCOL", "E_ENGINE_SPAWN", "E_INSTALL_RACE"];
+    // #1202: the engine still publishes these as its own although the CLI raises them before spawning.
+    const engineStill = ["E_MODEL_MISSING", "E_TEXT_EMPTY", "E_TEXT_TOO_LONG"];
+    // Added to the engine's CLI-only table after the recorded v1.25.0 assets; moves into cliOnly with the next re-record.
+    const unpublishedYet = ["E_INTERRUPTED"];
+    const shared = [...raised]
+      .filter((c) => !cliOnly.includes(c) && !engineStill.includes(c) && !unpublishedYet.includes(c))
+      .sort();
+    for (const t of TARGETS) {
+      const byOrigin = (origin: string) => t.pact.errors.filter((e) => e.origin === origin).map((e) => e.code).sort();
+      expect(byOrigin("cli")).toEqual(cliOnly);
+      expect(byOrigin("both")).toEqual(shared);
+      for (const code of engineStill) expect(byOrigin("engine")).toContain(code);
+      expect(byOrigin("cli").length + byOrigin("both").length + byOrigin("engine").length).toBe(t.pact.errors.length);
+    }
   });
 });
 
-describe("capability pact — flags the TS side emits", () => {
-  it("classifies every flag the say, install and transcribe builders emit", () => {
-    const emitted = new Set([
-      ...flagsIn(buildSayArgs(EVERY_SAY_OPTION, EVERY_CAPABILITY)),
-      ...capabilityBlindFlags(),
-    ]);
-    expect([...emitted].filter((flag) => FLAG_CAPABILITIES[flag] === undefined)).toEqual([]);
+for (const t of TARGETS) describe(`${t.key} accepts what the CLI would send it`, () => {
+  const doc = t.pact;
+
+  it("takes every transcribe flag its features allow", () => {
+    const argv = buildTranscribeArgs("a.wav", { vad: "on", itn: true, speakers: t.backend === "coreml" }, true);
+    expect(validateArgv(argv, doc).argv).toEqual(argv);
   });
 
-  for (const { key, pact } of TARGETS) {
-    it(`emits no say flag ${key}'s engine would reject`, () => {
-      // buildSayArgs takes the target's own capabilities, exactly as say() passes the
-      // installed engine's — so this is its drop decision held against the real binary.
-      const unsupported = flagsIn(buildSayArgs(EVERY_SAY_OPTION, pact)).filter(
-        (flag) => !satisfies(pact, FLAG_CAPABILITIES[flag] ?? []),
-      );
-      expect(unsupported).toEqual([]);
-    });
+  it("refuses --speakers unless it diarizes", () => {
+    const err = rejection(() => validateArgv(buildTranscribeArgs("a.wav", { speakers: true }, true), doc));
+    expect(err === null).toBe(t.pact.features.includes("transcribe.diarize"));
+  });
 
-    it(`refuses every capability-blind flag ${key}'s engine would reject`, () => {
-      for (const flag of new Set(capabilityBlindFlags())) {
-        const guard = FLAG_GUARDS[flag];
-        if (satisfies(pact, FLAG_CAPABILITIES[flag] ?? [])) {
-          if (guard) expect(() => guard(pact), `${flag} is supported on ${key}`).not.toThrow();
-          continue;
-        }
-        expect(guard, `${flag} is unsupported on ${key} and has no guard to refuse it`).toBeDefined();
-        expect(() => guard!(pact), `${flag} reaches ${key}'s engine unrefused`).toThrow();
-      }
-    });
-  }
+  it("takes every install flag, refusing --diarize where the build lacks it", () => {
+    const base = buildEngineInstallArgs({ noCache: true, ttsLangs: ["en"], vad: true });
+    expect(validateArgv(base, doc).argv).toEqual(base);
+    const err = rejection(() => validateArgv(buildEngineInstallArgs({ noCache: false, diarize: true }), doc));
+    expect(err === null).toBe(t.pact.features.includes("transcribe.diarize"));
+  });
+
+  it("advertises record.live only on the CoreML build", () => {
+    expect(t.pact.features.includes("record.live")).toBe(t.backend === "coreml");
+  });
+
+  it("takes the record argv its features allow, live auto-stop included", () => {
+    const file = buildRecordArgs({ out: "x.wav" }, 60);
+    expect(validateArgv(file, doc).argv).toEqual(file);
+    const live = buildRecordArgs({ live: true, autoStop: { silenceMs: 800, threshold: 0.5, minSpeechMs: 300 } }, 60);
+    expect(rejection(() => validateArgv(live, doc)) === null).toBe(t.pact.features.includes("record.live.auto-stop"));
+  });
+
+  it("takes every say flag, dropping only --no-expand-abbrev where the build cannot expand", () => {
+    const { argv, warnings } = validateArgv(buildSayArgs(EVERY_SAY_OPTION), doc);
+    const expands = t.pact.features.some((f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion");
+    expect(argv.includes("--no-expand-abbrev")).toBe(expands);
+    expect(warnings).toHaveLength(expands ? 0 : 1);
+  });
 });
 
 describe("capability pact — platform behaviour derived from the recordings", () => {
@@ -236,26 +268,4 @@ describe("capability pact — platform behaviour derived from the recordings", (
       expect(unsupported).toEqual([]);
     });
   }
-});
-
-describe("capability pact — gate strings", () => {
-  /**
-   * A gate on a capability string no build emits refuses forever. The pacts cannot be the
-   * authority here: a capability released after the pinned engine legitimately appears in no
-   * pact (`transcribe.itn` and `record.live` are both in that state today), so the Rust source
-   * answers "does this string exist" and the pacts answer "on which targets".
-   */
-  it("gates on capability strings the engine can emit", () => {
-    const rust = ["capabilities.rs", "transcribe/mod.rs", "record.rs"]
-      .map((file) => readRepoFile(join("rust", "src", file)))
-      .join("\n");
-    const gated = [
-      TRANSCRIBE_SEGMENTS_FEATURE,
-      TRANSCRIBE_DIARIZE_FEATURE,
-      TRANSCRIBE_ITN_FEATURE,
-      RECORD_LIVE_FEATURE,
-      ...Object.values(FLAG_CAPABILITIES).flat(),
-    ];
-    expect(gated.filter((capability) => !rust.includes(`"${capability}"`))).toEqual([]);
-  });
 });

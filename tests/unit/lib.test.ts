@@ -1,14 +1,12 @@
 import { describe, expect, it } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { chmodSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
-import { transcribe } from "../../src/lib";
+import { transcribe, transcribeWithTimestamps } from "../../src/lib";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
-import {
-  preflightTranscribeWithSegments,
-  transcribe as transcribeWrapper,
-  transcribeWithSegments,
-} from "../../src/transcribe";
+import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
+import { KeshaError } from "../../src/engine/events";
+import { tempDir } from "../helpers/temp-dir";
+import { waitForPidExit, waitForPidFile } from "../helpers/process";
 
 function fakeEngine(features: string[]): string {
   return writeTranscribingEngine(
@@ -37,7 +35,17 @@ async function withEngine<T>(enginePath: string, fn: () => T | Promise<T>): Prom
 
 describe("lib API", () => {
   it("rejects missing file", async () => {
-    await expect(transcribe("/nonexistent/audio.wav")).rejects.toThrow("File not found");
+    const err = await transcribe("/nonexistent/audio.wav").catch((e) => e);
+    expect(err).toBeInstanceOf(KeshaError);
+    expect((err as KeshaError).code).toBe("E_INPUT_NOT_FOUND");
+    expect((err as KeshaError).message).toContain("File not found");
+  });
+
+  // Exploratory S8-2: the spec names both exports; only downloadModel existed.
+  it("exports downloadEngine alongside downloadModel, as the same function", async () => {
+    const core = await import("../../src/lib");
+    expect(core.downloadEngine).toBe(core.downloadModel);
+    expect(typeof core.downloadEngine).toBe("function");
   });
 
   it("keeps transcribeWithSegments as a compatibility alias", async () => {
@@ -52,44 +60,48 @@ describe("lib API", () => {
     expect(e.stderr).toBe("stderr");
   });
 
+  it("exports KeshaError, and SayError extends it", async () => {
+    const core = await import("../../src/lib");
+    expect(core.KeshaError).toBeDefined();
+    expect(new core.SayError("m", 1, "")).toBeInstanceOf(core.KeshaError);
+  });
+
   it("uses canonical Bun install commands when transcription backend is missing", async () => {
     const saved = process.env.KESHA_ENGINE_BIN;
     process.env.KESHA_ENGINE_BIN = `/tmp/kesha-missing-engine-${Date.now()}`;
     try {
-      let message = "";
+      let hint = "";
       try {
-        await transcribeWrapper("audio.wav");
+        await validateTranscribeRequest({});
       } catch (err) {
-        message = err instanceof Error ? err.message : String(err);
+        hint = err instanceof KeshaError ? (err.hint ?? "") : String(err);
       }
-      expect(message).toContain("bun add -g @drakulavich/kesha-voice-kit");
-      expect(message).toContain("kesha install");
-      expect(message).not.toContain("bunx");
+      expect(hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
+      expect(hint).toContain("kesha install");
+      expect(hint).not.toContain("bunx");
     } finally {
       if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
       else process.env.KESHA_ENGINE_BIN = saved;
     }
   });
 
-  it("rejects speakers + vad:off before the engine-installed check (#768)", async () => {
+  it("reports the missing engine even for an invalid combo like speakers + vad:off (#768)", async () => {
     const saved = process.env.KESHA_ENGINE_BIN;
     try {
-      process.env.KESHA_ENGINE_BIN = join(mkdtempSync(join(tmpdir(), "kesha-no-engine-")), "absent");
-      await expect(
-        preflightTranscribeWithSegments({ speakers: true, vad: "off" }),
-      ).rejects.toThrow("E_INVALID_ARG");
+      process.env.KESHA_ENGINE_BIN = join(tempDir("kesha-no-engine-"), "absent");
+      let err: unknown;
+      try {
+        await validateTranscribeRequest({ speakers: true, vad: "off" });
+      } catch (e) {
+        err = e;
+      }
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_ENGINE_SPAWN");
+      expect((err as KeshaError).hint).toContain("kesha install");
     } finally {
       if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
       else process.env.KESHA_ENGINE_BIN = saved;
     }
-  });
-
-  fakeEngineIt("preflights timestamp support before segment transcription", async () => {
-    await withEngine(fakeEngine([]), async () => {
-      await expect(preflightTranscribeWithSegments({ timestamps: true })).rejects.toThrow(
-        "Timestamped segments require",
-      );
-    });
   });
 
   fakeEngineIt("routes timestamp requests through the JSON segment path", async () => {
@@ -110,22 +122,20 @@ describe("lib API", () => {
     });
   });
 
-  // The itn gate sits above the `timestamps || speakers` short-circuit, so it
-  // has to fire on the plain-text path too — the one that otherwise reaches the
-  // engine with no preflight at all (#710).
-  fakeEngineIt("preflights itn support on the plain-text path", async () => {
+  // transcribeWithSegments skips the CLI gate, so the refusal comes from the spawn-side validation (#710).
+  fakeEngineIt("refuses itn on the plain-text path when the engine lacks it", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
-      await expect(preflightTranscribeWithSegments({ itn: true })).rejects.toThrow(
-        "--itn requires a newer kesha-engine",
+      await expect(transcribeWithSegments("audio.wav", { itn: true })).rejects.toThrow(
+        "--itn needs transcribe.itn",
       );
     });
   });
 
-  fakeEngineIt("preflights itn support alongside timestamps", async () => {
+  fakeEngineIt("refuses itn alongside timestamps when the engine lacks it", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
       await expect(
-        preflightTranscribeWithSegments({ timestamps: true, itn: true }),
-      ).rejects.toThrow("--itn requires a newer kesha-engine");
+        transcribeWithSegments("audio.wav", { timestamps: true, itn: true }),
+      ).rejects.toThrow("--itn needs transcribe.itn");
     });
   });
 
@@ -135,6 +145,66 @@ describe("lib API", () => {
         text: "ok",
         segments: [],
       });
+    });
+  });
+});
+
+// Exploratory S8-1: abort was the one rejection on this surface that was not a KeshaError.
+describe("transcribe() abort", () => {
+  fakeEngineIt("an aborted call rejects with E_INTERRUPTED and leaves no engine running", async () => {
+    const dir = tempDir("kesha-lib-abort-");
+    const pidFile = join(dir, "engine.pid");
+    const audio = join(dir, "audio.wav");
+    writeFileSync(audio, "");
+    const enginePath = writeTranscribingEngine(
+      "kesha-lib-abort-engine-",
+      [],
+      `  printf '%s' "$$" > '${pidFile}'\n  sleep 30`,
+    );
+    await withEngine(enginePath, async () => {
+      const controller = new AbortController();
+      const run = transcribe(audio, { signal: controller.signal });
+      const enginePid = await waitForPidFile(pidFile);
+      controller.abort();
+      const err = await run.catch((e) => e);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_INTERRUPTED");
+      expect((err as KeshaError).origin).toBe("cli");
+      expect((err as KeshaError).exitCode).toBe(130);
+      expect((err as KeshaError).hint).toContain("AbortSignal");
+      expect(await waitForPidExit(enginePid)).toBe(true);
+    });
+  });
+
+  fakeEngineIt("an already-aborted signal rejects with E_INTERRUPTED before any engine is spawned", async () => {
+    const dir = tempDir("kesha-lib-preaborted-");
+    const marker = join(dir, "spawned");
+    const audio = join(dir, "audio.wav");
+    writeFileSync(audio, "");
+    const enginePath = writeTranscribingEngine("kesha-lib-preaborted-engine-", [], `  : > '${marker}'`);
+    await withEngine(enginePath, async () => {
+      const err = await transcribe(audio, { signal: AbortSignal.abort() }).catch((e) => e);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_INTERRUPTED");
+      expect(existsSync(marker)).toBe(false);
+    });
+  });
+});
+
+// Exploratory S8-3: the CLI answered a directory with E_INVALID_ARG while the API let the engine call it E_BAD_AUDIO.
+describe("transcribe() on a directory", () => {
+  fakeEngineIt("rejects with E_INVALID_ARG before any engine is spawned, on both entry points", async () => {
+    const dir = tempDir("kesha-lib-directory-");
+    const marker = join(dir, "spawned");
+    const enginePath = writeTranscribingEngine("kesha-lib-directory-engine-", [], `  : > '${marker}'`);
+    await withEngine(enginePath, async () => {
+      for (const call of [transcribe(dir), transcribeWithTimestamps(dir)]) {
+        const err = await call.catch((e) => e);
+        expect(err).toBeInstanceOf(KeshaError);
+        expect((err as KeshaError).code).toBe("E_INVALID_ARG");
+        expect((err as KeshaError).message).toContain("is a directory (expected an audio file)");
+      }
+      expect(existsSync(marker)).toBe(false);
     });
   });
 });

@@ -955,7 +955,7 @@ dependencies = [
 
 [[package]]
 name = "kesha-engine"
-version = "1.24.11"
+version = "1.25.0"
 dependencies = [
  "anyhow",
  "audioadapter-buffers",
@@ -982,6 +982,7 @@ dependencies = [
  "tempfile",
  "text-processing-rs",
  "thiserror 2.0.19",
+ "unicode-normalization",
  "ureq",
  "vosk_tts",
 ]

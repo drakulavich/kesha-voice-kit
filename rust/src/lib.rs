@@ -35,6 +35,12 @@ pub mod debug;
 pub mod errors;
 #[cfg(all(
     target_os = "macos",
+    target_arch = "aarch64",
+    feature = "system_kokoro"
+))]
+mod fluid_stderr;
+#[cfg(all(
+    target_os = "macos",
     any(
         feature = "coreml",
         feature = "system_diarize",
@@ -45,6 +51,7 @@ mod fluid_stdout;
 pub mod lang_id;
 pub mod models;
 mod process_tree;
+pub mod protocol;
 pub mod record;
 #[cfg(feature = "tts")]
 pub mod say_loop;

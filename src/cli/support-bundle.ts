@@ -30,9 +30,9 @@ export const supportBundleCommand = defineCommand({
         output: args.output,
         includeLogs: Boolean(args["include-logs"]),
       });
-      log.success(`Created support bundle: ${bundle.path}`);
-      log.info(`Entries: ${bundle.entries.length}`);
-      log.info(`Size: ${bundle.sizeBytes} bytes`);
+      log.status(`Created support bundle: ${bundle.path}`);
+      log.status(`Entries: ${bundle.entries.length}`);
+      log.status(`Size: ${bundle.sizeBytes} bytes`);
     } catch (err) {
       log.error(errorMessage(err));
       process.exit(1);

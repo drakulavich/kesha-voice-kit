@@ -22,30 +22,30 @@ function stageEngine(body: string): string {
 
 describe("enginePublishesJson", () => {
   test("an absent binary publishes nothing", () => {
-    expect(enginePublishesJson(join(tmpdir(), "kesha-absent-engine"), "--error-codes-json")).toBe(false);
+    expect(enginePublishesJson(join(tmpdir(), "kesha-absent-engine"), "describe")).toBe(false);
   });
 
   // The #796 stub: exits 0 for every flag and answers nothing. `existsSync` and a bare
   // exit-code probe both pass it, which is what un-skipped the drift test into a crash.
   posixTest("an engine that exits 0 and prints nothing publishes nothing", () => {
-    expect(enginePublishesJson(stageEngine("#!/bin/sh\nexit 0\n"), "--error-codes-json")).toBe(false);
+    expect(enginePublishesJson(stageEngine("#!/bin/sh\nexit 0\n"), "describe")).toBe(false);
   });
 
   posixTest("an engine that fails the flag publishes nothing", () => {
-    expect(enginePublishesJson(stageEngine("#!/bin/sh\nexit 2\n"), "--error-codes-json")).toBe(false);
+    expect(enginePublishesJson(stageEngine("#!/bin/sh\nexit 2\n"), "describe")).toBe(false);
   });
 
   posixTest("an engine that prints non-JSON publishes nothing", () => {
-    expect(enginePublishesJson(stageEngine("#!/bin/sh\necho not-json\n"), "--error-codes-json")).toBe(false);
+    expect(enginePublishesJson(stageEngine("#!/bin/sh\necho not-json\n"), "describe")).toBe(false);
   });
 
   // An empty array parses, so parseability alone would still let a hollow engine through.
   posixTest("an engine that publishes an empty list publishes nothing", () => {
-    expect(enginePublishesJson(stageEngine("#!/bin/sh\necho '[]'\n"), "--error-codes-json")).toBe(false);
+    expect(enginePublishesJson(stageEngine("#!/bin/sh\necho '[]'\n"), "describe")).toBe(false);
   });
 
   posixTest("an engine that answers the flag with entries publishes them", () => {
     const bin = stageEngine("#!/bin/sh\necho '[{\"code\":\"E_DEMO\"}]'\n");
-    expect(enginePublishesJson(bin, "--error-codes-json")).toBe(true);
+    expect(enginePublishesJson(bin, "describe")).toBe(true);
   });
 });

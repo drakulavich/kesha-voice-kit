@@ -64,7 +64,7 @@ export function runStatsAction(args: StatsCommandArgs): ActionResult {
     case "errors":
       return { ok: true, messages: info(renderErrors(getRecentErrors())) };
     case "export": {
-      const format = parseExportFormat(args.format ?? args.value ?? "json");
+      const format = parseExportFormat(args.format ?? args.value);
       if (!format) return { ok: false, error: "usage: kesha stats export --format json|csv" };
       return { ok: true, messages: [], stdout: exportStats(format) };
     }
@@ -135,12 +135,17 @@ export const statsCommand = defineCommand({
       description: "Export format: json | csv",
     },
   },
-  run({ args }: { args: StatsCommandArgs }) {
-    emitActionResult(runStatsAction(args));
+  run({ args, rawArgs }: { args: StatsCommandArgs; rawArgs: string[] }) {
+    emitActionResult(runStatsAction({ ...args, value: args.value ?? eatenNegativeNumber(rawArgs) }));
   },
 });
 
-function parseExportFormat(value: string): StatsExportFormat | null {
+// citty reads `-5` as a boolean flag named 5, so the value the user typed never reaches the action (Exploratory S5-F3).
+function eatenNegativeNumber(rawArgs: string[]): string | undefined {
+  return rawArgs.find((token) => /^-\d/.test(token));
+}
+
+function parseExportFormat(value: string | undefined): StatsExportFormat | null {
   return value === "json" || value === "csv" ? value : null;
 }
 

@@ -1,6 +1,22 @@
 import { describe, it, expect, spyOn } from "bun:test";
-import { buildSayArgs, engineCrashMessage, say, SayError, type SayOptions } from "../../src/synth";
-import { log } from "../../src/log";
+import { chmodSync, existsSync, writeFileSync } from "fs";
+import { join } from "path";
+import {
+  listVoiceIds,
+  buildSayArgs,
+  engineCrashMessage,
+  MAX_TEXT_CHARS,
+  say,
+  SayError,
+  validateSayText,
+  type SayOptions,
+} from "../../src/synth";
+import { getDescribe } from "../../src/engine";
+import { validateArgv } from "../../src/engine/describe";
+import { KeshaError } from "../../src/engine/events";
+import { describeDocument, describeJson, saveEngineEnv } from "../helpers/fake-engine";
+import { errorMessage } from "../../src/error-utils";
+import { tempDir } from "../helpers/temp-dir";
 
 describe("SayOptions type contract", () => {
   const oggOpusOptions: SayOptions = {
@@ -91,46 +107,171 @@ describe("buildSayArgs", () => {
   });
 });
 
-describe("--no-expand-abbrev (#232)", () => {
-  const baseOpts = {
-    voice: "ru-vosk-m02",
-    out: "/tmp/x.wav",
-    text: "ВОЗ",
-  };
+describe("--no-expand-abbrev", () => {
+  const baseOpts = { voice: "ru-vosk-m02", out: "/tmp/x.wav", text: "ВОЗ" };
 
-  it("not present by default", () => {
-    const args = buildSayArgs({
-      ...baseOpts,
-      noExpandAbbrev: false,
-    }, { protocolVersion: 1, backend: "onnx", features: ["tts", "tts.ru_acronym_expansion"] });
-    expect(args).not.toContain("--no-expand-abbrev");
+  it("is not present by default", () => {
+    expect(buildSayArgs({ ...baseOpts, noExpandAbbrev: false })).not.toContain("--no-expand-abbrev");
   });
 
-  it("forwarded when flag is set and engine supports it", () => {
-    const args = buildSayArgs({
-      ...baseOpts,
-      noExpandAbbrev: true,
-    }, { protocolVersion: 1, backend: "onnx", features: ["tts", "tts.ru_acronym_expansion"] });
-    expect(args).toContain("--no-expand-abbrev");
+  it("is built whenever asked for; the describe document decides whether it is sent", () => {
+    const argv = buildSayArgs({ ...baseOpts, noExpandAbbrev: true });
+    expect(argv).toContain("--no-expand-abbrev");
+    const expands = describeDocument({ features: ["tts", "tts.ru_acronym_expansion"] });
+    expect(validateArgv(argv, expands)).toEqual({ argv, warnings: [] });
+    const cannot = describeDocument({ features: ["tts"] });
+    const out = validateArgv(argv, cannot);
+    expect(out.argv).not.toContain("--no-expand-abbrev");
+    expect(out.warnings[0]).toContain("--no-expand-abbrev");
+    expect(out.warnings[0]).toContain("ignored");
   });
+});
 
-  it("dropped from argv with a warning when engine lacks the capability (#275 D3)", () => {
-    // The drop is no longer silent — `buildSayArgs` emits a `log.warn` so
-    // the user notices their flag had no effect. Verify the warn call
-    // directly via spyOn (Greptile follow-up on #277).
-    const warnSpy = spyOn(log, "warn").mockImplementation(() => {});
+describe("listVoiceIds under cancellation", () => {
+  const posixIt = process.platform === "win32" ? it.skip : it;
+
+  posixIt("a request that is already aborted never spawns the inventory and rejects at once", async () => {
+    const dir = tempDir("kesha-list-voices-abort-");
+    const spawned = join(dir, "spawned");
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ntouch "${spawned}"\nsleep 5\nexit 0\n`,
+    );
+    chmodSync(path, 0o755);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = path;
     try {
-      const args = buildSayArgs({
-        ...baseOpts,
-        noExpandAbbrev: true,
-      }, { protocolVersion: 1, backend: "onnx", features: ["tts"] });
-      expect(args).not.toContain("--no-expand-abbrev");
-      const warnArg = warnSpy.mock.calls[0]?.[0] ?? "";
-      expect(warnArg).toContain("--no-expand-abbrev");
-      expect(warnArg).toContain("flag ignored");
+      // A long-lived MCP server has the describe document cached, so the guard itself must refuse, not the describe run.
+      await getDescribe();
+      const startedAt = performance.now();
+      const err = await listVoiceIds({}, AbortSignal.abort()).then(() => null, (e: unknown) => e as KeshaError);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect(err!.code).toBe("E_INTERRUPTED");
+      expect(performance.now() - startedAt).toBeLessThan(2000);
+      expect(existsSync(spawned)).toBe(false);
     } finally {
-      warnSpy.mockRestore();
+      restore();
     }
+  });
+});
+
+describe("say on protocol 4", () => {
+  const posixIt = process.platform === "win32" ? it.skip : it;
+
+  function sayEngine(body: string): string {
+    const path = join(tempDir("kesha-say-v4-"), "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "say" ]; then\n${body}\nfi\nexit 2\n`,
+    );
+    chmodSync(path, 0o755);
+    return path;
+  }
+
+  posixIt("carries the engine's error code and hint on a SayError", async () => {
+    const engine = sayEngine(
+      `  printf '%s\\n' '{"kind":"error","code":"E_VOICE_UNKNOWN","message":"no such voice: xx","hint":"kesha say --list-voices"}' >&2\n  exit 1`,
+    );
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err).toBeInstanceOf(SayError);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect(err!.code).toBe("E_VOICE_UNKNOWN");
+      expect(err!.hint).toBe("kesha say --list-voices");
+      expect(err!.exitCode).toBe(1);
+      expect(err!.stderr).toContain("error [E_VOICE_UNKNOWN]: no such voice: xx");
+      expect(err!.origin).toBe("engine");
+    } finally {
+      restore();
+    }
+  });
+
+  posixIt("a non-event stderr line renders as E_INTERNAL, not as the raw line", async () => {
+    const engine = sayEngine(`  echo "loading voice pack..." >&2
+  printf 'RIFF'
+  exit 0`);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err).toBeInstanceOf(SayError);
+      expect(err!.code).toBe("E_INTERNAL");
+      expect(err!.exitCode).toBe(4);
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
+    } finally {
+      restore();
+    }
+  });
+
+  posixIt("a panic before a signal death keeps the crash explanation after the coded line", async () => {
+    const engine = sayEngine(`  echo "thread 'main' panicked at src/tts/kokoro.rs:88" >&2
+  exit 134`);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err!.code).toBe("E_INTERNAL");
+      const rendered = errorMessage(err);
+      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "thread 'main' panicked/);
+      expect(rendered).toContain("kesha-engine was killed by SIGABRT and produced no audio");
+    } finally {
+      restore();
+    }
+  });
+
+  posixIt("a signal death with no event renders one coded line and the crash explanation", async () => {
+    const engine = sayEngine(`  printf '%s\\n' '{"kind":"warn","code":"W_GENERIC","message":"warning: slow"}' >&2
+  exit 134`);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err!.code).toBe("E_INTERNAL");
+      expect(err!.exitCode).toBe(134);
+      const rendered = errorMessage(err);
+      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say exited with code 134\nwarning: slow\n/);
+      expect(rendered).toContain("killed by SIGABRT");
+      expect(rendered.match(/error \[/g)).toHaveLength(1);
+    } finally {
+      restore();
+    }
+  });
+
+  posixIt("an error event fails the run even though the engine exits 0 with audio bytes", async () => {
+    const engine = sayEngine(
+      `  printf '%s\\n' '{"kind":"error","code":"E_VOICE_UNKNOWN","message":"no such voice: xx"}' >&2\n  printf 'RIFF'\n  exit 0`,
+    );
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    try {
+      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as SayError);
+      expect(err).toBeInstanceOf(SayError);
+      expect(err!.code).toBe("E_VOICE_UNKNOWN");
+      expect(err!.exitCode).toBe(4);
+      expect(err!.stderr).toContain("error [E_VOICE_UNKNOWN]: no such voice: xx");
+      expect(err!.origin).toBe("engine");
+    } finally {
+      restore();
+    }
+  });
+
+  posixIt("returns the audio and is spawned with KESHA_PROTOCOL=4", async () => {
+    const engine = sayEngine(`  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2\n  printf 'RIFF'\n  exit 0`);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = engine;
+    const written: string[] = [];
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation((chunk) => (written.push(String(chunk)), true));
+    try {
+      const audio = await say({ text: "hi" });
+      expect(new TextDecoder().decode(audio)).toBe("RIFF");
+    } finally {
+      stderrSpy.mockRestore();
+      restore();
+    }
+    expect(written.join("")).toContain("proto=4");
   });
 });
 
@@ -143,7 +284,48 @@ describe("say input preflight", () => {
       expect(err).toBeInstanceOf(SayError);
       expect((err as SayError).exitCode).toBe(2);
       expect((err as Error).message).toBe("text is empty");
+      expect((err as SayError).origin).toBe("cli");
     }
+  });
+});
+
+/** The checks both doors share (#T1-1): the CLI runs them before voice routing, `say()` before the spawn. */
+describe("validateSayText", () => {
+  function refusal(text: string): { code: string; exitCode: number | undefined; message: string } {
+    try {
+      validateSayText(text);
+    } catch (err) {
+      const e = err as SayError;
+      return { code: e.code, exitCode: e.exitCode, message: e.message };
+    }
+    throw new Error(`expected validateSayText(${JSON.stringify(text)}) to throw`);
+  }
+
+  it("accepts ordinary text and text exactly at the ceiling", () => {
+    expect(() => validateSayText("Hello")).not.toThrow();
+    expect(() => validateSayText("я".repeat(MAX_TEXT_CHARS))).not.toThrow();
+  });
+
+  it("refuses empty and whitespace-only text as E_TEXT_EMPTY, exit 2", () => {
+    expect(refusal("")).toEqual({ code: "E_TEXT_EMPTY", exitCode: 2, message: "text is empty" });
+    expect(refusal(" \n\t ")).toEqual({ code: "E_TEXT_EMPTY", exitCode: 2, message: "text is empty" });
+  });
+
+  it("counts code points, not UTF-16 units, against the ceiling", () => {
+    // 2500 astral emoji are 5000 UTF-16 units but only 2500 characters.
+    expect(() => validateSayText("😀".repeat(MAX_TEXT_CHARS / 2))).not.toThrow();
+    const over = refusal("я".repeat(MAX_TEXT_CHARS + 1));
+    expect(over.code).toBe("E_TEXT_TOO_LONG");
+    expect(over.exitCode).toBe(5);
+    expect(over.message).toBe(`text exceeds ${MAX_TEXT_CHARS} chars (${MAX_TEXT_CHARS + 1})`);
+  });
+
+  it("refuses a NUL byte as E_INVALID_ARG, exit 2 — it cannot cross a process boundary", () => {
+    expect(refusal("null\0byte here")).toEqual({
+      code: "E_INVALID_ARG",
+      exitCode: 2,
+      message: "text contains a NUL byte",
+    });
   });
 });
 

@@ -11,7 +11,7 @@ import {
 } from "fs";
 import { hostname } from "os";
 import { dirname, join } from "path";
-import { TS_NATIVE_CODES } from "./error-codes";
+import { KeshaError } from "./engine/events";
 import { errorMessage } from "./error-utils";
 import { log } from "./log";
 
@@ -42,6 +42,16 @@ interface LockOwner {
 }
 
 /**
+ * An owner file by name. `live` carries its record; `corrupt` read but does not parse and is still
+ * a name to unlink; `unreadable` is one the read itself refused (EACCES, EIO) — nothing to judge,
+ * so it counts as held rather than as a corrupt owner to clear.
+ */
+type LockHolder =
+  | { kind: "live"; token: string; owner: LockOwner }
+  | { kind: "corrupt"; token: string }
+  | { kind: "unreadable"; token: string };
+
+/**
  * The owner is named by its file rather than identified by a field inside one: unlinking that
  * exact name is what makes both release and stale-lock takeover exclusive. Of two waiters
  * clearing the same dead owner one wins the unlink and the other gets ENOENT, and neither can
@@ -51,7 +61,7 @@ function ownerPath(lockDir: string, token: string): string {
   return join(lockDir, `${OWNER_PREFIX}${token}${OWNER_SUFFIX}`);
 }
 
-function readOwner(lockDir: string): LockOwner | null {
+function readOwner(lockDir: string): LockHolder | null {
   let entries: string[];
   try {
     entries = readdirSync(lockDir);
@@ -60,10 +70,21 @@ function readOwner(lockDir: string): LockOwner | null {
   }
   const name = entries.find((e) => e.startsWith(OWNER_PREFIX) && e.endsWith(OWNER_SUFFIX));
   if (!name) return null;
+  const token = name.slice(OWNER_PREFIX.length, -OWNER_SUFFIX.length);
+  let raw: string;
   try {
-    return JSON.parse(readFileSync(join(lockDir, name), "utf8")) as LockOwner;
-  } catch {
-    return null;
+    raw = readFileSync(join(lockDir, name), "utf8");
+  } catch (e) {
+    // The owner released between the listing and the read: no owner file, not a holder we cannot read.
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
+    log.debug(`install lock owner ${join(lockDir, name)} cannot be read (${errorMessage(e)}); treating it as held.`);
+    return { kind: "unreadable", token };
+  }
+  try {
+    return { kind: "live", token, owner: JSON.parse(raw) as LockOwner };
+  } catch (e) {
+    log.debug(`install lock owner ${join(lockDir, name)} does not parse (${errorMessage(e)}); treating it as stale.`);
+    return { kind: "corrupt", token };
   }
 }
 
@@ -77,9 +98,19 @@ function pidAlive(pid: number): boolean {
   }
 }
 
-function lockIsStale(owner: LockOwner): boolean {
-  if (owner.host === hostname() && !pidAlive(owner.pid)) return true;
-  return Date.now() - owner.startedAt > STALE_LOCK_MS;
+function lockIsStale(holder: LockHolder | null): boolean {
+  if (holder === null) return true;
+  switch (holder.kind) {
+    case "corrupt":
+      return true;
+    case "unreadable":
+      return false;
+    case "live": {
+      const { owner } = holder;
+      if (owner.host === hostname() && !pidAlive(owner.pid)) return true;
+      return Date.now() - owner.startedAt > STALE_LOCK_MS;
+    }
+  }
 }
 
 /**
@@ -180,10 +211,11 @@ function configuredMaxWaitMs(): number {
   if (!raw) return MAX_WAIT_MS;
   const secs = Number(raw);
   if (!Number.isFinite(secs) || secs <= 0) {
-    throw new Error(
-      `error [${TS_NATIVE_CODES.INVALID_ARG}]: KESHA_INSTALL_LOCK_WAIT_SECS="${raw}" is not a ` +
-        "positive number of seconds.\n  Fix: set it to how many seconds `kesha install` may wait " +
-        "for another install to release the cache, or unset it for the default (6 h).",
+    throw new KeshaError(
+      "E_INVALID_ARG",
+      `KESHA_INSTALL_LOCK_WAIT_SECS="${raw}" is not a positive number of seconds.\n  Fix: set it ` +
+        "to how many seconds `kesha install` may wait for another install to release the cache, " +
+        "or unset it for the default (6 h).",
     );
   }
   return secs * 1_000;
@@ -194,13 +226,13 @@ function configuredMaxWaitMs(): number {
  * install reached this cache first, nothing was written, and re-running once it is quiet is the
  * fix — so a consumer retrying on that code does the right thing here too (#1018).
  */
-function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: number): Error {
+function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: number): KeshaError {
   const waited =
     waitedMs >= 60_000 ? `${Math.round(waitedMs / 60_000)} min` : `${Math.round(waitedMs / 1_000)}s`;
   const who = holder ? `pid ${holder.pid} on ${holder.host}` : "an install it cannot identify";
-  return new Error(
-    `error [${TS_NATIVE_CODES.INSTALL_RACE}]: ` +
-      `Gave up after ${waited} waiting for another \`kesha install\` to release ` +
+  return new KeshaError(
+    "E_INSTALL_RACE",
+    `Gave up after ${waited} waiting for another \`kesha install\` to release ` +
       `${dirname(binPath)}: it is held by ${who}.\n` +
       `  Fix: wait for that install to finish, or — if none is running — delete ` +
       `${binPath}.lock and re-run. Concurrent jobs want private caches ` +
@@ -243,18 +275,21 @@ export async function acquireInstallLock(
     if (outcome === "impossible") return () => {};
 
     const holder = readOwner(lockDir);
-    if ((holder === null || lockIsStale(holder)) && clearLock(lockDir, holder?.token ?? null)) {
+    if (lockIsStale(holder) && clearLock(lockDir, holder?.token ?? null)) {
       continue;
     }
+    const held = holder?.kind === "live" ? holder.owner : null;
 
     if (!announced) {
       announced = true;
+      // The default wait is hours long, so the way out is stated up front rather than after the timeout (S4-F2).
       log.warn(
-        `Another \`kesha install\`${holder ? ` (pid ${holder.pid})` : ""} is using ` +
-          `${dirname(binPath)}; waiting for it to finish...`,
+        `Another \`kesha install\`${held ? ` (pid ${held.pid} on ${held.host})` : ""} is using ` +
+          `${dirname(binPath)}; waiting for it to finish... If no install is running, delete ` +
+          `${lockDir} and re-run.`,
       );
     }
-    if (Date.now() + delay >= deadline) throw waitTimedOut(binPath, holder, maxWaitMs);
+    if (Date.now() + delay >= deadline) throw waitTimedOut(binPath, held, maxWaitMs);
     await Bun.sleep(delay);
     delay = Math.min(delay * 2, POLL_MAX_MS);
   }

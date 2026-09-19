@@ -12,9 +12,10 @@ import {
 } from "./engine-health";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
+import { installedVoiceIds } from "./voice-inventory";
 import { engineVersion, packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
-import { kokoroAneComponents } from "./kokoro-ane";
+import { kokoroAneComponents, kokoroTtsLanguages } from "./kokoro-ane";
 import { isCoremlBackend } from "./fluid-asr-cache";
 import {
   fluidExternalRoots,
@@ -22,6 +23,7 @@ import {
   type FluidExternalRoot,
 } from "./fluid-roots";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
+import { collectStatusPaths, type StatusPaths } from "./status";
 import {
   getDiagnosticLogStatus,
   resolveDiagnosticLogDir,
@@ -29,12 +31,12 @@ import {
 } from "./diagnostic-log";
 
 const KNOWN_ENV_KEYS = [
+  "KESHA_HOME",
   "KESHA_ENGINE_BIN",
   "KESHA_CACHE_DIR",
   "KESHA_MODEL_MIRROR",
   "KESHA_STATS_DB",
   "KESHA_DEBUG",
-  "KESHA_DEBUG_FD",
   "KESHA_KOKORO_COMPUTE_UNITS",
   "KESHA_DIARIZE_COMPUTE_UNITS",
   "KESHA_DIARIZE_TIMEOUT_SECS",
@@ -65,6 +67,15 @@ interface OptionalComponent extends PathSummary {
   runnable?: boolean;
   /** Staged asset sets only: required entries that are not on disk (#831). */
   missing?: string[];
+  /** Staged asset sets only: Kokoro languages with a voice pack under this path (T2-7). */
+  languagesStaged?: string[];
+}
+
+/** What the synthesis path can actually speak with, which no other section of the report states (T2-7). */
+export interface DoctorTts {
+  voices: string[];
+  languagesStaged: string[];
+  languagesMissing: string[];
 }
 
 type DoctorDiagnosticLogStatus = DiagnosticLogStatus & { error?: string };
@@ -119,9 +130,11 @@ export interface DoctorReport {
     grandTotalBytes: number;
   };
   optionalComponents: OptionalComponent[];
+  tts: DoctorTts;
   stats: StatsStatus | (Partial<StatsStatus> & { error: string });
   diagnosticLogs: DoctorDiagnosticLogStatus;
   env: Record<string, string | null>;
+  paths: StatusPaths;
 }
 
 function pathSummary(path: string): PathSummary {
@@ -221,6 +234,8 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
     probeError = `binary is present but does not run (${health.detail}); re-run \`kesha install\``;
   } else if (health.status === "mute") {
     probeError = `${health.detail}; re-run \`kesha install\``;
+  } else if (health.status === "protocol") {
+    probeError = health.detail;
   } else if (health.status === "ok") {
     capabilities = health.capabilities;
   }
@@ -230,7 +245,7 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   return {
     path: redactPath(binPath, redact),
     installed,
-    versionMarker,
+    versionMarker: redactString("versionMarker", versionMarker, redact),
     pinnedVersion: engineVersion,
     versionState: engineVersionState(versionMarker, engineVersion),
     runnable: health.status !== "missing" && health.status !== "unusable",
@@ -323,6 +338,7 @@ async function collectOptionalComponents(
       exists: c.exists,
       sizeBytes: c.sizeBytes,
       missing: c.missing,
+      languagesStaged: c.languagesStaged,
     })),
     {
       // Diarization (#199) and Kokoro (#207) run in-engine now (native
@@ -336,6 +352,15 @@ async function collectOptionalComponents(
     ...(await Promise.all(SIDECAR_COMPONENTS.map((spec) => sidecarComponent(spec, sidecarDir)))),
   ];
   return components.map((component) => redactComponent(component, redact));
+}
+
+async function collectTts(homeDir?: string): Promise<DoctorTts> {
+  const languages = kokoroTtsLanguages({ homeDir, cacheRoot: keshaCacheDir() });
+  return {
+    voices: await installedVoiceIds(),
+    languagesStaged: languages.staged,
+    languagesMissing: languages.missing,
+  };
 }
 
 function collectStats(redact: boolean): DoctorReport["stats"] {
@@ -409,10 +434,31 @@ export async function collectDoctorReport(
     engine,
     cache: collectCache(redact, engine.capabilities?.backend, options.homeDir),
     optionalComponents: await collectOptionalComponents(redact, options.homeDir),
+    tts: await collectTts(options.homeDir),
     stats: collectStats(redact),
     diagnosticLogs: collectDiagnosticLogs(redact),
     env: collectEnv(redact),
+    paths: collectPaths(redact),
   };
+}
+
+function collectPaths(redact: boolean): StatusPaths {
+  const paths = collectStatusPaths();
+  const entry = (p: StatusPaths[keyof StatusPaths]) => ({ ...p, path: redactPath(p.path, redact) });
+  return { cache: entry(paths.cache), logs: entry(paths.logs), stats: entry(paths.stats), mcpAudio: entry(paths.mcpAudio) };
+}
+
+function formatPathsSection(paths: StatusPaths): string[] {
+  const row = (label: string, p: StatusPaths[keyof StatusPaths]) =>
+    `  ${label}: ${p.path}${p.source === "default" ? "" : ` (${p.source})`}`;
+  return [
+    "",
+    "Paths:",
+    row("Cache", paths.cache),
+    row("Logs", paths.logs),
+    row("Stats DB", paths.stats),
+    row("MCP audio", paths.mcpAudio),
+  ];
 }
 
 function formatComponentState(component: OptionalComponent): string {
@@ -486,6 +532,16 @@ function formatOptionalSection(components: DoctorReport["optionalComponents"]): 
   return lines;
 }
 
+function formatTtsSection(tts: DoctorTts): string[] {
+  return [
+    "",
+    "TTS:",
+    `  Voices: ${tts.voices.length === 0 ? "none" : tts.voices.join(", ")}`,
+    `  Languages staged: ${tts.languagesStaged.length === 0 ? "none" : tts.languagesStaged.join(", ")}`,
+    `  Languages missing a voice pack: ${tts.languagesMissing.length === 0 ? "none" : tts.languagesMissing.join(", ")}`,
+  ];
+}
+
 function formatStatsSection(stats: DoctorReport["stats"]): string[] {
   const lines = ["", "Stats:"];
   if ("error" in stats) {
@@ -538,8 +594,10 @@ export function formatDoctorReport(report: DoctorReport): string {
     "",
     ...formatCacheSection(report.cache),
     ...formatOptionalSection(report.optionalComponents),
+    ...formatTtsSection(report.tts),
     ...formatStatsSection(report.stats),
     ...formatDiagnosticLogsSection(report.diagnosticLogs),
+    ...formatPathsSection(report.paths),
     ...formatEnvSection(report.env),
   ];
 

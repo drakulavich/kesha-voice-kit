@@ -24,7 +24,7 @@ use ssml_parser::elements::ParsedElement;
 use ssml_parser::parse_ssml;
 
 use crate::coded_bail;
-use crate::errors::ErrorCode;
+use crate::errors::{CodedContext as _, ErrorCode};
 
 pub use segment::Segment;
 
@@ -33,6 +33,71 @@ use rate::{find_relative_rate, has_structural_source_siblings, parse_rate_value}
 use walker::{emit_span, parse_inner_spans, push_text_slice, span_priority};
 use warnings::{WARN_PROSODY_MID_UTTERANCE, WARN_PROSODY_NO_SUPPORTED_ATTR};
 
+/// ssml-parser drops CDATA from get_text(), so its content is substituted in, escaped, before parsing (T3-3).
+fn substitute_cdata(input: &str) -> std::borrow::Cow<'_, str> {
+    const OPEN: &str = "<![CDATA[";
+    const CLOSE: &str = "]]>";
+    if !input.contains(OPEN) {
+        return std::borrow::Cow::Borrowed(input);
+    }
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find(OPEN) {
+        out.push_str(&rest[..start]);
+        let after = &rest[start + OPEN.len()..];
+        // Unterminated: hand the rest to the parser, which rejects it as malformed.
+        let Some(end) = after.find(CLOSE) else {
+            out.push_str(&rest[start..]);
+            return std::borrow::Cow::Owned(out);
+        };
+        out.push_str(
+            &after[..end]
+                .replace('&', "&amp;")
+                .replace('<', "&lt;")
+                .replace('>', "&gt;"),
+        );
+        rest = &after[end + CLOSE.len()..];
+    }
+    out.push_str(rest);
+    std::borrow::Cow::Owned(out)
+}
+
+/// The upstream parser carries no structured error kind, so the tag and its accepted forms are inferred from its text (T3-2).
+fn parse_failure_hint(upstream: &str, input: &str) -> String {
+    if upstream.contains("TimeDesignation") {
+        return "SSML <break time> must be a duration like \"500ms\" or \"1s\", or absent".into();
+    }
+    if let Some(value) = upstream.split("Unrecognised value ").nth(1) {
+        let value = value.trim();
+        return match attribute_holding(input, value) {
+            Some("rate") => format!(
+                "SSML <prosody rate> must be a percentage like \"80%\" or one of x-slow, slow, medium, fast, x-fast, default (got \"{value}\")"
+            ),
+            Some("level") => format!(
+                "SSML <emphasis level> must be one of strong, moderate, none, reduced (got \"{value}\")"
+            ),
+            Some(attr) => format!("SSML attribute {attr} has an unrecognised value \"{value}\""),
+            None => format!("SSML has an unrecognised attribute value \"{value}\""),
+        };
+    }
+    "SSML is malformed".into()
+}
+
+/// The attribute whose quoted value is `value`: `rate` for `rate="0.5"`.
+fn attribute_holding<'a>(input: &'a str, value: &str) -> Option<&'a str> {
+    for quote in ['"', '\''] {
+        let needle = format!("={quote}{value}{quote}");
+        if let Some(pos) = input.find(&needle) {
+            let head = &input[..pos];
+            let start = head
+                .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == ':'))
+                .map_or(0, |i| i + 1);
+            return Some(&head[start..]);
+        }
+    }
+    None
+}
+
 /// Parse an SSML string into a linear segment list.
 /// Unknown tags emit a single stderr warning per name and are otherwise stripped
 /// (their text content is still synthesized).
@@ -40,6 +105,8 @@ use warnings::{WARN_PROSODY_MID_UTTERANCE, WARN_PROSODY_NO_SUPPORTED_ATTR};
 /// Hardening: requires a `<speak>` root element, rejects `<!DOCTYPE>` (XXE surface),
 /// and upstream `ssml-parser` disallows external entities by construction.
 pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
+    let substituted = substitute_cdata(input);
+    let input: &str = &substituted;
     let trimmed = input.trim_start();
     if trimmed.is_empty() {
         coded_bail!(ErrorCode::SsmlInvalid, "SSML input is empty");
@@ -71,7 +138,9 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
         );
     }
 
-    let ssml = parse_ssml(input)?;
+    let ssml = parse_ssml(input)
+        .map_err(|e| anyhow::anyhow!("{} ({e})", parse_failure_hint(&e.to_string(), input)))
+        .coded(ErrorCode::SsmlInvalid)?;
     let text: Vec<char> = ssml.get_text().chars().collect();
 
     // Secondary sort by priority so that when spans share the same `start`, inner
@@ -255,6 +324,32 @@ fn contains_doctype(input: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unrecognised_prosody_rate_names_the_attribute_and_its_accepted_forms() {
+        let err = parse(r#"<speak><prosody rate="0.5">hi</prosody></speak>"#).expect_err("refused");
+        let msg = format!("{err:#}");
+        assert_eq!(
+            crate::errors::code_of(&err),
+            ErrorCode::SsmlInvalid,
+            "{msg}"
+        );
+        assert!(
+            msg.contains("<prosody rate>") && msg.contains("x-slow") && msg.contains("\"0.5\""),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn an_unrecognised_emphasis_level_names_the_attribute_and_its_accepted_forms() {
+        let err =
+            parse(r#"<speak><emphasis level="loud">hi</emphasis></speak>"#).expect_err("refused");
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("<emphasis level>") && msg.contains("strong") && msg.contains("\"loud\""),
+            "{msg}"
+        );
+    }
 
     // Full parse() integration tests live in rust/tests/ssml_integration.rs (#267 F8).
     // This block covers only pub(super) items unreachable from there — currently tag_name.

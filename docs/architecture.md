@@ -78,8 +78,8 @@ before the success line, which asks both the version marker *and* the installed
 binary (`kesha-engine --version`) whether they are the requested release and
 fails with `E_INSTALL_RACE` if not. That promise holds for the moment the
 success line prints: once the lock is released, another install may replace the
-engine, so concurrent jobs that must pin a version want private caches
-(`KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`).
+engine, so concurrent jobs that must pin a version want private state
+(`KESHA_HOME`, or just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`).
 
 The wait itself is bounded, and giving up on it is `E_INSTALL_RACE` too — the
 same code for the same situation: another install holds this cache, nothing was
@@ -118,8 +118,10 @@ AAC, M4A. No ffmpeg.
 src/                  Bun/TS CLI + library
   cli.ts              argument parsing, --format/--json/--toon, top-level flags
   cli/                subcommands: install, init, logs, doctor, completions, dispatch
-  engine.ts          engine subprocess wrapper + getEngineCapabilities
-  engine-install.ts  engine binary download (uses keshaEngine.version)
+  engine.ts           engine subprocess wrapper + getDescribe/getEngineCapabilities
+  engine/describe.ts  describe-document schema, argv validation (validateArgv)
+  engine/events.ts    protocol-4 stderr event parsing (readEvents), KeshaError
+  engine-install.ts   engine binary download (uses keshaEngine.version)
   transcribe.ts      thin forwarder to `kesha-engine transcribe`
   synth.ts           thin forwarder to `kesha-engine say`
   voice-routing.ts   omitted-`--voice` language→voice picker
@@ -128,10 +130,10 @@ src/                  Bun/TS CLI + library
 
 rust/src/             kesha-engine (Rust)
   main.rs            clap CLI: transcribe / say / detect-lang / install / record / ...
-  capabilities.rs    --capabilities-json (single source of truth for feature flags)
+  capabilities.rs    feature-flag table read by `describe`
   models/            HF download + cache + SHA-256 pins — manifest.rs (tables), paths.rs
                      (cache dirs), download.rs (retry/verify), staging.rs (ANE bundles),
-                     progress.rs (stderr bar)
+                     progress.rs (download progress events)
   audio.rs           symphonia decode + rubato resample to 16kHz mono f32
   lang_id.rs         SpeechBrain ONNX audio language detection (always built)
   text_lang.rs       macOS NLLanguageRecognizer (macOS only)
@@ -156,10 +158,22 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    the engine via `src/engine.ts`, which locates the binary
    (`KESHA_ENGINE_BIN` override → installed cache path) and spawns it with
    `Bun.spawn`.
-3. The CLI reads the engine's capability surface via
-   `kesha-engine --capabilities-json` (`src/engine.ts::getEngineCapabilities`)
-   and validates flags against it instead of blindly forwarding — see the
-   "DO NOT BLINDLY FORWARD CLI FLAGS" rule in [CLAUDE.md](../CLAUDE.md).
+3. The CLI reads `kesha-engine describe` once per binary path (cached by path
+   + mtime) through `getDescribe` in `src/engine.ts`, and validates the argv of
+   every flag-carrying spawn on the parsed path (`transcribe`, `say`, MCP
+   `list_voices`) and of `record` against that document with `validateArgv`
+   (`src/engine/describe.ts`) before spawning — instead of blindly forwarding
+   flags, see the "DO NOT BLINDLY FORWARD CLI FLAGS" rule in
+   [CLAUDE.md](../CLAUDE.md). The parsed spawns read stderr as protocol-4
+   NDJSON events (`readEvents` in `src/engine/events.ts`), as do the Kokoro
+   warmup and CLI `say --list-voices`. `recordEngine` and the model-install spawn
+   pipe stderr too; the install keeps stdin and stdout inherited, while
+   `recordEngine` also pipes stdout and relays it byte for byte so a live
+   transcript cannot land inside the open ticker row. Their repeating progress
+   repaints one row via `createLiveStatus` and stays silent when stderr is
+   redirected or `--quiet` is set.
+   `getEngineCapabilities` is a thin view over the describe document kept
+   for the status/doctor/install screens that predate `describe`.
 4. **stdout is the result** (transcript / JSON / WAV bytes); **stderr is
    progress + errors**. This keeps stdout pipe-friendly.
 5. **Assets are install-only.** `kesha install` (and opt-in `--tts` / `--vad` /
@@ -188,7 +202,9 @@ darwin) and the native `fluidaudio-rs` CoreML path (`coreml` / `system_diarize`)
 
 ## Models: cache + pinning
 
-- Cache lives under `~/.cache/kesha/models/` (override `KESHA_CACHE_DIR`).
+- Cache lives under `~/.cache/kesha/models/` (override `KESHA_CACHE_DIR`, or
+  root every state location at once with `KESHA_HOME`; the full table is in
+  [diagnostic-logs.md](diagnostic-logs.md#where-kesha-keeps-its-files)).
 - Every model file in `rust/src/models/manifest.rs` carries a pinned **SHA-256**;
   `download_verified` refuses to cache a file whose hash doesn't match. This
   makes `KESHA_MODEL_MIRROR` safe and turns an upstream re-publish into a

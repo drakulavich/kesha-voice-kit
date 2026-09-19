@@ -1,18 +1,15 @@
 import { defineCommand } from "citty";
+import { statSync } from "fs";
 import { errorMessage } from "../error-utils";
-import {
-  getEngineBinPath,
-  isEngineInstalled,
-  spawnEngineProcess,
-  spawnStdioWithDebugFd,
-} from "../engine";
-import { installHint } from "../install-hint";
-import { registerProcessTree } from "../process-tree";
+import { exitCodeFor, KeshaError } from "../engine/events";
+import { renderInvalidArg } from "./options";
 import { log } from "../log";
 import {
+  MAX_TEXT_CHARS,
+  listVoiceIds,
   say,
-  SayError,
   SUPPORTED_SAMPLE_RATES,
+  validateSayText,
   type SayFormat,
   type SayOptions,
 } from "../synth";
@@ -21,13 +18,25 @@ import { resolveSayVoice } from "../voice-routing";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandOutcome, type CommandSession } from "./command-session";
 
+/** Four bytes per allowed character: a pipe that streams past it is refused without waiting for EOF. */
+const MAX_STDIN_BYTES = MAX_TEXT_CHARS * 4 + 4;
+
+/** A positional the user gave is the text, empty or not; only an absent one falls through to stdin (#T1-2). */
 async function resolveText(inline: string | undefined): Promise<string> {
-  if (inline !== undefined && inline.length > 0) return inline;
+  if (inline !== undefined) return inline;
   const chunks: Uint8Array[] = [];
+  let total = 0;
   for await (const chunk of Bun.stdin.stream()) {
     chunks.push(chunk);
+    total += chunk.byteLength;
+    if (total > MAX_STDIN_BYTES) break;
   }
-  const total = chunks.reduce((n, c) => n + c.byteLength, 0);
+  if (total > MAX_STDIN_BYTES) {
+    throw new KeshaError(
+      "E_TEXT_TOO_LONG",
+      `text exceeds ${MAX_TEXT_CHARS} chars (stdin passed ${MAX_STDIN_BYTES} bytes)`,
+    );
+  }
   const merged = new Uint8Array(total);
   let offset = 0;
   for (const c of chunks) {
@@ -41,7 +50,7 @@ export function shouldRejectMissingSayText(
   inlineText: string | undefined,
   stdinIsTty: boolean | undefined,
 ): boolean {
-  return (inlineText === undefined || inlineText.length === 0) && stdinIsTty === true;
+  return inlineText === undefined && stdinIsTty === true;
 }
 
 type Parsed<T> = { ok: true; value: T | undefined } | { ok: false; error: string };
@@ -65,11 +74,18 @@ function parseRateFlag(value: unknown): Parsed<number> {
   return rate;
 }
 
+/** The Opus encoder's own range, mirrored here so a caller error never costs a synthesis (#T1-5). */
+const MIN_OPUS_BITRATE = 6000;
+const MAX_OPUS_BITRATE = 510000;
+
 function parseBitrateFlag(value: unknown): Parsed<number> {
   const bitrate = parseFiniteNumberFlag("--bitrate", value);
   if (!bitrate.ok || bitrate.value === undefined) return bitrate;
   if (!Number.isInteger(bitrate.value) || bitrate.value <= 0) {
     return { ok: false, error: "--bitrate must be a positive integer." };
+  }
+  if (bitrate.value < MIN_OPUS_BITRATE || bitrate.value > MAX_OPUS_BITRATE) {
+    return { ok: false, error: `--bitrate must be between ${MIN_OPUS_BITRATE} and ${MAX_OPUS_BITRATE} bps.` };
   }
   return bitrate;
 }
@@ -113,6 +129,8 @@ function checkOpusOnlyFlags(
 }
 
 export type SayFlagArgs = {
+  voice?: unknown;
+  lang?: unknown;
   format?: unknown;
   rate?: unknown;
   bitrate?: unknown;
@@ -123,6 +141,9 @@ export type SayFlagArgs = {
 export type ResolvedSayFlags =
   | {
       ok: true;
+      voice: string | undefined;
+      lang: string | undefined;
+      out: string | undefined;
       format: SayFormat | undefined;
       rate: number | undefined;
       bitrate: number | undefined;
@@ -130,8 +151,22 @@ export type ResolvedSayFlags =
     }
   | { ok: false; error: string };
 
+const STRING_FLAGS = ["voice", "lang", "out", "format", "rate", "bitrate", "sample-rate"] as const;
+
+/** citty returns a trailing valueless string flag as `true` and `--out=` as `""`; both used to be discarded silently (#T1-3). */
+function missingFlagValue(args: SayFlagArgs): string | null {
+  for (const name of STRING_FLAGS) {
+    const value = (args as Record<string, unknown>)[name];
+    if (value === true || value === "") return `--${name} needs a value`;
+  }
+  return null;
+}
+
 /** Validates the encoder flags before the engine is spawned: faster failure in scripts (the engine repeats them authoritatively). */
 export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
+  const missing = missingFlagValue(args);
+  if (missing) return { ok: false, error: missing };
+
   const format = parseFormatFlag(args.format);
   if (!format.ok) return format;
   const rate = parseRateFlag(args.rate);
@@ -147,11 +182,32 @@ export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
 
   return {
     ok: true,
+    voice: typeof args.voice === "string" ? args.voice : undefined,
+    lang: typeof args.lang === "string" ? args.lang : undefined,
+    out,
     format: format.value,
     rate: rate.value,
     bitrate: bitrate.value,
     sampleRate: sampleRate.value,
   };
+}
+
+const STDIO_ALIASES = ["/dev/stdout", "/dev/stderr", "/dev/stdin"];
+
+/** `/dev/fd/N` stats as whatever the descriptor points at, so the name decides where stat cannot. */
+function isDeviceDestination(out: string): boolean {
+  if (STDIO_ALIASES.includes(out) || /^\/dev\/fd\/\d+$/.test(out)) return true;
+  try {
+    return statSync(out).isCharacterDevice();
+  } catch {
+    return false;
+  }
+}
+
+/** The engine writes `--out` from its own process, whose stdout is the CLI's pipe, so a device destination swallows the audio and still reports success (#T1-15). */
+export function deviceOutRefusal(out: string | undefined): string | null {
+  if (out === undefined || !isDeviceDestination(out)) return null;
+  return `--out ${out} is a character device, where the audio would be discarded; omit --out to write it to stdout`;
 }
 
 type SayOpts = {
@@ -182,6 +238,11 @@ function recordOutputArtifact(
   }
   stats.recordArtifact(artifactFromBytes(audio.byteLength, "output_audio", opts.format ?? "wav"));
   return { outputFormat: opts.format ?? "wav", outputSizeBytes: audio.byteLength };
+}
+
+/** citty's parser reads `--no-expand-abbrev` as the negation of a boolean `expand-abbrev`, so the declared key is never set (same trap `--no-vad` works around in main.ts). */
+export function noExpandAbbrevRequested(args: Record<string, unknown>, rawArgs: string[]): boolean {
+  return rawArgs.includes("--no-expand-abbrev") || args["no-expand-abbrev"] === true;
 }
 
 async function synthesizeAndEmit(
@@ -216,16 +277,16 @@ async function synthesizeAndEmit(
       },
     };
   } catch (err) {
-    const code = err instanceof SayError ? err.code : "E_INTERNAL";
-    const exitCode = err instanceof SayError ? err.exitCode : 4;
+    const code = err instanceof KeshaError ? err.code : "E_INTERNAL";
+    const exitCode = exitCodeFor(err);
     stats.recordError("tts", err, code);
-    log.error(err instanceof SayError ? err.stderr.trim() || err.message : errorMessage(err));
+    log.error(errorMessage(err));
     return {
       status: "failed",
       itemCount: 1,
       exitCode,
       finishFields: {
-        errorKind: err instanceof SayError ? "say_error" : "error",
+        errorKind: err instanceof KeshaError ? "say_error" : "error",
         exitCode,
         error_code: code,
       },
@@ -287,59 +348,61 @@ export const sayCommand = defineCommand({
       default: false,
     },
   },
-  async run({ args }) {
+  async run({ args, rawArgs }) {
     if (args.debug) log.debugEnabled = true;
     if (args["list-voices"]) {
-      if (!isEngineInstalled()) {
-        log.error(`kesha-engine not installed. run: ${installHint()}`);
-        process.exit(1);
-      }
-      // The engine prints the list directly — just relay its stdout + exit code.
-      const proc = spawnEngineProcess(
-        getEngineBinPath(),
-        ["say", "--list-voices"],
-        spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
-      );
-      // Register so a Ctrl-C during a cold Engine load terminates it and exits 130/143 (#939);
-      // dispose before the process.exit below so the registration never outlives the run.
-      const tree = registerProcessTree(proc);
-      let exitCode: number;
+      let ids: string[];
       try {
-        exitCode = await proc.exited;
-      } finally {
-        tree.dispose();
+        ids = await listVoiceIds({ onProgress: (line) => log.status(line) });
+      } catch (err) {
+        log.error(errorMessage(err));
+        process.exit(exitCodeFor(err));
       }
-      process.exit(exitCode);
+      await Bun.write(Bun.stdout, ids.map((id) => `${id}\n`).join(""));
+      process.exit(0);
     }
 
     const flags = resolveSayFlags(args);
     if (!flags.ok) {
-      log.error(flags.error);
+      log.error(renderInvalidArg(flags.error));
+      process.exit(2);
+    }
+
+    const deviceOut = deviceOutRefusal(flags.out);
+    if (deviceOut) {
+      log.error(renderInvalidArg(deviceOut));
       process.exit(2);
     }
 
     const inlineText = typeof args.text === "string" ? args.text : undefined;
     const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;
     if (shouldRejectMissingSayText(inlineText, stdinIsTty)) {
-      log.error("kesha say requires text or piped stdin. Usage: kesha say <text>");
+      log.error(renderInvalidArg("kesha say requires text or piped stdin. Usage: kesha say <text>"));
       process.exit(2);
     }
-    const text = await resolveText(inlineText);
-    const explicitVoice = typeof args.voice === "string" ? args.voice : undefined;
-    const langHint = typeof args.lang === "string" ? args.lang : undefined;
+    let text: string;
+    try {
+      text = await resolveText(inlineText);
+      validateSayText(text);
+    } catch (err) {
+      log.error(errorMessage(err));
+      process.exit(exitCodeFor(err));
+    }
+    const explicitVoice = flags.voice;
+    const langHint = flags.lang;
     const voice = await resolveSayVoice(explicitVoice, langHint, text);
 
     const opts: SayOpts = {
       text,
       voice,
       lang: langHint,
-      out: typeof args.out === "string" ? args.out : undefined,
+      out: flags.out,
       rate: flags.rate,
       ssml: Boolean(args.ssml),
       format: flags.format,
       bitrate: flags.bitrate,
       sampleRate: flags.sampleRate,
-      noExpandAbbrev: Boolean(args["no-expand-abbrev"]),
+      noExpandAbbrev: noExpandAbbrevRequested(args, rawArgs),
     };
 
     const outcome = await runCommandSession(

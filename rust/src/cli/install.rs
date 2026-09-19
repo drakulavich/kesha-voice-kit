@@ -1,5 +1,6 @@
 use anyhow::Result;
 
+use crate::protocol::events;
 use crate::{backend, models};
 
 #[derive(clap::Args)]
@@ -51,16 +52,19 @@ pub fn run(args: InstallArgs) -> Result<()> {
         let refs: Vec<&str> = tts_langs.iter().map(String::as_str).collect();
         models::validate_tts_langs(&refs)?;
         models::download_tts(&refs, no_cache)?;
-        eprintln!("TTS models installed ({}).", tts_langs.join(", "));
+        events::progress(
+            None,
+            format!("TTS models installed ({}).", tts_langs.join(", ")),
+        );
     }
     if vad {
         models::download_vad(no_cache)?;
-        eprintln!("VAD model installed.");
+        events::progress(None, "VAD model installed.");
     }
     #[cfg(feature = "system_diarize")]
     if diarize {
         models::download_diarize(no_cache)?;
-        eprintln!("Diarization model installed.");
+        events::progress(None, "Diarization model installed.");
     }
     // Pre-pay ANE model-compile (~20-30 s CoreML) / ORT session init (~500 ms) here so the
     // first real `kesha audio.ogg` is fast. CoreML cache is keyed by (model bytes, signing
@@ -72,15 +76,21 @@ pub fn run(args: InstallArgs) -> Result<()> {
         } else {
             "~500 ms for the ORT session init"
         };
-        eprintln!("Warming up ASR backend ({cost_hint})...");
+        events::progress(None, format!("Warming up ASR backend ({cost_hint})..."));
         let t = std::time::Instant::now();
         // Non-fatal: install already succeeded; first real run pays cold-start instead (#298).
         match backend::create_backend(&asr_dir) {
-            Ok(_) => eprintln!("ASR backend warmed up (dt={}ms).", t.elapsed().as_millis()),
-            Err(e) => eprintln!(
-                "warning: ASR backend warm-up failed ({e}); install \
-                 still complete but the first `kesha audio.ogg` will \
-                 pay the cold-start cost."
+            Ok(_) => events::progress(
+                None,
+                format!("ASR backend warmed up (dt={}ms).", t.elapsed().as_millis()),
+            ),
+            Err(e) => events::warn(
+                events::W_INSTALL,
+                format!(
+                    "warning: ASR backend warm-up failed ({e}); install \
+                     still complete but the first `kesha audio.ogg` will \
+                     pay the cold-start cost."
+                ),
             ),
         }
     }
@@ -92,8 +102,9 @@ pub fn run(args: InstallArgs) -> Result<()> {
     if diarize && !no_warmup && models::is_cached(models::ModelKind::Diarize) {
         let diarize_pkg = models::model_dir(models::ModelKind::Diarize)?;
         let diarize_loc = models::fluidaudio_diarize_location()?;
-        eprintln!(
-            "Warming up diarization model (one-time compile ~1-2 min on first install, ~4 s after)..."
+        events::progress(
+            None,
+            "Warming up diarization model (one-time compile ~1-2 min on first install, ~4 s after)...",
         );
         let t = std::time::Instant::now();
         let result = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
@@ -102,23 +113,34 @@ pub fn run(args: InstallArgs) -> Result<()> {
         });
         match result {
             Ok(_) => {
-                eprintln!(
-                    "Diarization model warmed up (dt={}ms).",
-                    t.elapsed().as_millis()
+                events::progress(
+                    None,
+                    format!(
+                        "Diarization model warmed up (dt={}ms).",
+                        t.elapsed().as_millis()
+                    ),
                 );
                 match models::cleanup_diarize_compiled_sidecars(&diarize_pkg) {
                     Ok(0) => {}
-                    Ok(n) => eprintln!("Removed {n} stale diarization sidecar(s)."),
-                    Err(e) => eprintln!("warning: diarization sidecar cleanup failed ({e})"),
+                    Ok(n) => {
+                        events::progress(None, format!("Removed {n} stale diarization sidecar(s)."))
+                    }
+                    Err(e) => events::warn(
+                        events::W_INSTALL,
+                        format!("warning: diarization sidecar cleanup failed ({e})"),
+                    ),
                 }
             }
-            Err(e) => eprintln!(
-                "warning: diarization warm-up failed ({e}); install still \
-                 complete but the first `kesha transcribe --speakers` will \
-                 pay the cold-start compile."
+            Err(e) => events::warn(
+                events::W_INSTALL,
+                format!(
+                    "warning: diarization warm-up failed ({e}); install still \
+                     complete but the first `kesha transcribe --speakers` will \
+                     pay the cold-start compile."
+                ),
             ),
         }
     }
-    eprintln!("Install complete.");
+    events::progress(None, "Install complete.");
     Ok(())
 }

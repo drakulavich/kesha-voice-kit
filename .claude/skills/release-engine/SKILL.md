@@ -39,15 +39,12 @@ grep '^default =' rust/Cargo.toml
 gh run list --workflow ci.yml --branch main --limit 1
 gh run list --workflow rust-test.yml --branch main --limit 1
 
-# 4. Local sanity — nextest, not `cargo test` (CLAUDE.md)
+# 4. Local sanity — fmt is checked here because preflight formats in place and cannot fail on it
 cargo fmt --check --manifest-path rust/Cargo.toml
-cargo clippy --manifest-path rust/Cargo.toml --all-targets -- -D warnings
-cargo check --manifest-path rust/Cargo.toml --features coreml --no-default-features
-just rust-test
-bunx tsc --noEmit && bun test && bun run check:versions
+just ALL=1 preflight
 ```
 
-If anything fails, STOP. Do not bump versions. A `bun test` failure that does not reproduce on a second run is the documented timing flake — confirm against CI on the same SHA rather than chasing it.
+If anything fails, STOP. Do not bump versions. A failure that does not reproduce on a second run is still a failure — confirm against CI on the same SHA rather than chasing it.
 
 ## Procedure
 
@@ -80,9 +77,9 @@ git push origin refs/tags/vX.Y.Z
 
 `--cleanup=verbatim` keeps the `#` heading lines a release body needs; git's default cleanup strips every line starting with `#`. The `-a` is equally load-bearing: a lightweight tag carries no annotation, and the notes are dropped with a `::notice::` rather than published — before #815 the lane read `%(contents)` unguarded and shipped the *commit* message as the release body instead. Do **not** run `.github/scripts/push-annotated-tag.sh` locally — it sets `user.name`/`user.email` to github-actions[bot] in the repo config, which is right in CI and wrong on a laptop.
 
-The build produces 3 platform binaries, smoke-tests each with `--capabilities-json`, and creates a **draft** release with SBOM, manifest, `SHA256SUMS` and Sigstore bundles. Engine tags do **not** attach Linux `.deb`/`.rpm` — those ship on the `-cli` marker release now (#728).
+The build produces 3 platform binaries, smoke-tests each with `describe`, and creates a **draft** release with SBOM, manifest, `SHA256SUMS` and Sigstore bundles. Engine tags do **not** attach Linux `.deb`/`.rpm` — those ship on the `-cli` marker release now (#728).
 
-Expect `Darwin synthesis smoke (advisory)` to fail — it is `continue-on-error` and tracked as #742 / #678.
+The `Darwin synthesis smoke` job is required — `release` lists it in `needs`, so a red smoke leaves the draft release unbuilt with the `release` job skipped, not failed. Read the smoke log (`KESHA_DEBUG=1` routes FluidAudio's CoreML errors to stderr there): it is a real synthesis failure to fix before re-tagging, never an expected one.
 
 ### Step 4 — Validate the draft before publishing
 
@@ -93,7 +90,7 @@ gh release download vX.Y.Z -p 'kesha-engine-darwin-arm64' -p 'SHA256SUMS' -p 'ke
 chmod +x kesha-engine-darwin-arm64
 ./kesha-engine-darwin-arm64 --version          # must equal X.Y.Z
 shasum -a 256 -c SHA256SUMS --ignore-missing
-./kesha-engine-darwin-arm64 --capabilities-json | jq '.backend, (.features|length)'
+./kesha-engine-darwin-arm64 describe | jq '.backend, (.features|length)'
 ```
 
 Compare the feature list against the previous release: a silently missing feature is the v1.1.0 failure mode, and the count is the cheapest way to catch it.

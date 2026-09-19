@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { classifyReleaseTag } from "../../.github/scripts/classify-release-tag.mjs";
 import {
@@ -12,6 +11,7 @@ import {
   stableVersionRe,
 } from "../../.github/scripts/release-tags.mjs";
 import { parseRepoYaml, readRepoFile, REPO_ROOT } from "../helpers/repo";
+import { tempDir } from "../helpers/temp-dir";
 
 const WORKFLOW = ".github/workflows/build-engine.yml";
 const WORKFLOW_YAML = readRepoFile(WORKFLOW);
@@ -190,7 +190,7 @@ describe("release manifest tag check", () => {
   const LINKED = ["src", ".github", "packaging"];
 
   function fixtureRepo(version: string, engineVersion: string): string {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-manifest-"));
+    const dir = tempDir("kesha-manifest-");
     for (const entry of LINKED) symlinkSync(`${REPO_ROOT}/${entry}`, join(dir, entry));
     writeFileSync(
       join(dir, "package.json"),

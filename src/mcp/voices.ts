@@ -1,6 +1,4 @@
-import { getEngineBinPath, isEngineInstalled, spawnEngineProcess, spawnStdioWithDebugFd } from "../engine";
-import { installHint } from "../install-hint";
-import { registerProcessTree } from "../process-tree";
+import { listVoiceIds } from "../synth";
 
 export interface VoiceInfo {
   voiceId: string;
@@ -30,7 +28,7 @@ function langNameFor(code: string): string {
   }
 }
 
-function parseVoiceInfo(id: string): VoiceInfo {
+export function parseVoiceInfo(id: string): VoiceInfo {
   if (id.startsWith("ru-vosk-")) {
     const suffix = id.slice("ru-vosk-".length); // e.g. "m02" or "f01"
     const genderChar = suffix[0];
@@ -101,40 +99,8 @@ function parseVoiceInfo(id: string): VoiceInfo {
   };
 }
 
-export function parseVoiceLines(text: string): VoiceInfo[] {
-  return text
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-    .map((id) => parseVoiceInfo(id));
-}
-
 export async function listVoices(): Promise<VoiceInfo[]> {
-  if (!isEngineInstalled()) {
-    throw new Error(`kesha-engine not installed. run: ${installHint()}`);
-  }
-  const proc = spawnEngineProcess(
-    getEngineBinPath(),
-    ["say", "--list-voices"],
-    spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
-  );
-  // Register so an interrupt of the long-lived MCP stdio server terminates this spawn
-  // instead of orphaning it; dispose in finally keeps the registration request-scoped
-  // so a persistent server never leaks one per call (#939).
-  const tree = registerProcessTree(proc);
-  try {
-    const [out, err, code] = await Promise.all([
-      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
-      new Response(proc.stderr as ReadableStream<Uint8Array>).text(),
-      proc.exited,
-    ]);
-    if (code !== 0) {
-      throw new Error(`engine list-voices failed (exit ${code}): ${err.trim()}`);
-    }
-    return parseVoiceLines(out);
-  } finally {
-    tree.dispose();
-  }
+  return (await listVoiceIds()).map(parseVoiceInfo);
 }
 
 export function aggregateLanguages(voices: VoiceInfo[]): LanguageInfo[] {

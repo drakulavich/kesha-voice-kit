@@ -2,22 +2,16 @@ import { dirname, join, resolve, sep } from "path";
 import { errorMessage } from "./error-utils";
 import { homedir, tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
-import {
-  getEngineBinPath,
-  getEngineCapabilities,
-  spawnEngineProcess,
-  spawnStdioWithDebugFd,
-  TRANSCRIBE_DIARIZE_FEATURE,
-  type EngineCapabilities,
-} from "./engine";
+import { getDescribe, getEngineBinPath, protocolEnv, spawnEngineProcess } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
-import { engineTarget, isDarwinArm64 } from "./engine-targets";
-import { TS_NATIVE_CODES } from "./error-codes";
+import { engineTarget, engineTargetEntries, isDarwinArm64, targetKey } from "./engine-targets";
+import { validateArgv } from "./engine/describe";
+import { engineFailure, KeshaError, readEvents, type StderrOutcome } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
-import { streamResponseToFile } from "./progress";
+import { createLiveStatus, streamResponseToFile } from "./progress";
 import { registerProcessTree } from "./process-tree";
 import {
   readInstalledEngineVersion,
@@ -37,8 +31,28 @@ export function getEngineBinaryName(
   arch: string = process.arch,
 ): string {
   const target = engineTarget(platform, arch);
-  if (!target) throw new Error(`Unsupported platform: ${platform} ${arch}`);
+  if (!target) {
+    const supported = engineTargetEntries().map((e) => targetKey(e.platform, e.arch)).join(", ");
+    throw new KeshaError("E_UNSUPPORTED_PLATFORM", `no published kesha-engine for ${platform} ${arch}`, {
+      hint: `supported: ${supported} (docs/product-positioning.md#platform-matrix)`,
+    });
+  }
   return target.assetName;
+}
+
+/** The platform pre-check: a request this host can never serve fails before the lock, the download or any Engine exists. */
+export function assertPlatformCanInstall(
+  request: Pick<EngineInstallRequest, "diarize">,
+  platform: string = process.platform,
+  arch: string = process.arch,
+): void {
+  if (request.diarize && !isDarwinArm64(platform, arch)) {
+    throw new KeshaError(
+      "E_UNSUPPORTED_PLATFORM",
+      `--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is ${platform} ${arch}`,
+      { hint: "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)" },
+    );
+  }
 }
 
 /** Sidecar spec — centralises AVSpeech (#141) and future sidecars so each is one entry. */
@@ -230,7 +244,8 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
   const proc = spawnEngineProcess(
     binPath,
     ["say", "--voice", "en-am_michael", "--out", outPath, "Kesha warmup."],
-    spawnStdioWithDebugFd(["ignore", "pipe", "pipe"]),
+    ["ignore", "pipe", "pipe"],
+    protocolEnv(),
   );
   const tree = registerProcessTree(proc);
 
@@ -240,22 +255,20 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
     proc.kill();
   }, 180_000);
 
-  let stderr = "";
   try {
-    const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
-    const [stderrText, exitCode] = await Promise.all([
-      new Response(stderrStream).text(),
+    const [events, exitCode] = await Promise.all([
+      readEvents(proc.stderr as ReadableStream<Uint8Array>),
       proc.exited,
     ]);
-    stderr = stderrText.trim();
 
     if (timedOut) {
       log.warn("FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow.");
       return;
     }
-    if (exitCode !== 0) {
+    if (exitCode !== 0 || events.invalid.length > 0 || events.error) {
+      const err = engineFailure("say", events, exitCode);
       log.warn(
-        `FluidAudio Kokoro warmup failed${stderr ? `: ${stderr}` : ""}; first ` +
+        `FluidAudio Kokoro warmup failed (${errorMessage(err)}); first ` +
           "`kesha say en-*` may still be slow.",
       );
       return;
@@ -423,6 +436,10 @@ async function engineWorks(binPath: string): Promise<boolean> {
     );
     return false;
   }
+  if (health.status === "protocol") {
+    log.warn(`${health.detail} — re-downloading it.`);
+    return false;
+  }
   const detail = health.status === "unusable" ? health.detail : "binary disappeared";
   log.warn(
     `Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` +
@@ -501,78 +518,92 @@ function checkEngineWritable(engineDir: string): boolean {
 }
 
 /**
- * Validates that the installed engine matches the requested backend.
- * Throws if the engine advertises a different backend.
- */
-function validateBackend(backend: string, caps: EngineCapabilities | null): void {
-  if (caps && caps.backend !== backend) {
-    throw new Error(
-      `Requested backend "${backend}" is not available: the installed engine for this platform uses "${caps.backend}".\n  Fix: omit --${backend} to use the auto-detected backend, or run on a platform that ships the "${backend}" build.`,
-    );
-  }
-}
-
-/**
- * Guards against forwarding `--diarize` to an engine built without it.
+ * The install path's pre-spawn gate: checks the requested backend against the describe
+ * document, then validates the built engine argv through it. `--diarize` on a build that
+ * lacks `system_diarize` (the Nix build, which omits it on purpose — docs/nix-install.md)
+ * gets the npm-release remedy instead of `validateArgv`'s generic "needs" message.
  *
- * Catches the case where the platform check passed (darwin-arm64) but the
- * engine itself was built without `system_diarize` — e.g., the Nix build,
- * which compiles `coreml,tts,system_tts` and intentionally omits diarize
- * because the FluidAudio CoreML weights need network at build time and the
- * Nix sandbox forbids it. Without this guard, `kesha-engine install
- * --diarize` would fail with clap's generic "unexpected argument" error.
+ * A bare `install` (no backend, no flags) skips `getDescribe()` entirely: a read-only
+ * engine dir never probes the cached binary's health, so a pre-protocol-4 engine there
+ * would otherwise fail a plain `kesha install` on a describe call that argv has nothing
+ * for `validateArgv` to check anyway.
  */
-export function validateDiarize(caps: EngineCapabilities | null): void {
-  // null = pre-capabilities-JSON engine; forwarding --diarize would surface as clap's "unexpected argument".
-  if (!caps || !caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
-    throw new Error(
-      "--diarize is not supported by the installed engine: it was built " +
-        "without the 'system_diarize' feature (the Nix build is one such " +
-        "case — see docs/nix-install.md).\n" +
-        "  Fix: install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, " +
-        "which ships the diarize-enabled engine on darwin-arm64.",
+async function validateInstallRequest(
+  opts: { noCache: boolean; backend?: string } & InstallOptions,
+): Promise<string[]> {
+  const wanted = buildEngineInstallArgs({
+    noCache: opts.noCache,
+    ttsLangs: opts.ttsLangs,
+    vad: opts.vad,
+    diarize: opts.diarize,
+  });
+  if (!opts.backend && wanted.length === 1) return wanted;
+
+  const doc = await getDescribe();
+  if (opts.backend && doc.backend !== opts.backend) {
+    throw new KeshaError(
+      "E_INVALID_ARG",
+      `Requested backend "${opts.backend}" is not available: the installed engine for this platform uses "${doc.backend}".`,
+      {
+        hint: `omit --${opts.backend} to use the auto-detected backend, or run on a platform that ships the "${opts.backend}" build`,
+      },
     );
+  }
+  try {
+    const { argv, warnings } = validateArgv(wanted, doc);
+    for (const warning of warnings) log.warn(warning);
+    return argv;
+  } catch (err) {
+    if (opts.diarize && err instanceof KeshaError && err.code === "E_INVALID_ARG" && err.message.includes("--diarize")) {
+      throw new KeshaError(
+        "E_INVALID_ARG",
+        "The installed engine was built without the system_diarize feature, so --diarize is unavailable " +
+          "(the Nix build in docs/nix-install.md is one such case).",
+        {
+          hint: "install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, which ships the diarize-enabled engine on darwin-arm64",
+        },
+      );
+    }
+    throw err;
   }
 }
 
-/**
- * Runs `kesha-engine install` to download/verify models.
- * Inherits stdio so per-file progress reaches the user live, and throws on non-zero exit.
- */
-async function runEngineModelInstall(
-  binPath: string,
-  noCache: boolean,
-  options: InstallOptions,
-): Promise<void> {
+/** Runs `kesha-engine install` to download/verify models. */
+async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
   log.progress("Installing models...");
-  const installArgs = buildEngineInstallArgs({
-    noCache,
-    ttsLangs: options.ttsLangs,
-    vad: options.vad,
-    diarize: options.diarize,
-  });
-  // #680: piping buffers the child until exit, so multi-GB downloads looked hung.
-  // `env` is load-bearing, not tidiness: this child resolves the model destination from
-  // `KESHA_CACHE_DIR`, and without it Bun's startup snapshot sends a redirected install
-  // to the real `~/.cache/kesha` anyway (#876).
-  const proc = spawnEngineProcess(
-    binPath,
-    installArgs,
-    spawnStdioWithDebugFd(["inherit", "inherit", "inherit"]),
-  );
+  const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
+  // The byte percentage repaints one row; `GET`/`OK`/`retrying` are discrete steps that must stay in the log.
+  const status = createLiveStatus();
+  let events: StderrOutcome;
   let exitCode: number;
   try {
-    exitCode = await proc.exited;
+    [events, exitCode] = await Promise.all([
+      readEvents(proc.stderr as ReadableStream<Uint8Array>, {
+        onProgress: (line, event) => {
+          if (event.pct !== undefined) {
+            status.update(line);
+            return;
+          }
+          status.clear();
+          log.progress(line);
+        },
+        onWarn: (line) => {
+          status.clear();
+          log.warn(line);
+        },
+      }),
+      proc.exited,
+    ]);
   } finally {
+    status.clear();
     tree.dispose();
   }
 
+  if (events.error || events.invalid.length > 0) throw engineFailure("install", events, exitCode);
   if (exitCode !== 0) {
-    throw new Error(
-      `Failed to install models: kesha-engine install exited with code ${exitCode}. ` +
-        "See the engine output above for the failing file.",
-    );
+    // Nothing coded and nothing off-protocol: the engine failed without saying why, so neither do we.
+    throw new Error(`Failed to install models: kesha-engine install exited with code ${exitCode}.`);
   }
 }
 
@@ -599,7 +630,7 @@ export function assertNotRealCacheUnderTest(binPath: string): void {
   const offender = insideRealCache(binPath)
     ? { what: `install the engine into ${binPath}`, fix: "KESHA_ENGINE_BIN to a temp path" }
     : insideRealCache(keshaCacheDir())
-      ? { what: `download models into ${keshaCacheDir()}`, fix: "KESHA_CACHE_DIR to a temp dir" }
+      ? { what: `download models into ${keshaCacheDir()}`, fix: "KESHA_HOME (or KESHA_CACHE_DIR) to a temp dir" }
       : null;
   if (!offender) return;
 
@@ -625,21 +656,23 @@ async function assertRequestedVersionLanded(binPath: string, version: string): P
   const landed = readInstalledEngineVersion(binPath);
   const reported = await readExecutableVersion(binPath);
   if (reported && reported !== version) {
-    throw new Error(
-      `error [${TS_NATIVE_CODES.INSTALL_RACE}]: installed engine v${version}, but the binary in ` +
+    throw new KeshaError(
+      "E_INSTALL_RACE",
+      `installed engine v${version}, but the binary in ` +
         `${dirname(binPath)} reports v${reported} — something else published an engine there ` +
         "during this install.\n" +
         `  Fix: re-run \`kesha install --engine-version ${version}\` once no other install is ` +
-        "running against this cache (KESHA_CACHE_DIR / KESHA_ENGINE_BIN pick a private one).",
+        "running against this cache (KESHA_HOME, or KESHA_CACHE_DIR / KESHA_ENGINE_BIN, picks a private one).",
     );
   }
   if (landed === version && existsSync(binPath)) return;
-  throw new Error(
-    `error [${TS_NATIVE_CODES.INSTALL_RACE}]: installed engine v${version}, but ${dirname(binPath)} ` +
+  throw new KeshaError(
+    "E_INSTALL_RACE",
+    `installed engine v${version}, but ${dirname(binPath)} ` +
       `now holds ${landed ? `v${landed}` : "no recorded engine"} — something else wrote there ` +
       "during this install.\n" +
       `  Fix: re-run \`kesha install --engine-version ${version}\` once no other install is ` +
-      "running against this cache (KESHA_CACHE_DIR / KESHA_ENGINE_BIN pick a private one).",
+      "running against this cache (KESHA_HOME, or KESHA_CACHE_DIR / KESHA_ENGINE_BIN, picks a private one).",
   );
 }
 
@@ -687,20 +720,23 @@ function ensureEngineDirCreatable(binPath: string): void {
       ? { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN }
       : process.env.KESHA_CACHE_DIR
         ? { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR }
-        : null;
+        : process.env.KESHA_HOME
+          ? { name: "KESHA_HOME", value: process.env.KESHA_HOME }
+          : null;
     const errno = (e as NodeJS.ErrnoException).code ?? "";
     const why = ENGINE_DIR_PATH_ERRNOS[errno];
     const what = setting
       ? `${setting.name}="${setting.value}" cannot hold the engine directory ${engineDir}: ${why ?? errorMessage(e)}`
       : `cannot create the engine directory ${engineDir}: ${why ?? errorMessage(e)}`;
     if (!why) {
-      throw new Error(
-        `error [${TS_NATIVE_CODES.INTERNAL}]: ${what}.\n  Fix: resolve that filesystem error and ` +
+      throw new KeshaError(
+        "E_INTERNAL",
+        `${what}.\n  Fix: resolve that filesystem error and ` +
           "re-run `kesha install`; if it persists, file a bug with `kesha support-bundle`.",
       );
     }
     const fix = engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir);
-    throw new Error(`error [${TS_NATIVE_CODES.INVALID_ARG}]: ${what}.\n  Fix: ${fix}`);
+    throw new KeshaError("E_INVALID_ARG", `${what}.\n  Fix: ${fix}`);
   }
 }
 
@@ -717,8 +753,15 @@ export interface EngineInstallRequest extends InstallOptions {
  * `version` is the single input for the release URL, the cache-validity comparison, the
  * sidecar downloads and the recorded `.version` marker — reading the pin at any one of
  * them would install the requested Engine and then replace it on the next cache check.
+ *
+ * `platform` and `arch` are a seam for the unit tests, which stage CoreML-shaped engines on every CI runner; production callers take the process.
  */
-export async function installEngine(request: EngineInstallRequest = {}): Promise<string> {
+export async function installEngine(
+  request: EngineInstallRequest = {},
+  platform: string = process.platform,
+  arch: string = process.arch,
+): Promise<string> {
+  assertPlatformCanInstall(request, platform, arch);
   const binPath = getEngineBinPath();
   assertNotRealCacheUnderTest(binPath);
   ensureEngineDirCreatable(binPath);
@@ -761,11 +804,10 @@ async function installLockedEngine(
     await refreshCachedEngine(binPath, canWriteEngineDir, noCache, version);
   } else {
     if (!canWriteEngineDir) {
-      throw new Error(
-        // The sibling of the engine dir that cannot be *created*, which #998 coded the same way:
-        // both are a configured path this user cannot write the engine into.
-        `error [${TS_NATIVE_CODES.INVALID_ARG}]: ` +
-          `Cannot install engine v${version}: ${engineDir} is not writable ` +
+      // The sibling of the engine dir that cannot be *created* — #998 coded both the same way.
+      throw new KeshaError(
+        "E_INVALID_ARG",
+        `Cannot install engine v${version}: ${engineDir} is not writable ` +
           `(installed: ${installedVersion ? `v${installedVersion}` : "no recorded version"}).\n` +
           "  Fix: point KESHA_ENGINE_BIN at a writable path, or install into a writable prefix.",
       );
@@ -773,13 +815,9 @@ async function installLockedEngine(
     await fetchEngineBinary(binPath, installedVersion, version);
   }
 
-  if (backend || options.diarize) {
-    const caps = await getEngineCapabilities();
-    if (backend) validateBackend(backend, caps);
-    if (options.diarize) validateDiarize(caps);
-  }
+  const installArgs = await validateInstallRequest({ noCache, backend, ...options });
 
-  await runEngineModelInstall(binPath, noCache, options);
+  await runEngineModelInstall(binPath, installArgs);
 
   // Warm the FluidAudio Kokoro CoreML cache only when a Kokoro language is
   // requested. Russian (`ru`) routes through Vosk-TTS, not Kokoro, so a

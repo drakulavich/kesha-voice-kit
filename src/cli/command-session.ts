@@ -4,6 +4,7 @@ import type {
   DiagnosticLogSession,
   DiagnosticSessionStatus,
 } from "../diagnostic-log";
+import { setEngineDebugSink } from "../engine/events";
 import { errorMessage } from "../error-utils";
 import { log } from "../log";
 import { createStatsRecorder } from "../stats";
@@ -46,12 +47,21 @@ export async function runCommandSession(
   };
   session.diagnosticLog.event("command.start", { command, ...startFields });
 
+  setEngineDebugSink((event) =>
+    session.diagnosticLog.event("engine.debug", {
+      t_ms: event.t_ms,
+      engineEvent: event.event ?? null,
+      ...engineDebugFields(event.fields),
+    }),
+  );
   let outcome: CommandOutcome;
   try {
     outcome = await body(session);
   } catch (err) {
     closeSessionQuietly(session, command, { status: "failed", itemCount: 0 });
     throw err;
+  } finally {
+    setEngineDebugSink(null);
   }
 
   // A flush error must not displace a failure the command already has to report (Greptile P1/P2 on #607).
@@ -61,6 +71,18 @@ export async function runCommandSession(
     closeSession(session, command, outcome);
   }
   return outcome;
+}
+
+// The message is prose and `event` is a reserved log field, so only the engine's typed fields ride along (Exploratory S9-F5).
+function engineDebugFields(fields: unknown): DiagnosticLogFields {
+  const out: DiagnosticLogFields = {};
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return out;
+  for (const [key, value] of Object.entries(fields)) {
+    if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+      out[key] = value;
+    }
+  }
+  return out;
 }
 
 function closeSessionQuietly(

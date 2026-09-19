@@ -1,14 +1,17 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
+import { exitCodeFor, KeshaError } from "../engine/events";
+import { renderInvalidArg } from "./options";
 import {
   isEngineInstalled,
-  preflightRecordLive,
   recordEngine,
+  validateRecordRequest,
   type LiveAutoStopOptions,
   type RecordTarget,
 } from "../engine";
 import { installHint } from "../install-hint";
 import { log } from "../log";
+import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 
 export interface RecordArgs {
   out?: string;
@@ -195,7 +198,7 @@ export const recordCommand = defineCommand({
     if (args.debug) log.debugEnabled = true;
     const resolved = resolveRecordArgs(args as RecordArgs);
     if (!resolved.ok) {
-      log.error(resolved.error);
+      log.error(renderInvalidArg(resolved.error));
       process.exit(2);
     }
     if (!isEngineInstalled()) {
@@ -203,11 +206,16 @@ export const recordCommand = defineCommand({
       process.exit(1);
     }
     try {
-      if (resolved.target.live) await preflightRecordLive(resolved.target.autoStop !== undefined);
+      await validateRecordRequest(resolved.target, resolved.maxSeconds);
       await recordEngine(resolved.target, resolved.maxSeconds);
     } catch (err) {
+      const signalExitCode = getPendingSignalExitCode();
+      if (signalExitCode !== null) {
+        await waitForPendingSignalCleanup();
+        process.exit(signalExitCode);
+      }
       log.error(errorMessage(err));
-      process.exit(1);
+      process.exit(err instanceof KeshaError ? exitCodeFor(err) : 1);
     }
   },
 });

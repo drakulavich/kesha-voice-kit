@@ -243,6 +243,21 @@ pub fn vad_model_or_skip(test: &str) -> Option<PathBuf> {
     None
 }
 
+/// Parakeet has no mini stand-in either, so the Kokoro tier flag says nothing about it: a lane
+/// that stages real ASR weights promises them through `KESHA_REQUIRE_ASR_TESTS` (#1223).
+pub fn asr_model_or_skip(test: &str) -> bool {
+    if kesha_engine::models::is_cached(kesha_engine::models::ModelKind::Asr) {
+        return true;
+    }
+    assert!(
+        std::env::var_os("KESHA_REQUIRE_ASR_TESTS").is_none(),
+        "ASR weights not installed while KESHA_REQUIRE_ASR_TESTS is set — \
+         this lane stages them, so a missing bundle is a broken layout, not a laptop"
+    );
+    eprintln!("ASR weights not installed (`kesha install`) — skipping {test}");
+    false
+}
+
 /// An LFS pointer stub is still a valid audio-extension path, so a decoder fails deep inside its
 /// probe with a message that never mentions LFS — panics with the actionable hint instead (#990).
 pub fn assert_not_lfs_pointer(path: &Path) {
@@ -266,4 +281,58 @@ fn cache_base() -> PathBuf {
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
     PathBuf::from(home).join(".cache/kesha")
+}
+
+/// Source text before the first `#[cfg(test)] mod` or `#[cfg(all(test, …))] mod`; an attribute on a single item would otherwise un-scan everything after it.
+pub fn non_test_prefix(text: &str) -> &str {
+    const MARKERS: [&str; 2] = ["#[cfg(test)]", "#[cfg(all(test,"];
+    let mut from = 0;
+    loop {
+        let Some((at, marker)) = MARKERS
+            .iter()
+            .filter_map(|m| text[from..].find(m).map(|i| (from + i, *m)))
+            .min_by_key(|(i, _)| *i)
+        else {
+            return text;
+        };
+        let Some(close) = text[at..].find(']') else {
+            return text;
+        };
+        if text[at + close + 1..].trim_start().starts_with("mod ") {
+            return &text[..at];
+        }
+        from = at + marker.len();
+    }
+}
+
+/// A 16-bit mono PCM WAV whose header declares `declared_frames` at `sample_rate` while the
+/// body holds `body_len` zero bytes, so header-only probes see one duration and readers another.
+pub fn write_pcm16_wav(path: &Path, sample_rate: u32, declared_frames: u32, body_len: usize) {
+    let data_len = declared_frames * 2;
+    let mut bytes = Vec::with_capacity(44 + body_len);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes());
+    bytes.extend_from_slice(&sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&(sample_rate * 2).to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    bytes.resize(44 + body_len, 0);
+    std::fs::write(path, bytes).expect("write wav fixture");
+}
+
+/// The one `error` event a failed run must leave on stderr, with nothing beside it.
+pub fn sole_error_event(out: &std::process::Output) -> serde_json::Value {
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let lines: Vec<&str> = stderr.lines().collect();
+    assert_eq!(lines.len(), 1, "exactly one stderr line, got: {stderr}");
+    let v: serde_json::Value = serde_json::from_str(lines[0])
+        .unwrap_or_else(|_| panic!("stderr line is not a protocol event: {stderr}"));
+    assert_eq!(v["kind"], "error", "{stderr}");
+    v
 }

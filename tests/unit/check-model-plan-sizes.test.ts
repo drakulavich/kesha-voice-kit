@@ -4,6 +4,7 @@ import {
   contentLength,
   flattenPlan,
   liveSize,
+  manifestUrlsForGroup,
   parseManifestEntries,
   parseManifestUrls,
   type FetchLike,
@@ -289,5 +290,32 @@ describe("liveSize", () => {
     const dead: FetchLike = async () => new Response(null, { status: 404 });
 
     expect(await liveSize(url, { fetchImpl: dead, backoffMs: 0 })).toBeNull();
+  });
+});
+
+// The two ANE bundles pin 36 of the same rel_paths to different URLs; the deduped map loses one.
+describe("group-scoped manifest lookup", () => {
+  test("each ANE bundle's shared basename resolves to its own URL", () => {
+    const shared = "KokoroAlbert.mlmodelc/coremldata.bin";
+    const en = manifestUrlsForGroup(realManifestSource(), "aneEn")?.get(shared);
+    const zh = manifestUrlsForGroup(realManifestSource(), "aneZh")?.get(shared);
+
+    expect(en).toContain("/ANE/");
+    expect(zh).toContain("/ANE-zh/");
+    expect(en).not.toBe(zh);
+  });
+
+  test("a group with no declared const falls back to the whole-source map", () => {
+    expect(manifestUrlsForGroup(realManifestSource(), "asr")).toBeNull();
+  });
+
+  test("every recorded plan entry resolves to exactly one URL", () => {
+    const source = realManifestSource();
+    const unresolved = flattenPlan(modelPlan).filter(
+      (entry) =>
+        (manifestUrlsForGroup(source, entry.group) ?? realManifestUrls()).get(entry.relPath) ===
+        undefined,
+    );
+    expect(unresolved).toEqual([]);
   });
 });

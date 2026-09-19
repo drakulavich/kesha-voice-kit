@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { classifyFirstArg, unknownCommandMessages } from "../../src/cli/dispatch";
+import { classifyFirstArg, hoistLeadingFlags, unknownCommandMessages } from "../../src/cli/dispatch";
 
 // ---------------------------------------------------------------------------
 // classifyFirstArg
@@ -71,5 +71,27 @@ describe("unknownCommandMessages", () => {
   test("unrelated token gets only the generic file hint", () => {
     const { warnLines } = unknownCommandMessages("xyzabc", KNOWN);
     expect(warnLines).toEqual(["If this is an audio file, pass a path like './xyzabc'."]);
+  });
+});
+
+describe("hoistLeadingFlags", () => {
+  test("flags typed before a subcommand name move behind it", () => {
+    expect(hoistLeadingFlags(["--json", "--debug", "record", "--out", "j.wav"], KNOWN)).toEqual([
+      "record",
+      "--json",
+      "--debug",
+      "--out",
+      "j.wav",
+    ]);
+  });
+
+  test("a leading flag followed by a non-subcommand token is left alone", () => {
+    expect(hoistLeadingFlags(["--lang", "en", "record"], KNOWN)).toEqual(["--lang", "en", "record"]);
+    expect(hoistLeadingFlags(["--json", "call.ogg"], KNOWN)).toEqual(["--json", "call.ogg"]);
+  });
+
+  test("a subcommand already first, or argv after --, is untouched", () => {
+    expect(hoistLeadingFlags(["record", "--out", "j.wav"], KNOWN)).toEqual(["record", "--out", "j.wav"]);
+    expect(hoistLeadingFlags(["--", "record"], KNOWN)).toEqual(["--", "record"]);
   });
 });

@@ -2,17 +2,16 @@
 //!
 //! A leaf failure attaches a code via [`coded_bail!`] or [`CodedContext::coded`].
 //! The code rides in the `anyhow` chain inside a [`CodedError`]; the top-level
-//! [`report`] walks the chain, prints `error [CODE]: <message>` to stderr, and
-//! returns the process exit code. An uncoded error falls back to `E_INTERNAL`,
-//! so the `error [CODE]:` contract holds even on paths not individually coded.
+//! [`report`] walks the chain, emits one `error` event on stderr, and returns
+//! the process exit code. An uncoded error falls back to `E_INTERNAL`, so every
+//! failure carries a code even on paths not individually coded.
 //! User-facing registry: `docs/errors.md`.
 
 use serde::Serialize;
 
 /// Declare the `ErrorCode` enum, its `ALL` slice, and `as_str` from one
 /// variant→code-string list so a new variant cannot silently vanish from
-/// `ALL` (and thus from `--error-codes-json`, `kesha doctor`, and the
-/// docs-drift check). `title`/`category`/`retryable` stay ordinary exhaustive
+/// `ALL` (and thus from `describe`, `kesha doctor`, and the docs-drift check). `title`/`category`/`retryable` stay ordinary exhaustive
 /// matches below — the compiler already forces those updated.
 macro_rules! error_codes {
     ($($variant:ident => $code:literal),+ $(,)?) => {
@@ -173,34 +172,52 @@ pub fn code_of(err: &anyhow::Error) -> ErrorCode {
         .unwrap_or(ErrorCode::Internal)
 }
 
-/// Print `error [CODE]: <message>` to stderr; always returns 1.
+thread_local! {
+    static EXPECTING_PANIC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".to_string())
+}
+
+/// Routes an uncaught panic through the event stream as `E_INTERNAL`, so the runtime never
+/// writes prose to stderr; a panic inside [`catch_panic`] stays silent because it is reported.
+pub fn install_panic_hook() {
+    std::panic::set_hook(Box::new(|info| {
+        if EXPECTING_PANIC.with(std::cell::Cell::get) {
+            return;
+        }
+        let location = info
+            .location()
+            .map(|l| format!(" at {}:{}", l.file(), l.line()))
+            .unwrap_or_default();
+        crate::protocol::events::error(
+            ErrorCode::Internal,
+            format!(
+                "engine panicked: {}{location}",
+                panic_message(info.payload())
+            ),
+            Some("file a bug with `kesha support-bundle`"),
+        );
+    }));
+}
+
+/// Runs `f`, returning a panic as its message instead of unwinding past the caller.
+pub fn catch_panic<T>(f: impl FnOnce() -> T) -> Result<T, String> {
+    EXPECTING_PANIC.with(|c| c.set(true));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    EXPECTING_PANIC.with(|c| c.set(false));
+    result.map_err(|payload| panic_message(&*payload))
+}
+
+/// Emit the fatal error as an `error` event; always returns 1.
 pub fn report(err: &anyhow::Error) -> i32 {
-    let code = code_of(err);
-    eprintln!("error [{}]: {:#}", code.as_str(), err);
+    crate::protocol::events::error(code_of(err), format!("{err:#}"), None);
     1
-}
-
-#[derive(Serialize)]
-struct CodeEntry {
-    code: &'static str,
-    title: &'static str,
-    category: Category,
-    retryable: bool,
-}
-
-/// JSON array of every error code, for `--error-codes-json`, docs drift tests,
-/// and `kesha doctor`.
-pub fn error_codes_json() -> String {
-    let entries: Vec<CodeEntry> = ErrorCode::ALL
-        .iter()
-        .map(|&c| CodeEntry {
-            code: c.as_str(),
-            title: c.title(),
-            category: c.category(),
-            retryable: c.retryable(),
-        })
-        .collect();
-    serde_json::to_string(&entries).expect("error-codes serialize")
 }
 
 #[cfg(test)]
@@ -329,6 +346,14 @@ mod tests {
     }
 
     #[test]
+    fn catch_panic_returns_the_message_and_a_value_otherwise() {
+        assert_eq!(catch_panic(|| 7), Ok(7));
+        let err = catch_panic(|| -> u8 { panic!("rate {} is invalid", 0) }).unwrap_err();
+        assert_eq!(err, "rate 0 is invalid");
+        assert!(!EXPECTING_PANIC.with(std::cell::Cell::get));
+    }
+
+    #[test]
     fn code_of_falls_back_to_internal_for_uncoded() {
         let err = anyhow::anyhow!("plain error");
         assert_eq!(code_of(&err), ErrorCode::Internal);
@@ -341,24 +366,5 @@ mod tests {
         assert_eq!(report(&coded.unwrap_err()), 1);
         let plain = anyhow::anyhow!("plain");
         assert_eq!(report(&plain), 1);
-    }
-
-    #[test]
-    fn error_codes_json_covers_all_variants() {
-        let json = error_codes_json();
-        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        let arr = parsed.as_array().unwrap();
-        assert_eq!(arr.len(), ErrorCode::ALL.len());
-        for c in ErrorCode::ALL {
-            assert!(
-                arr.iter().any(|e| e["code"] == c.as_str()),
-                "{} missing from --error-codes-json",
-                c.as_str()
-            );
-        }
-        let model_missing = arr.iter().find(|e| e["code"] == "E_MODEL_MISSING").unwrap();
-        assert_eq!(model_missing["category"], "model");
-        assert_eq!(model_missing["retryable"], false);
-        assert!(model_missing["title"].is_string());
     }
 }

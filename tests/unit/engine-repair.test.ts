@@ -8,14 +8,14 @@ import { engineFunctionalHealth, probeExecutable } from "../../src/engine-health
 import { getEngineCapabilities } from "../../src/engine";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
-import { isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 
 // #770: an interrupted `kesha install` left a truncated binary that the kernel refuses to
 // load, while the `.version` marker still vouched for it. Every repair path then failed.
 
 const WORKING_ENGINE = `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
 fi
 exit 0
 `;
@@ -24,8 +24,28 @@ const CORRUPT_ENGINE = "\x7fELF\x00\x01\x02truncated";
 /** The #796 stub verbatim: it spawns and exits 0, and describes nothing (#801). */
 const MUTE_ENGINE = "#!/bin/sh\nexit 0\n";
 const BABBLING_ENGINE = `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' 'not json'
+fi
+exit 0
+`;
+const STALE_ENGINE = `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [], protocolVersion: 3 })}'
+fi
+exit 0
+`;
+const LOADER_NOISE_ENGINE = `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  echo "ld.so: warning: cannot enable executable stack" >&2
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
+fi
+exit 0
+`;
+const DESCRIBE_ERROR_ENGINE = `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the TTS bundle is missing"}' >&2
+  exit 1
 fi
 exit 0
 `;
@@ -37,9 +57,9 @@ function hangingEngine(marker: string): string {
   return `#!/bin/sh\nexec sleep ${marker}\n`;
 }
 const SLOW_ENGINE = `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   sleep 1
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
 fi
 exit 0
 `;
@@ -189,6 +209,30 @@ describe("engineFunctionalHealth (#801)", () => {
     const health = await engineFunctionalHealth(10_000);
     expect(health.status).toBe("ok");
   }, 20_000);
+
+  // A protocol mismatch used to fall through to `mute`, hiding the real cause from status/doctor.
+  posixTest("a stale engine is protocol-mismatched, not mute", async () => {
+    stageEngine("kesha-functional-protocol-", STALE_ENGINE);
+    const health = await engineFunctionalHealth();
+    expect(health.status).toBe("protocol");
+    expect(health.status === "protocol" && health.detail).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(health.status === "protocol" && health.detail).toContain("kesha install");
+  });
+
+  // A describe that breaks the event stream is a protocol fault, not the corrupt binary `mute` reports.
+  posixTest("a describe that also writes a non-event line is a protocol fault, not mute", async () => {
+    stageEngine("kesha-functional-noise-", LOADER_NOISE_ENGINE);
+    const health = await engineFunctionalHealth();
+    expect(health.status).toBe("protocol");
+    expect(health.status === "protocol" && health.detail).toContain("error [E_INTERNAL]: kesha-engine describe wrote a line that is not a protocol event: \"ld.so: warning: cannot enable executable stack\"");
+  });
+
+  posixTest("a describe the engine itself fails is a protocol fault, not mute", async () => {
+    stageEngine("kesha-functional-describe-error-", DESCRIBE_ERROR_ENGINE);
+    const health = await engineFunctionalHealth();
+    expect(health.status).toBe("protocol");
+    expect(health.status === "protocol" && health.detail).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
+  });
 });
 
 describe("install repairs a corrupt engine (#770)", () => {
@@ -214,6 +258,17 @@ describe("install repairs a corrupt engine (#770)", () => {
     expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
   }, 30_000);
 
+  // A stale protocol used to fall through with a wrong "binary disappeared" diagnosis, but must still repair.
+  posixTest("a cached engine that speaks a stale protocol is re-downloaded", async () => {
+    const binPath = stageEngine("kesha-repair-protocol-", STALE_ENGINE);
+    const urls = stubRelease();
+
+    await installEngine();
+
+    expect(engineDownloads(urls)).toHaveLength(1);
+    expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
+  }, 30_000);
+
   posixTest("a healthy cached engine is still not re-downloaded", async () => {
     stageEngine("kesha-repair-healthy-", WORKING_ENGINE);
     const urls = stubRelease();
@@ -223,12 +278,11 @@ describe("install repairs a corrupt engine (#770)", () => {
     expect(engineDownloads(urls)).toHaveLength(0);
   }, 30_000);
 
-  // The probe used to run before any install work and threw E_ENGINE_SPAWN, so the command
-  // died recommending the very command the user had just run.
+  // getEngineCapabilities() reads null on any KeshaError since protocol v4 (Task 4) — no reject to survive here anymore.
   posixTest("the pre-install capabilities probe survives an unspawnable engine", async () => {
     stageEngine("kesha-repair-caps-", CORRUPT_ENGINE);
 
-    await expect(getEngineCapabilities()).rejects.toThrow(/E_ENGINE_SPAWN/);
+    expect(await getEngineCapabilities()).toBeNull();
     expect(await probeCapabilitiesForInstall()).toBeNull();
   });
 

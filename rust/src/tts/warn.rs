@@ -32,6 +32,8 @@
 use std::collections::HashSet;
 use std::sync::{Mutex, OnceLock};
 
+use crate::protocol::events;
+
 fn warned() -> &'static Mutex<HashSet<String>> {
     static W: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     W.get_or_init(|| Mutex::new(HashSet::new()))
@@ -41,7 +43,7 @@ pub fn warn_once(key: &str, msg: &str) {
     let mut set = warned().lock().expect("warn_once: mutex poisoned");
     if !set.contains(key) {
         set.insert(key.to_string());
-        eprintln!("warning: {msg}");
+        events::warn(events::W_GENERIC, format!("warning: {msg}"));
     }
 }
 

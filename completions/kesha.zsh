@@ -40,6 +40,7 @@ _kesha() {
       '--no-color[Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)]'
     else
       _describe -t commands 'kesha command' commands
+      _files
     fi
     return
   fi
@@ -155,7 +156,8 @@ _kesha() {
       '--vad[Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.]' \
       '--no-vad[Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers]' \
       '--quiet[Suppress progress output; print only results and errors]' \
-      '--no-color[Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)]'
+      '--no-color[Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)]' \
+      '*:audio file:_files'
       ;;
   esac
 }

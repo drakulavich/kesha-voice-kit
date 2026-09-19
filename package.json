@@ -1,6 +1,6 @@
 {
   "name": "@drakulavich/kesha-voice-kit",
-  "version": "1.29.1",
+  "version": "1.31.0",
   "description": "Give your tools a voice — speech to text and back, 25 languages, up to ~19× faster than Whisper. On your machine.",
   "type": "module",
   "bin": {
@@ -40,7 +40,7 @@
     }
   },
   "keshaEngine": {
-    "version": "1.24.11"
+    "version": "1.25.0"
   },
   "scripts": {
     "test": "bun test --timeout 30000",
@@ -109,6 +109,7 @@
   "overrides": {
     "hono": "^4.12.25",
     "fast-uri": "^3.1.5",
-    "ip-address": "^10.3.1"
+    "ip-address": "^10.3.1",
+    "smol-toml": "1.7.2"
   }
 }

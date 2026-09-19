@@ -16,14 +16,15 @@ use crate::backend::TranscriptionChunk;
 use crate::coded_bail;
 use crate::errors::ErrorCode;
 use crate::models;
+use crate::protocol::events;
 use crate::vad::{VadConfig, VadDetector, SAMPLE_RATE as VAD_SAMPLE_RATE};
 use crate::{dtrace, dtrace_json};
 
-/// Capability-flag string surfaced via `--capabilities-json`. Single source of
+/// Capability-flag string surfaced via `describe`. Single source of
 /// truth so the engine, the TS CLI gate, and the integration tests can't drift.
 pub const TRANSCRIBE_SEGMENTS_FEATURE: &str = "transcribe.segments";
 
-/// Capability flag surfaced via `--capabilities-json` when the engine ships
+/// Capability flag surfaced via `describe` when the engine ships
 /// with FluidAudio diarization. Only true on darwin-arm64 release builds
 /// that include the `system_diarize` feature. Closes #199 angle D.
 #[cfg_attr(not(feature = "system_diarize"), allow(dead_code))]
@@ -321,16 +322,16 @@ pub fn transcribe_with_options(
         mode
     };
 
-    let model_dir = ensure_asr_installed(models::cache_dir())?;
-
     // `Auto` needs a duration probe for routing. `Off` probes too so explicit
-    // full-file ASR can fail before loading a backend for media beyond the
-    // duration/memory-bound single-pass contract.
+    // full-file ASR is refused before any model is required, as a bad flag, for
+    // media beyond the duration/memory-bound single-pass contract.
     let duration = match mode {
         VadMode::Auto | VadMode::Off => probe_duration_if_plausible(audio_path),
         _ => None,
     };
     validate_plain_transcribe_safety(mode, duration, vad_installed)?;
+
+    let model_dir = ensure_asr_installed(models::cache_dir())?;
     let decision = decide(mode, duration, vad_installed);
     dtrace!(
         "asr::mode={mode:?} duration={:?} vad_installed={vad_installed} decision={decision:?}",
@@ -353,16 +354,22 @@ pub fn transcribe_with_options(
         }
         VadDecision::PlainWithHint => {
             let secs = duration.unwrap_or(0.0);
-            eprintln!(
-                "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
+            events::warn(
+                events::W_VAD_NOT_INSTALLED,
+                format!(
+                    "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
+                ),
             );
             transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
         }
         VadDecision::ChunkedWithHint => {
             let secs = duration.unwrap_or(0.0);
-            eprintln!(
-                "hint: audio is {secs:.0}s; VAD is not installed, so Kesha is using fixed-window ASR chunks. \
-                 Run `kesha install --vad` for better long-audio boundaries."
+            events::warn(
+                events::W_VAD_NOT_INSTALLED,
+                format!(
+                    "hint: audio is {secs:.0}s; VAD is not installed, so Kesha is using fixed-window ASR chunks. \
+                     Run `kesha install --vad` for better long-audio boundaries."
+                ),
             );
             transcribe_chunked(audio_path, &model_dir, timestamps_required)
         }
@@ -408,6 +415,8 @@ fn finalize_output(
 
 /// Shared by plain and chunked paths to avoid duplicate timing+logging+create_backend blocks.
 fn create_timed_backend(model_dir: &Path) -> Result<Box<dyn backend::TranscribeBackend>> {
+    // A cold ASR load runs into tens of seconds; without a live event a wired-up spinner reads as a hang (Exploratory S8-8).
+    events::progress(Some("transcribe"), "loading the speech model");
     let t0 = Instant::now();
     let be = backend::create_backend(model_dir)?;
     let dt_ms = t0.elapsed().as_millis() as u64;
@@ -512,7 +521,7 @@ fn transcribe_via_vad(
         spans.len()
     );
 
-    let mut be = backend::create_backend(model_dir)?;
+    let mut be = create_timed_backend(model_dir)?;
 
     if spans.is_empty() {
         let min_speech_samples =
@@ -530,16 +539,18 @@ fn transcribe_via_vad(
         );
         if samples.len() >= min_speech_samples {
             if total_secs >= FULL_FILE_SINGLE_PASS_MAX_SECONDS {
-                eprintln!(
-                    "warning: VAD produced no speech segments for very long audio; using fixed-window ASR chunks instead of unsafe full-file ASR"
+                events::warn(
+                    events::W_VAD_NO_SPEECH,
+                    "warning: VAD produced no speech segments for very long audio; using fixed-window ASR chunks instead of unsafe full-file ASR",
                 );
                 return transcribe_chunked_samples(&samples, &mut |slice| {
                     be.transcribe_samples(slice)
                 });
             } else {
-                eprintln!(
-                    // No flag advice here: --no-vad is refused under --speakers (#768).
-                    "warning: VAD produced no speech segments; transcribing full file (the audio may be silent, or its speech quieter than the VAD threshold)"
+                // No flag advice here: --no-vad is refused under --speakers (#768).
+                events::warn(
+                    events::W_VAD_NO_SPEECH,
+                    "warning: VAD produced no speech segments; transcribing full file (the audio may be silent, or its speech quieter than the VAD threshold)",
                 );
             }
         }
@@ -581,7 +592,12 @@ where
     F: FnMut(&[f32]) -> Result<TranscriptionChunk>,
 {
     let mut out = Vec::with_capacity(spans.len());
-    for &(start_s, end_s) in spans {
+    let total = spans.len();
+    for (index, &(start_s, end_s)) in spans.iter().enumerate() {
+        events::progress(
+            Some("transcribe"),
+            format!("transcribing segment {} of {total}", index + 1),
+        );
         let start = (start_s * sr) as usize;
         let end = ((end_s * sr) as usize).min(samples.len());
         if start >= end {
@@ -612,9 +628,9 @@ where
             }
             Err(e) => {
                 // One failing segment shouldn't kill the whole transcript.
-                eprintln!(
-                    "warning: VAD segment {:.2}-{:.2}s failed: {e}",
-                    start_s, end_s
+                events::warn(
+                    events::W_GENERIC,
+                    format!("warning: VAD segment {start_s:.2}-{end_s:.2}s failed: {e}"),
                 );
             }
         }
@@ -706,9 +722,12 @@ where
                 if first_failure.is_none() {
                     first_failure = Some(e.to_string());
                 }
-                eprintln!(
-                    "warning: fixed-window ASR chunk {:.2}-{:.2}s failed: {e}",
-                    window.output_start_s, window.output_end_s
+                events::warn(
+                    events::W_GENERIC,
+                    format!(
+                        "warning: fixed-window ASR chunk {:.2}-{:.2}s failed: {e}",
+                        window.output_start_s, window.output_end_s
+                    ),
                 );
             }
         }
@@ -980,7 +999,8 @@ fn validate_plain_transcribe_safety(
     } else {
         "run `kesha install --vad`, then rerun without --no-vad"
     };
-    anyhow::bail!(
+    coded_bail!(
+        ErrorCode::InvalidArg,
         "refusing --no-vad for very long audio \
          (detected {duration_s:.0}s; single-pass limit is {FULL_FILE_SINGLE_PASS_MAX_SECONDS:.0}s). \
          Parakeet full-file ASR is duration/memory-bound; {action}."
@@ -1022,9 +1042,9 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
 fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<std::path::PathBuf> {
     let dir = models::model_dir_at(models::ModelKind::Asr, &cache?);
     if !models::is_cached_in(models::ModelKind::Asr, &dir) {
-        anyhow::bail!(
-            "Error: No transcription models installed\n\n\
-             Please run: kesha install"
+        coded_bail!(
+            ErrorCode::ModelMissing,
+            "No transcription models installed. Run: kesha install"
         );
     }
     Ok(dir)
@@ -1844,6 +1864,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("temp cache root");
         let err = ensure_asr_installed(Ok(tmp.path().to_path_buf()))
             .expect_err("an empty cache root holds no ASR model");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
         let msg = format!("{err:#}");
         assert!(
             msg.contains("No transcription models installed") && msg.contains("kesha install"),

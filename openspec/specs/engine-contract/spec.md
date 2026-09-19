@@ -5,12 +5,13 @@
 The Engine (`kesha-engine`) is a self-contained Rust binary downloaded during
 `kesha install` and invoked by the CLI as a subprocess — never linked
 in-process. This spec defines the boundary between the CLI and the Engine: the
-Capabilities JSON protocol, the error-code taxonomy and stderr format, the
-`KESHA_*` environment variables that both sides honour, and the rule that the
-CLI validates flags against Capabilities JSON instead of forwarding them
-blindly. Ira depends on stable exit codes and error codes in scripts. Sona
-depends on the capabilities contract to feature-gate her agent code. Maks
-depends on the Engine being available and well-behaved on his Apple Silicon Mac.
+describe document (protocol 4) that publishes the flag schema and the error
+taxonomy, the event stream on stderr, the `KESHA_*` environment variables that
+both sides honour, and the rule that the CLI validates flags against the
+describe document instead of forwarding them blindly. Ira depends on stable
+exit codes and error codes in scripts. Sona depends on the capabilities
+contract to feature-gate her agent code. Maks depends on the Engine being
+available and well-behaved on his Apple Silicon Mac.
 
 ## Non-Goals
 
@@ -19,6 +20,7 @@ depends on the Engine being available and well-behaved on his Apple Silicon Mac.
 - The Engine's audio decode pipeline (symphonia + rubato) is not specified here.
 - Model hash pinning and download mechanics are covered in the installation
   spec.
+
 ## Requirements
 ### Requirement: The Engine is always a subprocess, never linked in-process
 
@@ -41,54 +43,87 @@ Model cache (`~/.cache/kesha/`).
 - THEN the CLI prints an actionable error with a `kesha install` hint
 - AND exits 1 without attempting to spawn a missing binary
 
-> *Technical Note — `getEngineBinPath()` in `src/engine.ts:46` returns
-> `process.env.KESHA_ENGINE_BIN ?? defaultEngineBinPath()`.
-> `isEngineInstalled()` at `src/engine.ts:50` uses `existsSync`.*
+> *Technical Note — `src/engine.ts::getEngineBinPath` returns
+> `process.env.KESHA_ENGINE_BIN || defaultEngineBinPath()` (an empty string
+> counts as unset); `src/engine.ts::isEngineInstalled` uses `existsSync`.*
 
-### Requirement: `--capabilities-json` describes the Engine's feature set
+### Requirement: `kesha-engine describe` publishes the protocol schema
 
-Running `kesha-engine --capabilities-json` SHALL print a single-line JSON
-object to stdout (protocol version 3) and exit 0. The object contains:
+Running `kesha-engine describe` SHALL print a single JSON object to stdout and exit 0, and that describe document SHALL be the only place the CLI learns what the Engine accepts. It SHALL carry `protocolVersion` (the integer 4), `backend`, `profile`, `commands` (each subcommand with each accepted flag and the feature that gates it), `features`, `errors` (every Error code with title, category, retryability and origin), `warnings` (every Warning code with title) and, on builds that synthesize speech, `tts.languages`.
 
-- `protocolVersion`: `3` (integer constant).
-- `backend`: `"coreml"` on Apple Silicon builds, `"onnx"` on all others.
-- `features`: array of capability-flag strings (see Technical Note below for
-  the full set and their compile-time gates).
-- `tts`: present only on `tts`-feature builds; an object with `languages` — an
-  array of `{ code, engines }` objects, one per supported TTS language, with
-  the default engine first.
+The `errors` section SHALL mark exactly `E_MODEL_DOWNLOAD`, `E_DIARIZE_TIMEOUT` and `E_INSTALL_RACE` as retryable.
 
-The CLI caches the Capabilities JSON in-process keyed by binary path and
-`mtimeMs`; the cache invalidates automatically when `kesha install` overwrites
-the binary.
+The CLI SHALL validate any argv against `commands` before spawning the Engine: a flag the schema does not list for that subcommand, a flag whose gate is absent from `features`, or a flag whose `requires` is missing or whose `conflicts` is present SHALL be rejected on the CLI side with `E_INVALID_ARG` and no subprocess. A flag whose schema row carries `whenUngated: drop` SHALL instead be omitted from the argv with one `warn` event when its gate is absent from `features`, and the command SHALL proceed; the default is `reject`. A `gate` names one feature or an any-of list of features.
 
-#### Scenario: Sona probes capabilities before calling `say`
+A platform pre-check that runs before anything is downloaded SHALL report `E_UNSUPPORTED_PLATFORM`, because no Engine is needed to know the platform; once an Engine binary exists, `kesha install` SHALL validate its argv against the describe document before spawning `kesha-engine install`, so a flag whose gate the build does not carry is `E_INVALID_ARG`.
 
-- GIVEN the Engine is a `tts`-feature build
-- WHEN the CLI calls `getEngineCapabilities()`
-- THEN the result has `protocolVersion: 3` and `features` contains `"tts"`
-- AND `tts.languages` contains at least `{ code: "en", engines: ["kokoro"] }`
-  and `{ code: "ru", engines: ["vosk"] }`
+#### Scenario: Sona probes the Engine before calling `say`
 
-#### Scenario: CoreML backend on Apple Silicon
+- GIVEN the Engine is a build that synthesizes speech
+- WHEN the CLI runs `kesha-engine describe`
+- THEN the result has `protocolVersion: 4` and `features` contains `"tts"`
+- AND `tts.languages` contains at least `{ code: "en", engines: ["kokoro"] }` and `{ code: "ru", engines: ["vosk"] }`
 
-- GIVEN an `aarch64-apple-darwin` Engine binary
-- WHEN the CLI calls `getEngineCapabilities()`
-- THEN `backend` is `"coreml"`
+#### Scenario: A flag the Engine does not accept never reaches it
 
-#### Scenario: Engine with no subcommand prints usage and exits 1
+- GIVEN the Engine's schema lists `--speakers` under `transcribe` gated on `transcribe.diarize`
+- AND `features` does not contain `transcribe.diarize`
+- WHEN Ira runs `kesha meeting.ogg --speakers`
+- THEN the CLI exits with `E_INVALID_ARG` naming darwin-arm64 as the platform that serves it
+- AND no Engine subprocess is spawned
 
-- WHEN Ira runs `kesha-engine` with no arguments
-- THEN stderr contains `Usage: kesha-engine <command>`
-- AND the process exits 1
+#### Scenario: Install pre-check runs before any Engine exists
 
-> *Technical Note — Capability flag strings and their compile-time gates
-> (`rust/src/capabilities.rs:37`):*
+- GIVEN no Engine is installed on a linux-x64 host
+- WHEN Sona calls `install({ diarize: true })`
+- THEN the CLI rejects with `E_UNSUPPORTED_PLATFORM` before downloading anything
+- AND on a darwin-arm64 host whose installed Engine is a `portable` build, `install --diarize` is `E_INVALID_ARG` from the schema because `transcribe.diarize` is absent from `features`
+
+#### Scenario: An optional flag on an Engine without its feature
+
+- GIVEN the Engine advertises neither `tts.ru_acronym_expansion` nor `tts.en_acronym_expansion`
+- WHEN Sona calls `say({ text: "NASA", noExpandAbbrev: true })`
+- THEN the CLI omits `--no-expand-abbrev` from the argv and renders one `warn` event naming the flag
+- AND synthesis proceeds and resolves with audio
+
+> *Technical Note — Subcommand `Describe` in `rust/src/main.rs`; schema assembly, the gate table (`gate_rows()`) and the clap-parity test in `rust/src/protocol/describe.rs`; CLI validation in `src/engine/describe.ts`. The platform pre-check is `assertPlatformCanInstall` in `src/engine-install.ts`: `installEngine` runs it before taking the install lock or downloading anything, and `kesha install` runs it where the bare `Error` used to be — after `--plan` has returned, before the lock and the download — so `--diarize` off darwin-arm64 is `E_UNSUPPORTED_PLATFORM` with no Engine involved; a host with no published target is only refused when an engine download is actually needed (`getEngineBinaryName`), so a Nix or self-built engine still installs models there. The `whenUngated: drop` row for `--no-expand-abbrev` is the only place that flag's gate lives.*
 >
-> | Flag | Gate |
+> *Error code taxonomy carried in `errors` (`ErrorCode::ALL`, `title`, `category` and `retryable` in `rust/src/errors.rs`; `origin_of` in `rust/src/protocol/describe.rs`):*
+>
+> | Code | Category | Retryable | Origin | Title |
+> |---|---|---|---|---|
+> | `E_INPUT_NOT_FOUND` | input | no | both | Input file not found |
+> | `E_BAD_AUDIO` | input | no | engine | Unreadable or unsupported audio |
+> | `E_INVALID_ARG` | input | no | both | Invalid command-line argument |
+> | `E_MODEL_MISSING` | model | no | both | Model or voice not installed |
+> | `E_MODEL_DOWNLOAD` | model | **yes** | engine | Model download failed |
+> | `E_CACHE_CORRUPT` | model | no | engine | Cached model failed verification |
+> | `E_MODEL_LOAD` | model | no | engine | Model failed to load |
+> | `E_UNSUPPORTED_PLATFORM` | platform | no | both | Feature unsupported on this platform |
+> | `E_SIDECAR_MISSING` | platform | no | engine | Helper sidecar missing or failed |
+> | `E_NO_BACKEND` | platform | no | engine | No ASR backend compiled in |
+> | `E_ENGINE_SPAWN` | platform | no | cli | Engine binary not installed or failed to start |
+> | `E_ENGINE_PROTOCOL` | platform | no | cli | Engine speaks a protocol this CLI does not |
+> | `E_INTERRUPTED` | platform | no | cli | The run was cancelled by a signal or by its caller |
+> | `E_TEXT_EMPTY` | tts | no | both | Empty synthesis text |
+> | `E_TEXT_TOO_LONG` | tts | no | both | Synthesis text too long |
+> | `E_VOICE_UNKNOWN` | tts | no | engine | Unknown voice id |
+> | `E_SSML_INVALID` | tts | no | engine | Malformed SSML |
+> | `E_SSML_UNSUPPORTED` | tts | no | engine | SSML not supported for this engine |
+> | `E_SCRIPT_UNSUPPORTED` | tts | no | engine | Text script not supported for this voice |
+> | `E_TRANSCRIBE_FAILED` | transcribe | no | engine | Transcription failed |
+> | `E_DIARIZE_TIMEOUT` | transcribe | **yes** | engine | Speaker diarization timed out |
+> | `E_INSTALL_RACE` | internal | **yes** | cli | Another install reached the same cache first |
+> | `E_INTERNAL` | internal | no | both | Unexpected internal error |
+>
+> *Feature strings and their gates (`get_capabilities` in `rust/src/capabilities.rs`; the gates become Profile names once `build-profiles` lands):*
+>
+> | Feature | Gate |
 > |---|---|
 > | `"transcribe"` | always |
 > | `"transcribe.segments"` | always |
+> | `"transcribe.itn"` | always |
+> | `"transcribe.words"` | any ASR Backend |
 > | `"detect-lang"` | always |
 > | `"vad"` | always |
 > | `"detect-text-lang"` | `target_os = "macos"` |
@@ -97,178 +132,193 @@ the binary.
 > | `"tts.en_acronym_expansion"` | `feature = "tts"` |
 > | `"tts.ru_emphasis_marker"` | `feature = "tts"` |
 > | `"tts.prosody_rate"` | `feature = "tts"` |
-> | `"transcribe.diarize"` | `feature = "system_diarize"` + `target_os = "macos"` |
->
-> `protocolVersion: 3` asserted in `rust/src/capabilities.rs:128`.
-> Cache in `src/engine.ts:356`; invalidates when `mtimeMs` changes.*
+> | `"record.live"` | `darwin` Profile |
+> | `"record.live.auto-stop"` | `darwin` Profile |
+> | `"transcribe.diarize"` | `darwin` Profile |
+
+### Requirement: The protocol version is a gate, not a label
+
+The CLI SHALL refuse to use an Engine whose describe document reports a `protocolVersion` other than 4, and SHALL report the refusal as the Error code `E_ENGINE_PROTOCOL` with a hint naming the remedy.
+
+#### Scenario: The installed Engine speaks the current protocol
+
+- GIVEN the installed Engine's describe document reports `protocolVersion: 4`
+- WHEN Ira runs `kesha note.ogg`
+- THEN the CLI validates the argv against the schema and spawns the transcription
+- AND no `E_ENGINE_PROTOCOL` is reported
+
+#### Scenario: A stale Engine after a CLI upgrade
+
+- GIVEN Maks upgraded the CLI but the cached Engine still answers protocol 3
+- WHEN he runs `kesha note.ogg`
+- THEN the CLI exits 1 with `E_ENGINE_PROTOCOL`
+- AND the hint names `kesha install`
+
+#### Scenario: A newer Engine installed for one invocation
+
+- GIVEN Ira ran `kesha install --engine-version` with a release whose protocol is 5
+- WHEN she runs `kesha note.ogg`
+- THEN the CLI exits 1 with `E_ENGINE_PROTOCOL`
+- AND the hint names the CLI upgrade command with `bun add -g`
+
+> *Technical Note — `parseDescribe` (`src/engine/describe.ts`) accepts any numeric `protocolVersion`; the gate is `protocolMismatch` in the same file, which `getDescribe` (`src/engine.ts`) throws before caching a document.*
+
+### Requirement: Engine stderr is an event stream
+
+The Engine SHALL write every non-payload line to stderr as one JSON object per line with a `kind` of `progress`, `warn`, `error` or `debug` and a `message`; `error` and `warn` SHALL each carry a `code` that is one of the published codes, and `error` MAY carry a `hint`. Diagnostics that a linked library writes to the Engine's file descriptor 2 on its own (the FluidAudio bridge on darwin-arm64) SHALL be captured and re-emitted as events — a `warn` on a successful call, or folded into the coded `error` of a failed one — so no raw library line ever reaches the CLI. Argument-parsing failures SHALL join the Event stream rather than bypass it: a clap parse error and a missing subcommand SHALL each be emitted as one `error` event whose `code` is `E_INVALID_ARG` and whose `message` contains the usage text, and the process SHALL exit 2. stdout SHALL carry only the command's payload; `--help` and `--version` SHALL remain plain prose on stdout and are the only prose exemption. A fatal `error` SHALL be followed by exit code 1, except where the tts-synthesis spec assigns another Exit code.
+
+The CLI SHALL render events for humans and SHALL treat a stderr line that is not a JSON object as `E_INTERNAL`, quoting at most the first 200 characters of the line once, never echoing the user's whole input. The CLI SHALL accept `\r\n` line endings.
+
+#### Scenario: Missing model produces a parseable Error code
+
+- GIVEN the ASR model is not installed
+- WHEN Ira runs `kesha standup.ogg`
+- THEN Engine stderr contains a line whose `kind` is `error` and whose `code` is `E_MODEL_MISSING`
+- AND the CLI prints the message and the hint and exits 1
+
+#### Scenario: Progress reaches the caller while the run is in flight
+
+- GIVEN a diarization run whose model load takes a minute
+- WHEN the Engine emits `progress` events during the load
+- THEN Sona's `onProgress` callback receives each one before the run completes
+
+#### Scenario: No subcommand
+
+- WHEN Ira runs `kesha-engine` with no arguments
+- THEN stderr carries one `error` event with code `E_INVALID_ARG` whose message contains `Usage: kesha-engine`
+- AND the process exits 2
+
+#### Scenario: A line that is not JSON
+
+- GIVEN the Engine crashes and the runtime prints a panic message to stderr
+- WHEN the CLI parses stderr
+- THEN the failure is reported as `E_INTERNAL` with the first 200 characters of the raw line in the message
+
+#### Scenario: A library warning stays on the event stream
+
+- GIVEN a word FluidAudio's G2P cannot encode
+- WHEN the Engine synthesizes it on darwin-arm64
+- THEN the failure reaches the CLI as one coded `error` event and the library's own diagnostic as a `warn` event or inside that error's message
+- AND the CLI prints one `error [E_SCRIPT_UNSUPPORTED]: …` line and no unprefixed line
+
+> *Technical Note — Emitter in `rust/src/protocol/events.rs` (`rust/tests/no_stray_eprintln.rs` keeps it the only writer); parser `readEvents` in `src/engine/events.ts`. `Cli::try_parse()` in `rust/src/main.rs` turns a usage error into one `E_INVALID_ARG` event and exit 2, which `rust/tests/describe_cli.rs` pins for the deleted flags.*
+
+### Requirement: A panic is reported through the Event stream
+
+The Engine SHALL report a panic it did not expect as one `error` event with the Error code `E_INTERNAL` naming the panic and its location, and SHALL then exit 1; the runtime's own panic prose and its `RUST_BACKTRACE` hint SHALL NOT reach stderr.
+
+#### Scenario: An unexpected panic during a command
+
+- GIVEN a command hits a panic no code path anticipated
+- WHEN the Engine unwinds
+- THEN stderr carries one `error` event whose `code` is `E_INTERNAL` and whose message starts with `engine panicked:`
+- AND the process exits 1
+
+#### Scenario: A panic the Engine anticipates and codes
+
+- GIVEN a code path guards a known panic and reports it under its own Error code
+- WHEN that panic fires
+- THEN only the coded event is emitted, never a second `E_INTERNAL` for the same failure
+
+> *Technical Note — `rust/src/errors.rs::install_panic_hook` is installed first thing in
+> `rust/src/main.rs`, which also catches the unwind to exit 1; `catch_panic` marks the
+> thread so the hook skips a panic the caller reports itself.*
+
+### Requirement: Transcription reports progress while it runs
+
+The Engine's `transcribe` command SHALL emit protocol-4 `progress` events while it works — at minimum when the speech model is loading, and once per speech segment as it is transcribed — so a caller that wired `TranscribeOptions.onProgressLine` sees movement during a plain transcribe rather than a callback that never fires until the run is over. These are in addition to the existing `debug` events, which are unchanged.
+
+#### Scenario: Sona transcribes a plain voice note with a spinner
+
+- GIVEN Sona calls `transcribe` with an `onProgressLine` callback and the ASR model is installed
+- WHEN a plain (non-diarized) transcription runs
+- THEN her callback receives at least one `progress` event before the transcript resolves
+
+#### Scenario: A VAD-segmented transcription reports each segment
+
+- GIVEN a file long enough to be split into speech segments
+- WHEN it is transcribed
+- THEN a `progress` event is emitted for each segment as it is processed
+
+> *Technical Note — `rust/src/transcribe/mod.rs::create_timed_backend` emits the model-load
+> event on every backend-loading path (plain, chunked, VAD), and `build_vad_output_segments`
+> emits `transcribing segment N of M`; both go through `protocol::events::progress`.*
 
 ### Requirement: The CLI validates flags against Capabilities JSON instead of forwarding blindly
 
-Before spawning the Engine for a capability-gated operation, the CLI SHALL
-check the relevant feature flag in the cached Capabilities JSON. It SHALL NOT
-forward flags to subcommands that do not accept them.
+Before spawning the Engine the CLI SHALL validate the full argv against the `commands` section of the describe document, with one generic check rather than a per-feature guard, and SHALL NOT forward any flag the schema does not list for that subcommand.
 
-Specifically: `kesha-engine install` accepts only `--no-cache` (plus
-`--tts`/`--vad`/`--diarize`/`--no-warmup`); the CLI must not forward
-transcription or TTS flags to the install subcommand. `--speakers` requires
-`transcribe.diarize` in `features`; the CLI throws a clear error when the flag
-is unavailable instead of letting the Engine reject it.
+#### Scenario: A valid argv reaches the Engine unchanged
+
+- GIVEN the Engine's schema lists `--json` and `--itn` under `transcribe` with no absent gate
+- WHEN Ira runs `kesha meeting.ogg --json --itn`
+- THEN the CLI passes both flags through to the Engine subprocess unchanged
+- AND no validation error is reported
 
 #### Scenario: Diarization requested on a non-diarize build
 
-- GIVEN the Engine does not advertise `transcribe.diarize` in its features
-- WHEN Ira calls `transcribe("meeting.ogg", { speakers: true })`
-- THEN the CLI throws with a message stating diarization is darwin-arm64 only
+- GIVEN the Engine's `features` does not contain `transcribe.diarize`
+- WHEN Sona calls `transcribe("meeting.ogg", { speakers: true })`
+- THEN the call rejects with a `KeshaError` whose `code` is `E_INVALID_ARG` and whose message states diarization is darwin-arm64 only
 - AND no Engine subprocess is spawned
 
 #### Scenario: Unknown flag not forwarded to install
 
-- GIVEN the CLI's install command is invoked
+- GIVEN the CLI's install command is invoked with `--format json`
 - WHEN the CLI constructs the Engine argv for `kesha-engine install`
-- THEN the argv contains only `install` plus at most
-  `--no-cache`, `--tts <langs>`, `--vad`, `--diarize`, `--no-warmup`
-- AND no CLI-level flags (e.g. `--format`, `--lang`) appear in the Engine argv
+- THEN `--format` is absent from the argv because the schema does not list it under `install`
+- AND the CLI does not need a hand-written list of install flags to know that
 
-> *Technical Note — `preflightTranscribeEngineWithSegments` in
-> `src/engine.ts:193` checks `TRANSCRIBE_DIARIZE_FEATURE` against capabilities
-> before building the argv. Engine install argv is constructed in
-> `src/engine-install.ts`; the CLAUDE.md rule "DO NOT BLINDLY FORWARD CLI FLAGS
-> TO SUBCOMMANDS" is the governing design constraint.*
-
-### Requirement: `--error-codes-json` prints the full error-code taxonomy
-
-Running `kesha-engine --error-codes-json` SHALL print a JSON array to stdout
-and exit 0. Each element SHALL be an object with `code` (string), `title`
-(string), `category` (lowercase string), and `retryable` (boolean).
-
-The taxonomy SHALL contain exactly 19 codes. Only `E_MODEL_DOWNLOAD` and
-`E_DIARIZE_TIMEOUT` SHALL be marked retryable.
-
-The CLI SHALL read error codes from Engine stderr using the regex
-`/^error \[([A-Z0-9_]+)\]:/m`; when no match is found, it SHALL fall back to
-`E_INTERNAL`. The drift test in the test suite verifies that the TS-native code
-registry and the Engine taxonomy do not diverge.
-
-#### Scenario: Ira inspects the taxonomy from a script
-
-- WHEN Ira runs `kesha-engine --error-codes-json`
-- THEN stdout is a JSON array of exactly 19 objects
-- AND each object has `code`, `title`, `category`, and `retryable` fields
-- AND the process exits 0
-
-#### Scenario: Only retryable codes are model-download and diarize-timeout
-
-- WHEN Ira parses the `--error-codes-json` output
-- THEN exactly `E_MODEL_DOWNLOAD` and `E_DIARIZE_TIMEOUT` have `retryable: true`
-- AND all other 17 codes have `retryable: false`
-
-> *Technical Note — Full E_* taxonomy (`rust/src/errors.rs:12`):*
->
-> | Code | Category | Retryable | Title |
-> |---|---|---|---|
-> | `E_INPUT_NOT_FOUND` | input | no | Input file not found |
-> | `E_BAD_AUDIO` | input | no | Unreadable or unsupported audio |
-> | `E_INVALID_ARG` | input | no | Invalid command-line argument |
-> | `E_MODEL_MISSING` | model | no | Model or voice not installed |
-> | `E_MODEL_DOWNLOAD` | model | **yes** | Model download failed |
-> | `E_CACHE_CORRUPT` | model | no | Cached model failed verification |
-> | `E_MODEL_LOAD` | model | no | Model failed to load |
-> | `E_UNSUPPORTED_PLATFORM` | platform | no | Feature unsupported on this platform |
-> | `E_SIDECAR_MISSING` | platform | no | Helper sidecar missing or failed |
-> | `E_NO_BACKEND` | platform | no | No ASR backend compiled in |
-> | `E_TEXT_EMPTY` | tts | no | Empty synthesis text |
-> | `E_TEXT_TOO_LONG` | tts | no | Synthesis text too long |
-> | `E_VOICE_UNKNOWN` | tts | no | Unknown voice id |
-> | `E_SSML_INVALID` | tts | no | Malformed SSML |
-> | `E_SSML_UNSUPPORTED` | tts | no | SSML not supported for this engine |
-> | `E_SCRIPT_UNSUPPORTED` | tts | no | Text script not supported for this voice |
-> | `E_TRANSCRIBE_FAILED` | transcribe | no | Transcription failed |
-> | `E_DIARIZE_TIMEOUT` | transcribe | **yes** | Speaker diarization timed out |
-> | `E_INTERNAL` | internal | no | Unexpected internal error |
->
-> `extractEngineErrorCode` regex: `src/error-codes.ts:9`.
-> Fallback to `E_INTERNAL` in `engineErrorCode` at `src/error-codes.ts:42`.*
-
-### Requirement: Engine stderr format is `error [E_CODE]: <message>`
-
-When the Engine encounters a fatal error it SHALL print a single line to stderr
-in the form `error [E_CODE]: <human-readable message>` and exit 1. The `E_CODE`
-token consists only of uppercase letters, digits, and underscores.
-
-The CLI extracts the code with the regex `^error \[([A-Z0-9_]+)\]:` applied
-multiline to the captured stderr. Non-fatal warnings (e.g. VAD hints, model
-mirror notices) may also appear on stderr; they do not carry the `error [...]`
-prefix.
-
-#### Scenario: Missing model produces a parseable error code
-
-- GIVEN the ASR model is not installed
-- WHEN Ira runs `kesha standup.ogg`
-- THEN stderr contains a line matching `error [E_MODEL_MISSING]: ...`
-- AND the CLI surfaces `E_MODEL_MISSING` to the user
-- AND the process exits 1
-
-#### Scenario: Engine stderr with no error code
-
-- GIVEN the Engine crashes without printing an `error [...]` line
-- WHEN the CLI captures stderr
-- THEN `engineErrorCode(stderr)` returns `"E_INTERNAL"`
-
-> *Technical Note — `report` in `rust/src/errors.rs:200` calls
-> `eprintln!("error [{}]: {:#}", code.as_str(), err)` and always returns exit
-> code 1. Exception: the `say` subcommand maps structured TTS errors through
-> `exit_code_for_tts_err` (`rust/src/cli/say.rs:132-136`) to exit codes 2
-> (empty text), 4 (synthesis/SSML/internal), and 5 (text too long) — see the
-> tts-synthesis spec. All other Engine fatal exits go through `report` or
-> `process::exit(errors::report(&err))`.*
+> *Technical Note — `validateArgv(argv, doc)` in `src/engine/describe.ts` replaced the hand-written `preflight*` / `assert*Supported` family; every production argv builder (`buildTranscribeArgs`, `buildEngineInstallArgs`, `buildSayArgs`, `buildRecordArgs`) meets it before a spawn, and `tests/unit/capabilities-pact.test.ts` drives each one against the published binaries’ recorded gate tables. The CLAUDE.md rule "DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS" stayed, rewritten to point at `gate_rows()` as the one place a gate is added.*
 
 ### Requirement: TS-native codes cover CLI-side failures
 
-The CLI SHALL define four TS-native error codes for failures that occur before
-or around the Engine (never inside it):
+The CLI SHALL report failures that happen before or around the Engine with the same Error code vocabulary the Engine publishes in its describe document: `E_INPUT_NOT_FOUND`, `E_ENGINE_SPAWN`, `E_INVALID_ARG`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE` and `E_INTERNAL` SHALL appear in `errors`, and every failure the Core API throws SHALL be a `KeshaError` carrying `code`, `hint` when known, and `exitCode` and `stderr` whenever an Engine subprocess ran.
 
-- `E_INPUT_NOT_FOUND` — input file not found (checked by the CLI before spawn).
-- `E_ENGINE_SPAWN` — Engine binary not installed or failed to start.
-- `E_INVALID_ARG` — invalid argument detected by the CLI.
-- `E_INTERNAL` — unexpected internal error in the CLI.
+Each entry's `origin` SHALL be `engine`, `cli` or `both`: `E_INPUT_NOT_FOUND`, `E_INVALID_ARG`, `E_UNSUPPORTED_PLATFORM` and `E_INTERNAL` are `both` because either side raises them (the CLI raises `E_UNSUPPORTED_PLATFORM` from its platform pre-check before any Engine exists), while `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE` are `cli` because only the CLI can observe them. `E_MODEL_MISSING`, `E_TEXT_EMPTY` and `E_TEXT_TOO_LONG` are also `both`: the CLI raises them before spawning an Engine — `E_MODEL_MISSING` when `--speakers` needs a diarization or VAD model that `kesha install --diarize` / `--vad` has not placed, and `E_TEXT_EMPTY` / `E_TEXT_TOO_LONG` from `kesha say`'s own text validation — while the Engine raises the same codes when it validates the same conditions directly.
 
-These codes SHALL appear in `SayError.code` and in structured error records. A
-drift test SHALL verify that every value in `KNOWN_TS_CODES` also appears in
-the Engine taxonomy (or is explicitly TS-only).
+These codes SHALL appear in structured error records (`TranscribeErrorRecord.code`).
+
+#### Scenario: A successful call reports no code
+
+- GIVEN the Engine and the English TTS models are installed
+- WHEN Sona calls `await say({ text: "hello" })`
+- THEN the promise resolves with the audio bytes
+- AND no `error` event and no `KeshaError` is produced
 
 #### Scenario: Engine binary missing surfaces E_ENGINE_SPAWN
 
 - GIVEN the Engine binary is absent
 - WHEN Sona calls `await say({ text: "hello" })`
-- THEN `SayError.code` is `"E_ENGINE_SPAWN"` (the value of
-  `TS_NATIVE_CODES.ENGINE_SPAWN`)
+- THEN the promise rejects with a `KeshaError` whose `code` is `E_ENGINE_SPAWN` and whose `hint` names `kesha install`
 
-> *Technical Note — `TS_NATIVE_CODES` at `src/error-codes.ts:18`.
-> `KNOWN_TS_CODES` at `src/error-codes.ts:39`. `SayError` default code
-> `"E_INTERNAL"` in `src/synth.ts:103`; engine-spawn path uses
-> `TS_NATIVE_CODES.ENGINE_SPAWN` at `src/synth.ts:131`.*
+#### Scenario: The error reference matches the taxonomy
+
+- GIVEN `docs/errors.md` is checked two-way against `kesha-engine describe`
+- WHEN a code is added to the Engine taxonomy without adding its row to the document
+- THEN the docs check in CI fails naming the missing code
+
+> *Technical Note — `KeshaError` in `src/engine/events.ts`. The CLI keeps no code list of its own: the CLI-only codes are `origin: cli` rows the Engine publishes (`origin_of` in `rust/src/protocol/describe.rs`), `rust/tests/error_codes_docs.rs` checks `docs/errors.md` against `describe` two-way with no exemption list, and `tests/unit/protocol-literals.test.ts` pins that every code the CLI names is documented.*
 
 ### Requirement: `KESHA_*` environment variables configure both CLI and Engine
 
-Both the CLI and the Engine SHALL honour the `KESHA_*` environment variables
-listed below. The CLI SHALL read them at startup; the Engine SHALL read them at
-spawn time (inheriting `process.env` from the CLI).
+Both the CLI and the Engine SHALL honour the `KESHA_*` environment variables listed below; the CLI SHALL read them at startup and the Engine at spawn time, inheriting `process.env` from the CLI with one addition: when `KESHA_HOME` (and not `KESHA_CACHE_DIR`) resolved the Model cache root, the CLI SHALL set `KESHA_CACHE_DIR` to that resolved root in every Engine spawn's environment, so the Engine lands models and recordings under the same root without reading `KESHA_HOME` itself (`state-directories`). `KESHA_DEBUG_FD` SHALL no longer exist: with `KESHA_DEBUG` set, the Engine's debug timeline SHALL be emitted as `debug` events on the Event stream and the CLI SHALL route them to the Diagnostic log.
 
-> *Technical Note — Full `KESHA_*` env var table:*
+> *Technical Note — `KESHA_*` env var table:*
 >
 > | Variable | Read by | Effect |
 > |---|---|---|
-> | `KESHA_ENGINE_BIN` | CLI | Override Engine binary path (`src/engine.ts:47`). |
-> | `KESHA_CACHE_DIR` | CLI + Engine | Override Model cache root (default `~/.cache/kesha/`). CLI: `src/paths.ts:5`. Engine: `rust/src/models/paths.rs::cache_dir`. |
+> | `KESHA_ENGINE_BIN` | CLI | Override Engine binary path (`src/engine.ts::getEngineBinPath`). |
+> | `KESHA_HOME` | CLI | Root every state location under one directory (`cache/`, `logs/`, `stats.sqlite`, `mcp-audio/`); outranked by the specific variables below, outranks the platform defaults. CLI: `src/state-paths.ts::resolveStatePaths`; forwarded to the Engine as `KESHA_CACHE_DIR` by `src/engine.ts::spawnEngineProcess`. |
+> | `KESHA_CACHE_DIR` | CLI + Engine | Override Model cache root (default `~/.cache/kesha/`, or `<KESHA_HOME>/cache` when `KESHA_HOME` is set). CLI: `src/paths.ts::keshaCacheDir`. Engine: `rust/src/models/paths.rs::cache_dir`. |
 > | `KESHA_MODEL_MIRROR` | Engine | Rewrite HuggingFace download base URLs; GitHub release URLs are never rewritten. Safe because of Pinned hashes (`rust/src/models/download.rs::model_mirror`). |
-> | `KESHA_DEBUG` | CLI + Engine | Enable debug trace output. Falsey values: `""`, `"0"`, `"false"`, `"no"`, `"off"` (case-insensitive). Truthy: any other non-empty value. CLI: `src/log.ts:30`. Engine: `rust/src/debug.rs:57`. |
-> | `KESHA_DEBUG_FD` | CLI + Engine | Forward a file descriptor number to the Engine for NDJSON debug event output. Values 0/1/2 are rejected (covered by stdin/stdout/stderr). Values above 1024 (`MAX_FORWARDED_FD`) are rejected. Must be a non-negative integer ≥ 3. CLI: `src/engine.ts:92`. Engine: `rust/src/debug.rs:159`. |
-> | `KESHA_DIARIZE_TIMEOUT_SECS` | Engine | Cap total diarization wall time (seconds). It can only cut a run short — the phase budgets still apply, so it never widens one. Unset or empty means no overall cap; any other non-positive or unparseable value fails with `E_INVALID_ARG` rather than silently removing the cap. Engine: `rust/src/transcribe/diarize.rs`. |
-> | `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` | Engine | Replace the 300 s budget for the CoreML model load (seconds), for a host whose cold ANE compile is legitimately slower. Does not affect the other phases. Unset or empty keeps the default; any other non-positive or unparseable value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
+> | `KESHA_DEBUG` | CLI + Engine | Enable debug trace output. Falsey values: `""`, `"0"`, `"false"`, `"no"`, `"off"` (case-insensitive). Truthy: any other non-empty value. CLI: `src/log.ts::envDebug`. Engine: `rust/src/debug.rs::enabled`; events emitted through `rust/src/protocol/events.rs`. |
+> | `KESHA_DIARIZE_TIMEOUT_SECS` | Engine | Cap total diarization wall time (seconds). It can only cut a run short — the phase budgets still apply, so it never widens one. Unset or empty means no overall cap; any other non-positive or unparseable value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
+> | `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` | Engine | Replace the 300 s budget for the CoreML model load (seconds). Does not affect the other phases. Unset or empty keeps the default; any other non-positive or unparseable value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
 > | `KESHA_DIARIZE_COMPUTE_UNITS` | Engine | CoreML compute units for the Sortformer model: `all` (default), `cpu-and-ane`, `cpu-and-gpu`, `cpu-only`. An unrecognised value fails with `E_INVALID_ARG`. Engine: `rust/src/transcribe/diarize.rs`. |
-> | `KESHA_DIARIZE_MODEL_PATH` | CLI + Engine | Override the Sortformer model path. CLI: `src/engine.ts:212`. Engine: `rust/src/transcribe/mod.rs:747`. |
-> | `KESHA_STATS_DB` | CLI | Override the Stats DB path (`src/stats.ts:580`). |
-> | `KESHA_LOG_DIR` | CLI | Override the Diagnostic log directory (`src/diagnostic-log.ts:73`). |
+> | `KESHA_DIARIZE_MODEL_PATH` | CLI + Engine | Override the Sortformer model path. CLI: `src/engine.ts::assertDiarizeModelInstalled`. Engine: `rust/src/transcribe/mod.rs::resolve_diarize_model_path`. |
+> | `KESHA_STATS_DB` | CLI | Override the Stats DB path (`src/stats.ts::resolveStatsDbPath`); outranks `KESHA_HOME`. |
+> | `KESHA_LOG_DIR` | CLI | Override the Diagnostic log directory (`src/diagnostic-log.ts::resolveDiagnosticLogDir`); outranks `KESHA_HOME`. |
 
 #### Scenario: Ira points the cache at a network share in CI
 
@@ -277,69 +327,64 @@ spawn time (inheriting `process.env` from the CLI).
 - THEN the CLI resolves the Engine binary from `/mnt/ci-cache/kesha/`
 - AND the Engine reads models from `/mnt/ci-cache/kesha/models/`
 
-#### Scenario: KESHA_DEBUG_FD rejects stdin/stdout/stderr numbers
+#### Scenario: Ira isolates a whole run with one variable
 
-- WHEN `KESHA_DEBUG_FD=1` is set
-- THEN `spawnStdioWithDebugFd` returns the base stdio array unchanged (fd 1 is
-  rejected)
-- AND no extra fd is forwarded to the Engine
+- GIVEN `KESHA_HOME=/tmp/kesha-ci` is set and `KESHA_CACHE_DIR` is not
+- WHEN Ira runs `kesha standup.ogg`
+- THEN the Engine is spawned with `KESHA_CACHE_DIR=/tmp/kesha-ci/cache` in its environment
+- AND it reads models from `/tmp/kesha-ci/cache/models/`
+- AND every other `KESHA_*` variable reaches the Engine unchanged
 
-#### Scenario: KESHA_DEBUG_FD rejects out-of-range values
+#### Scenario: A specific variable outranks the umbrella at the Engine boundary
 
-- WHEN `KESHA_DEBUG_FD=2000` is set
-- THEN `spawnStdioWithDebugFd` returns the base stdio array unchanged
-  (2000 > `MAX_FORWARDED_FD` = 1024)
+- GIVEN `KESHA_HOME=/tmp/kesha-ci` and `KESHA_CACHE_DIR=/mnt/models` are both set
+- WHEN Maks runs `kesha note.ogg`
+- THEN the Engine's environment carries `KESHA_CACHE_DIR=/mnt/models`, untouched by the CLI
+- AND the CLI's own Diagnostic log and Stats DB still resolve under `/tmp/kesha-ci`
 
-> *Technical Note — `MAX_FORWARDED_FD = 1024` at `src/engine.ts:66`. The
-> guard condition at `src/engine.ts:95`:
-> `!Number.isInteger(fd) || fd < 3 || fd > MAX_FORWARDED_FD`.*
+#### Scenario: Debug timeline with no extra descriptor
+
+- GIVEN `KESHA_DEBUG=1` is set and `KESHA_DEBUG_FD` is also set from an old script
+- WHEN Maks runs `kesha note.ogg`
+- THEN `KESHA_DEBUG_FD` is ignored
+- AND the Engine's `debug` events appear in the Diagnostic log for that run
+
+> *Technical Note — the CLI forwards no descriptor (`tests/unit/protocol-literals.test.ts` pins that `KESHA_DEBUG_FD` is unreferenced in `src/`), `rust/src/debug.rs` opens none, and `rust/tests/debug_structured_events.rs` asserts the `debug` events on stderr with a stale `KESHA_DEBUG_FD` exported to prove it is ignored.*
 
 ### Requirement: Capabilities JSON cache invalidates on Engine binary change
 
-The CLI SHALL cache the Capabilities JSON in-process, keyed by the Engine
-binary path and its `mtimeMs`. The cache invalidates automatically when the
-binary is replaced (e.g. after `kesha install`), ensuring the CLI never uses
-stale feature flags after an upgrade.
+The CLI SHALL cache the describe document in-process, keyed by the Engine binary path and its `mtimeMs`, and SHALL invalidate it when the binary is replaced, so an upgrade never runs against a stale schema.
 
 #### Scenario: Cache hit — no extra subprocess spawned
 
-- GIVEN `getEngineCapabilities()` was called once successfully
-- WHEN the CLI calls `getEngineCapabilities()` again with the same binary and
-  same `mtimeMs`
+- GIVEN the schema was read once successfully
+- WHEN the CLI needs it again for the same binary and the same `mtimeMs`
 - THEN no new subprocess is spawned
-- AND the cached result is returned immediately
 
 #### Scenario: Cache miss after install overwrites the binary
 
-- GIVEN `getEngineCapabilities()` was called before `kesha install` ran
-- WHEN `kesha install` overwrites the Engine binary (changing its `mtimeMs`)
-- THEN the next call to `getEngineCapabilities()` re-spawns the Engine and
-  refreshes the cache
+- GIVEN the schema was read before `kesha install` ran
+- WHEN `kesha install` overwrites the Engine binary
+- THEN the next read re-spawns `kesha-engine describe` and refreshes the cache
 
-> *Technical Note — Cache logic at `src/engine.ts:356`. Cache key:
-> `{ binPath, mtime }`. `statSync(binPath).mtimeMs` at `src/engine.ts:368`;
-> `statSync` throwing (missing binary) causes `getEngineCapabilities` to
-> return `null`.*
+> *Technical Note — `getDescribe` in `src/engine.ts` caches the parsed document keyed by the binary's path and mtime; `parseDescribe` and `protocolMismatch` live in `src/engine/describe.ts`.*
 
 ### Requirement: The written-form pass is advertised and validated, never forwarded blind
 
-Capabilities JSON SHALL advertise the Engine's support for the written-form Transcription
-pass, and the CLI SHALL validate the request against Capabilities JSON before spawning the
-Engine.
+The describe document SHALL advertise the Engine's support for the written-form Transcription pass in `features`, and the CLI SHALL validate the request against that document before spawning the Engine.
 
-An Engine that does not advertise it SHALL cause the request to fail with the action that
-resolves it, on every Transcription path — not only the timestamped one.
+An Engine that does not advertise it SHALL cause the request to fail with the action that resolves it, on every Transcription path — not only the timestamped one — as a `KeshaError` whose `code` is `E_INVALID_ARG`.
 
 #### Scenario: Sona inspects a current Engine
 
 - GIVEN an Engine built from this change
-- WHEN Sona reads its Capabilities JSON
-- THEN the feature list contains the written-form pass entry
+- WHEN Sona reads its describe document
+- THEN `features` contains the written-form pass entry
 - AND it is present regardless of which Backend the Engine was compiled with
 
 #### Scenario: Ira runs a new CLI against an Engine installed months ago
 
-- GIVEN an installed Engine whose Capabilities JSON omits the entry
+- GIVEN an installed Engine whose describe document omits the entry
 - WHEN Ira transcribes with the written-form pass requested
 - THEN the command fails before the Engine is spawned
 - AND the message names upgrading the Engine as the action
@@ -350,56 +395,49 @@ resolves it, on every Transcription path — not only the timestamped one.
 - WHEN Ira transcribes without requesting the pass
 - THEN Transcription succeeds as before
 
-> *Technical Note — feature string `transcribe.itn`, declared once as
-> `TRANSCRIBE_ITN_FEATURE` in `rust/src/transcribe/mod.rs` beside
-> `TRANSCRIBE_SEGMENTS_FEATURE` and pushed unconditionally in
-> `rust/src/capabilities.rs:34`, mirrored in `src/engine.ts:15`. Unlike
-> `transcribe.diarize` this is not Backend-gated: the pass is pure Rust and behaves
-> identically on CoreML and ONNX, so the gate exists for Engine-version skew only.
-> The check is hoisted above the `timestamps || speakers` short-circuit in
-> `src/transcribe.ts:42`, because the pass is meaningful with plain text output.*
+> *Technical Note — feature string `transcribe.itn` is declared once as `TRANSCRIBE_ITN_FEATURE` (`rust/src/transcribe/mod.rs`), pushed unconditionally by `get_capabilities`, and gated by its row in `gate_rows()`. Unlike `transcribe.diarize` this is not Backend-gated: the pass is pure Rust and behaves identically on CoreML and ONNX, so the gate exists for Engine-version skew only. The CLI keeps no mirror of the string: `validateTranscribeRequest` (`src/transcribe.ts`) runs `validateArgv` on every transcribe request, plain-text output included.*
 
 ### Requirement: `record.live` is advertised only by Engines that can serve it
 
-The Engine SHALL include `record.live` in the `features` array of
-`--capabilities-json` when, and only when, it was compiled with the CoreML
-backend on macOS. On every other build the flag SHALL be absent from the array
-rather than present-and-false, matching how the feature vector already treats
-`transcribe.diarize` and `detect-text-lang`.
+The Engine SHALL include `record.live` in the `features` array of its describe document when, and only when, it was compiled with the CoreML Backend on macOS. On every other build the flag SHALL be absent from the array rather than present-and-false, matching how the feature vector already treats `transcribe.diarize` and `detect-text-lang`.
 
 #### Scenario: Maks probes a CoreML Engine on Apple Silicon
 
-- WHEN Maks runs `kesha-engine --capabilities-json`
+- WHEN Maks runs `kesha-engine describe`
 - THEN `features` contains `"record.live"` alongside `"transcribe"`
 - AND `backend` is `"coreml"`
 
 #### Scenario: Ira probes the Linux ONNX Engine
 
-- WHEN Ira runs `kesha-engine --capabilities-json` on the Linux build
+- WHEN Ira runs `kesha-engine describe` on the Linux build
 - THEN `features` does not contain `"record.live"`
-- AND the JSON is otherwise unchanged from today
+- AND the rest of the document is unchanged in shape
 
-> *Technical Note — the push is gated on
-> `#[cfg(all(feature = "coreml", target_os = "macos"))]` in
-> `rust/src/capabilities.rs`, mirroring the runtime gate exactly so the
-> advertisement cannot outlive the code path. `protocolVersion` stays 3:
-> adding a feature string is additive and the existing flag-checking contract
-> covers it.*
+> *Technical Note — the push is gated on `#[cfg(all(feature = "coreml", target_os = "macos"))]` in `rust/src/capabilities.rs`, mirroring the runtime gate exactly so the advertisement cannot outlive the code path, and `record_live_is_advertised_only_where_it_compiles` pins it; the flag’s gate is the `live: record.live` row of `gate_rows()`. `protocolVersion` is 4: adding a feature string is additive and the generic flag-validation contract covers it.*
 
 ### Requirement: Engine spawn failures surface as E_ENGINE_SPAWN
-Any failure to launch the `kesha-engine` binary (missing file, permission denied) SHALL surface to the user as `error [E_ENGINE_SPAWN]` including the attempted binary path, the underlying cause, and a recovery hint (`kesha install`, or `KESHA_ENGINE_BIN` when set). Raw `posix_spawn`/ENOENT exceptions MUST NOT escape to the user.
+
+Any failure to launch the `kesha-engine` binary (missing file, permission denied) SHALL surface as a `KeshaError` whose `code` is `E_ENGINE_SPAWN`, carrying the attempted binary path, the underlying cause, and a `hint` naming the remedy (`kesha install`, or `KESHA_ENGINE_BIN` when it is set). Raw `posix_spawn`/ENOENT exceptions MUST NOT reach Ira, Maks or Sona.
+
+#### Scenario: the engine binary runs
+
+- GIVEN the Engine binary exists at the resolved path and the OS executes it
+- WHEN Ira runs `kesha standup.ogg`
+- THEN the subprocess starts and no `E_ENGINE_SPAWN` is reported
 
 #### Scenario: engine binary path does not exist
-- **WHEN** any CLI or MCP code path spawns the engine and the binary path does not exist
-- **THEN** the surfaced error carries code `E_ENGINE_SPAWN`, names the path, and includes an actionable hint
+
+- WHEN any CLI or MCP code path spawns the Engine and the binary path does not exist
+- THEN the surfaced `KeshaError` carries `code` `E_ENGINE_SPAWN`, names the path, and carries an actionable `hint`
+
+> *Technical Note — `KeshaError` in `src/engine/events.ts` is the failure type on every path; `SayError` (`src/synth.ts`) extends it and stays `say()`'s failure type, carrying the same `code`, `exitCode`, `stderr`, `hint` and `origin`.*
 
 ## Open Issues
 
-- Protocol version is hardcoded to `3`; there is no negotiation mechanism if
-  the CLI and Engine are on incompatible versions. The CLI currently falls back
-  to `null` (capabilities unavailable) rather than erroring on version mismatch.
-- `KESHA_DEBUG_FD` NDJSON event schema is not yet stable and is not specified
-  here; callers should treat the format as internal.
-- `E_ENGINE_SPAWN` is a TS-native code that has no corresponding entry in the
-  Engine's `--error-codes-json` output; the drift test exempts TS-only codes
-  explicitly.
+- The protocol version is a gate, not a negotiation: a describe document that is
+  not version 4 is refused as `E_ENGINE_PROTOCOL` with a reinstall or upgrade hint.
+- The payload of `debug` events on the event stream is internal and not specified
+  here.
+- CLI-only codes (`E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE`) are
+  `origin: cli` entries in the describe document's `errors` section, so the
+  two-way check against `docs/errors.md` needs no exemption.

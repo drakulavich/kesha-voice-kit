@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   closeSync,
   existsSync,
   mkdirSync,
@@ -72,6 +73,7 @@ interface WaiterOptions {
   holdMs?: number;
   /** Spin until the barrier file appears, so several waiters reach the lock at the same instant. */
   barrier?: boolean;
+  stderr?: "pipe";
 }
 
 /** One `kesha install` competing for the lock, bracketing its turn in the shared log. */
@@ -94,7 +96,7 @@ function spawnWaiter(binPath: string, dir: string, opts: WaiterOptions) {
       `appendFileSync(log, "exit " + process.pid + "\\n");\n` +
       `release();\n`,
   );
-  return Bun.spawn([process.execPath, script], { stdout: "ignore", stderr: "ignore" });
+  return Bun.spawn([process.execPath, script], { stdout: "ignore", stderr: opts.stderr ?? "ignore" });
 }
 
 /** The greatest number of waiters that were inside the critical section at the same time. */
@@ -126,14 +128,15 @@ describe("acquireInstallLock (#997)", () => {
     const dir = tempDir("kesha-lock-handover-run-");
     const lockDir = `${binPath}.lock`;
     mkdirSync(lockDir, { recursive: true });
+    const crashed = "crashed-owner";
     // The crashed owner's record is a FIFO, so the waiter blocks inside its staleness check
     // until this test writes it. That turns "two waiters clear the same dead lock at once"
     // from a timing coincidence into something a test can state.
-    await Bun.spawn(["mkfifo", join(lockDir, "owner-crashed-owner.json")]).exited;
+    await Bun.spawn(["mkfifo", join(lockDir, `owner-${crashed}.json`)]).exited;
 
     const waiter = spawnWaiter(binPath, dir, { maxWaitMs: 1_000 });
     // Opening the write end returns only once the waiter has the read end open.
-    const fifo = openSync(join(lockDir, "owner-crashed-owner.json"), "w");
+    const fifo = openSync(join(lockDir, `owner-${crashed}.json`), "w");
 
     // The peer's takeover, completed while the waiter is still reading: the dead owner's lock
     // moves aside and a live one stands in its place.
@@ -145,7 +148,7 @@ describe("acquireInstallLock (#997)", () => {
     writeSync(
       fifo,
       JSON.stringify({
-        token: "crashed-owner",
+        token: crashed,
         pid: await deadPid(),
         host: hostname(),
         startedAt: Date.now(),
@@ -199,13 +202,79 @@ describe("acquireInstallLock (#997)", () => {
     second();
   });
 
+  posixTest("a waiter says which lock to delete as soon as it starts waiting, not after the timeout (Exploratory S4-F2)", async () => {
+    const binPath = stageBinPath("kesha-lock-hint-");
+    const dir = tempDir("kesha-lock-hint-run-");
+    let release: (() => void) | null = await acquireInstallLock(binPath, 2_000);
+    const waiter = spawnWaiter(binPath, dir, { maxWaitMs: 5_000, stderr: "pipe" });
+    if (!waiter.stderr) throw new Error("the waiter's stderr is not piped");
+    const decoder = new TextDecoder();
+    let seen = "";
+    try {
+      for await (const chunk of waiter.stderr) {
+        seen += decoder.decode(chunk, { stream: true });
+        if (release && seen.includes(`delete ${binPath}.lock`)) {
+          release();
+          release = null;
+        }
+      }
+    } finally {
+      release?.();
+    }
+
+    expect(seen).toContain(`delete ${binPath}.lock`);
+    expect(await waiter.exited).toBe(0);
+  }, 30_000);
+
+  test("a lock whose owner file does not parse is cleared on the first poll, not after the stale ceiling (#1224)", async () => {
+    const binPath = stageBinPath("kesha-lock-corrupt-owner-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, "owner-deadbeef.json"), "{not json");
+
+    const release = await acquireInstallLock(binPath, 2_000);
+    expect(existsSync(join(lockDir, "owner-deadbeef.json"))).toBe(false);
+    release();
+    expect(existsSync(lockDir)).toBe(false);
+  });
+
+  posixTest("an owner file that cannot be read is a held lock, not a corrupt one", async () => {
+    // Greptile P1 on #1225: EACCES on a live owner must not read as "does not parse" and get cleared.
+    if (process.getuid?.() === 0) return;
+    const binPath = stageBinPath("kesha-lock-unreadable-owner-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeOwner(lockDir, "live-owner", process.pid);
+    chmodSync(join(lockDir, "owner-live-owner.json"), 0o000);
+
+    await expect(acquireInstallLock(binPath, 300)).rejects.toMatchObject({
+      code: "E_INSTALL_RACE",
+      message: expect.stringMatching(/cannot identify/),
+    });
+    expect(existsSync(join(lockDir, "owner-live-owner.json"))).toBe(true);
+  });
+
+  test("a lock directory holding something that is not an owner record still ends in E_INSTALL_RACE naming the path", async () => {
+    const binPath = stageBinPath("kesha-lock-foreign-file-");
+    const lockDir = `${binPath}.lock`;
+    mkdirSync(lockDir, { recursive: true });
+    writeFileSync(join(lockDir, "README"), "not a lock");
+
+    await expect(acquireInstallLock(binPath, 200)).rejects.toMatchObject({
+      code: "E_INSTALL_RACE",
+      message: expect.stringMatching(/cannot identify[\s\S]*\.lock and re-run/),
+    });
+    expect(existsSync(join(lockDir, "README"))).toBe(true);
+  });
+
   posixTest("waiting on a live owner ends by naming it instead of hanging", async () => {
     const binPath = stageBinPath("kesha-lock-timeout-");
     const release = await acquireInstallLock(binPath, 2_000);
     try {
-      await expect(acquireInstallLock(binPath, 200)).rejects.toThrow(
-        new RegExp(`E_INSTALL_RACE[\\s\\S]*held by pid ${process.pid}[\\s\\S]*\\.lock and re-run`),
-      );
+      await expect(acquireInstallLock(binPath, 200)).rejects.toMatchObject({
+        code: "E_INSTALL_RACE",
+        message: expect.stringMatching(new RegExp(`held by pid ${process.pid}[\\s\\S]*\\.lock and re-run`)),
+      });
     } finally {
       release();
     }
@@ -216,7 +285,7 @@ describe("acquireInstallLock (#997)", () => {
     const release = await acquireInstallLock(binPath, 2_000);
     const restoreEnv = withLockWaitSecs("1");
     try {
-      await expect(acquireInstallLock(binPath)).rejects.toThrow(/E_INSTALL_RACE/);
+      await expect(acquireInstallLock(binPath)).rejects.toMatchObject({ code: "E_INSTALL_RACE" });
     } finally {
       restoreEnv();
       release();
@@ -227,9 +296,10 @@ describe("acquireInstallLock (#997)", () => {
     const binPath = stageBinPath("kesha-lock-env-bad-");
     const restoreEnv = withLockWaitSecs("soon");
     try {
-      await expect(acquireInstallLock(binPath)).rejects.toThrow(
-        /E_INVALID_ARG[\s\S]*KESHA_INSTALL_LOCK_WAIT_SECS/,
-      );
+      await expect(acquireInstallLock(binPath)).rejects.toMatchObject({
+        code: "E_INVALID_ARG",
+        message: expect.stringContaining("KESHA_INSTALL_LOCK_WAIT_SECS"),
+      });
     } finally {
       restoreEnv();
     }

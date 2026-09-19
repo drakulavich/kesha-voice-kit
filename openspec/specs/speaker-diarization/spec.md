@@ -113,7 +113,8 @@ missing.
 - WHEN Maks runs `kesha --json --speakers meeting.ogg`
 - THEN the missing model is reported with an actionable setup hint naming
   `--diarize` — `kesha init --diarize` on a TTY, `kesha install --diarize` when
-  stderr is piped (`installHint("--diarize")`, `src/engine.ts:224`)
+  stderr is piped (`installHint("--diarize")`,
+  `src/engine.ts::assertDiarizeModelInstalled`)
 - AND the diarize preflight error fires before ASR model lookup
 - AND the process exits 1
 
@@ -411,9 +412,9 @@ diarizing on units the user did not ask for.
 
 > *Technical Note — `compute_units_from_env` in
 > `rust/src/transcribe/diarize.rs`. There is deliberately no CLI flag: the
-> Engine's `transcribe` subcommand takes a narrow flag set and adding one would
-> require the `--capabilities-json` negotiation the CLI uses for every other
-> forwarded flag.*
+> Engine's `transcribe` subcommand takes a narrow flag set, and adding one would
+> need a `gate_rows()` entry plus the describe-document validation the CLI
+> applies to every other forwarded flag.*
 
 ## Open Issues
 

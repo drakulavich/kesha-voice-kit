@@ -123,7 +123,7 @@ kesha-voice-kit/
 │   │   ├── lang_id.rs          # ONNX speechbrain audio language detection
 │   │   ├── text_lang.rs        # macOS NLLanguageRecognizer (macOS only)
 │   │   ├── vad.rs              # Silero VAD v5 (576-sample rolling context)
-│   │   ├── capabilities.rs     # `--capabilities-json` feature list
+│   │   ├── capabilities.rs     # feature list `describe` serves
 │   │   ├── tts/                # Kokoro + Vosk + AVSpeech + SSML
 │   │   │   ├── kokoro.rs       # ONNX Kokoro-82M
 │   │   │   ├── vosk.rs         # vosk-tts-rs wrapper
@@ -157,8 +157,7 @@ kesha-voice-kit/
 - Squash-merge preferred. Greptile reviews are advisory but their P1/P2
   findings should be addressed before merge.
 - Active work is visible as a branch, a worktree, and an open PR — there is
-  no label to apply. See [`docs/runbooks/conveyor.md`](docs/runbooks/conveyor.md)
-  for the loop.
+  no label to apply.
 
 ## Code style
 
@@ -194,8 +193,6 @@ kesha-voice-kit/
   these the moment behaviour crosses the CLI or engine boundary.
 - Rust integration tests in `rust/tests/` — `cargo nextest run` / `just rust-test`
   (matches CI). Do not rely on plain `cargo test` for the suite.
-- `audio-quality-check` agent runs after every commit touching
-  `rust/src/tts/**` (see `.claude/agents/audio-quality-check.md`).
 
 ### Fast path vs slow path
 
@@ -269,7 +266,7 @@ Handy loops:
   and macos-14 also runs the CoreML `cargo check --all-targets` and
   `just verify-darwin-full` feature set.
 - `build-engine.yml` — runs on `v*` tag pushes (excluding `v*-cli`):
-  builds 3 platform binaries, smoke-tests each with `--capabilities-json`,
+  builds 3 platform binaries, smoke-tests each with `describe`,
   creates a draft release.
 - No inline scripts > 3 lines — extract to `.github/scripts/`.
 

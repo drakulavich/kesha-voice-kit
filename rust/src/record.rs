@@ -20,6 +20,9 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, StreamConfig};
 
 #[cfg(any(target_os = "macos", test))]
+use crate::protocol::events;
+
+#[cfg(any(target_os = "macos", test))]
 const OUTPUT_CHANNELS: u16 = 1;
 #[cfg(any(target_os = "macos", test))]
 const FORMAT_IEEE_FLOAT: u16 = 0x0003;
@@ -48,6 +51,18 @@ pub const RECORD_LIVE_FEATURE: &str = "record.live";
 /// Capabilities flag for opt-in end-of-utterance stopping on a live recording.
 pub const RECORD_LIVE_AUTO_STOP_FEATURE: &str = "record.live.auto-stop";
 
+/// The process that started the recording is gone, so nobody is waiting for its result.
+#[derive(Debug)]
+pub struct ParentExited;
+
+impl std::fmt::Display for ParentExited {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("recording stopped: the parent process exited")
+    }
+}
+
+impl std::error::Error for ParentExited {}
+
 pub struct RecordSummary {
     pub path: std::path::PathBuf,
     pub sample_rate: u32,
@@ -71,14 +86,38 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
         anyhow::bail!("--max-seconds must be greater than 0");
     }
 
+    let output = WavOutput::open(path)?;
+    let (sample_rate, mono_samples) = match capture_default_input_mono(max_duration) {
+        Ok(captured) => captured,
+        Err(err) => {
+            output.abandon();
+            return Err(err);
+        }
+    };
+
+    output
+        .commit(|file| write_plain_mono_float_wav(file, sample_rate, &mono_samples))
+        .with_context(|| format!("failed to write WAV recording: {}", path.display()))?;
+
+    Ok(RecordSummary {
+        path: path.to_path_buf(),
+        sample_rate,
+        channels: OUTPUT_CHANNELS,
+        frames: mono_samples.len() as u64,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn capture_default_input_mono(max_duration: Duration) -> Result<(u32, Vec<f32>)> {
     let input = open_default_input()?;
     let input_channels = input.config.channels;
     let sample_rate = input.config.sample_rate.0;
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(RECORD_QUEUE_BUFFERS);
     let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let (stop_tx, stop_rx) = mpsc::channel::<()>();
-    spawn_stdin_stop_thread(stop_tx);
+    let (stop_tx, stop_rx) = mpsc::channel::<Stop>();
+    spawn_stdin_stop_thread(stop_tx.clone());
+    spawn_parent_watch_thread(stop_tx);
 
     let sink = {
         let dropped = std::sync::Arc::clone(&dropped);
@@ -94,9 +133,9 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
 
     let started = Instant::now();
     let mut mono_samples = Vec::new();
-    'recording: loop {
-        if stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration {
-            break;
+    let ended_by = 'recording: loop {
+        if let Some(stop) = stop_due(&stop_rx, started, max_duration) {
+            break stop;
         }
         match sample_rx.recv_timeout(Duration::from_millis(100)) {
             Ok(samples) => {
@@ -104,21 +143,24 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
                     .chunks_exact(usize::from(input_channels))
                     .enumerate()
                 {
-                    if index % 1024 == 0
-                        && (stop_rx.try_recv().is_ok() || started.elapsed() >= max_duration)
-                    {
-                        break 'recording;
+                    if index % 1024 == 0 {
+                        if let Some(stop) = stop_due(&stop_rx, started, max_duration) {
+                            break 'recording stop;
+                        }
                     }
                     mono_samples.push(mix_frame_to_mono(frame).clamp(-1.0, 1.0));
                 }
             }
             Err(RecvTimeoutError::Timeout) => {}
-            Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Disconnected) => break Stop::Requested,
         }
-    }
+    };
 
     // Drain after stopping capture, or the last words spoken never reach the file.
     drop(stream);
+    if matches!(ended_by, Stop::ParentExited) {
+        return Err(ParentExited.into());
+    }
     while let Ok(samples) = sample_rx.try_recv() {
         for frame in samples.chunks_exact(usize::from(input_channels)) {
             mono_samples.push(mix_frame_to_mono(frame).clamp(-1.0, 1.0));
@@ -126,15 +168,7 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
     }
     warn_dropped_buffers(dropped.load(std::sync::atomic::Ordering::Relaxed));
 
-    write_plain_mono_float_wav(path, sample_rate, &mono_samples)
-        .context("failed to write WAV recording")?;
-
-    Ok(RecordSummary {
-        path: path.to_path_buf(),
-        sample_rate,
-        channels: OUTPUT_CHANNELS,
-        frames: mono_samples.len() as u64,
-    })
+    Ok((sample_rate, mono_samples))
 }
 
 /// What a live session produced, and whether a signal ended it.
@@ -172,7 +206,10 @@ pub fn record_default_input_live(
     let input = open_default_input()?;
     let sample_rate = input.config.sample_rate.0;
 
-    eprintln!("Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...");
+    events::progress(
+        None,
+        "Preparing streaming ASR (first run compiles models for the ANE, ~20 s)...",
+    );
     let mut feed = LiveFeed {
         session: crate::streaming_asr::StreamingAsrSession::start(sample_rate)?,
         mono: Vec::new(),
@@ -183,8 +220,9 @@ pub fn record_default_input_live(
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(RECORD_QUEUE_BUFFERS);
     let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let (stop_tx, stop_rx) = mpsc::channel::<()>();
-    spawn_stdin_stop_thread(stop_tx);
+    let (stop_tx, stop_rx) = mpsc::channel::<Stop>();
+    spawn_stdin_stop_thread(stop_tx.clone());
+    spawn_parent_watch_thread(stop_tx);
 
     let sink = {
         let dropped = std::sync::Arc::clone(&dropped);
@@ -197,9 +235,12 @@ pub fn record_default_input_live(
     stream
         .play()
         .context("failed to start microphone recording")?;
-    eprintln!(
-        "Listening ({sample_rate} Hz)... transcript prints when recording stops; \
-         Ctrl-C stops and still prints."
+    events::progress(
+        None,
+        format!(
+            "Listening ({sample_rate} Hz)... transcript prints when recording stops; \
+             Ctrl-C stops and still prints."
+        ),
     );
 
     let ended_by_endpoint = feed.listen(&sample_rx, &stop_rx, max_duration)?;
@@ -266,21 +307,30 @@ fn open_recovery_spill(sample_rate: u32) -> Option<spill::SpillWav> {
     let dir = match spill::recovery_dir() {
         Ok(dir) => dir,
         Err(err) => {
-            eprintln!("warning: this session has no recovery audio: {err:#}");
+            events::warn(
+                events::W_RECOVERY_AUDIO,
+                format!("warning: this session has no recovery audio: {err:#}"),
+            );
             return None;
         }
     };
     spill::prune_stale_spills(&dir, spill::RETENTION);
     match spill::SpillWav::create(&spill::spill_path(&dir), sample_rate) {
         Ok(spill) => {
-            eprintln!(
-                "Recovery audio: {} (removed once the transcript is delivered).",
-                spill.path().display()
+            events::progress(
+                None,
+                format!(
+                    "Recovery audio: {} (removed once the transcript is delivered).",
+                    spill.path().display()
+                ),
             );
             Some(spill)
         }
         Err(err) => {
-            eprintln!("warning: this session has no recovery audio: {err:#}");
+            events::warn(
+                events::W_RECOVERY_AUDIO,
+                format!("warning: this session has no recovery audio: {err:#}"),
+            );
             None
         }
     }
@@ -294,12 +344,39 @@ fn settle_recovery_spill(spill: Option<spill::SpillWav>, ended_normally: bool) {
         return;
     }
     if let Err(err) = spill.flush() {
-        eprintln!("warning: recovery audio may be truncated: {err:#}");
+        events::warn(
+            events::W_RECOVERY_AUDIO,
+            format!("warning: recovery audio may be truncated: {err:#}"),
+        );
     }
-    eprintln!(
-        "Recovery audio kept: {0} — transcribe it with `kesha {0}`.",
-        spill.path().display()
+    events::warn(
+        events::W_RECOVERY_AUDIO,
+        format!(
+            "Recovery audio kept: {0} — transcribe it with `kesha {0}`.",
+            spill.path().display()
+        ),
     );
+}
+
+/// Each elapsed second reaches the consumer as one event, whatever stderr is (#1164).
+#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+struct ListenTicker {
+    announced: u64,
+}
+
+#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+impl ListenTicker {
+    fn new() -> Self {
+        Self { announced: 0 }
+    }
+
+    fn tick(&mut self, elapsed: u64) -> bool {
+        if elapsed <= self.announced {
+            return false;
+        }
+        self.announced = elapsed;
+        true
+    }
 }
 
 /// `mono` is per-call scratch, not accumulated audio as in the WAV path.
@@ -330,7 +407,10 @@ impl LiveFeed {
         );
         if let Some(active) = spill.as_mut() {
             if let Err(err) = active.push(mono) {
-                eprintln!("warning: recovery audio stopped early: {err:#}");
+                events::warn(
+                    events::W_RECOVERY_AUDIO,
+                    format!("warning: recovery audio stopped early: {err:#}"),
+                );
                 *spill = None;
             }
         }
@@ -344,12 +424,11 @@ impl LiveFeed {
     fn listen(
         &mut self,
         sample_rx: &mpsc::Receiver<Vec<f32>>,
-        stop_rx: &mpsc::Receiver<()>,
+        stop_rx: &mpsc::Receiver<Stop>,
         max_duration: Duration,
     ) -> Result<bool> {
         let started = Instant::now();
-        let mut announced = 0u64;
-        let tick = io::stderr().is_terminal();
+        let mut ticker = ListenTicker::new();
         let mut ended_by_endpoint = false;
         loop {
             if stop_rx.try_recv().is_ok()
@@ -360,7 +439,7 @@ impl LiveFeed {
             }
             match sample_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(samples) if self.feed(&samples)? => {
-                    eprintln!("End of utterance detected.");
+                    events::progress(None, "End of utterance detected.");
                     ended_by_endpoint = true;
                     break;
                 }
@@ -369,13 +448,9 @@ impl LiveFeed {
                 Err(RecvTimeoutError::Disconnected) => break,
             }
             let elapsed = started.elapsed().as_secs();
-            if tick && elapsed > announced {
-                announced = elapsed;
-                eprint!("\rListening... {elapsed}s");
+            if ticker.tick(elapsed) {
+                events::progress(None, format!("Listening... {elapsed}s"));
             }
-        }
-        if announced > 0 {
-            eprintln!();
         }
         Ok(ended_by_endpoint)
     }
@@ -395,9 +470,12 @@ impl LiveFeed {
 #[cfg(target_os = "macos")]
 fn warn_dropped_buffers(dropped: usize) {
     if dropped > 0 {
-        eprintln!(
-            "warning: dropped {dropped} microphone buffer(s) — recording could not keep up, \
-             so audio may have gaps"
+        events::warn(
+            events::W_MIC_DROPPED,
+            format!(
+                "warning: dropped {dropped} microphone buffer(s) — recording could not keep up, \
+                 so audio may have gaps"
+            ),
         );
     }
 }
@@ -421,6 +499,46 @@ fn enqueue_record_buffer(
     }
 }
 
+/// Why a capture loop stopped; only a vanished parent changes what happens to the audio.
+#[cfg(target_os = "macos")]
+enum Stop {
+    Requested,
+    ParentExited,
+}
+
+#[cfg(target_os = "macos")]
+fn stop_due(
+    stop_rx: &mpsc::Receiver<Stop>,
+    started: Instant,
+    max_duration: Duration,
+) -> Option<Stop> {
+    match stop_rx.try_recv() {
+        Ok(stop) => Some(stop),
+        Err(_) if started.elapsed() >= max_duration => Some(Stop::Requested),
+        Err(_) => None,
+    }
+}
+
+#[cfg(target_os = "macos")]
+const PARENT_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
+/// SIGKILL on the CLI signals nothing and its terminal keeps stdin open, so the parent pid is the only sign it is gone (Exploratory S3-F1).
+#[cfg(target_os = "macos")]
+fn spawn_parent_watch_thread(stop_tx: mpsc::Sender<Stop>) {
+    // SAFETY: getppid takes no arguments and cannot fail.
+    let parent = unsafe { libc::getppid() };
+    std::thread::spawn(move || loop {
+        std::thread::sleep(PARENT_POLL_INTERVAL);
+        // SAFETY: as above.
+        let now = unsafe { libc::getppid() };
+        // `== 1` because an already-orphaned spawn never differs from its start (Exploratory S3-F1).
+        if now == 1 || now != parent {
+            let _ = stop_tx.send(Stop::ParentExited);
+            return;
+        }
+    });
+}
+
 #[cfg(target_os = "macos")]
 /// Starts the one-shot piped-stdin stop reader for a CLI recording.
 ///
@@ -428,14 +546,14 @@ fn enqueue_record_buffer(
 /// cancel, and the engine performs one recording before its process exits. Do
 /// not reuse this helper for multiple recordings in one process: the first
 /// reader owns stdin until it receives a byte or the process exits.
-fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<()>) {
+fn spawn_stdin_stop_thread(stop_tx: mpsc::Sender<Stop>) {
     if io::stdin().is_terminal() {
         return;
     }
     std::thread::spawn(move || {
         let mut buf = [0u8; 1];
         let _ = io::stdin().read(&mut buf);
-        let _ = stop_tx.send(());
+        let _ = stop_tx.send(Stop::Requested);
     });
 }
 
@@ -470,7 +588,7 @@ fn build_input_stream_for_format(
     input: &DefaultInput,
     sink: impl FnMut(Vec<f32>) + Send + 'static,
 ) -> Result<cpal::Stream> {
-    let err_fn = |err| eprintln!("recording stream error: {err}");
+    let err_fn = |err| events::warn(events::W_GENERIC, format!("recording stream error: {err}"));
     match input.sample_format {
         SampleFormat::F32 => build_input_stream::<f32>(&input.device, &input.config, sink, err_fn),
         SampleFormat::I16 => build_input_stream::<i16>(&input.device, &input.config, sink, err_fn),
@@ -613,15 +731,92 @@ fn create_parent_dir(path: &Path) -> Result<()> {
         .with_context(|| format!("failed to create output directory: {}", parent.display()))
 }
 
+/// The `--out` destination: probed before the microphone opens so an unwritable path is the caller's argument (Exploratory S3-F4), never truncated, and replaced through a `.partial` sibling only once the recording succeeded.
 #[cfg(any(target_os = "macos", test))]
-fn write_plain_mono_float_wav(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<()> {
-    let header = wav_header_bytes(sample_rate, samples.len())?;
-    create_parent_dir(path)?;
+#[derive(Debug)]
+struct WavOutput {
+    path: std::path::PathBuf,
+    partial: std::path::PathBuf,
+    file: Option<std::fs::File>,
+    existed: bool,
+}
 
-    let mut file = std::io::BufWriter::new(
-        std::fs::File::create(path)
-            .with_context(|| format!("failed to create WAV recording: {}", path.display()))?,
-    );
+#[cfg(any(target_os = "macos", test))]
+impl WavOutput {
+    fn open(path: &Path) -> Result<Self> {
+        use crate::errors::{CodedError, ErrorCode};
+        let invalid = |what: &str, err: anyhow::Error| {
+            anyhow::Error::new(CodedError {
+                code: ErrorCode::InvalidArg,
+                message: format!("cannot {what} --out {}: {err:#}", path.display()),
+            })
+        };
+        create_parent_dir(path).map_err(|err| invalid("create the directory for", err))?;
+        let existed = path.exists();
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(false)
+            .open(path)
+            .map_err(|err| invalid("write", err.into()))?;
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or_default();
+        let mut partial_name = path
+            .file_name()
+            .map(|n| n.to_os_string())
+            .unwrap_or_default();
+        partial_name.push(format!(".{}-{nanos:x}.partial", std::process::id()));
+        let partial = path.with_file_name(partial_name);
+        // Exclusive creation: a symlink planted at the name fails here instead of being followed and truncated.
+        let file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)
+            .map_err(|err| invalid("write", err.into()))?;
+        Ok(Self {
+            path: path.to_path_buf(),
+            partial,
+            file: Some(file),
+            existed,
+        })
+    }
+
+    /// Nothing was recorded: the probe file goes if it was ours, an earlier recording stays.
+    fn abandon(self) {
+        let _ = std::fs::remove_file(&self.partial);
+        if !self.existed {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+
+    fn commit(mut self, write: impl FnOnce(std::fs::File) -> Result<()>) -> Result<()> {
+        let written = self
+            .file
+            .take()
+            .with_context(|| format!("{} was already committed", self.partial.display()))
+            .and_then(write)
+            .and_then(|()| {
+                std::fs::rename(&self.partial, &self.path).with_context(|| {
+                    format!("failed to move the recording to {}", self.path.display())
+                })
+            });
+        if written.is_err() {
+            let _ = std::fs::remove_file(&self.partial);
+        }
+        written
+    }
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn write_plain_mono_float_wav(
+    file: std::fs::File,
+    sample_rate: u32,
+    samples: &[f32],
+) -> Result<()> {
+    let header = wav_header_bytes(sample_rate, samples.len())?;
+    let mut file = std::io::BufWriter::new(file);
     file.write_all(&header)?;
     for sample in samples {
         file.write_all(&sample.to_le_bytes())?;
@@ -839,10 +1034,100 @@ mod tests {
     }
 
     #[test]
+    fn a_directory_as_the_wav_output_is_the_callers_argument() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = WavOutput::open(dir.path()).unwrap_err();
+        assert_eq!(
+            crate::errors::code_of(&err),
+            crate::errors::ErrorCode::InvalidArg
+        );
+        let rendered = format!("{err:#}");
+        assert!(rendered.contains("--out"), "{rendered}");
+        assert!(
+            rendered.contains(&dir.path().display().to_string()),
+            "{rendered}"
+        );
+        assert!(
+            dir.path().is_dir(),
+            "the refusal must leave the directory alone"
+        );
+    }
+
+    fn leftover_partial(dir: &Path) -> bool {
+        std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().ends_with(".partial"))
+    }
+
+    // Greptile on #1216: a predictable sibling name let a planted symlink redirect the truncating create.
+    #[cfg(unix)]
+    #[test]
+    fn a_planted_symlink_beside_the_output_is_never_followed() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take.wav");
+        let victim = dir.path().join("victim.txt");
+        std::fs::write(&victim, b"keep me").unwrap();
+        std::os::unix::fs::symlink(&victim, dir.path().join("take.wav.partial")).unwrap();
+        WavOutput::open(&path)
+            .unwrap()
+            .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0; 4]))
+            .unwrap();
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep me");
+        assert!(hound::WavReader::open(&path).is_ok());
+    }
+
+    // Greptile on #1216: File::create used to truncate an existing --out before the microphone even opened.
+    #[test]
+    fn a_failed_capture_keeps_the_recording_that_was_already_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take.wav");
+        std::fs::write(&path, b"earlier take").unwrap();
+        WavOutput::open(&path).unwrap().abandon();
+        assert_eq!(std::fs::read(&path).unwrap(), b"earlier take");
+        assert!(
+            !leftover_partial(dir.path()),
+            "a .partial file was left behind"
+        );
+    }
+
+    #[test]
+    fn a_failed_capture_leaves_no_file_where_there_was_none() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take.wav");
+        WavOutput::open(&path).unwrap().abandon();
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn a_successful_recording_replaces_the_earlier_file_only_at_the_end() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("take.wav");
+        std::fs::write(&path, b"earlier take").unwrap();
+        let output = WavOutput::open(&path).unwrap();
+        assert_eq!(
+            std::fs::read(&path).unwrap(),
+            b"earlier take",
+            "opening --out must not truncate it"
+        );
+        output
+            .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0; 4]))
+            .unwrap();
+        assert!(hound::WavReader::open(&path).is_ok());
+        assert!(
+            !leftover_partial(dir.path()),
+            "a .partial file was left behind"
+        );
+    }
+
+    #[test]
     fn wav_writer_finalizes_readable_mono_float_wav() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mic.wav");
-        write_plain_mono_float_wav(&path, 16_000, &[0.0, 0.5, -0.5]).unwrap();
+        WavOutput::open(&path)
+            .unwrap()
+            .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0, 0.5, -0.5]))
+            .unwrap();
 
         let reader = hound::WavReader::open(&path).unwrap();
         let spec = reader.spec();
@@ -861,7 +1146,10 @@ mod tests {
     fn wav_writer_uses_plain_ieee_float_without_channel_mask() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("mic.wav");
-        write_plain_mono_float_wav(&path, 16_000, &[0.0; 8]).unwrap();
+        WavOutput::open(&path)
+            .unwrap()
+            .commit(|file| write_plain_mono_float_wav(file, 16_000, &[0.0; 8]))
+            .unwrap();
         let wav = std::fs::read(path).unwrap();
         let fmt_chunk_offset = (0..wav.len() - 8)
             .find(|i| &wav[*i..*i + 4] == b"fmt ")
@@ -1035,6 +1323,16 @@ mod tests {
             path.exists(),
             "the only copy of the audio was deleted before the transcript was delivered"
         );
+    }
+
+    /// One event per elapsed second, whatever stderr is (#1164).
+    #[test]
+    fn the_listen_ticker_reports_each_elapsed_second_once() {
+        let mut ticker = ListenTicker::new();
+        assert!(!ticker.tick(0));
+        assert!(ticker.tick(1));
+        assert!(!ticker.tick(1), "one event per second, not per poll");
+        assert!(ticker.tick(2));
     }
 
     #[test]

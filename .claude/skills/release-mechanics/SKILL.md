@@ -144,7 +144,7 @@ gh workflow run "🔨 Build Engine" \
 
 Because `workflow_dispatch` authors release notes inline via `-f notes`, skip engine-release step 4 when using this path.
 
-Known break (v1.16.0, 2026-05-14): `GITHUB_TOKEN` tag pushes do not trigger downstream `on.push.tags`; dispatch ends with `tag: success, build/release: skipped`. Workaround until PAT/GitHub App token fix: fetch tags, delete the remote tag, re-push it from a maintainer laptop so a user-authored push triggers the build:
+A `GITHUB_TOKEN` tag push triggers no `on.push.tags` run — GitHub never cascades events from the default token — so a dispatch that pushes the tag ends `tag: success, build/release: skipped`. This is permanent platform behaviour and the reason release tags are pushed by a human. If a token already pushed one, fetch tags, delete the remote tag, and re-push it from a maintainer laptop:
 
 ```bash
 git fetch --tags
@@ -179,7 +179,7 @@ GitHub's immutable-releases permanently reserves tag names after publish. **Brok
 
 ## `just smoke-test` ALONE DOES NOT VALIDATE A NEW ENGINE — `gh release download` THE DRAFT BINARY AND EXERCISE IT BEFORE `gh release edit --draft=false`
 
-`just smoke-test` runs `bun link @drakulavich/kesha-voice-kit`, `kesha install`, then `bun scripts/smoke-test.ts`, but a prior `bun add -g` can leave the old global shim in front. Then `kesha --version` and `kesha install` exercise the previous CLI/engine and produce a false-green "6/6 passed". v1.5.0 hit this: `--capabilities-json` passed, Kokoro synth crashed (`Invalid input name: tokens`), and local smoke still routed through v1.4.4 CLI + v1.4.1 engine.
+`just smoke-test` runs `bun link @drakulavich/kesha-voice-kit`, `kesha install`, then `bun scripts/smoke-test.ts`, but a prior `bun add -g` can leave the old global shim in front. Then `kesha --version` and `kesha install` exercise the previous CLI/engine and produce a false-green "6/6 passed". v1.5.0 hit this: the capability probe passed, Kokoro synth crashed (`Invalid input name: tokens`), and local smoke still routed through v1.4.4 CLI + v1.4.1 engine.
 
 Before `gh release edit --draft=false`, always validate the draft binary directly with authenticated `gh release download`, not `curl` (drafts 404 anonymously). Un-draft starts `📦 npm Publish` within ~60 s; npm unpublish is limited/noisy, and #291's Greptile review flagged this ordering.
 
@@ -193,9 +193,9 @@ chmod +x kesha-engine && xattr -d com.apple.quarantine kesha-engine 2>/dev/null
 ./kesha-engine --version          # → "kesha-engine X.Y.Z"
 
 # 2. Capability surface — must include every feature the build matrix promised
-./kesha-engine --capabilities-json | jq .features
+./kesha-engine describe | jq .features
 
-# 3. Real end-to-end exercise (the one CI's --capabilities-json check misses).
+# 3. Real end-to-end exercise (the one CI's describe check misses).
 #    For TTS: synthesize a known-good voice into a fresh KESHA_CACHE_DIR.
 #    For ASR: transcribe a fixture from rust/tests/fixtures/.
 KESHA_CACHE_DIR="$SMOKE/cache" ./kesha-engine install --tts
@@ -210,7 +210,7 @@ file "$SMOKE/en.wav"              # must report a valid WAV
 
 Repeat for `kesha-engine-linux-x64` (run via Docker if not on Linux). If ANY of those three steps fail, **DO NOT un-draft** — un-drafting fires `📦 npm Publish` automatically. Either yank the GitHub release (`gh release delete vX.Y.Z --yes`, delete the tag, bump patch, retry) or push a fix and rebuild via `gh workflow run "🔨 Build Engine"`. Since the draft never went public, no recall is needed.
 
-The CI smoke step (`--capabilities-json` only) is a sanity check on the toolchain, not a behavior test. Behavior testing is the human-in-the-loop pre-undraft gate; it lives in this checklist, not in the workflow file.
+The CI smoke step (`describe` only) is a sanity check on the toolchain, not a behavior test. Behavior testing is the human-in-the-loop pre-undraft gate; it lives in this checklist, not in the workflow file.
 
 ## `bun link` DOES NOT OVERRIDE A GLOBALLY-INSTALLED PACKAGE — REMOVE FIRST
 
@@ -234,4 +234,8 @@ Greptile comment mechanics:
 
 - It updates one existing top-level comment, not a new comment per review. Confirm re-review by checking both the "Last reviewed commit" SHA (`body | match("commit/([a-f0-9]+)")`) and the issue-comment `.updated_at`; `gh pr view --json comments` has null `updatedAt`, so use `gh api repos/OWNER/REPO/issues/<N>/comments`.
 - Do not arm auto-merge before Greptile reviews the latest head; otherwise CI-green can merge before a new P1/P2 arrives (#287→#288→#289; #290→#291→#292 avoided by waiting). Merge by hand once the latest SHA carries no unresolved P1/P2. Do **not** use the Confidence Score as the signal: 9 of 30 PRs across #753–#800 scored `5/5` "safe to merge" while carrying Greptile's own P1/P2 inline findings (#775 had two P1).
-- If Greptile is the next gate, set a real wait: `ScheduleWakeup(delaySeconds: 300-900, prompt: "<<autonomous-loop-dynamic>>", reason: "<...>")` (270s for cache-warm, 900s+ for cache miss; avoid the dead zone around 300s). Optional auto-merge poll: `while :; do gh api repos/drakulavich/kesha-voice-kit/issues/N/comments --jq '.[] | select(.user.login | contains("greptile"))'; done`, merging only when `commit/SHA` matches head and no unresolved P1/P2 inline comment is attached to it. If the latest head stays uncovered after the wait, leave the PR unmerged and report the stale/missing Greptile review to the maintainer. Stop the poll if the user says to wait.
+- If Greptile is the next gate, arm a wait instead of ending the turn: `ScheduleWakeup(delaySeconds: 600-900, prompt: "check PR #N: Greptile review on head <sha>, CI on that sha", reason: "waiting for Greptile on #N")` — the delay is Greptile's typical latency, not a cache window (the harness keeps the conversation cached for an hour, so there is nothing to tune). Optionally pair it with a background poll of `gh api repos/drakulavich/kesha-voice-kit/issues/N/comments --jq '.[] | select(.user.login=="greptile-apps[bot]")'` that exits when `commit/<sha>` matches the head. Merge only when that SHA is the head and no unresolved P1/P2 inline comment is attached to it; if the head stays uncovered after the wait, leave the PR unmerged and report the missing review to the maintainer.
+
+## THE STABLE TAG HELPER
+
+When an authorized maintainer needs a verified stable tag creation sequence, use `just release-tag vX.Y.Z notes.md` from the clean root checkout. The deliberate GitHub API fallback is `just release-tag vX.Y.Z notes.md api`; do not switch to it after a timed-out Git push until the remote tag state is known. Details: [release tag helper](docs/runbooks/release-tag-helper.md).

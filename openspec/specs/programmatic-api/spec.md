@@ -45,9 +45,13 @@ API.
 object. It SHALL:
 1. Throw `Error("File not found: <path>")` when the file does not exist (checked
    before spawning the Engine).
-2. Not surface the Engine's progress output on the caller's stderr.
-3. Return a `Promise<string>` resolving to the transcript text.
-4. Throw when the Engine fails (non-zero exit).
+2. Throw a `KeshaError` whose `code` is `E_INVALID_ARG` and whose message
+   contains `is a directory (expected an audio file)` when the path is a
+   directory (checked before spawning the Engine) — the same code the CLI
+   reports for that input, never the Engine's `E_BAD_AUDIO`.
+3. Not surface the Engine's progress output on the caller's stderr.
+4. Return a `Promise<string>` resolving to the transcript text.
+5. Throw when the Engine fails (non-zero exit).
 
 #### Scenario: Sona transcribes a voice note
 
@@ -61,11 +65,19 @@ object. It SHALL:
 - WHEN Sona calls `await transcribe("ghost.ogg")`
 - THEN the promise rejects with an Error whose message contains `"File not found: ghost.ogg"`
 
-> *Technical Note — `transcribe` in `src/lib.ts:44`; `existsSync` check at
-> `src/lib.ts:46`. The Engine's stderr never reaches the caller's stderr because
-> `runEngine` (`src/engine.ts:106`) spawns it with `stdio: ["ignore", "pipe",
-> "pipe"]` — stderr is captured into a string, surfaced only inside the thrown
-> Error on failure and discarded on success.*
+#### Scenario: Path is a directory
+
+- WHEN Sona calls `await transcribe("recordings/")` and `recordings` is a directory
+- THEN the promise rejects with a `KeshaError` whose `code` is `E_INVALID_ARG`
+- AND no Engine is spawned
+
+> *Technical Note — `src/lib.ts::transcribe` runs `assertAudioFileArgument`
+> (the `existsSync` check, then `src/transcribe.ts::isDirectoryPath`, the
+> helper the CLI's `src/cli/main.ts` uses for the same refusal) before it
+> delegates. The Engine never writes to the caller's stderr itself because
+> `src/engine.ts::runEngine` spawns it with `stdio: ["ignore", "pipe",
+> "pipe"]` — that stderr is read by the CLI and parsed as protocol 4 events,
+> and travels inside the thrown Error on failure.*
 
 ### Requirement: `transcribeWithTimestamps(path, opts?)` returns text and segments
 
@@ -73,7 +85,9 @@ object. It SHALL:
 `text` (string) and `segments` (array of `TranscriptionSegment`). Each segment
 has `start` (number, seconds), `end` (number, seconds), `text` (string), and
 optionally `speaker` (number, when diarization was requested). It SHALL throw
-`Error("File not found: <path>")` when the file does not exist.
+`Error("File not found: <path>")` when the file does not exist, and a
+`KeshaError` whose `code` is `E_INVALID_ARG` when the path is a directory,
+both before spawning the Engine.
 
 `transcribeWithSegments` is a deprecated alias for `transcribeWithTimestamps`
 introduced in v1.9.0. Both names MUST remain importable; no removal is
@@ -97,9 +111,16 @@ scheduled before the next major version.
 - WHEN Sona calls `await transcribeWithTimestamps("missing.mp3")`
 - THEN the promise rejects with `Error("File not found: missing.mp3")`
 
-> *Technical Note — `transcribeWithTimestamps` in `src/lib.ts:55`. Deprecated
-> alias `transcribeWithSegments` at `src/lib.ts:75`. `TranscriptionSegment`
-> type in `src/engine.ts:28`.*
+#### Scenario: Path is a directory
+
+- WHEN Sona calls `await transcribeWithTimestamps("recordings/")` and `recordings` is a directory
+- THEN the promise rejects with a `KeshaError` whose `code` is `E_INVALID_ARG`
+- AND no Engine is spawned
+
+> *Technical Note — `src/lib.ts::transcribeWithTimestamps`, with the deprecated
+> alias `src/lib.ts::transcribeWithSegments`; both share
+> `src/lib.ts::assertAudioFileArgument` with `transcribe`. The
+> `TranscriptionSegment` type is declared in `src/engine.ts::TranscriptionSegment`.*
 
 ### Requirement: `say(opts)` synthesizes speech and returns audio bytes
 
@@ -115,7 +136,7 @@ file and the returned `Uint8Array` is empty.
 - `text` exceeds `MAX_TEXT_CHARS` (5000 Unicode code points) → `SayError`
   with `exitCode: 5` and `code: "E_TEXT_TOO_LONG"`.
 - Engine not installed → `SayError` with `exitCode: 1` and
-  `code: "E_ENGINE_SPAWN"` (the `TS_NATIVE_CODES.ENGINE_SPAWN` value).
+  `code: "E_ENGINE_SPAWN"`.
 
 When `opts.noExpandAbbrev` is set and the Engine does not advertise
 `tts.ru_acronym_expansion` or `tts.en_acronym_expansion`, the flag is silently
@@ -156,15 +177,19 @@ dropped and a `log.warn` message is emitted (not a thrown error).
 - THEN the file `/tmp/hello.wav` is written with WAV audio
 - AND the returned `Uint8Array` is empty
 
-> *Technical Note — `say` in `src/synth.ts:112`. `MAX_TEXT_CHARS = 5000` at
-> `src/synth.ts:22`. `SayError` at `src/synth.ts:96` carries `exitCode`,
-> `stderr`, `code`. `E_TEXT_EMPTY` exit code 2 at `src/synth.ts:115`;
-> `E_TEXT_TOO_LONG` exit code 5 at `src/synth.ts:118`. Engine-not-installed
-> throws `TS_NATIVE_CODES.ENGINE_SPAWN` (`"E_ENGINE_SPAWN"`) with exit code 1 at
-> `src/synth.ts:127-134`; its message embeds `installHint("--tts")`
-> (`src/install-hint.ts:9`) — `kesha init --tts` when `process.stderr.isTTY`,
-> `kesha install --tts` otherwise. The `noExpandAbbrev`
-> capability check is in `buildSayArgs` at `src/synth.ts:66`.*
+> *Technical Note — `src/synth.ts::say` raises all three pre-flight failures
+> before it spawns: `E_TEXT_EMPTY` with exit code 2, `E_TEXT_TOO_LONG` with exit
+> code 5 once the text passes `src/synth.ts::MAX_TEXT_CHARS` (5000), and
+> `E_ENGINE_SPAWN` with exit code 1 when the engine is absent.
+> `src/synth.ts::SayError` carries `exitCode`, `stderr`, `code`. The
+> engine-not-installed message embeds `installHint("--tts")`
+> (`src/install-hint.ts::installHint`) — `kesha init --tts` when
+> `process.stderr.isTTY`, `kesha install --tts` otherwise.
+> `src/synth.ts::buildSayArgs` appends `--no-expand-abbrev` unconditionally; the
+> capability check that drops it lives in
+> `src/engine/describe.ts::validateArgv`, which matches the flag's
+> `whenUngated: "drop"` row against the engine's describe document and returns
+> the warning `say` hands to `log.warn`.*
 
 ### Requirement: `downloadModel` / `downloadEngine` installs the Engine binary
 
@@ -181,8 +206,8 @@ same function.
 - AND subsequent `transcribe` calls succeed
 
 > *Technical Note — `downloadEngine` imported from `src/engine-install.ts`
-> and re-exported as `downloadModel` at `src/lib.ts:11`. `downloadCoreML`
-> deprecated alias at `src/lib.ts:42`.*
+> and re-exported as `src/lib.ts::downloadModel`. Deprecated alias:
+> `src/lib.ts::downloadCoreML`.*
 
 ### Requirement: `downloadTts(noCache?, langs?)` installs TTS models
 
@@ -198,7 +223,7 @@ Unsupported-on-platform language codes are rejected by the Engine.
 - AND subsequent `say({ text: "hello" })` and
   `say({ text: "привет", voice: "ru-vosk-m02" })` succeed
 
-> *Technical Note — `downloadTts` at `src/lib.ts:37`. Delegates to
+> *Technical Note — `src/lib.ts::downloadTts` delegates to
 > `downloadEngine(noCache, undefined, { ttsLangs: langs })`.*
 
 ### Requirement: `toToon(results)` encodes a result array as TOON
@@ -216,8 +241,8 @@ the `{ results, errors }` envelope `kesha --toon --include-errors` prints.
 - THEN the returned string is 30–60% shorter than the JSON equivalent
 - AND `decode(toToon(results))` equals the original `results` array
 
-> *Technical Note — `toToon` re-exported as `formatToonOutput` from
-> `src/toon.ts` at `src/lib.ts:19`.*
+> *Technical Note — `src/toon.ts::formatToonOutput` is re-exported under the
+> public name `src/lib.ts::toToon`.*
 
 ### Requirement: Exported types cover the full public surface
 
@@ -232,11 +257,13 @@ The Core API SHALL export the following TypeScript types: `TranscribeResult`,
 - THEN the TypeScript compiler resolves both types without error
 
 > *Technical Note — `TranscribeResult`, `TranscribeErrorRecord`,
-> `TranscribeJsonOutput` re-exported from `src/types.ts` at `src/lib.ts:26`.
-> `TranscriptionOutput`, `TranscriptionSegment` re-exported from `src/engine.ts`
-> at `src/lib.ts:10`. `TranscribeOptions` re-exported from `src/transcribe.ts`
-> at `src/lib.ts:9`. `SayOptions`, `SayError` re-exported from `src/synth.ts`
-> at `src/lib.ts:12`. `VadMode` exported via `src/transcribe.ts`.*
+> `TranscribeJsonOutput` re-exported from `src/types.ts`
+> (`src/lib.ts::TranscribeResult`). `TranscriptionOutput`,
+> `TranscriptionSegment` re-exported from `src/engine.ts`
+> (`src/lib.ts::TranscriptionSegment`). `TranscribeOptions` re-exported from
+> `src/transcribe.ts` (`src/lib.ts::TranscribeOptions`). `SayOptions`,
+> `SayError` re-exported from `src/synth.ts` (`src/lib.ts::SayError`).
+> `VadMode` re-exported from `src/engine.ts` (`src/lib.ts::VadMode`).*
 
 ### Requirement: Never-auto-download — all functions throw when prerequisites are missing
 
@@ -251,12 +278,12 @@ message naming the `kesha install` command needed to fix the situation.
 - THEN the promise rejects with an error carrying an actionable setup hint —
   `kesha init` on an interactive TTY, `kesha install` when stderr is piped
 
-> *Technical Note — `isEngineInstalled()` in `src/engine.ts:50` gates
-> Engine-dependent calls. `preflightTranscribeWithSegments` in
-> `src/transcribe.ts:32` checks `isEngineInstalled()` and throws a `bun add -g`
-> + `installHint()` block when false (`src/transcribe.ts:34-39`); `installHint()`
-> (`src/install-hint.ts:9`) yields `kesha init` on a TTY, `kesha install`
-> otherwise.*
+> *Technical Note — `src/engine.ts::isEngineInstalled` gates Engine-dependent
+> calls. `src/transcribe.ts::validateTranscribeRequest` checks
+> `isEngineInstalled()` and throws a `bun add -g` + `installHint()` block
+> when false, then validates the argv against `kesha-engine describe`;
+> `src/install-hint.ts::installHint` yields `kesha init` on a TTY,
+> `kesha install` otherwise.*
 
 ## Open Issues
 

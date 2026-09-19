@@ -1,24 +1,25 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
+import { chmodSync, writeFileSync } from "fs";
 import { join } from "path";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { waitForPidExit, waitForPidFile } from "../helpers/process";
+import { trackPid, waitForPidExit, waitForPidFile } from "../helpers/process";
+import { describeJson } from "../helpers/fake-engine";
+import { tempDir } from "../helpers/temp-dir";
 
 const DEFAULT_CWD = import.meta.dir + "/../..";
 
-function createListVoicesHangEngine(dir: string, enginePidPath: string): string {
+function createHangingEngine(dir: string, enginePidPath: string): string {
   const enginePath = join(dir, "kesha-engine");
   writeFileSync(
     enginePath,
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
-if (args[0] === "--capabilities-json") {
-  console.log(JSON.stringify({ protocolVersion: 3, backend: "fake", features: ["tts"] }));
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["tts"] }))});
   process.exit(0);
 }
-if (args[0] === "say" && args[1] === "--list-voices") {
+if (args[0] === "transcribe" || (args[0] === "say" && args[1] === "--list-voices")) {
   await Bun.write(${JSON.stringify(enginePidPath)}, String(process.pid));
   await new Promise(() => {});
 }
@@ -36,9 +37,9 @@ process.exit(2);
 describe("MCP server lifecycle", () => {
   test("interrupting the server terminates a list_voices Engine spawn", async () => {
     if (process.platform === "win32") return;
-    const dir = mkdtempSync(join(tmpdir(), "kesha-mcp-lifecycle-"));
+    const dir = tempDir("kesha-mcp-lifecycle-");
     const enginePidPath = join(dir, "engine.pid");
-    const enginePath = createListVoicesHangEngine(dir, enginePidPath);
+    const enginePath = createHangingEngine(dir, enginePidPath);
 
     const transport = new StdioClientTransport({
       command: process.execPath,
@@ -67,5 +68,45 @@ describe("MCP server lifecycle", () => {
 
     expect(await waitForPidExit(enginePid)).toBe(true);
     await transport.close().catch(() => {});
+  }, 30_000);
+});
+
+// Exploratory S7-2: with a call in flight, a client that died left `kesha mcp` at PPID 1 with its engine
+// still running; the SDK's stdio transport never watches stdin for EOF, so nothing ended the call.
+describe("MCP server stdin EOF", () => {
+  test("closing stdin mid-call stops the engine and exits the server", async () => {
+    if (process.platform === "win32") return;
+    const dir = tempDir("kesha-mcp-eof-");
+    const enginePidPath = join(dir, "engine.pid");
+    const enginePath = createHangingEngine(dir, enginePidPath);
+    writeFileSync(join(dir, "audio.wav"), "");
+
+    const server = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", "mcp"], {
+      cwd: DEFAULT_CWD,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "ignore",
+      env: {
+        ...(process.env as Record<string, string>),
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        HOME: dir,
+        KESHA_HOME: dir,
+        KESHA_CACHE_DIR: join(dir, "cache"),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+    trackPid(server.pid);
+    const send = (message: unknown) => server.stdin.write(`${JSON.stringify(message)}\n`);
+    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } });
+    send({ jsonrpc: "2.0", method: "notifications/initialized" });
+    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "transcribe_audio", arguments: { path: join(dir, "audio.wav") } } });
+    server.stdin.flush();
+    const enginePid = await waitForPidFile(enginePidPath);
+
+    server.stdin.end();
+
+    expect(await waitForPidExit(enginePid)).toBe(true);
+    expect(await waitForPidExit(server.pid)).toBe(true);
   }, 30_000);
 });

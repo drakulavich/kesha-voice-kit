@@ -21,7 +21,7 @@
 //! stdout because their bytes would be intentionally discarded. Worker callers
 //! send progress over channels and leave reporting to the stdout-owning thread.
 
-use std::io::Write;
+use crate::protocol::events;
 use std::os::fd::OwnedFd;
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -81,9 +81,9 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
                     // to /dev/null should never fail, so this is a very low-probability
                     // path; warn on stderr to match the dup2 handling below.
                     let errno = std::io::Error::last_os_error();
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "warning: failed to flush stdout before restore after FluidAudio call: {errno}"
+                    events::warn(
+                        events::W_GENERIC,
+                        format!("warning: failed to flush stdout before restore after FluidAudio call: {errno}"),
                     );
                 }
                 // SAFETY: saved is a dup'd stdout fd we own. as_raw_fd
@@ -99,9 +99,9 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
                     // Rare path (fd exhaustion mid-run); we can't do better
                     // than warn from a Drop impl.
                     let errno = std::io::Error::last_os_error();
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "warning: failed to restore stdout after FluidAudio call: {errno}"
+                    events::warn(
+                        events::W_GENERIC,
+                        format!("warning: failed to restore stdout after FluidAudio call: {errno}"),
                     );
                 }
             }
@@ -122,9 +122,9 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
             // SAFETY: fflush(NULL) flushes all open C output streams; no borrows.
             if unsafe { libc::fflush(std::ptr::null_mut()) } != 0 {
                 let errno = std::io::Error::last_os_error();
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "warning: failed to flush stdout before silencing for FluidAudio call: {errno}"
+                events::warn(
+                    events::W_GENERIC,
+                    format!("warning: failed to flush stdout before silencing for FluidAudio call: {errno}"),
                 );
             }
             // SAFETY: devnull is owned by the caller; dup2 atomically replaces
@@ -132,9 +132,9 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
             let rc = unsafe { libc::dup2(devnull.as_raw_fd(), libc::STDOUT_FILENO) };
             if rc < 0 {
                 let errno = std::io::Error::last_os_error();
-                let _ = writeln!(
-                    std::io::stderr(),
-                    "warning: failed to silence stdout before FluidAudio call: {errno}"
+                events::warn(
+                    events::W_GENERIC,
+                    format!("warning: failed to silence stdout before FluidAudio call: {errno}"),
                 );
             }
         }
@@ -243,9 +243,9 @@ impl StdoutShield {
                 let rc = unsafe { libc::dup2(devnull.as_raw_fd(), libc::STDOUT_FILENO) };
                 if rc < 0 {
                     let errno = std::io::Error::last_os_error();
-                    let _ = writeln!(
-                        std::io::stderr(),
-                        "warning: failed to shield stdout from FluidAudio: {errno}"
+                    events::warn(
+                        events::W_GENERIC,
+                        format!("warning: failed to shield stdout from FluidAudio: {errno}"),
                     );
                 }
             }
@@ -258,6 +258,7 @@ impl StdoutShield {
     /// flushed immediately). Falls back to the process stdout when the shield
     /// failed to save it.
     pub(crate) fn write_stdout(&self, bytes: &[u8]) -> std::io::Result<()> {
+        use std::io::Write;
         if let Some(file) = self.real_stdout.as_ref() {
             // `&File` implements `Write`; write through a shared ref so we don't
             // need `&mut self` (the fd is owned by the File regardless).

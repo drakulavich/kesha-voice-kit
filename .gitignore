@@ -38,5 +38,3 @@ mutants.out.old/
 .kesha-ci-cache/
 .kesha-ci-cache-probe/
 
-# standalone conveyor profile: names the real repository and maintainer, never committed.
-conveyor.config.json

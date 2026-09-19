@@ -170,14 +170,14 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("ru", 0.95, "linux", "x64")).toBe("ru-vosk-m02");
   });
 
-  it("routes every language the darwin-arm64 build advertises in --capabilities-json", () => {
+  it("routes every language the darwin-arm64 build advertises in its describe document", () => {
     const unrouted = advertisedTtsLangs().systemKokoro.filter(
       (lang) => pickVoiceForLang(lang, 0.95, "darwin", "arm64") === undefined,
     );
     expect(unrouted).toEqual([]);
   });
 
-  it("routes every language ONNX builds advertise in --capabilities-json", () => {
+  it("routes every language ONNX builds advertise in its describe document", () => {
     for (const [platform, arch] of [
       ["linux", "x64"],
       ["win32", "x64"],

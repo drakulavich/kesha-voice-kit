@@ -12,7 +12,7 @@ import {
 } from "../../src/status";
 import { humanBytes } from "../../src/format";
 import { starSeenPath } from "../../src/star";
-import { saveEngineEnv, stageEngineHome, writeFakeEngine } from "../helpers/fake-engine";
+import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine, writeVoiceListingEngine } from "../helpers/fake-engine";
 import modelPlan from "../../model-plan.json" with { type: "json" };
 
 // Literals, not derived from model-plan.json: a dropped plan entry must go red here, since the Rust binding test skips plan-only PRs (#1132).
@@ -178,8 +178,8 @@ describe("collectStatus + renderStatus", () => {
     writeFileSync(
       binPath,
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":2,"backend":"fake-coreml","features":["transcribe.segments","transcribe.diarize"]}'
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "fake-coreml", features: ["transcribe.segments", "transcribe.diarize"] })}'
   exit 0
 fi
 exit 2
@@ -207,7 +207,7 @@ exit 2
       renderStatus(await collectStatus());
       const output = lines.join("\n");
       expect(output).toContain("Backend: fake-coreml");
-      expect(output).toContain("Protocol: v2");
+      expect(output).toContain("Protocol: v4");
       expect(output).toContain("Features: transcribe.segments, transcribe.diarize");
       expect(output).toContain("Mirror: https://mirror.example.com/kesha");
       expect(output).toContain("TTS voices:");
@@ -243,7 +243,7 @@ describe("collectStatus --json payload (#647)", () => {
       expect(report.engine.installed).toBe(true);
       expect(report.engine.path).toBe(binPath);
       expect(report.engine.capabilities).toEqual({
-        protocolVersion: 3,
+        protocolVersion: 4,
         backend: "fake-coreml",
         features: ["tts"],
       });
@@ -317,10 +317,20 @@ describe("collectStatus --json payload (#647)", () => {
     // Non-null capabilities must mean it described itself: `renderStatus` calls `features.join` (#647).
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-json-shape-"));
     const cache = join(dir, ".cache", "kesha");
-    const binPath = writeFakeEngine(join(cache, "engine", "bin"), {
-      protocolVersion: "three",
-      backend: 42,
-    });
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '{"protocolVersion":"three","backend":42}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(binPath, 0o755);
     process.env.KESHA_ENGINE_BIN = binPath;
     process.env.KESHA_CACHE_DIR = cache;
     process.env.HOME = dir;
@@ -329,6 +339,37 @@ describe("collectStatus --json payload (#647)", () => {
       expect(report.engine.installed).toBe(true);
       expect(report.engine.capabilities).toBeNull();
       expect(() => renderStatus(report)).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("a stale engine is reported as a protocol mismatch, not a mute one", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-protocol-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ features: [], protocolVersion: 3 })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(binPath, 0o755);
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const report = await collectStatus();
+      expect(report.engine.installed).toBe(true);
+      expect(report.engine.capabilities).toBeNull();
+      expect(report.hint).toContain("E_ENGINE_PROTOCOL");
+      expect(report.hint).toContain("kesha install");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -383,6 +424,7 @@ describe("collectStatus --json payload (#647)", () => {
         "engine",
         "hint",
         "modelMirror",
+        "paths",
         "runtime",
         "voices",
       ]);
@@ -391,7 +433,32 @@ describe("collectStatus --json payload (#647)", () => {
         "installed",
         "path",
       ]);
+      expect(Object.keys(roundTripped.paths).sort()).toEqual(["cache", "logs", "mcpAudio", "stats"]);
+      expect(roundTripped.paths.cache).toEqual({ path: join(dir, ".cache", "kesha"), source: "KESHA_CACHE_DIR" });
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("paths name the rule that decided each location, so isolation is verifiable", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-paths-"));
+    const saved = { KESHA_HOME: process.env.KESHA_HOME, KESHA_LOG_DIR: process.env.KESHA_LOG_DIR };
+    process.env.KESHA_ENGINE_BIN = join(dir, "nope", "kesha-engine");
+    process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+    process.env.HOME = dir;
+    process.env.KESHA_HOME = join(dir, "home");
+    process.env.KESHA_LOG_DIR = join(dir, "elsewhere", "logs");
+    try {
+      const { paths } = await collectStatus();
+      expect(paths.cache.source).toBe("KESHA_CACHE_DIR");
+      expect(paths.logs).toEqual({ path: join(dir, "elsewhere", "logs"), source: "KESHA_LOG_DIR" });
+      expect(paths.stats).toEqual({ path: join(dir, "home", "stats.sqlite"), source: "KESHA_HOME" });
+      expect(paths.mcpAudio).toEqual({ path: join(dir, "home", "mcp-audio"), source: "KESHA_HOME" });
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
       rmSync(dir, { recursive: true, force: true });
     }
   });
@@ -405,6 +472,12 @@ describe("renderStatus turns a report into the states a user acts on", () => {
       voices: [],
       runtime: { bun: "1.9.9", platform: "testos", arch: "testarch" },
       modelMirror: null,
+      paths: {
+        cache: { path: "/cache", source: "default" },
+        logs: { path: "/logs", source: "default" },
+        stats: { path: "/stats.sqlite", source: "default" },
+        mcpAudio: { path: "/tmp/kesha-mcp", source: "default" },
+      },
       hint: null,
       disk: null,
       ...overrides,
@@ -732,11 +805,20 @@ describe("collectStatus FluidAudio accounting (#688)", () => {
     const dir = mkdtempSync(join(tmpdir(), prefix));
     const fluidHome = mkdtempSync(join(tmpdir(), `${prefix}home-`));
     const cache = join(dir, ".cache", "kesha");
-    const binPath = writeFakeEngine(join(cache, "engine", "bin"), {
-      protocolVersion: 3,
-      backend,
-      features: [],
-    });
+    const binDir = join(cache, "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend, features: [] })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    chmodSync(binPath, 0o755);
     write(join(cache, "models", "kokoro-82m", "voice.bin"), 64);
 
     process.env.KESHA_ENGINE_BIN = binPath;
@@ -1038,4 +1120,37 @@ describe("human status output is a load-bearing contract (#647)", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   }, 15_000);
+});
+
+// T2-6: the cache scan sees neither the ANE packs nor AVSpeech, so status advertised 6 of 214.
+describe("collectStatus reports what the engine can speak with", () => {
+  const restoreEnv = saveEngineEnv();
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  const ENGINE_VOICES = [
+    "en-am_michael",
+    "es-em_alex",
+    "macos-com.apple.voice.compact.ru-RU.Milena",
+    "ru-vosk-m02",
+  ];
+
+  posixEngineTest("an installed engine's --list-voices union is the inventory", async () => {
+    const home = stageEngineHome("kesha-status-engine-voices-");
+    writeVoiceListingEngine(home.binDir, ENGINE_VOICES);
+    mkdirSync(join(home.cache, "models", "kokoro-82m", "voices"), { recursive: true });
+    writeFileSync(join(home.cache, "models", "kokoro-82m", "voices", "am_michael.bin"), "voice");
+
+    expect((await collectStatus()).voices).toEqual(ENGINE_VOICES);
+  });
+
+  posixEngineTest("an engine that cannot answer falls back to the cache scan", async () => {
+    const home = stageEngineHome("kesha-status-voices-fallback-");
+    writeFakeEngine(home.binDir);
+    mkdirSync(join(home.cache, "models", "kokoro-82m", "voices"), { recursive: true });
+    writeFileSync(join(home.cache, "models", "kokoro-82m", "voices", "am_michael.bin"), "voice");
+
+    expect((await collectStatus()).voices).toEqual(["en-am_michael"]);
+  });
 });

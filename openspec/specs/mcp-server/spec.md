@@ -30,6 +30,12 @@ The server exposes four tools (`transcribe_audio`, `synthesize_speech`,
 `list_voices`, `list_languages`) and one resource template
 (`kesha-audio://{file}`).
 
+When the client's side of stdin reaches EOF — the client exited, crashed or
+closed the pipe — the server SHALL stop even while a tool call is outstanding:
+the in-flight call is cancelled, the Engine subprocess it started is
+terminated, and the process exits rather than being reparented to init with a
+running Engine.
+
 #### Scenario: Sona configures kesha mcp in her agent
 
 - GIVEN Sona adds `{ command: "kesha", args: ["mcp"] }` to her MCP client
@@ -39,11 +45,60 @@ The server exposes four tools (`transcribe_audio`, `synthesize_speech`,
 - AND the kesha-audio resource template appears in the resources list
 - AND the server remains running until the client closes the connection
 
-> *Technical Note — `mcpCommand` in `src/cli/mcp.ts:5` creates the server via
-> `createKeshaMcpServer()` (`src/mcp/server.ts:6`) and connects a
-> `StdioServerTransport`. `sweepOldAudio()` runs at server creation
-> (`src/mcp/server.ts:7`). Server name is `"kesha-voice-kit"` at
-> `src/mcp/server.ts:8`.*
+#### Scenario: Sona's agent dies while a transcription is in flight
+
+- GIVEN Sona's agent called `transcribe_audio` on a long recording and the Engine is running
+- WHEN the agent process exits, closing the server's stdin
+- THEN the Engine subprocess is terminated
+- AND the `kesha mcp` process exits
+- AND no process from that session is left running
+
+#### Scenario: The client disconnects with nothing in flight
+
+- GIVEN no tool call is outstanding
+- WHEN the client closes the connection
+- THEN the server exits promptly
+
+> *Technical Note — `src/cli/mcp.ts::mcpCommand` creates the server via
+> `createKeshaMcpServer()` (`src/mcp/server.ts::createKeshaMcpServer`) and
+> connects a `StdioServerTransport`; the SDK transport never watches stdin for
+> EOF, so the command listens for `end` itself and closes the server, which
+> aborts every in-flight request handler and, through the forwarded signal,
+> terminates its Engine. `sweepOldAudio()` runs at server creation, and the
+> server name is `"kesha-voice-kit"` — both inside
+> `src/mcp/server.ts::createKeshaMcpServer`.*
+
+### Requirement: A cancelled tool call stops the Engine it started
+
+When an MCP client cancels an in-flight `transcribe_audio` or `synthesize_speech` request, the server SHALL terminate the Engine subprocess that request started rather than let it run to completion, so repeated cancellations never accumulate live Engines. A request that arrives already cancelled SHALL spawn no Engine.
+
+#### Scenario: Sona cancels a long transcription
+
+- GIVEN Sona's agent called `transcribe_audio` on a 30-minute recording and the Engine is running
+- WHEN the client sends the MCP cancellation for that request
+- THEN the Engine subprocess is terminated, escalating to a force kill if needed
+- AND no Engine process from that request is left running
+
+#### Scenario: Sona cancels three times in a row
+
+- GIVEN Sona's agent starts and cancels `transcribe_audio` three times
+- WHEN the third cancellation is delivered
+- THEN no Engine process from any of the three requests is running
+
+#### Scenario: The request is cancelled before the Engine starts
+
+- GIVEN a `synthesize_speech` request whose cancellation arrives before the handler runs
+- WHEN the handler observes the cancelled request
+- THEN it returns `isError: true` and no Engine is spawned
+
+> *Technical Note — `src/mcp/tools.ts::registerTools` forwards the request's
+> `extra.signal` into `transcribe`/`transcribeWithTimestamps` (`src/lib.ts`)
+> and into `say` (`src/synth.ts::say`, which accepts `SayOptions.signal`) and
+> `resolveSayVoice` (`src/voice-routing.ts`). Every spawn wires the signal
+> through `src/process-tree.ts::abortOnSignal`, the same helper
+> `src/engine.ts::runEngine` uses, and the cancelled call rejects with
+> `E_INTERRUPTED`. `list_voices` and `list_languages` do not take the signal:
+> their spawn is sub-second and is reaped on server exit.*
 
 ### Requirement: `transcribe_audio` transcribes a local audio file
 
@@ -77,10 +132,10 @@ included when diarization was requested by the engine. The tool's
 - THEN the response has `isError: true`
 - AND the `content[0].text` names the missing file
 
-> *Technical Note — `transcribe_audio` is registered in `src/mcp/tools.ts:87`.
-> Missing-file check at `src/mcp/tools.ts:113` uses `existsSync` before
-> spawning the engine. Segment shape at `src/mcp/tools.ts:96-104`.
-> `readOnlyHint: true` at `src/mcp/tools.ts:107`.*
+> *Technical Note — `transcribe_audio` is registered by
+> `src/mcp/tools.ts::registerTools`, which checks `existsSync(path)` before
+> spawning the engine, declares the segment shape in that tool's `outputSchema`,
+> and sets `annotations: { readOnlyHint: true }`.*
 
 ### Requirement: `synthesize_speech` produces an audio file and returns a resource link
 
@@ -93,7 +148,8 @@ default `"wav"`).
 The tool SHALL:
 1. Validate `rate` and return `isError: true` when it is outside `[0.5, 2.0]`.
 2. Synthesize audio via the Engine and write it to a UUID-named file in
-   `<tmpdir>/kesha-mcp/` with permissions `0600`.
+   the MCP audio directory (`<tmpdir>/kesha-mcp/` by default, `<KESHA_HOME>/mcp-audio/`
+   when `KESHA_HOME` is set; `state-directories`) with permissions `0600`.
 3. Return a `resource_link` content item with URI `kesha-audio://<filename>`
    and a text summary of the synthesis.
 4. Return `structuredContent` with `uri`, `path`, `format`, `voice`, and
@@ -141,14 +197,14 @@ The tool SHALL:
 - THEN synthesis uses the Engine's default voice
 - AND `structuredContent.voice` names that voice rather than a placeholder
 
-> *Technical Note — `synthesize_speech` registered at `src/mcp/tools.ts:37`.
-> Rate validation at `src/mcp/tools.ts:62`. `allocAudioPath` in
-> `src/mcp/audio-output.ts:25` creates `<tmpdir>/kesha-mcp/` with mode
-> `0o700` and names the file `<uuid>.<ext>`. `chmodSync(outPath, 0o600)` at
-> `src/mcp/tools.ts:71`. The voice is resolved before the engine is spawned by
-> `resolveSayVoice` (`src/voice-routing.ts:76`) — the same function `kesha say`
-> uses — falling back to `DEFAULT_VOICE_ID`, and passed to the engine
-> explicitly so the reported id is the one that spoke (#942).*
+> *Technical Note — `synthesize_speech` is registered by
+> `src/mcp/tools.ts::registerTools`, which rejects a `rate` outside
+> `(0.5-2.0)` and applies `chmodSync(outPath, 0o600)` once synthesis returns.
+> `src/mcp/audio-output.ts::allocAudioPath` creates the MCP audio directory
+> (`src/state-paths.ts::resolveStatePaths`) with mode `0o700` and names the file `<uuid>.<ext>`. The voice is resolved before
+> the engine is spawned by `src/voice-routing.ts::resolveSayVoice` — the same
+> function `kesha say` uses — falling back to `DEFAULT_VOICE_ID`, and passed to
+> the engine explicitly so the reported id is the one that spoke (#942).*
 
 ### Requirement: `list_voices` returns installed voice metadata
 
@@ -172,10 +228,11 @@ The `list_voices` tool SHALL invoke the Engine's `say --list-voices` and return
 - THEN the response has `isError: true`
 - AND `content[0].text` begins with `list_voices failed:`
 
-> *Technical Note — `list_voices` registered at `src/mcp/tools.ts:135`.
-> `listVoices()` in `src/mcp/voices.ts:110` spawns `kesha-engine say
-> --list-voices`. `parseVoiceInfo` in `src/mcp/voices.ts:31` derives model,
-> language, and gender from the Voice id prefix.*
+> *Technical Note — `list_voices` is registered by
+> `src/mcp/tools.ts::registerTools`. `src/mcp/voices.ts::listVoices` maps the
+> ids returned by `src/synth.ts::listVoiceIds`, which spawns `kesha-engine say
+> --list-voices`, through `src/mcp/voices.ts::parseVoiceInfo` — that derives
+> model, language, and gender from the Voice id prefix.*
 
 ### Requirement: `list_languages` returns aggregated language counts
 
@@ -191,9 +248,9 @@ carrying `languageCode`, `languageName`, and `voiceCount`.
 - AND each entry's `voiceCount` equals the number of installed voices for that
   language code
 
-> *Technical Note — `list_languages` registered at `src/mcp/tools.ts:168`.
-> `aggregateLanguages` in `src/mcp/voices.ts:126` groups by `languageCode` and
-> sorts with `localeCompare`.*
+> *Technical Note — `list_languages` is registered by
+> `src/mcp/tools.ts::registerTools`. `src/mcp/voices.ts::aggregateLanguages`
+> groups by `languageCode` and sorts with `localeCompare`.*
 
 ### Requirement: `kesha-audio://{file}` resource returns base64-encoded audio
 
@@ -223,18 +280,21 @@ an error naming the file.
 - WHEN Sona attempts `resources/read kesha-audio://old.wav`
 - THEN an error is returned stating the file is not found or already swept
 
-> *Technical Note — resource handler at `src/mcp/tools.ts:18`. Basename
-> sandbox: `basename(String(file))` at `src/mcp/tools.ts:23`. MIME selection
-> by `mimeForExt` at `src/mcp/tools.ts:11`. `sweepOldAudio` in
-> `src/mcp/audio-output.ts:30` deletes files with `mtimeMs < Date.now() - 24h`
-> (`MAX_AGE_MS = 24 * 60 * 60 * 1000` at `src/mcp/audio-output.ts:7`).
-> Audio directory: `join(tmpdir(), "kesha-mcp")` at
-> `src/mcp/audio-output.ts:9`.*
+> *Technical Note — the `kesha-audio://{file}` resource handler lives in
+> `src/mcp/tools.ts::registerTools`, which sandboxes the parameter with
+> `basename(String(file))` and picks the MIME type through its nested
+> `src/mcp/tools.ts::registerTools::mimeForExt`.
+> `src/mcp/audio-output.ts::sweepOldAudio` deletes files older than
+> `src/mcp/audio-output.ts::MAX_AGE_MS`, which is `24 * 60 * 60 * 1000`.
+> Audio directory: `src/mcp/audio-output.ts::audioDir`, which is the MCP audio
+> path of `src/state-paths.ts::resolveStatePaths` — `<tmpdir>/kesha-mcp` by default,
+> `<KESHA_HOME>/mcp-audio` under `KESHA_HOME`.*
 
 ### Requirement: Old MCP audio files are swept at server start
 
 At every `kesha mcp` startup the server SHALL delete files in the MCP audio
-directory whose modification time is more than 24 hours in the past, on a
+directory (`<tmpdir>/kesha-mcp/` by default, `<KESHA_HOME>/mcp-audio/` when `KESHA_HOME`
+is set — the `state-directories` resolution) whose modification time is more than 24 hours in the past, on a
 best-effort basis (errors for individual files are silently ignored to handle
 races and permission edge cases).
 
@@ -244,6 +304,13 @@ races and permission edge cases).
 - WHEN `kesha mcp` starts
 - THEN those files are deleted before the first tool call is handled
 
+#### Scenario: Sona runs the server under an isolated home
+
+- GIVEN `KESHA_HOME=/tmp/kesha-agent` is set
+- WHEN `kesha mcp` starts and `synthesize_speech` is called
+- THEN the audio file lands in `/tmp/kesha-agent/mcp-audio/` with mode `0600`
+- AND `<tmpdir>/kesha-mcp/` is neither created nor swept
+
 #### Scenario: MCP directory does not yet exist
 
 - GIVEN the MCP audio directory has never been created
@@ -251,11 +318,11 @@ races and permission edge cases).
 - THEN `sweepOldAudio` returns without error (directory absence is silently
   ignored)
 
-> *Technical Note — `sweepOldAudio()` called in `createKeshaMcpServer()`
-> (`src/mcp/server.ts:7`). The sweep reads the directory with `readdirSync`;
-> if the directory does not exist, the `catch` at `src/mcp/audio-output.ts:36`
-> silently returns. Individual file errors are caught per-file at
-> `src/mcp/audio-output.ts:43`.*
+> *Technical Note — `sweepOldAudio()` is called by
+> `src/mcp/server.ts::createKeshaMcpServer`. The sweep reads the directory with
+> `readdirSync`; if the directory does not exist, the `catch` around that read
+> silently returns, and individual file errors are caught per-file inside the
+> loop — both in `src/mcp/audio-output.ts::sweepOldAudio`.*
 
 ### Requirement: Voice listing tools return install hints when the engine is missing
 `list_voices` and `list_languages` SHALL detect a missing engine before spawning and return a structured tool error whose message names the install command, matching the behavior `synthesize_speech` already has.

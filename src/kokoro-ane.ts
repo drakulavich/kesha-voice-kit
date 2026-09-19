@@ -1,8 +1,8 @@
-import { existsSync } from "fs";
+import { existsSync, readdirSync } from "fs";
 import { join } from "path";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import { isDarwinArm64 } from "./engine-targets";
-import { kokoroAneDir, kokoroG2pDir } from "./fluid-roots";
+import { kokoroAneDir, kokoroAneZhDir, kokoroG2pDir } from "./fluid-roots";
 
 /**
  * What darwin-arm64 Kokoro actually needs on disk, and who puts it there. Since #856 these
@@ -44,8 +44,10 @@ export interface KokoroAneComponent {
   note: string;
   /** Something is staged here — not that the set is complete. */
   exists: boolean;
-  /** Required entries absent from disk; empty when the set is whole. */
+  /** Entries of THIS set absent from disk; it says nothing about which languages can speak (T2-7). */
   missing: string[];
+  /** Kokoro languages with at least one voice pack directly under `path`. */
+  languagesStaged: string[];
   sizeBytes: number;
 }
 
@@ -87,6 +89,67 @@ export function kokoroAneComponents(options: KokoroAneOptions = {}): KokoroAneCo
     ...component,
     exists: existsSync(component.path),
     missing: required.filter((entry) => !existsSync(join(component.path, entry))),
+    languagesStaged: stagedLanguagesIn(component.path),
     sizeBytes: dirSizeBytes(component.path),
   }));
+}
+
+/** Kokoro language of a voice-pack basename; mirrors `models/manifest.rs::ane_voice_lang`. */
+const PACK_LANG: Record<string, string> = {
+  a: "en",
+  b: "en",
+  e: "es",
+  f: "fr",
+  h: "hi",
+  i: "it",
+  j: "ja",
+  p: "pt",
+  z: "zh",
+};
+
+/** Every Kokoro language this build can install a voice pack for, in the order diagnostics list them. */
+export const KOKORO_LANGUAGES = [...new Set(Object.values(PACK_LANG))].sort();
+
+/** Kokoro language a voice-pack basename belongs to; `undefined` for anything that is not one. */
+export function voicePackLanguage(basename: string): string | undefined {
+  return basename.endsWith(".bin") ? PACK_LANG[basename[0]!.toLowerCase()] : undefined;
+}
+
+function stagedLanguagesIn(dir: string): string[] {
+  let entries: string[];
+  try {
+    entries = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const langs = new Set<string>();
+  for (const entry of entries) {
+    const lang = voicePackLanguage(entry);
+    if (lang) langs.add(lang);
+  }
+  return [...langs].sort();
+}
+
+export interface KokoroTtsLanguages {
+  staged: string[];
+  missing: string[];
+}
+
+/**
+ * Which Kokoro languages have a voice pack on disk and which do not, across both bundles —
+ * the question `doctor --json` could not answer while the ANE component reported `missing: []`
+ * for an install where seven of the eight languages failed E_MODEL_MISSING (T2-7).
+ */
+export function kokoroTtsLanguages(options: KokoroAneOptions = {}): KokoroTtsLanguages {
+  if (!isDarwinArm64(options.platform, options.arch)) return { staged: [], missing: [] };
+  const homeDir = options.homeDir ?? diagnosticHomeDir();
+  const roots = { homeDir, cacheRoot: options.cacheRoot };
+  const staged = new Set([
+    ...stagedLanguagesIn(kokoroAneDir(roots)),
+    ...stagedLanguagesIn(join(kokoroAneZhDir(roots), "voices")),
+  ]);
+  return {
+    staged: [...staged].sort(),
+    missing: KOKORO_LANGUAGES.filter((lang) => !staged.has(lang)),
+  };
 }

@@ -25,11 +25,18 @@ no credentials.
 
 `kesha doctor` SHALL collect and print a structured diagnostic report covering: CLI
 package name and version; Bun runtime version, platform, and architecture; Engine
-binary path, install status, version marker, and Capabilities JSON (obtained by
+binary path, install status, version marker, and the describe document (obtained by
 probing the Engine); Model cache path, existence, total size, and per-component
 breakdown; optional-component install status (VAD, TTS Kokoro, TTS Vosk, FluidAudio
-Kokoro cache, Diarization, Sidecars); Stats DB status; Diagnostic log status; and a
-snapshot of known `KESHA_*` environment variables.
+Kokoro cache, Diarization, Sidecars); the TTS languages staged and the installed Voice
+ids; Stats DB status; Diagnostic log status; a snapshot of known `KESHA_*` environment
+variables; and the four resolved state paths (Model cache, Diagnostic log directory,
+Stats DB, MCP audio directory), each with the source that decided it — `default`,
+`KESHA_HOME`, or the specific variable — as defined by `state-directories`. The
+FluidAudio Kokoro component SHALL report completeness per language: a language whose
+voice pack is absent is listed as missing for that language, and the component SHALL
+NOT report an empty `missing` list while a supported language cannot be synthesized
+from it.
 
 `kesha doctor` SHALL always exit 0, even when components are missing or the Engine
 probe fails. It SHALL never download or modify any file.
@@ -51,7 +58,7 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 - GIVEN the Engine binary is missing
 - WHEN Ira runs `kesha doctor`
 - THEN the report shows `Binary: <path> (missing)` and `not available` for
-  capabilities
+  the describe document
 - AND all other sections are still present
 - AND the process exits 0
 
@@ -60,7 +67,7 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 - GIVEN the Engine and ASR models are installed
 - WHEN Maks runs `kesha doctor --json`
 - THEN stdout is a JSON object with `package`, `runtime`, `engine`, `cache`,
-  `optionalComponents`, `stats`, `diagnosticLogs`, and `env` keys
+  `optionalComponents`, `stats`, `diagnosticLogs`, `env`, and `paths` keys
 - AND the process exits 0
 
 #### Scenario: Maks checks an install an interrupted download left behind
@@ -69,6 +76,15 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 - WHEN Maks runs `kesha doctor`
 - THEN the report shows it as installed but not executable, with a `kesha install` hint
 - AND a sidecar that is simply absent is still shown as missing
+- AND the process exits 0
+
+#### Scenario: Ira verifies that an isolated run touched nothing of hers
+
+- GIVEN `KESHA_HOME=/tmp/kesha-ci` is set
+- WHEN Ira runs `kesha doctor --json`
+- THEN `paths.cache`, `paths.logs`, `paths.stats` and `paths.mcpAudio` all point under
+  `/tmp/kesha-ci` with `source: "KESHA_HOME"`
+- AND `env` lists `KESHA_HOME` with its value
 - AND the process exits 0
 
 #### Scenario: Sona redacts before sharing
@@ -80,25 +96,46 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 - AND home-directory paths appear as `~/…`
 - AND the process exits 0
 
+#### Scenario: The env snapshot no longer offers a descriptor variable
+
+- GIVEN `KESHA_DEBUG_FD=7` is exported from an old script
+- WHEN Maks runs `kesha doctor`
+- THEN the env snapshot does not list `KESHA_DEBUG_FD`, because the variable no longer exists
+- AND the process exits 0
+
+#### Scenario: Doctor names the languages a Kokoro cache cannot serve
+
+- GIVEN darwin-arm64 with the English ANE chain staged and no Spanish pack
+- WHEN Sona runs `kesha doctor --json`
+- THEN the FluidAudio Kokoro component lists `en` as staged and `es` among the missing languages
+- AND the report carries the installed Voice ids
+
 > *Technical Note — sources: `src/doctor.ts::collectDoctorReport`,
 > `src/doctor.ts::formatDoctorReport`, `src/cli/doctor.ts::doctorCommand`.
 > Executability comes from `src/engine-health.ts::probeExecutable` and surfaces as
 > `engine.runnable` and per-component `runnable` in the JSON report; any exit code counts
 > as healthy, since the sidecars legitimately exit non-zero when given no work.
-> Known env keys snapshot: `KESHA_ENGINE_BIN`, `KESHA_CACHE_DIR`,
-> `KESHA_MODEL_MIRROR`, `KESHA_STATS_DB`, `KESHA_DEBUG`, `KESHA_DEBUG_FD`
-> (from `KNOWN_ENV_KEYS`). Secret-pattern detection splits the key on
-> non-alphanumeric characters and checks each part against
+> Known env keys snapshot: the eleven entries of `src/doctor.ts::KNOWN_ENV_KEYS`
+> (`KESHA_HOME`, `KESHA_ENGINE_BIN`, `KESHA_CACHE_DIR`, `KESHA_MODEL_MIRROR`, `KESHA_STATS_DB`,
+> `KESHA_DEBUG`, the two `*_COMPUTE_UNITS`, the two diarize timeouts and
+> `KESHA_INSTALL_LOCK_WAIT_SECS`); `KESHA_DEBUG_FD` is no longer among them. Secret-pattern
+> detection splits the key on non-alphanumeric characters and checks each part against
 > `["TOKEN","KEY","SECRET","PASSWORD","CREDENTIAL","AUTH"]`. URL redaction strips
 > `username`, `password`, `search`, and `hash`. Home-path redaction rewrites the
-> exact home prefix to `~`; case-insensitive on Windows.*
+> exact home prefix to `~`; case-insensitive on Windows. The `paths` object comes from
+> `src/state-paths.ts::resolveStatePaths`; its path values and the `KESHA_HOME` value in the
+> env snapshot pass through that same home-prefix redaction.*
 
 ### Requirement: `kesha status` shows engine and voice install state
 
 `kesha status` SHALL print a concise install summary: Engine binary path and install
-status; Backend, protocol version, and features (from Capabilities JSON); Bun runtime
+status; Backend, protocol version, and features (from the describe document); Bun runtime
 version and platform; active Model mirror (when `KESHA_MODEL_MIRROR` is set); and the
-list of installed TTS Voice ids.
+list of installed TTS Voice ids. When an Engine is installed and answers, the Voice ids
+SHALL be the Engine's own inventory (the same list `kesha say --list-voices` prints,
+including FluidAudio Kokoro voices and `macos-*` system voices); when no Engine is
+installed or its inventory probe fails, the list SHALL fall back to what the Model cache
+holds on disk.
 
 `--disk` SHALL additionally print a per-component disk-usage table (Engine, ASR,
 Language ID, VAD, TTS Kokoro, TTS Vosk) and the grand total. The FluidAudio Kokoro
@@ -122,7 +159,14 @@ nested capabilities value so that a binary which cannot report them yields one
 null rather than three, making "can the Engine run" a single check; consumers
 deciding that SHALL require presence AND non-null capabilities. Consumers SHALL be
 able to reach both conclusions from these fields without matching any
-human-readable prose.
+human-readable prose. The nested value's shape and key name SHALL NOT change with
+protocol version 4, so the Raycast extension keeps reading it unmodified.
+
+The `--json` object SHALL also carry a `paths` object naming the resolved Model cache,
+Diagnostic log directory, Stats DB and MCP audio directory, each with the `source`
+that decided it (`default`, `KESHA_HOME`, or the specific variable), so a consumer can
+confirm isolation without reading timestamps; the human rendering SHALL print a
+source only when it is not `default`.
 
 Every documented key SHALL be present in every payload: absent values are null
 (or the empty list for Voice ids), never omitted, so a consumer never has to tell
@@ -159,7 +203,7 @@ Engine is installed, matching the human path.
 - WHEN Ira runs `kesha status`
 - THEN the output shows a red cross for the Engine binary
 - AND an actionable setup hint is printed — `kesha init` on an interactive TTY,
-  `kesha install` when stderr is piped (`installHint()`, `src/status.ts:88`)
+  `kesha install` when stderr is piped (`installHint()`, `src/status.ts::engineHint`)
 - AND the process exits 0
 
 #### Scenario: Ira asks for disk usage with no Engine installed
@@ -175,8 +219,16 @@ Engine is installed, matching the human path.
 - WHEN Ira runs `kesha status --json`
 - THEN stdout parses as a single JSON object and contains nothing else
 - AND the object reports Engine presence as `true`, the binary path, the Backend,
-  the protocol version, the features, and the installed TTS Voice ids
+  the protocol version `4`, the features, and the installed TTS Voice ids
 - AND the process exits 0
+
+#### Scenario: Maks sees where a second profile writes
+
+- GIVEN `KESHA_HOME=/Volumes/work/kesha` and `KESHA_LOG_DIR=/var/log/kesha` are set
+- WHEN Maks runs `kesha status --json`
+- THEN `paths.cache.source` is `"KESHA_HOME"` and `paths.logs.source` is `"KESHA_LOG_DIR"`
+- AND `paths.logs.path` is `/var/log/kesha`
+- AND with neither variable set every `source` reads `"default"` and no key is omitted
 
 #### Scenario: Engine missing under `--json`
 
@@ -187,9 +239,9 @@ Engine is installed, matching the human path.
 - AND stderr does not repeat that hint
 - AND the process exits 0
 
-#### Scenario: Capabilities probe fails under `--json`
+#### Scenario: The describe probe fails under `--json`
 
-- GIVEN the Engine binary exists but `--capabilities-json` cannot be read
+- GIVEN the Engine binary exists but `kesha-engine describe` cannot be read
   (corrupt or incompatible binary)
 - WHEN Ira runs `kesha status --json`
 - THEN Engine presence is reported as `true` while the capabilities value is null
@@ -198,15 +250,32 @@ Engine is installed, matching the human path.
   this apart from both a healthy Engine and a missing one
 - AND the process exits 0, matching the human path's "probe failed" line
 
-> *Technical Note — sources: `src/status.ts::showStatus`, `src/status.ts::showDiskUsage`,
-> `src/cli/status.ts::statusCommand`. TTS voice enumeration reads `kokoro-82m/voices/*.bin`
-> (prefixed `en-`) and checks `vosk-ru/model.onnx` + `vosk-ru/bert/model.onnx` presence
+#### Scenario: Status agrees with --list-voices
+
+- GIVEN an installed Engine on darwin-arm64
+- WHEN Maks compares `kesha status --json | jq '.voices | length'` with `kesha say --list-voices | wc -l`
+- THEN the two numbers are equal
+
+#### Scenario: Status without an Engine still lists what is on disk
+
+- GIVEN no Engine binary but Vosk-TTS files in the Model cache
+- WHEN Ira runs `kesha status`
+- THEN the five `ru-vosk-*` ids are listed from the cache and the setup hint is printed
+
+> *Technical Note — sources: `src/status.ts::collectStatus` and `renderStatus`, `src/status.ts::showDiskUsage`,
+> `src/cli/status.ts::statusCommand`. TTS voice enumeration is
+> `src/voice-inventory.ts::installedVoiceIds`: `kesha-engine say --list-voices` when the
+> Engine is installed, otherwise (or when that probe fails) `cachedVoiceIds`, which reads
+> `kokoro-82m/voices/*.bin` (prefixed `en-`) and checks the Vosk-RU files' presence
 > (voices `ru-vosk-f01`, `ru-vosk-f02`, `ru-vosk-f03`, `ru-vosk-m01`, `ru-vosk-m02`).
 > `activeModelMirror()` trims and strips trailing slashes from `KESHA_MODEL_MIRROR`;
-> returns null when unset or empty. Capabilities come from
-> `src/engine.ts::getEngineCapabilities` (`src/engine.ts:348`), which returns null on a
-> failed or unparseable probe — that null is what the payload reports. The `--json`
-> flag follows the `doctor` precedent at `src/cli/doctor.ts:16-32`.*
+> returns null when unset or empty. Capabilities are `engineFunctionalHealth()`'s
+> (`src/engine-health.ts`) `capabilities` when its status is `ok` and null otherwise, so a
+> failed or unparseable probe is what the payload reports as null. The `paths` object is
+> `src/state-paths.ts::resolveStatePaths` rendered as-is. The `--json`
+> flag follows the `doctor` precedent at `src/cli/doctor.ts::doctorCommand`. The
+> Raycast extension reads the nested value at
+> `raycast/src/lib/kesha-bin.ts::readStructuredStatus`.*
 
 ### Requirement: `kesha logs` manages privacy-safe NDJSON Diagnostic logs
 
@@ -236,8 +305,9 @@ Log files rotate when the active file would exceed `maxBytes` (default 10 MB); u
 `retain` rotated files are kept (default 5). Rotation naming: `kesha.1.ndjson`,
 `kesha.2.ndjson`, etc.
 
-Log directory: `~/Library/Logs/kesha` (macOS), `%LOCALAPPDATA%\kesha\logs` (Windows),
-`$XDG_STATE_HOME/kesha/logs` (Linux; override: `KESHA_LOG_DIR`).
+Log directory: `KESHA_LOG_DIR` when set; otherwise `<KESHA_HOME>/logs` when `KESHA_HOME` is
+set; otherwise `~/Library/Logs/kesha` (macOS), `%LOCALAPPDATA%\kesha\logs` (Windows) or
+`$XDG_STATE_HOME/kesha/logs` (Linux) — the `state-directories` precedence.
 
 #### Scenario: Ira checks log status
 
@@ -245,6 +315,13 @@ Log directory: `~/Library/Logs/kesha` (macOS), `%LOCALAPPDATA%\kesha\logs` (Wind
 - THEN the mode, active path, total size, rotated file count, and rotation settings
   are printed to stderr/info
 - AND the process exits 0
+
+#### Scenario: Ira's CI job keeps its logs out of her home directory
+
+- GIVEN `KESHA_HOME=/tmp/kesha-ci` is set and `KESHA_LOG_DIR` is not
+- WHEN Ira runs `kesha logs path`
+- THEN the printed path is `/tmp/kesha-ci/logs/kesha.ndjson`
+- AND `~/Library/Logs/kesha` is neither created nor written
 
 #### Scenario: Enable and then disable
 
@@ -273,7 +350,8 @@ Log directory: `~/Library/Logs/kesha` (macOS), `%LOCALAPPDATA%\kesha\logs` (Wind
 - AND the output reports the number of files and bytes deleted
 - AND the process exits 0
 
-> *Technical Note — sources: `src/diagnostic-log.ts`, `src/cli/logs.ts::logsCommand`.
+> *Technical Note — sources: `src/diagnostic-log.ts`, `src/cli/logs.ts::logsCommand`;
+> `src/diagnostic-log.ts::resolveDiagnosticLogDir` delegates to `src/state-paths.ts::resolveStatePaths`.
 > Active log file: `kesha.ndjson`. Rotated files match `/^kesha\.\d+\.ndjson$/`.
 > Field name blocklist: `DISALLOWED_FIELD_NAME` regex; string value safety:
 > `SAFE_STRING_VALUE = /^[A-Za-z0-9_.@+-]{1,120}$/` AND NOT `UNSAFE_STRING_VALUE`
@@ -295,10 +373,12 @@ messages — never transcript text, audio bytes, input file names, or raw paths.
 the format SHALL exit 2. `retention <days>` accepts a positive integer of days or
 `off` for no expiry; any other value SHALL exit 2. Unknown action names SHALL exit 2.
 
-Default retention is 90 days. The DB path defaults to
+Default retention is 90 days. The DB path is `KESHA_STATS_DB` when set; otherwise
+`<KESHA_HOME>/stats.sqlite` when `KESHA_HOME` is set; otherwise
 `~/Library/Application Support/kesha/stats.sqlite` (macOS),
-`%APPDATA%\kesha\stats.sqlite` (Windows), or
-`$XDG_DATA_HOME/kesha/stats.sqlite` (Linux); override: `KESHA_STATS_DB`.
+`%APPDATA%\kesha\stats.sqlite` (Windows) or `$XDG_DATA_HOME/kesha/stats.sqlite` (Linux) —
+the `state-directories` precedence. `KESHA_STATS_DB` SHALL be documented beside
+`KESHA_LOG_DIR` and `KESHA_HOME`; until this change it existed only in code.
 
 #### Scenario: Ira checks stats status when disabled
 
@@ -314,6 +394,13 @@ Default retention is 90 days. The DB path defaults to
 - AND `kesha stats week` then shows the last-7-days summary including runs, input
   files, STT time, and stage breakdown
 - AND both commands exit 0
+
+#### Scenario: A test run enables Stats without touching the developer's database
+
+- GIVEN `KESHA_HOME=/tmp/kesha-test` is set and `KESHA_STATS_DB` is not
+- WHEN Maks runs `kesha stats enable` and then a transcription
+- THEN the DB is created at `/tmp/kesha-test/stats.sqlite` and the run is recorded there
+- AND `~/Library/Application Support/kesha/stats.sqlite` is neither created nor modified
 
 #### Scenario: Export with missing format is rejected
 
@@ -333,7 +420,8 @@ Default retention is 90 days. The DB path defaults to
 - THEN the CLI lists supported actions to stderr
 - AND exits 2
 
-> *Technical Note — sources: `src/stats.ts`, `src/cli/stats.ts::statsCommand`.
+> *Technical Note — sources: `src/stats.ts`, `src/cli/stats.ts::statsCommand`;
+> `src/stats.ts::resolveStatsDbPath` delegates to `src/state-paths.ts::resolveStatePaths`.
 > Stats DB schema v1: tables `settings`, `runs`, `artifacts`, `stage_timings`,
 > `errors`. Privacy contract (in every export): `contentFree: true`,
 > `neverStored: ["audio bytes","transcripts","input text","output text","file names",
@@ -431,7 +519,7 @@ as invariants, not options:
 > `UNSAFE_STRING_VALUE`, `SAFE_STRING_VALUE`, `validateField`);
 > `src/stats.ts::sanitizeStatsError`, `src/stats.ts::statsPrivacyContract`,
 > `src/stats.ts::artifactFromFile` (records `extname(path)` and `st.size`, not the
-> path itself). Audio size bucketing in `stats.ts::summarizeSizeBuckets`:
+> path itself). Audio size bucketing in `src/stats.ts::summarizeSizeBuckets`:
 > `<1 MB`, `1-10 MB`, `10-100 MB`, `100 MB+`.*
 
 ## Open Issues

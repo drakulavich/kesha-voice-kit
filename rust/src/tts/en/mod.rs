@@ -7,6 +7,7 @@
 
 pub(super) mod acronym;
 pub(super) mod letter_table;
+pub mod numbers;
 
 use crate::tts::ssml::Segment;
 
@@ -45,7 +46,7 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
                 let stripped = crate::tts::strip_emphasis_markers(content);
                 vec![Segment::Text(stripped)]
             }
-            Segment::Text(t) => acronym::expand_to_segments(&t, auto_expand),
+            Segment::Text(t) => acronym::expand_to_segments(&numbers::verbalize(&t), auto_expand),
             Segment::ProsodyRate { rate, content } => vec![Segment::ProsodyRate {
                 rate,
                 content: normalize_segments(content, auto_expand),
@@ -66,6 +67,20 @@ mod tests {
     }
 
     #[test]
+    fn currency_and_comma_grouped_amounts_are_spoken_before_g2p() {
+        // Both Kokoro G2Ps drop the sign and lose a comma-grouped amount entirely.
+        let out = normalize_segments(vec![Segment::Text("He paid $1,234.56".to_string())], false);
+        let spoken = match out.as_slice() {
+            [Segment::Text(t)] => t.clone(),
+            other => panic!("expected one text segment, got {other:?}"),
+        };
+        assert_eq!(
+            spoken,
+            "He paid one thousand two hundred thirty four dollars and fifty six cents"
+        );
+    }
+
+    #[test]
     fn spell_segment_becomes_text_via_letter_table() {
         let out = normalize_segments(vec![Segment::Spell("EPAM".to_string())], false);
         assert_eq!(out, vec![Segment::Text("ee pee ay em".to_string())]);
@@ -81,7 +96,10 @@ mod tests {
     fn break_and_ipa_pass_through() {
         let segs = vec![
             Segment::Break(Duration::from_millis(500)),
-            Segment::Ipa("əˈpæm".to_string()),
+            Segment::Ipa {
+                ph: "əˈpæm".to_string(),
+                text: "APAM".to_string(),
+            },
         ];
         assert_eq!(normalize_segments(segs.clone(), true), segs);
     }
@@ -137,7 +155,10 @@ mod tests {
             vec![Segment::ProsodyRate {
                 rate: 0.75,
                 content: vec![
-                    Segment::Ipa("ˈiːpæm".to_string()),
+                    Segment::Ipa {
+                        ph: "ˈiːpæm".to_string(),
+                        text: "EPAM".to_string()
+                    },
                     Segment::Text(" partners".to_string()),
                 ],
             }]

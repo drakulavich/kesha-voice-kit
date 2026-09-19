@@ -23,6 +23,7 @@ input channels to mono.
 - With `--out`, the sample rate is whatever the device reports and the recorder
   applies no resampling. `--live` resamples to 16 kHz in flight, because that is
   what the ASR model consumes.
+
 ## Requirements
 ### Requirement: `--live` and `--out` are mutually exclusive, and one is required
 
@@ -58,9 +59,9 @@ The CLI SHALL reject an invocation that passes both `--live` and `--out`, and SH
 
 ### Requirement: `--live` transcribes the microphone without writing a file
 
-`kesha record --live` SHALL capture the default microphone and transcribe it through a streaming ASR session, printing the final transcript to stdout when recording stops. No WAV file SHALL be written. Progress and errors go to stderr so stdout carries the transcript and nothing else.
+`kesha record --live` SHALL capture the default microphone and transcribe it through a streaming ASR session, printing the final transcript to stdout when recording stops. No WAV file SHALL be written. Progress and errors go to stderr so stdout carries the transcript and nothing else. The no-speech line is the session's outcome, not progress: `--quiet` SHALL keep it.
 
-Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapsed, or stdin EOF.
+Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapsed, or stdin EOF. The CLI's relay adds a contract of its own for the reader of stdout: when a write to stdout fails because the reader closed the pipe, the relay SHALL write nothing further, SHALL keep draining the Engine's stdout so the Engine never blocks, SHALL stop the Engine once rather than let it hold the microphone until `--max-seconds`, and SHALL judge the Engine's exit exactly as it judges any other live stop — the clean interrupt status is success, an error event is a failure. The shipped Engine delivers the transcript in one write after recording has stopped, so no write can fail before the stop and this contract has no observable effect today; it binds the moment the live session streams partial lines.
 
 #### Scenario: Maks dictates a note straight to text
 
@@ -77,12 +78,27 @@ Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapse
 - THEN the word count reflects only the transcript
 - AND no progress text has leaked into the pipe
 
+#### Scenario: Sona takes only the first line of a streaming transcript
+
+- GIVEN an Engine that streams partial transcript lines to stdout as it recognises them (none ships today — the live session delivers once, at the end)
+- AND Sona runs `kesha record --live | head -1`
+- WHEN `head` prints the first line and exits, closing the pipe
+- THEN the CLI stops the Engine at once instead of recording until `--max-seconds`
+- AND the process exits 0, and the stop adds no message of its own to stderr — the listening line and the ticker printed before the reader left are the only progress; the reader leaving is not a failure, and nobody is there to tell
+
 #### Scenario: nothing was said
 
 - GIVEN Maks runs `kesha record --live --max-seconds 5` and stays silent
 - THEN stdout is empty — not a blank line
 - AND stderr says no speech was detected
 - AND the process exits 0 rather than reporting a failure
+
+#### Scenario: nothing was said, quietly
+
+- GIVEN Maks runs `kesha record -q --live --max-seconds 5` and stays silent
+- THEN stdout is empty
+- AND stderr still says no speech was detected, with no listening line or ticker before it
+- AND the process exits 0
 
 > *Technical Note — the streaming session is `StreamingAsrSession` in
 > `rust/src/streaming_asr.rs`, compiled only under
@@ -97,30 +113,34 @@ Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapse
 
 ### Requirement: `--live` requires an Engine that advertises `record.live`
 
-The CLI SHALL check the Engine's Capabilities for the `record.live` feature flag before spawning, and SHALL refuse `--live` with a message naming the platform requirement and pointing at the capture-then-transcribe alternative when the flag is absent. The flag SHALL NOT be forwarded to an Engine that does not advertise it.
+The CLI SHALL read the Engine's describe document for the `record.live` feature before spawning, and SHALL refuse `--live` with `E_INVALID_ARG` and a message naming the platform requirement and pointing at the capture-then-transcribe alternative when that feature is absent from `features`. The flag SHALL NOT be forwarded to an Engine that does not advertise it.
+
+A describe document the CLI cannot read SHALL end the command as a refusal rather than an assumption of support, carrying the `KeshaError` that the failed read produced and a hint naming `kesha install`.
+
+#### Scenario: Maks records live on a CoreML Engine
+
+- GIVEN the installed Engine's describe document lists `record.live` in `features`
+- WHEN Maks runs `kesha record --live`
+- THEN the CLI forwards `--live` and the live transcription starts
+- AND no `E_INVALID_ARG` is reported
 
 #### Scenario: Ira runs `--live` against a Linux ONNX Engine
 
 - GIVEN the installed Engine does not advertise `record.live`
 - WHEN Ira runs `kesha record --live`
-- THEN the CLI reports that live transcription requires a CoreML Engine on
-  Apple Silicon, and names `kesha record --out … && kesha …` as the way to get
-  a transcript on this platform
+- THEN the CLI reports `E_INVALID_ARG`, states that live transcription requires a
+  CoreML Engine on Apple Silicon, and names `kesha record --out … && kesha …` as
+  the way to get a transcript on this platform
 - AND the process exits 1 without spawning the Engine
 
-#### Scenario: capabilities cannot be read
+#### Scenario: the describe document cannot be read
 
-- GIVEN the Engine is installed but `--capabilities-json` fails
+- GIVEN the Engine is installed but `kesha-engine describe` fails
 - WHEN Maks runs `kesha record --live`
 - THEN the CLI refuses rather than forwarding `--live` on the assumption that
   it is supported
 
-> *Technical Note — flag: `RECORD_LIVE_FEATURE = "record.live"` in
-> `src/engine.ts`, checked by `preflightRecordLive`. Mirrors the
-> `transcribe.diarize` gate. The Engine-side `cfg` gate is the second line of
-> defence: a build without the streaming session rejects `--live` with
-> `error [E_UNSUPPORTED_PLATFORM]` and exit 1, naming the two-step alternative —
-> the same shape `record` already uses on Linux.*
+> *Technical Note — `validateRecordRequest` (`src/engine.ts`) runs `validateArgv(buildRecordArgs(…), await getDescribe())`, so `--live` is refused by the `live: record.live` row of `gate_rows()` (`rust/src/protocol/describe.rs`) exactly like every other gated flag; there is no record-specific check left. The Engine-side `cfg` gate in `rust/src/capabilities.rs` is the second line of defence: a build without the streaming session rejects `--live` as one `error` event whose `code` is `E_UNSUPPORTED_PLATFORM`, exits 1, and names the two-step alternative — the same shape `record` already uses on Linux.*
 
 ### Requirement: --max-seconds defaults to 120 and must be 1–3600
 
@@ -201,7 +221,9 @@ are clamped to `[-1.0, 1.0]` before writing.
 The Engine SHALL stop recording when either `--max-seconds` elapsed time is
 reached or stdin reaches EOF (pipe closed by the caller), whichever comes
 first. If stdin is a terminal, the EOF stop is not available; only
-`--max-seconds` applies.
+`--max-seconds` applies. Under `--live` the CLI adds a stop of its own: a write
+to its stdout failing because the reader closed the pipe, on which the CLI sends
+the Engine one `SIGTERM` (unreachable while the Engine delivers once, at the end).
 
 #### Scenario: Sona stops recording by closing the pipe
 
@@ -221,6 +243,27 @@ first. If stdin is a terminal, the EOF stop is not available; only
 > `rust/src/record.rs` lines 131–139; the thread is only spawned when stdin is
 > not a terminal (`!io::stdin().is_terminal()`). Max-seconds check:
 > `rust/src/record.rs` lines 96 and 106.*
+
+### Requirement: A recording whose parent process exits stops within about a second
+
+The Engine SHALL stop a `kesha record` capture within about a second of losing the process that started it — detected by its parent pid becoming 1 or changing from the one it started with — closing the microphone, removing any partially written file, and exiting non-zero, even when no signal reached it and its standard input stayed open.
+
+#### Scenario: Ira's CLI is force-killed mid-recording
+
+- GIVEN Ira started `kesha record --out note.wav` and the CLI is killed with SIGKILL from an interactive terminal
+- WHEN about a second passes
+- THEN the Engine has closed the microphone and exited non-zero
+- AND `note.wav` was not left behind
+
+#### Scenario: A recording whose caller is alive runs to its limit
+
+- GIVEN Maks runs `kesha record --out note.wav --max-seconds 5` and lets it run
+- WHEN the five seconds elapse with the caller still present
+- THEN the recording completes and the WAV is written
+
+> *Technical Note — `rust/src/record.rs::spawn_parent_watch_thread` polls `getppid`
+> every 250 ms and sends `Stop::ParentExited`, on which `capture_default_input_mono`
+> returns `ParentExited`; `rust/src/cli/record.rs` maps that to exit 129.*
 
 ### Requirement: `--out` produces a WAV file — IEEE-float 32-bit mono at native device rate
 
@@ -248,6 +291,44 @@ IEEE-float WAV format. Parent directories are created if they do not exist.
 > layout that does not apply to mono files. `fact` chunk is always written.
 > Source: `write_plain_mono_float_wav` in `rust/src/record.rs` lines 234–276.*
 
+### Requirement: An `--out` path that cannot take the WAV is refused before the microphone opens
+
+The Engine SHALL open the `--out` path before it opens the microphone, and SHALL refuse a path it cannot write — a directory, a symlink to one, a location this user cannot write into — with the Error code `E_INVALID_ARG`, a message naming `--out`, the path and the operating system's reason, and exit 1, without recording anything. Opening the path SHALL NOT truncate a file already there: the recording is written beside it and moved into place only once it succeeded, so a capture that fails leaves the earlier file untouched.
+
+#### Scenario: Maks passes a directory as --out
+
+- GIVEN `~/recordings` is a directory
+- WHEN Maks runs `kesha record --out ~/recordings --max-seconds 30`
+- THEN the Engine reports `E_INVALID_ARG` naming `~/recordings` and `Is a directory`
+- AND no recording runs first
+- AND the process exits 1
+
+#### Scenario: Ira records into a directory she cannot write
+
+- GIVEN `/srv/locked` exists and Ira has no write permission on it
+- WHEN Ira runs `kesha record --out /srv/locked/note.wav`
+- THEN the Engine reports `E_INVALID_ARG` naming the path and `Permission denied`
+- AND the process exits 1
+
+#### Scenario: A failed capture keeps the earlier recording
+
+- GIVEN `~/notes/standup.wav` holds yesterday's recording
+- WHEN Maks runs `kesha record --out ~/notes/standup.wav` and the capture fails before it finishes
+- THEN yesterday's file is still there, byte for byte
+- AND no `standup.wav.partial` is left beside it
+
+#### Scenario: A writable path records as before
+
+- WHEN Maks runs `kesha record --out ~/notes/standup.wav` and stops it
+- THEN the WAV is written there and the success line reports it
+
+> *Technical Note — `rust/src/record.rs::WavOutput` is opened first in
+> `record_default_input_to_wav`: it probes the path without truncating it, records
+> into an exclusively created, per-process-named `.partial` sibling (a planted
+> symlink at that name fails instead of being followed) and renames that over
+> `--out` on success; `abandon` removes the sibling and, only when nothing was
+> there before, the probe file.*
+
 ### Requirement: `--out` prints a success message on stderr naming recording details
 
 When a capture-to-WAV recording completes successfully, the Engine SHALL print a single line to
@@ -258,13 +339,21 @@ Recorded <path> (<sample_rate> Hz, <channels> channel, <frames> frames)
 ```
 
 Stdout remains empty so the caller can detect the silent completion without
-parsing.
+parsing. The line is the recording's outcome, not progress: `--quiet` SHALL
+keep it while dropping the listening line and the elapsed-second ticker.
 
 #### Scenario: Maks reads the confirmation
 
 - GIVEN `kesha record --out note.wav --max-seconds 5` completes normally
 - THEN stderr contains exactly one line matching
   `Recorded note.wav (44100 Hz, 1 channel, <N> frames)`
+- AND stdout is empty
+- AND the process exits 0
+
+#### Scenario: Ira scripts a quiet recording
+
+- GIVEN `kesha record -q --out note.wav --max-seconds 5` completes normally
+- THEN stderr contains the `Recorded note.wav (...)` line and nothing else
 - AND stdout is empty
 - AND the process exits 0
 

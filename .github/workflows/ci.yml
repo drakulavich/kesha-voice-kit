@@ -104,6 +104,9 @@ jobs:
               - 'rust/tests/**'
               # Same reason, and tracked: rust/vendor/vosk-tts/src/*.rs are legal rust/… reference targets too (#1141 review round 1).
               - 'rust/vendor/**'
+              # tests/unit/claude-hooks.test.ts checks that every hook settings.json registers is tracked; a hook-only edit must still run it (#1205 review round 1).
+              - '.claude/settings.json'
+              - '.claude/hooks/**'
             integration:
               - 'src/**'
               - 'tests/integration/**'
@@ -209,7 +212,7 @@ jobs:
 
       # check:recipes parses `just --dump`; without a `just` here it fails loudly rather than
       # skipping, which is the point — a silently-skipped gate is the drift it exists to catch.
-      - uses: taiki-e/install-action@ba47c86ac325773530516bb756137ac718732518 # v2.86.5
+      - uses: taiki-e/install-action@742a3317eac7bd62f91cd888b4eead5e784ba833 # v2.87.1
         with:
           tool: just@1.58.0
 

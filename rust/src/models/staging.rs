@@ -24,7 +24,7 @@ use super::paths::*;
     ),
     test
 ))]
-use super::progress::with_stderr;
+use crate::protocol::events;
 #[cfg(any(
     all(
         feature = "system_kokoro",
@@ -313,7 +313,10 @@ fn read_dir_paths(dir: &Path) -> Result<Vec<PathBuf>> {
 fn purge_incomplete_ane_bundles_in(kokoro_dir: &Path) -> Result<()> {
     for path in incomplete_ane_bundles_in(kokoro_dir)? {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
-        with_stderr(|| eprintln!("REPAIR {name} (incomplete, will refetch on first synth)"));
+        events::progress(
+            None,
+            format!("REPAIR {name} (incomplete, will refetch on first synth)"),
+        );
         fs::remove_dir_all(&path)
             .with_context(|| format!("remove incomplete CoreML bundle {}", path.display()))?;
     }

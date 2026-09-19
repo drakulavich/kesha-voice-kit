@@ -32,6 +32,8 @@ interface BadInputSpec {
   args: string[];
   env?: Record<string, string>;
   code: string;
+  /** The documented process exit status (docs/errors.md); left unset where only "non-zero" is the contract. */
+  exitCode?: number;
   stderrContains: string[];
   stderrNotContains?: string[];
   /** Result lines the command legitimately prints before failing; stdout stays empty otherwise. */
@@ -60,6 +62,33 @@ function stageUnwritableDir(parent: string, name: string): string | null {
 
 const KNOWN_BAD_INPUTS: BadInput[] = [
   {
+    name: "a say rate outside its range",
+    prepare: () => ({
+      args: ["say", "--rate", "9", "hello"],
+      code: "E_INVALID_ARG",
+      exitCode: 2,
+      stderrContains: ["--rate must be between 0.5 and 2.0."],
+    }),
+  },
+  {
+    name: "a record duration of zero seconds",
+    prepare: (dir) => ({
+      args: ["record", "--out", join(dir, "take.wav"), "--max-seconds", "0"],
+      code: "E_INVALID_ARG",
+      exitCode: 2,
+      stderrContains: ["--max-seconds must be an integer between 1 and"],
+    }),
+  },
+  {
+    name: "a stats retention that is not a day count",
+    prepare: () => ({
+      args: ["stats", "retention", "soon"],
+      code: "E_INVALID_ARG",
+      exitCode: 2,
+      stderrContains: ["usage: kesha stats retention <days|off>"],
+    }),
+  },
+  {
     name: "a directory where an audio file is expected",
     prepare(dir) {
       const target = join(dir, "a-directory");
@@ -67,6 +96,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       return {
         args: [target],
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: ["is a directory (expected an audio file)"],
       };
     },
@@ -92,6 +122,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_CACHE_DIR: readOnly },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           "KESHA_CACHE_DIR",
           readOnly,
@@ -110,6 +141,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_CACHE_DIR: file },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           "KESHA_CACHE_DIR",
           file,
@@ -132,6 +164,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_ENGINE_BIN: binPath },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           "KESHA_ENGINE_BIN",
           binPath,
@@ -153,6 +186,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_ENGINE_BIN: binPath },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           "KESHA_ENGINE_BIN",
           binPath,
@@ -174,6 +208,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_ENGINE_BIN: join(engineDir, "kesha-engine") },
         code: "E_INVALID_ARG",
+        exitCode: 2,
         stderrContains: [
           `Cannot install engine v${UNRELEASED}`,
           `${engineDir} is not writable`,
@@ -206,6 +241,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         args: ["install", "--engine-version", UNRELEASED],
         env: { KESHA_ENGINE_BIN: binPath, KESHA_INSTALL_LOCK_WAIT_SECS: "1" },
         code: "E_INSTALL_RACE",
+        exitCode: 1,
         stderrContains: [
           "Gave up after",
           `held by pid ${process.pid}`,
@@ -240,6 +276,7 @@ describe("failures the CLI answers without the engine", () => {
         args,
         env,
         code,
+        exitCode,
         stderrContains,
         stderrNotContains = [],
         stdoutContains = [],
@@ -256,7 +293,8 @@ describe("failures the CLI answers without the engine", () => {
         },
       });
 
-      expect(run.exitCode).not.toBe(0);
+      if (exitCode === undefined) expect(run.exitCode).not.toBe(0);
+      else expect(run.exitCode).toBe(exitCode);
       if (stdoutContains.length === 0) expect(run.stdout).toBe("");
       for (const needle of stdoutContains) {
         expect(run.stdout).toContain(needle);

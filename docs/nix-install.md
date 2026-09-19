@@ -12,7 +12,7 @@ For users who just want the Rust binary — this is the supported Nix path:
 ```bash
 nix build github:drakulavich/kesha-voice-kit#kesha-engine
 ./result/bin/kesha-engine --help
-./result/bin/kesha-engine --capabilities-json   # see which backends compiled in
+./result/bin/kesha-engine describe   # protocol schema: backend, profile, features
 ```
 
 ## Development shell

@@ -1,7 +1,17 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "fs";
 import { runCommandSession, type CommandSessionFactories } from "../../src/cli/command-session";
-import type { DiagnosticLogFields, DiagnosticLogSession, DiagnosticSessionStatus } from "../../src/diagnostic-log";
+import {
+  createDiagnosticLogSession,
+  resolveDiagnosticLogPath,
+  setDiagnosticLogMode,
+  type DiagnosticLogFields,
+  type DiagnosticLogSession,
+  type DiagnosticSessionStatus,
+} from "../../src/diagnostic-log";
+import { readEvents } from "../../src/engine/events";
 import type { StatsRecorder, StatsRunStatus } from "../../src/stats";
+import { tempDir } from "../helpers/temp-dir";
 
 type LoggedEvent = { event: string; fields: DiagnosticLogFields };
 
@@ -193,5 +203,59 @@ describe("runCommandSession", () => {
     expect(f.events[1]?.fields.status).toBe("failed");
     expect(f.statsFinishes).toEqual([{ status: "failed", itemCount: 0 }]);
     expect(f.finishes).toEqual(["failed"]);
+  });
+
+  test("engine debug events reach the diagnostic log while a command runs, and not after", async () => {
+    const f = fakeSession();
+    await runCommandSession(
+      "transcribe",
+      {},
+      async () => {
+        await readEvents(new Response('{"kind":"debug","t_ms":5,"message":"tick"}\n').body!);
+        return { status: "success", itemCount: 0, finishFields: {} };
+      },
+      f.factories,
+    );
+    expect(f.events).toContainEqual({
+      event: "engine.debug",
+      fields: { t_ms: 5, engineEvent: null },
+    });
+    const before = f.events.length;
+    await readEvents(new Response('{"kind":"debug","t_ms":6,"message":"late"}\n').body!);
+    expect(f.events).toHaveLength(before);
+  });
+
+  test("a named engine debug event with fields is written to the real ndjson log (Exploratory S9-F5)", async () => {
+    const savedLogDir = process.env.KESHA_LOG_DIR;
+    process.env.KESHA_LOG_DIR = tempDir("kesha-command-session-log-");
+    try {
+      setDiagnosticLogMode("on");
+      const f = fakeSession();
+      await runCommandSession(
+        "transcribe",
+        {},
+        async () => {
+          await readEvents(
+            new Response(
+              '{"kind":"debug","t_ms":7,"event":"asr.backend_loaded","message":"asr::backend_loaded dt=12ms","fields":{"dt_ms":12}}\n',
+            ).body!,
+          );
+          return { status: "success", itemCount: 0 };
+        },
+        { createStats: f.factories.createStats, createDiagnosticLog: createDiagnosticLogSession },
+      );
+
+      const raw = readFileSync(resolveDiagnosticLogPath(), "utf8");
+      const lines = raw.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+      expect(lines.find((line) => line.event === "engine.debug")).toMatchObject({
+        t_ms: 7,
+        engineEvent: "asr.backend_loaded",
+        dt_ms: 12,
+      });
+      expect(raw).not.toContain("asr::backend_loaded dt=12ms");
+    } finally {
+      if (savedLogDir === undefined) delete process.env.KESHA_LOG_DIR;
+      else process.env.KESHA_LOG_DIR = savedLogDir;
+    }
   });
 });

@@ -40,6 +40,7 @@ import {
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
 import { parseRepoYaml, readRepoFile, repoPath, REPO_ROOT } from "../helpers/repo";
+import { tempDir } from "../helpers/temp-dir";
 
 const PATH = ".github/workflows/build-engine.yml";
 const CI = ".github/workflows/ci.yml";
@@ -257,14 +258,14 @@ describe("forbidFindPipedToHead", () => {
   // A dropped check wouldn't show up against the clean repo tree, only against a probe (see above).
   test("the file gate actually runs it", () => {
     const yaml = "on: push\njobs:\n  smoke:\n    runs-on: macos-14\n    steps:\n      - run: find . -name x | head -1\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    const path = join(tempDir("kesha-wf-"), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1088"))).toHaveLength(1);
   });
 });
 
 describe("checkFlakeNix", () => {
-  const dir = () => mkdtempSync(join(tmpdir(), "kesha-flake-"));
+  const dir = () => tempDir("kesha-flake-");
 
   test("catches find piped to head", () => {
     const path = join(dir(), "flake.nix");
@@ -626,7 +627,7 @@ describe("manifest sources stay inside both path filters", () => {
   // The real tree cannot separate the two lists — both path filters are directory wildcards that cover
   // every models file — so the argument order checkFile forwards is only visible on distinct sets (#950 round 3).
   test("checkFile forwards each list to its own rule", () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
+    const dir = tempDir("kesha-wf-");
     const ci = join(dir, "ci.yml");
     writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'a.rs'\n              - 'b.rs'\n");
     const seed = join(dir, "cache-seed.yml");
@@ -650,7 +651,7 @@ describe("manifest sources stay inside both path filters", () => {
 
   // A gate is only a gate if checkFile still calls it; the real tree cannot notice an unwired one.
   test("the file gate actually runs all three", () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-wf-"));
+    const dir = tempDir("kesha-wf-");
     const ci = join(dir, "ci.yml");
     writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n");
     // Distinct fifth and sixth arguments: each rule must name the file from its OWN set, so handing
@@ -699,6 +700,24 @@ describe("cross-reference targets stay inside the code filter", () => {
   // #1132 round 3's lesson: every test passed an explicit root, so the default main() actually uses went unpinned.
   test("the production default crate root is rust", () => {
     expect(collectRustReferenceTargets().map((file) => file.replaceAll("\\", "/"))).toContain("rust/build.rs");
+  });
+
+  // Only cargo's own <crate>/target/ is build output; a source module happening to be named target is still a source.
+  test("a cargo build directory is not a source tree, but a nested target module is", () => {
+    const root = mkdtempSync(join(tmpdir(), "kesha-rust-walk-"));
+    try {
+      mkdirSync(join(root, "src", "target"), { recursive: true });
+      mkdirSync(join(root, "target", "debug", "build", "x", "out"), { recursive: true });
+      writeFileSync(join(root, "src", "lib.rs"), "");
+      writeFileSync(join(root, "src", "target", "mod.rs"), "");
+      writeFileSync(join(root, "target", "debug", "build", "x", "out", "generated.rs"), "");
+      const slashed = (files: string[]) => files.map((file) => file.replaceAll("\\", "/"));
+      const prefix = root.replaceAll("\\", "/");
+      expect(slashed(collectRustReferenceTargets(root))).toEqual([`${prefix}/src/lib.rs`, `${prefix}/src/target/mod.rs`]);
+      expect(slashed(collectRustSources(join(root, "src")))).toEqual([`${prefix}/src/lib.rs`, `${prefix}/src/target/mod.rs`]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("the real ci.yml covers every cross-reference target", () => {
@@ -793,7 +812,7 @@ describe("requireFlakeNixInWorkflowsFilter", () => {
 
   test("the file gate actually runs it", () => {
     const yaml = "jobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            workflows:\n              - '.github/workflows/**'\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
+    const path = join(tempDir("kesha-wf-"), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1088"))).toHaveLength(1);
   });
@@ -841,7 +860,7 @@ describe("requireBuildScriptInCoremlFilter", () => {
   test("the file gate actually runs it", () => {
     const yaml =
       "on:\n  pull_request:\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            coreml:\n              - 'rust/src/backend/fluidaudio.rs'\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
+    const path = join(tempDir("kesha-wf-"), "rust-test.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1145"))).toHaveLength(1);
   });
@@ -1026,7 +1045,7 @@ describe("requirePipefailShell", () => {
   // dropped check because the tree it reads is already clean.
   test("the file gate actually runs it", () => {
     const yaml = "on: push\njobs:\n  smoke:\n    runs-on: ubuntu-latest\n    steps:\n      - run: a | b\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    const path = join(tempDir("kesha-wf-"), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1084"))).toHaveLength(1);
   });
@@ -1074,7 +1093,7 @@ describe("requirePipefailShell", () => {
 
   test("the file gate actually runs it on a composite action", () => {
     const yaml = "name: Example\nruns:\n  using: composite\n  steps:\n    - run: a | b\n      shell: sh\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "action.yml");
+    const path = join(tempDir("kesha-wf-"), "action.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1089"))).toHaveLength(1);
   });
@@ -1265,7 +1284,7 @@ describe("requireJobTimeouts", () => {
   // dropped check because the tree it reads is already clean.
   test("the file gate actually runs it", () => {
     const yaml = "on: push\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    steps:\n      - run: echo hi\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    const path = join(tempDir("kesha-wf-"), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
@@ -1485,7 +1504,7 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
   test("the file gate actually runs it", () => {
     const yaml =
       "on:\n  pull_request:\njobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n      - run: echo hi\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "probe.yml");
+    const path = join(tempDir("kesha-wf-"), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
@@ -1547,7 +1566,7 @@ describe("requireBuildEngineSerialisesRunsPerRef", () => {
 
   test("the file gate actually runs it", () => {
     const yaml = "on:\n  push:\njobs: {}\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
+    const path = join(tempDir("kesha-wf-"), "build-engine.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1108"))).toHaveLength(2);
   });
@@ -1625,7 +1644,7 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
   test("the file gate actually runs it", () => {
     const yaml =
       "on:\n  push:\njobs:\n  release:\n    steps:\n      - uses: softprops/action-gh-release@3d0d9888c\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "build-engine.yml");
+    const path = join(tempDir("kesha-wf-"), "build-engine.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1115"))).toHaveLength(1);
   });
@@ -1664,7 +1683,7 @@ describe("requireRustTestCancelsSupersededRuns", () => {
 
   test("the file gate actually runs it", () => {
     const yaml = "on:\n  pull_request:\nconcurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "rust-test.yml");
+    const path = join(tempDir("kesha-wf-"), "rust-test.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
@@ -1692,7 +1711,7 @@ describe("forbidNixBuildInCiAggregator", () => {
   // a second error containing "nix-build" and this would pass asserting nothing (#1105).
   test("the file gate actually runs it", () => {
     const yaml = "on: push\njobs:\n  nix-build:\n    if: github.event_name == 'push'\n  ci:\n    needs: [nix-build]\n";
-    const path = join(mkdtempSync(join(tmpdir(), "kesha-wf-")), "ci.yml");
+    const path = join(tempDir("kesha-wf-"), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("nix-build"))).toHaveLength(1);
   });

@@ -13,5 +13,7 @@ export const mcpCommand = defineCommand({
     const server = createKeshaMcpServer();
     const transport = new StdioServerTransport();
     await server.connect(transport);
+    // The SDK transport never watches for EOF, so a client that died mid-call left the engine running (exploratory S7-2).
+    process.stdin.once("end", () => void server.close());
   },
 });

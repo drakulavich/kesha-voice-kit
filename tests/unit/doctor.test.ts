@@ -19,18 +19,19 @@ import {
   type DoctorReport,
 } from "../../src/doctor";
 import { collectStatus } from "../../src/status";
-import { stageEngineHome } from "../helpers/fake-engine";
+import { describeDocument, describeJson, saveEngineEnv, stageEngineHome, writeVoiceListingEngine } from "../helpers/fake-engine";
+import { describeToCapabilities } from "../../src/engine/describe";
 import { createSupportBundle } from "../../src/support-bundle";
 import { engineVersion, packageName, packageVersion } from "../../src/package-info";
 import { enableStats } from "../../src/stats";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { KOKORO_ANE_EN_REQUIRED, KOKORO_G2P_REQUIRED } from "../../src/kokoro-ane";
+import { tempDir } from "../helpers/temp-dir";
 
-const fakeCapabilities = {
-  protocolVersion: 2,
+const fakeCapabilities = describeDocument({
   backend: "fake-coreml",
   features: ["transcribe.segments", "transcribe.diarize"],
-};
+});
 
 function writeEngineStub(path: string, body: string): void {
   writeFileSync(path, body);
@@ -106,13 +107,13 @@ describe("redactDiagnosticValue", () => {
 describe("collectDoctorReport", () => {
   const savedEnv = {
     HOME: process.env.HOME,
+    KESHA_HOME: process.env.KESHA_HOME,
     KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
     KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
     KESHA_MODEL_MIRROR: process.env.KESHA_MODEL_MIRROR,
     KESHA_STATS_DB: process.env.KESHA_STATS_DB,
     KESHA_LOG_DIR: process.env.KESHA_LOG_DIR,
     KESHA_DEBUG: process.env.KESHA_DEBUG,
-    KESHA_DEBUG_FD: process.env.KESHA_DEBUG_FD,
   };
 
   function restoreEnv() {
@@ -131,6 +132,7 @@ describe("collectDoctorReport", () => {
       process.env.HOME = dir;
       process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
       process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_HOME = join(dir, "kesha-home");
       process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
       process.env.KESHA_LOG_DIR = join(dir, "logs");
       process.env.KESHA_MODEL_MIRROR = "https://user:pass@example.com/kesha?token=abc";
@@ -165,6 +167,14 @@ describe("collectDoctorReport", () => {
       expect(report.cache.totalBytes).toBe("vad".length);
       expect(report.env.KESHA_MODEL_MIRROR).toBe("https://example.com/kesha");
       expect(report.env.KESHA_DEBUG).toBe("1");
+      expect(report.env.KESHA_HOME).toBe("~/kesha-home");
+      expect(report.paths).toEqual({
+        cache: { path: "~/.cache/kesha", source: "KESHA_CACHE_DIR" },
+        logs: { path: "~/logs", source: "KESHA_LOG_DIR" },
+        stats: { path: "~/stats.sqlite", source: "KESHA_STATS_DB" },
+        mcpAudio: { path: "~/kesha-home/mcp-audio", source: "KESHA_HOME" },
+      });
+      expect(formatDoctorReport(report)).toContain("  MCP audio: ~/kesha-home/mcp-audio (KESHA_HOME)");
       expect("runCount" in report.stats).toBe(true);
       expect(report.diagnosticLogs.mode).toBe("retain-on-failure");
       expect(report.diagnosticLogs.dir).toBe("~/logs");
@@ -360,7 +370,7 @@ describe("collectDoctorReport", () => {
       writeEngineStub(
         binPath,
         `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${JSON.stringify(fakeCapabilities)}'
   exit 0
 fi
@@ -374,11 +384,11 @@ exit 2
 
       const report = await collectDoctorReport({ redact: true });
       expect(report.engine.installed).toBe(true);
-      expect(report.engine.capabilities).toEqual(fakeCapabilities);
+      expect(report.engine.capabilities).toEqual(describeToCapabilities(fakeCapabilities));
       expect(report.engine.probeError).toBeNull();
 
       const output = formatDoctorReport(report);
-      expect(output).toContain("fake-coreml, protocol v2");
+      expect(output).toContain("fake-coreml, protocol v4");
       expect(output).toContain("transcribe.diarize");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -435,6 +445,7 @@ describe("the human report states what each component is doing (#770)", () => {
       },
       cache: cacheReport({ totalBytes: 4096 }),
       optionalComponents: [],
+      tts: { voices: [], languagesStaged: [], languagesMissing: [] },
       stats: {
         enabled: true,
         dbPath: "/stats.sqlite",
@@ -455,6 +466,12 @@ describe("the human report states what each component is doing (#770)", () => {
         retain: 5,
       },
       env: {},
+      paths: {
+        cache: { path: "/cache", source: "default" },
+        logs: { path: "/logs", source: "default" },
+        stats: { path: "/stats.sqlite", source: "default" },
+        mcpAudio: { path: "/tmp/kesha-mcp", source: "default" },
+      },
       ...overrides,
     };
   }
@@ -706,13 +723,38 @@ describe("collectDoctorReport probe and cache accounting", () => {
     }
   });
 
+  posixEngineTest("a stale engine is named as a protocol mismatch, not a mute one", async () => {
+    const { dir, binDir } = stage("kesha-doctor-protocol-engine-");
+    writeEngineStub(
+      join(binDir, "kesha-engine"),
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ features: [], protocolVersion: 3 })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    try {
+      const report = await collectDoctorReport();
+      expect(report.engine.runnable).toBe(true);
+      expect(report.engine.capabilities).toBeNull();
+      expect(report.engine.probeError).toContain("E_ENGINE_PROTOCOL");
+      const rendered = formatDoctorReport(report);
+      expect(rendered).toContain("E_ENGINE_PROTOCOL");
+      expect(rendered).toContain("kesha install");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   posixEngineTest("a CoreML engine gets the in-cache FluidAudio row, not the ONNX model dir", async () => {
     const { dir, binDir } = stage("kesha-doctor-coreml-cache-");
     writeEngineStub(
       join(binDir, "kesha-engine"),
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"coreml","features":[]}'
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "coreml", features: [] })}'
   exit 0
 fi
 exit 2
@@ -734,8 +776,8 @@ exit 2
     writeEngineStub(
       join(binDir, "kesha-engine"),
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
   exit 0
 fi
 exit 2
@@ -830,7 +872,6 @@ describe("createSupportBundle", () => {
     KESHA_MODEL_MIRROR: process.env.KESHA_MODEL_MIRROR,
     KESHA_STATS_DB: process.env.KESHA_STATS_DB,
     KESHA_DEBUG: process.env.KESHA_DEBUG,
-    KESHA_DEBUG_FD: process.env.KESHA_DEBUG_FD,
   };
 
   function restoreEnv() {
@@ -887,7 +928,7 @@ describe("createSupportBundle", () => {
   });
 
   test("includes bounded diagnostic log tail only when requested", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-support-bundle-logs-test-"));
+    const dir = tempDir("kesha-support-bundle-logs-test-");
     try {
       process.env.HOME = dir;
       process.env.KESHA_LOG_DIR = join(dir, "logs");
@@ -920,6 +961,22 @@ describe("createSupportBundle", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("a version marker holding the home path is redacted like every other path (Exploratory S5-F1)", async () => {
+    const dir = tempDir("kesha-support-bundle-marker-");
+    process.env.HOME = dir;
+    process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+    process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+    mkdirSync(join(dir, "engine", "bin"), { recursive: true });
+    writeFileSync(join(dir, "engine", "bin", "kesha-engine.version"), `${join(dir, "builds", "alice")}\n`);
+
+    const output = join(dir, "bundle.tar.gz");
+    await createSupportBundle({ output, now: new Date("2026-05-17T12:34:56Z") });
+    const archive = gunzipSync(readFileSync(output)).toString("utf8");
+
+    expect(archive).toContain("~/builds/alice");
+    expect(archive).not.toContain(dir);
   });
 });
 
@@ -1141,8 +1198,8 @@ describe("doctor and status agree on the disk total (#790)", () => {
     writeEngineStub(
       binPath,
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"onnx","features":[]}'
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'
   exit 0
 fi
 exit 2
@@ -1178,8 +1235,8 @@ exit 2
     writeEngineStub(
       binPath,
       `#!/bin/sh
-if [ "$1" = "--capabilities-json" ]; then
-  printf '%s\\n' '{"protocolVersion":3,"backend":"coreml","features":[]}'
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "coreml", features: [] })}'
   exit 0
 fi
 exit 2
@@ -1221,5 +1278,34 @@ exit 2
       rmSync(dir, { recursive: true, force: true });
       rmSync(fluidHome, { recursive: true, force: true });
     }
+  });
+});
+
+// T2-7: the report named no voice or language, so nothing in it contradicted `missing: []`.
+describe("doctor reports the TTS voices and languages", () => {
+  const restoreEnv = saveEngineEnv();
+
+  beforeEach(restoreEnv);
+  afterEach(restoreEnv);
+
+  const darwinArmTest = isDarwinArm64() ? test : test.skip;
+
+  darwinArmTest("names the languages whose voice packs are staged and those absent", async () => {
+    const home = stageEngineHome("kesha-doctor-tts-languages-");
+    writeVoiceListingEngine(home.binDir, ["en-am_michael", "macos-com.apple.voice.compact.ru-RU.Milena"]);
+    const ane = join(home.cache, "fluidaudio", "kokoro-82m-coreml", "ANE");
+    mkdirSync(ane, { recursive: true });
+    writeFileSync(join(ane, "am_michael.bin"), "pack");
+    writeFileSync(join(ane, "em_alex.bin"), "pack");
+
+    const report = await collectDoctorReport({ redact: false, homeDir: home.dir });
+
+    expect(report.tts.voices).toEqual([
+      "en-am_michael",
+      "macos-com.apple.voice.compact.ru-RU.Milena",
+    ]);
+    expect(report.tts.languagesStaged).toEqual(["en", "es"]);
+    expect(report.tts.languagesMissing).toEqual(["fr", "hi", "it", "ja", "pt", "zh"]);
+    expect(formatDoctorReport(report)).toContain("Languages staged: en, es");
   });
 });

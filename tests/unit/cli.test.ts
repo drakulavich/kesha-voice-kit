@@ -509,6 +509,21 @@ describe("language detection", () => {
     const warning = checkLanguageMismatch("en", "");
     expect(warning).toBeNull();
   });
+
+  test("--lang matches case-insensitively and ignores the region subtag (Exploratory S11-1)", () => {
+    for (const expected of ["en-us", "EN", "en_US", "en-GB"]) {
+      expect(checkLanguageMismatch(expected, "en")).toBeNull();
+    }
+    expect(checkLanguageMismatch("en", "EN-us")).toBeNull();
+  });
+
+  test("--lang still warns on a different primary language, quoting the code as typed", () => {
+    expect(checkLanguageMismatch("en-US", "ru")).toBe('warning: expected language "en-US" but detected "ru"');
+  });
+
+  test("a three-letter code is compared as a whole subtag, not as a prefix", () => {
+    expect(checkLanguageMismatch("eng", "en")).not.toBeNull();
+  });
 });
 
 

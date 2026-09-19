@@ -95,10 +95,10 @@ other platform is unsupported and fails.
 
 > *Technical Note — sources: `src/cli/install.ts::resolveBackendFlag`,
 > `src/cli/install.ts::defaultBackendForPlatform` (darwin-arm64 → `coreml`, linux-x64 and
-> win32-x64 → `onnx`), `src/engine-install.ts::validateBackend` (post-download backend
-> mismatch check via Capabilities JSON). The pre-flight in `performInstall` only engages
-> when the platform backend is defined, so an unshipped platform defers to the
-> post-download check.*
+> win32-x64 → `onnx`), `src/engine-install.ts::validateInstallRequest` (post-download
+> backend mismatch check against the describe document's `backend`, #1165). The
+> pre-flight in `performInstall` only engages when the platform backend is defined, so
+> an unshipped platform defers to the post-download check.*
 
 ### Requirement: Windows x64 installs the released ONNX Engine
 
@@ -207,9 +207,12 @@ what any platform is claimed to support.
 > ubuntu-latest, `windows-engine-smoke` on windows-latest — both run a cold install and
 > `.github/scripts/smoke-synthesis.ts`), `.github/scripts/assert-install-warmup.ts`, and
 > `rust/src/cli/install.rs` (warm-up warns and continues, #298). The engine-downloading
-> lanes carry a `!startsWith(github.head_ref, 'release/')` guard at `ci.yml:387`, `:448`
-> and `:501`; the channel those lanes resolve is what keeps alpha Engine tags out of
-> unrelated pull requests.*
+> lanes carry a `!startsWith(github.head_ref, 'release/')` guard —
+> `.github/workflows/ci.yml::integration-tests-full`,
+> `.github/workflows/ci.yml::published-engine-smoke`,
+> `.github/workflows/ci.yml::windows-engine-smoke` and
+> `.github/workflows/ci.yml::tts-e2e`; the channel those lanes resolve is what keeps
+> alpha Engine tags out of unrelated pull requests.*
 
 ### Requirement: Linux packages ship only from a release that publishes the same CLI version
 
@@ -255,10 +258,13 @@ The packaged version is taken from `package.json#version` at the tag, so the lan
 
 The CLI SHALL install TTS models only when `--tts` is passed. Bare `--tts` installs
 English only. `--tts <lang>…` installs the listed languages. Positional language codes
-without `--tts` SHALL fail with exit 1 explaining the required flag. Unsupported
-language codes SHALL fail with exit 1 listing the supported set.
+without `--tts` SHALL fail with `error [E_INVALID_ARG]: …` and exit 2 explaining the
+required flag, the usage class every other argument error shares. Unsupported
+language codes SHALL fail with `error [E_INVALID_ARG]: …` and exit 2, listing the
+supported set, before anything is downloaded and also under `--plan`.
 
 The supported TTS language sets are:
+
 - ONNX build (linux-x64, macOS ONNX): `en`, `es`, `fr`, `it`, `pt`, `ru`
 - darwin-arm64 (CoreML): additionally `hi`, `ja`, `zh`
 
@@ -279,19 +285,23 @@ already installed leaves English in place.
   downloaded
 - AND the process exits 0
 
-#### Scenario: Language code without `--tts` flag
-
-- WHEN Ira runs `kesha install ru`
-- THEN the CLI prints an error: language codes require the `--tts` flag, e.g.
-  `kesha install --tts ru`
-- AND the process exits 1 without downloading anything
-
 #### Scenario: Unsupported language code
 
 - GIVEN the machine is linux-x64 (ONNX build)
 - WHEN Ira runs `kesha install --tts zh`
-- THEN the CLI prints an error listing supported languages for this platform
-- AND the process exits 1
+- THEN stderr reads `error [E_INVALID_ARG]: Unsupported TTS language(s): zh. …` listing the supported languages for this platform
+- AND the process exits 2
+
+#### Scenario: Language codes without the flag
+
+- WHEN Ira runs `kesha install ru`
+- THEN stderr reads `error [E_INVALID_ARG]: Language codes (ru) require the --tts flag, …`
+- AND the process exits 2 and nothing is downloaded
+
+#### Scenario: Unsupported language code under --plan
+
+- WHEN Maks runs `kesha install --plan --tts xx`
+- THEN the same coded line is printed and the process exits 2 with an empty stdout
 
 > *Technical Note — sources: `src/cli/install.ts::resolveTtsLangs`,
 > `src/install-plan.ts` (KOKORO_GRAPH_FILE ~325 MB, per-language KOKORO_VOICE_FILES
@@ -484,13 +494,55 @@ the first one is still streaming into.
 > `cleanup_orphan_staging`): Windows keeps last-write time stale while a handle is open,
 > so an in-flight download there cannot be told apart from an orphan.*
 
+### Requirement: Concurrent installs into one Model cache are serialised, and a lock nobody holds is cleared
+
+`kesha install` SHALL take a lock on the Engine directory before writing to it, so that two installs sharing one Model cache never overwrite each other, and SHALL wait for a live holder rather than fail. A lock whose owner is a process on the same host that has exited, whose owner has held it past the stale ceiling, or whose owner record does not parse SHALL be cleared by the next waiter within one poll interval rather than waited out — an owner on another host cannot be probed, so its death is only known once the ceiling passes; an owner record that cannot be read at all SHALL be treated as a live holder, since a permission or I/O failure says nothing about the install behind it. A waiter that outlasts the wait ceiling SHALL fail with `E_INSTALL_RACE`, naming the holder when it can and the lock path to delete in every case.
+
+#### Scenario: Ira runs two installs at once against a shared cache
+
+- GIVEN one `kesha install` holds the lock on a shared `KESHA_CACHE_DIR`
+- WHEN Ira starts a second `kesha install` in another job
+- THEN the second run reports that it is waiting and names the lock to delete if no install is running
+- AND it proceeds as soon as the first run releases the lock
+
+#### Scenario: The lock's owner record does not parse
+
+- GIVEN the lock directory holds an owner file that is not valid JSON
+- WHEN Maks runs `kesha install`
+- THEN the install clears that lock on its first poll and proceeds
+- AND it does not wait for the stale ceiling or report `E_INSTALL_RACE`
+
+#### Scenario: The lock's owner record cannot be read
+
+- GIVEN the lock directory holds an owner file the current user has no permission to read
+- WHEN Ira runs `kesha install` with `KESHA_INSTALL_LOCK_WAIT_SECS` set
+- THEN the install waits out that ceiling and fails with `E_INSTALL_RACE`
+- AND the owner file is still there
+
+#### Scenario: The lock directory holds something that is not an owner record
+
+- GIVEN the lock directory holds a file that is not an owner record and no owner file
+- WHEN Ira runs `kesha install` with `KESHA_INSTALL_LOCK_WAIT_SECS` set
+- THEN the install waits out that ceiling and fails with `E_INSTALL_RACE`
+- AND the message says the holder cannot be identified and names the lock path to delete
+
+> *Technical Note — `src/install-lock.ts::acquireInstallLock` (#997) publishes an owner
+> file inside a staged directory and renames it into place; `readOwner` returns the owner
+> record, the owner file's token with no record when the file does not parse, the token
+> marked `unreadable` when the file cannot be read, or null when there is no owner file; `clearLock` unlinks the owner by its exact name and then
+> removes the directory. `waitTimedOut` is the `E_INSTALL_RACE` (#1018). Pinned by
+> `tests/unit/install-lock.test.ts`.*
+
 ### Requirement: `--plan` shows the download plan without changing local state
 
 The CLI SHALL print a human-readable Install plan when `--plan` is passed, listing all
 components with their sizes, cache status (cached / needed / refresh), source, and the
 expected network bytes for the current run. No files SHALL be downloaded or modified.
-The plan also includes warm-up steps and ends with the equivalent `kesha install …`
-command.
+On darwin-arm64 the FluidAudio Kokoro ANE chain, the shared G2P bundle and each
+requested language's voice pack SHALL appear as sized components, their sizes derived
+from the pinned manifest, so `--tts <lang>` for a language whose pack is not staged
+states the bytes it will fetch and a staged one counts as cached. The plan also
+includes warm-up steps and ends with the equivalent `kesha install …` command.
 
 #### Scenario: Ira previews a fresh install
 
@@ -507,6 +559,19 @@ command.
 - WHEN Maks runs `kesha install --plan --tts en ru --vad`
 - THEN the plan additionally lists TTS Kokoro, TTS Vosk RU, and VAD Silero components
 - AND already-cached components are marked `cached`
+
+#### Scenario: Plan for a FluidAudio language that is not staged
+
+- GIVEN darwin-arm64 with English staged and Spanish not
+- WHEN Ira runs `kesha install --plan --tts es`
+- THEN the plan lists the Spanish voice pack as `needed` with its size
+- AND `Expected Kesha-managed network for this run` is that size, not `0 B`
+
+#### Scenario: Plan for a FluidAudio language already staged
+
+- WHEN Ira runs `kesha install --plan --tts en` on the same machine
+- THEN the ANE chain and the English pack are marked `cached`
+- AND the expected network total is `0 B`
 
 > *Technical Note — sources: `src/install-plan.ts::renderInstallPlan`. The plan is
 > rendered entirely client-side from pinned sizes; no network access is required.
@@ -630,6 +695,11 @@ for interactive input.
 `--diarize` on a non-darwin-arm64 platform is silently dropped with a warning; the
 install proceeds without it.
 
+Cancelling any prompt (Ctrl-C or Escape) SHALL end `kesha init` with `Init cancelled.`
+and exit 130 — the same code an interrupted `kesha install` reports — so a chained
+`kesha init && …` does not continue as though setup had succeeded. Nothing is
+downloaded on that path.
+
 #### Scenario: Maks runs guided setup on Apple Silicon
 
 - GIVEN the machine is darwin-arm64 with a TTY
@@ -660,11 +730,22 @@ install proceeds without it.
 - THEN a warning is printed: `--diarize is currently darwin-arm64 only; omitting it`
 - AND the install proceeds without the diarize model
 
+#### Scenario: Maks presses Ctrl-C at a prompt
+
+- GIVEN Maks runs `kesha init && kesha meeting.ogg` in a TTY
+- WHEN Maks presses Ctrl-C at the TTS language picker
+- THEN the CLI prints `Init cancelled.` and exits 130
+- AND nothing is downloaded
+- AND `kesha meeting.ogg` does not run
+
 > *Technical Note — sources: `src/cli/init.ts::initCommand`,
 > `src/cli/init.ts::promptInitSelection`, `src/cli/init.ts::runNonInteractive`,
 > `src/cli/init.ts::canInstallDiarizeOnPlatform`. The TTS language picker uses
 > `@clack/prompts::multiselect` with `required: false` (no-selection = skip TTS).
-> TTY check: `process.stdin.isTTY === true && process.stdout.isTTY === true`.*
+> TTY check: `process.stdin.isTTY === true && process.stdout.isTTY === true`.
+> A cancelled clack prompt returns `isCancel`'s sentinel rather than throwing;
+> `src/cli/init.ts::exitIfCancelled` turns it into `process.exit(130)`. Pinned by
+> `tests/unit/init.test.ts` (S4-F1).*
 
 ### Requirement: The star prompt is gated to meaningful version bumps and bounded in time
 
@@ -713,13 +794,14 @@ After a successful install the CLI MAY print an invitation to star the repositor
 - THEN nothing is printed, and the slot is still consumed so the same version
   never asks again
 
-> *Technical Note — `maybeAskForStar` (`src/star.ts:62`) is called after
-> `installEngine` succeeds (`src/cli/install.ts:239`).
-> `shouldShowStarPrompt` (`src/star.ts:42`) returns true for an absent marker
+> *Technical Note — `src/star.ts::maybeAskForStar` is called after
+> `installEngine` succeeds, from `src/cli/install.ts::performInstall`.
+> `src/star.ts::shouldShowStarPrompt` returns true for an absent marker
 > and for a major-or-minor increase only. The marker is `<engine-bin>.star-seen`
-> (`src/star.ts:16`) and is written *before* printing, so one run never prompts
-> twice and a write failure is non-fatal. `GH_PROBE_TIMEOUT_MS` is 2 000 ms
-> (`src/star.ts:6`), sized to clear a healthy `gh auth status` (0.77–1.21 s
+> (`src/star.ts::starSeenPath`) and is written *before* printing, so one run never
+> prompts twice and a write failure is non-fatal.
+> `src/star.ts::GH_PROBE_TIMEOUT_MS` is 2 000 ms, sized to clear a healthy
+> `gh auth status` (0.77–1.21 s
 > measured) but not a wedged one that blocked install 11–25 s (#810).
 > `maybeAskForStar` is total: its whole body sits in a try that swallows any
 > throw to `log.warn`, so a failing probe, spawn, or logger cannot escape into

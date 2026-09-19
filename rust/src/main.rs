@@ -1,119 +1,34 @@
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{error::ErrorKind, Parser};
 
-use kesha_engine::{capabilities, cli, debug, errors};
-
-#[derive(Parser)]
-#[command(name = "kesha-engine", version)]
-struct Cli {
-    #[command(subcommand)]
-    command: Option<Commands>,
-
-    /// Print capabilities as JSON
-    #[arg(long = "capabilities-json")]
-    capabilities_json: bool,
-
-    /// Print the error-code taxonomy as JSON and exit.
-    #[arg(long = "error-codes-json")]
-    error_codes_json: bool,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    /// Transcribe an audio file
-    Transcribe {
-        /// Path to audio file
-        audio_path: String,
-        /// Output structured JSON with text and timestamped segments.
-        #[arg(long)]
-        json: bool,
-        /// Force Silero VAD preprocessing. Requires the VAD model to be
-        /// installed (`kesha install --vad`). Mutually exclusive with
-        /// `--no-vad`. Without either flag, VAD auto-engages on audio
-        /// ≥ 120 s when the model is installed (#187).
-        #[arg(long, conflicts_with = "no_vad")]
-        vad: bool,
-        /// Disable VAD preprocessing regardless of duration or install state.
-        #[arg(long = "no-vad")]
-        no_vad: bool,
-        /// Include speaker labels in transcript segments. Requires --json.
-        /// Engages VAD windowing automatically at any duration (labels attach
-        /// to speech segments), so it cannot be combined with `--no-vad`.
-        /// Currently darwin-arm64 only (#199).
-        #[arg(long)]
-        speakers: bool,
-        /// Rewrite spoken-form numbers, money, dates and times to written form
-        /// ("two hundred thirty two" → "232"). English-only in practice; other
-        /// languages pass through unchanged (#710).
-        #[arg(long)]
-        itn: bool,
-    },
-    /// Detect spoken language from audio
-    DetectLang {
-        /// Path to audio file
-        audio_path: String,
-    },
-    /// Detect language of text (macOS only)
-    DetectTextLang {
-        /// Text to analyze
-        text: String,
-    },
-    /// Record microphone audio to a WAV file
-    Record {
-        /// Output WAV file. Required unless --live is passed.
-        #[arg(long, conflicts_with = "live")]
-        out: Option<std::path::PathBuf>,
-        /// Transcribe the microphone live and print the transcript to stdout
-        /// instead of writing a WAV. CoreML builds on macOS only.
-        #[arg(long)]
-        live: bool,
-        /// Maximum recording duration in seconds
-        #[arg(long = "max-seconds", default_value_t = 120)]
-        max_seconds: u64,
-        /// Stop a live transcription after trailing silence. Requires the
-        /// explicitly installed Silero VAD model (`kesha install --vad`).
-        #[arg(long, requires = "live")]
-        auto_stop: bool,
-        /// Trailing silence before --auto-stop ends the recording.
-        #[arg(long = "auto-stop-silence-ms", requires = "auto_stop")]
-        auto_stop_silence_ms: Option<u32>,
-        /// Silero speech-probability threshold for --auto-stop.
-        #[arg(long = "auto-stop-threshold", requires = "auto_stop")]
-        auto_stop_threshold: Option<f32>,
-        /// Minimum detected speech before --auto-stop may end a recording.
-        #[arg(long = "auto-stop-min-speech-ms", requires = "auto_stop")]
-        auto_stop_min_speech_ms: Option<u32>,
-    },
-    /// Download models
-    Install(cli::install::InstallArgs),
-    /// Synthesize speech from text (TTS)
-    #[cfg(feature = "tts")]
-    Say(cli::say::SayArgs),
-}
+use kesha_engine::cli::args::{Cli, Commands};
+use kesha_engine::errors::ErrorCode;
+use kesha_engine::protocol::events;
+use kesha_engine::{cli, debug, errors};
 
 fn main() {
-    // Anchor the `KESHA_DEBUG=1` `+Nms` timeline before `Cli::parse()` so
+    // Anchor the `KESHA_DEBUG=1` `+Nms` timeline before `Cli::try_parse()` so
     // clap parsing + env probes are counted toward the first `dtrace!`'s
     // prefix (Greptile P2 on #293). No-op when debug is off.
     debug::init();
-    let cli = Cli::parse();
-
-    if cli.capabilities_json {
-        let caps = capabilities::get_capabilities();
-        match serde_json::to_string(&caps) {
-            Ok(s) => println!("{s}"),
-            Err(e) => std::process::exit(errors::report(&anyhow::Error::new(e))),
+    errors::install_panic_hook();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) if matches!(e.kind(), ErrorKind::DisplayHelp | ErrorKind::DisplayVersion) => {
+            let _ = e.print();
+            return;
         }
-        return;
-    }
+        Err(e) => {
+            events::error(ErrorCode::InvalidArg, e.to_string().trim_end(), None);
+            std::process::exit(2);
+        }
+    };
 
-    if cli.error_codes_json {
-        println!("{}", errors::error_codes_json());
-        return;
-    }
-
-    if let Err(err) = run_command(cli.command) {
-        std::process::exit(errors::report(&err));
+    // The hook has already reported a panic as E_INTERNAL; 1 keeps the exit status inside the contract.
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| run_command(cli.command))) {
+        Ok(Ok(())) => {}
+        Ok(Err(err)) => std::process::exit(errors::report(&err)),
+        Err(_) => std::process::exit(1),
     }
 }
 
@@ -138,13 +53,21 @@ fn run_command(command: Option<Commands>) -> Result<()> {
             auto_stop_threshold,
             auto_stop_min_speech_ms,
         }) => {
-            let endpoint = cli::record::endpoint_config(
+            let recorded = cli::record::endpoint_config(
                 auto_stop,
                 auto_stop_silence_ms,
                 auto_stop_threshold,
                 auto_stop_min_speech_ms,
-            )?;
-            cli::record::run(out, live, max_seconds, endpoint)?
+            )
+            .and_then(|endpoint| cli::record::run(out, live, max_seconds, endpoint));
+            if let Err(err) = recorded {
+                std::process::exit(cli::record::exit_code(&err));
+            }
+        }
+        Some(Commands::Describe) => {
+            let s = kesha_engine::protocol::describe::render()?;
+            kesha_engine::dtrace!("describe: rendered {} bytes", s.len());
+            println!("{s}");
         }
         Some(Commands::Install(args)) => cli::install::run(args)?,
         #[cfg(feature = "tts")]
@@ -152,9 +75,12 @@ fn run_command(command: Option<Commands>) -> Result<()> {
             std::process::exit(cli::say::run(args));
         }
         None => {
-            eprintln!("Usage: kesha-engine <command>");
-            eprintln!("Run --help for usage information");
-            std::process::exit(1);
+            events::error(
+                ErrorCode::InvalidArg,
+                "Usage: kesha-engine <command>\nRun --help for usage information",
+                None,
+            );
+            std::process::exit(2);
         }
     }
 

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use std::path::PathBuf;
 
+use crate::protocol::events;
 use crate::{models, say_loop, tts};
 
 #[derive(clap::Args)]
@@ -96,6 +97,10 @@ pub(crate) fn resolve_output_format(
         if let Some(r) = sample_rate {
             *sr = r;
         }
+        // The encoder keeps its own check, but reaching it costs a full synthesis first (T1-5).
+        if !tts::encode::OPUS_BITRATE_RANGE.contains(br) {
+            return Err(format!("--bitrate must be 6000..=510000 bps, got {br}"));
+        }
     } else if bitrate.is_some() || sample_rate.is_some() {
         return Err("--bitrate / --sample-rate only apply to --format ogg-opus".to_string());
     }
@@ -122,11 +127,20 @@ fn list_kokoro_voices(_cache: &std::path::Path) -> Vec<String> {
             .filter_map(|e| e.ok())
             .filter_map(|e| {
                 let p = e.path();
-                if p.extension().and_then(|s| s.to_str()) == Some("bin") {
-                    p.file_stem().map(|s| format!("en-{}", s.to_string_lossy()))
-                } else {
-                    None
+                if p.extension().and_then(|s| s.to_str()) != Some("bin") {
+                    return None;
                 }
+                let stem = p.file_stem()?.to_string_lossy().into_owned();
+                // Only prefixes the non-ANE resolve_voice arm accepts may be listed; an id the resolver rejects is #1168 again.
+                let lang = match stem.chars().next()? {
+                    'a' | 'b' => "en",
+                    'e' => "es",
+                    'f' => "fr",
+                    'i' => "it",
+                    'p' => "pt",
+                    _ => return None,
+                };
+                Some(format!("{lang}-{stem}"))
             })
             .collect()
     }
@@ -149,26 +163,51 @@ fn list_vosk_ru_voices(cache: &std::path::Path) -> Vec<String> {
     ]
 }
 
-/// Map a TTS error to the documented exit code for `kesha say`.
-/// 2 = bad input, 4 = synthesis failure, 5 = text too long.
-/// (Voice-not-installed exits 1 directly from the resolver path.)
+/// Map a TTS error to the documented exit code for `kesha say`: 1 = operational,
+/// 2 = bad input, 4 = uncoded or unservable, 5 = text too long.
+/// Keyed on the code, so the same code cannot exit differently per engine (T2-5).
 fn exit_code_for_tts_err(e: &tts::TtsError) -> i32 {
-    match e {
-        tts::TtsError::EmptyText => 2,
-        tts::TtsError::TextTooLong { .. } => 5,
-        tts::TtsError::SynthesisFailed(_) | tts::TtsError::Coded { .. } => 4,
+    use crate::errors::ErrorCode as C;
+    match e.code() {
+        C::ModelMissing
+        | C::ModelDownload
+        | C::CacheCorrupt
+        | C::ModelLoad
+        | C::SidecarMissing
+        | C::VoiceUnknown => 1,
+        C::InvalidArg | C::SsmlInvalid | C::TextEmpty => 2,
+        C::TextTooLong => 5,
+        _ => 4,
     }
 }
 
 /// Read text from stdin, trimming surrounding whitespace.
 fn read_stdin() -> Result<String, i32> {
     use std::io::Read;
-    let mut buf = String::new();
-    if let Err(e) = std::io::stdin().read_to_string(&mut buf) {
-        eprintln!("error [E_INTERNAL]: failed to read stdin: {e}");
+    // Four bytes per allowed character: a pipe that streams past it is refused without waiting for EOF.
+    const MAX_STDIN_BYTES: u64 = tts::MAX_TEXT_CHARS as u64 * 4 + 4;
+    let mut bytes = Vec::new();
+    if let Err(e) = std::io::stdin()
+        .lock()
+        .take(MAX_STDIN_BYTES + 1)
+        .read_to_end(&mut bytes)
+    {
+        events::error(
+            crate::errors::ErrorCode::Internal,
+            format!("failed to read stdin: {e}"),
+            None,
+        );
         return Err(4);
     }
-    Ok(buf.trim().to_string())
+    if bytes.len() as u64 > MAX_STDIN_BYTES {
+        let err = tts::TtsError::TextTooLong {
+            max: tts::MAX_TEXT_CHARS,
+            actual: String::from_utf8_lossy(&bytes).chars().count(),
+        };
+        events::error(err.code(), format!("{err}"), None);
+        return Err(exit_code_for_tts_err(&err));
+    }
+    Ok(String::from_utf8_lossy(&bytes).trim().to_string())
 }
 
 /// Validate text length against TTS limits; returns the validated string or an
@@ -176,7 +215,7 @@ fn read_stdin() -> Result<String, i32> {
 fn validate_text(text: String) -> Result<String, i32> {
     if text.is_empty() {
         let err = tts::TtsError::EmptyText;
-        eprintln!("error [{}]: {err}", err.code().as_str());
+        events::error(err.code(), format!("{err}"), None);
         return Err(exit_code_for_tts_err(&err));
     }
     let len = text.chars().count();
@@ -185,7 +224,7 @@ fn validate_text(text: String) -> Result<String, i32> {
             max: tts::MAX_TEXT_CHARS,
             actual: len,
         };
-        eprintln!("error [{}]: {err}", err.code().as_str());
+        events::error(err.code(), format!("{err}"), None);
         return Err(exit_code_for_tts_err(&err));
     }
     Ok(text)
@@ -205,34 +244,34 @@ fn resolve_voice(
             espeak_lang: "en-us",
         }),
         (Some(_), None) | (None, Some(_)) => {
-            eprintln!(
-                "error [{}]: pass both --model and --voice-file or neither",
-                crate::errors::ErrorCode::InvalidArg.as_str()
+            events::error(
+                crate::errors::ErrorCode::InvalidArg,
+                "pass both --model and --voice-file or neither",
+                None,
             );
             Err(2)
         }
         (None, None) => {
             let id = voice_id.unwrap_or(tts::voices::DEFAULT_VOICE_ID);
-            let cache = models::cache_dir().map_err(|err| {
-                eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
-                1
-            })?;
-            tts::voices::resolve_voice(&cache, id).map_err(|err| {
-                eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
-                1
-            })
+            let cache = models::cache_dir().map_err(|err| crate::errors::report(&err))?;
+            tts::voices::resolve_voice(&cache, id).map_err(|err| crate::errors::report(&err))
         }
     }
 }
 
 /// Build the [`tts::EngineChoice`] from the resolved voice and playback rate.
-fn engine_choice<'a>(resolved: &'a tts::voices::ResolvedVoice, rate: f32) -> tts::EngineChoice<'a> {
+fn engine_choice<'a>(
+    resolved: &'a tts::voices::ResolvedVoice,
+    voice_id: &'a str,
+    rate: f32,
+) -> tts::EngineChoice<'a> {
     match resolved {
         tts::voices::ResolvedVoice::Kokoro {
             model_path,
             voice_path,
             ..
         } => tts::EngineChoice::Kokoro {
+            voice_id,
             model_path,
             voice_path,
             speed: rate,
@@ -252,6 +291,7 @@ fn engine_choice<'a>(resolved: &'a tts::voices::ResolvedVoice, rate: f32) -> tts
             model_dir,
             speaker_id,
         } => tts::EngineChoice::Vosk {
+            voice_id,
             model_dir,
             speaker_id: *speaker_id,
             speed: rate,
@@ -264,6 +304,78 @@ fn engine_choice<'a>(resolved: &'a tts::voices::ResolvedVoice, rate: f32) -> tts
     }
 }
 
+/// A fifo destination streams, so it is never opened here: the open would block until a reader attaches.
+#[cfg(unix)]
+fn out_file_type_refusal(path: &std::path::Path) -> Option<Result<(), String>> {
+    use std::os::unix::fs::FileTypeExt;
+    let file_type = std::fs::metadata(path).map(|m| m.file_type());
+    // `/dev/stdout` is the engine's stdout, which is the CLI's pipe, not the caller's (T1-15).
+    let device = path.starts_with("/dev")
+        || file_type
+            .as_ref()
+            .is_ok_and(|ft| ft.is_char_device() || ft.is_block_device());
+    if device {
+        return Some(Err(format!(
+            "--out {} is a character device, where the audio would be discarded; \
+             omit --out to write it to stdout",
+            path.display()
+        )));
+    }
+    file_type.is_ok_and(|ft| ft.is_fifo()).then_some(Ok(()))
+}
+
+#[cfg(not(unix))]
+fn out_file_type_refusal(_path: &std::path::Path) -> Option<Result<(), String>> {
+    None
+}
+
+/// Probe `--out` before synthesis pays for a path the caller mistyped, as `record::WavOutput::open` does (T1-4).
+/// The caller's pathname is only ever opened when it already exists, never created or removed, so no
+/// swap between two steps can turn the probe against another party's file (#1220 review).
+fn probe_out_path(path: &std::path::Path) -> Result<(), String> {
+    if let Some(verdict) = out_file_type_refusal(path) {
+        return verdict;
+    }
+    let refusal = |err: std::io::Error| format!("cannot write --out {}: {err}", path.display());
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => match std::fs::OpenOptions::new().write(true).open(path) {
+            Ok(_) => Ok(()),
+            // A symlink whose target is not there yet: judge the target instead.
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                match std::fs::read_link(path) {
+                    Ok(target) => {
+                        probe_out_path(&path.parent().map_or(target.clone(), |d| d.join(&target)))
+                    }
+                    Err(_) => Err(refusal(err)),
+                }
+            }
+            Err(err) => Err(refusal(err)),
+        },
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+            probe_parent_writable(path).map_err(refusal)
+        }
+        Err(err) => Err(refusal(err)),
+    }
+}
+
+/// A sibling only this probe names, created exclusively and removed, stands in for the file synthesis will create.
+fn probe_parent_writable(path: &std::path::Path) -> std::io::Result<()> {
+    let dir = match path.parent() {
+        Some(d) if !d.as_os_str().is_empty() => d,
+        _ => std::path::Path::new("."),
+    };
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let sibling = dir.join(format!(".kesha-out-probe-{}-{nanos}", std::process::id()));
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&sibling)?;
+    let _ = std::fs::remove_file(&sibling);
+    Ok(())
+}
+
 /// Write synthesized bytes to `--out` file or stdout.
 fn write_output(out: Option<&std::path::Path>, bytes: &[u8]) -> Result<(), i32> {
     use std::io::Write;
@@ -274,7 +386,11 @@ fn write_output(out: Option<&std::path::Path>, bytes: &[u8]) -> Result<(), i32> 
             .map_err(|e| e.to_string()),
     };
     result.map_err(|msg| {
-        eprintln!("error [E_INTERNAL]: write failed: {msg}");
+        events::error(
+            crate::errors::ErrorCode::Internal,
+            format!("write failed: {msg}"),
+            None,
+        );
         4
     })
 }
@@ -283,10 +399,7 @@ pub fn run(a: SayArgs) -> i32 {
     if a.list_voices {
         let cache = match models::cache_dir() {
             Ok(c) => c,
-            Err(err) => {
-                eprintln!("error [{}]: {err:#}", crate::errors::code_of(&err).as_str());
-                return 1;
-            }
+            Err(err) => return crate::errors::report(&err),
         };
         let mut voice_ids: Vec<String> = list_kokoro_voices(&cache)
             .into_iter()
@@ -298,12 +411,12 @@ pub fn run(a: SayArgs) -> i32 {
         #[cfg(all(feature = "system_tts", target_os = "macos"))]
         voice_ids.extend(tts::avspeech::list_voices(None));
         voice_ids.sort();
+        // Stdout is the list: a sentence there is a voice id to the MCP list_voices tool (#1168).
         if voice_ids.is_empty() {
-            println!("No voices installed. Run: kesha install --tts");
-        } else {
-            for id in voice_ids {
-                println!("{id}");
-            }
+            events::progress(None, "No voices installed. Run: kesha install --tts");
+        }
+        for id in voice_ids {
+            println!("{id}");
         }
         return 0;
     }
@@ -320,13 +433,22 @@ pub fn run(a: SayArgs) -> i32 {
     ) {
         Ok(f) => f,
         Err(msg) => {
-            eprintln!(
-                "error [{}]: {msg}",
-                crate::errors::ErrorCode::InvalidArg.as_str()
-            );
+            events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
             return 2;
         }
     };
+
+    if let Some(path) = a.out.as_deref() {
+        if let Err(msg) = probe_out_path(path) {
+            events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
+            return 2;
+        }
+    }
+
+    if let Err(msg) = tts::say::validate_rate(a.rate) {
+        events::error(crate::errors::ErrorCode::InvalidArg, msg, None);
+        return 2;
+    }
 
     let raw_text = match a.text {
         Some(s) => s,
@@ -350,7 +472,11 @@ pub fn run(a: SayArgs) -> i32 {
         .lang
         .clone()
         .unwrap_or_else(|| resolved.espeak_lang().to_string());
-    let engine = engine_choice(&resolved, a.rate);
+    let engine = engine_choice(
+        &resolved,
+        a.voice.as_deref().unwrap_or(tts::voices::DEFAULT_VOICE_ID),
+        a.rate,
+    );
 
     let bytes = match tts::say(tts::SayOptions {
         text: &text,
@@ -362,7 +488,7 @@ pub fn run(a: SayArgs) -> i32 {
     }) {
         Ok(w) => w,
         Err(e) => {
-            eprintln!("error [{}]: {e}", e.code().as_str());
+            events::error(e.code(), format!("{e}"), None);
             return exit_code_for_tts_err(&e);
         }
     };
@@ -438,6 +564,19 @@ mod tests {
     }
 
     #[test]
+    fn opus_bitrate_range_is_enforced_before_synthesis() {
+        for bad in [1, 5_999, 510_001] {
+            let err = resolve_output_format(Some("ogg-opus"), Some(bad), None, None)
+                .expect_err("bitrate outside the documented range must be refused");
+            assert!(err.contains("--bitrate must be 6000..=510000 bps"), "{err}");
+        }
+        for ok in [6_000, 32_000, 510_000] {
+            resolve_output_format(Some("ogg-opus"), Some(ok), None, None)
+                .unwrap_or_else(|e| panic!("{ok}: {e}"));
+        }
+    }
+
+    #[test]
     fn unknown_format_lists_supported_values() {
         let err = resolve_output_format(Some("mp3"), None, None, None).unwrap_err();
         assert!(err.contains("supported: wav, ogg-opus, flac"), "{err}");
@@ -457,12 +596,31 @@ mod tests {
             exit_code_for_tts_err(&tts::TtsError::SynthesisFailed("boom".into())),
             4
         );
-        assert_eq!(
-            exit_code_for_tts_err(&tts::TtsError::Coded {
-                code: crate::errors::ErrorCode::SsmlInvalid,
-                message: "bad ssml".into()
-            }),
-            4
-        );
+        use crate::errors::ErrorCode as C;
+        for (code, expected) in [
+            (C::ModelMissing, 1),
+            (C::ModelDownload, 1),
+            (C::CacheCorrupt, 1),
+            (C::ModelLoad, 1),
+            (C::SidecarMissing, 1),
+            (C::VoiceUnknown, 1),
+            (C::InvalidArg, 2),
+            (C::SsmlInvalid, 2),
+            (C::TextEmpty, 2),
+            (C::TextTooLong, 5),
+            (C::ScriptUnsupported, 4),
+            (C::SsmlUnsupported, 4),
+            (C::Internal, 4),
+        ] {
+            assert_eq!(
+                exit_code_for_tts_err(&tts::TtsError::Coded {
+                    code,
+                    message: "boom".into()
+                }),
+                expected,
+                "{}",
+                code.as_str()
+            );
+        }
     }
 }

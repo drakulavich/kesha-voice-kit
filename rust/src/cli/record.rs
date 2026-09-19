@@ -3,6 +3,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 
+use crate::protocol::events;
+
 pub fn endpoint_config(
     enabled: bool,
     trailing_silence_ms: Option<u32>,
@@ -34,6 +36,15 @@ pub fn endpoint_config(
     }))
 }
 
+/// An `--out` the caller mistyped is exit 2 like `say`'s, not the operational 1 every other engine error takes.
+pub fn exit_code(err: &anyhow::Error) -> i32 {
+    let operational = crate::errors::report(err);
+    if crate::errors::code_of(err) == crate::errors::ErrorCode::InvalidArg {
+        return 2;
+    }
+    operational
+}
+
 pub fn run(
     out: Option<PathBuf>,
     live: bool,
@@ -46,14 +57,21 @@ pub fn run(
 
     let out = out.ok_or_else(|| anyhow::anyhow!("--out is required unless --live is passed"))?;
     let summary =
-        crate::record::record_default_input_to_wav(&out, Duration::from_secs(max_seconds))?;
-    eprintln!(
-        "Recorded {} ({} Hz, {} channel{}, {} frames)",
-        summary.path.display(),
-        summary.sample_rate,
-        summary.channels,
-        if summary.channels == 1 { "" } else { "s" },
-        summary.frames,
+        match crate::record::record_default_input_to_wav(&out, Duration::from_secs(max_seconds)) {
+            // Nobody is left to read an event; 129 is the status a hangup would have left.
+            Err(err) if err.is::<crate::record::ParentExited>() => std::process::exit(129),
+            result => result?,
+        };
+    events::progress(
+        None,
+        format!(
+            "Recorded {} ({} Hz, {} channel{}, {} frames)",
+            summary.path.display(),
+            summary.sample_rate,
+            summary.channels,
+            if summary.channels == 1 { "" } else { "s" },
+            summary.frames,
+        ),
     );
     Ok(())
 }
@@ -68,7 +86,7 @@ fn run_live(max_duration: Duration, endpoint: Option<crate::vad::EndpointConfig>
     // write to a closed terminal or a dead pipe keeps the audio (#962).
     let outcome = crate::record::record_default_input_live(max_duration, endpoint, |transcript| {
         if transcript.is_empty() {
-            eprintln!("No speech detected.");
+            events::progress(None, "No speech detected.");
             return Ok(());
         }
         shield.write_stdout(format!("{transcript}\n").as_bytes())?;

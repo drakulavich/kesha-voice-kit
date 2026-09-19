@@ -12,7 +12,8 @@ use std::time::Instant;
 
 use super::encode::OutputFormat;
 use super::{
-    en, encode, g2p, kokoro, ru, sessions, ssml, EngineChoice, SayOptions, TtsError, MAX_TEXT_CHARS,
+    en, encode, g2p, kokoro, ru, seam, sessions, ssml, EngineChoice, SayOptions, TtsError,
+    MAX_TEXT_CHARS,
 };
 
 #[cfg(all(feature = "system_tts", target_os = "macos"))]
@@ -22,10 +23,24 @@ use super::avspeech;
 /// silence. 30s × 24 kHz × 4 B ≈ 2.9 MB max per tag, easily affordable.
 const MAX_BREAK_SECS: f64 = 30.0;
 
-fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
+fn silence_len(dur: std::time::Duration, sample_rate: u32) -> usize {
     let secs = dur.as_secs_f64().min(MAX_BREAK_SECS);
-    let n = (secs * sample_rate as f64).round() as usize;
-    vec![0.0_f32; n]
+    (secs * sample_rate as f64).round() as usize
+}
+
+/// Engine-safe playback rate: Vosk and Kokoro both honor rate within ~7% of theoretical at these endpoints (#236).
+pub const RATE_RANGE: std::ops::RangeInclusive<f32> = 0.5..=2.0;
+
+/// Refuse a `--rate` no engine can honour before one is chosen: FluidAudio's Swift traps on 0 (T4-3).
+pub fn validate_rate(rate: f32) -> Result<(), String> {
+    if rate.is_finite() && RATE_RANGE.contains(&rate) {
+        return Ok(());
+    }
+    Err(format!(
+        "--rate must be between {:.1} and {:.1} (got {rate})",
+        RATE_RANGE.start(),
+        RATE_RANGE.end()
+    ))
 }
 
 /// Saturating composition of the CLI `--rate` flag with an SSML
@@ -45,7 +60,7 @@ fn silence_samples(dur: std::time::Duration, sample_rate: u32) -> Vec<f32> {
 /// `2.0` looks indistinguishable from a clean 2× rate (#267 F9).
 fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     let raw = cli_rate * ssml_rate;
-    let clamped = raw.clamp(0.5, 2.0);
+    let clamped = raw.clamp(*RATE_RANGE.start(), *RATE_RANGE.end());
     // Exact bound check, not `(raw - clamped).abs() > EPSILON`: at raw≈0.5
     // the f32 ULP (~6e-8) is below `EPSILON` (~1.2e-7), so a value one ULP
     // outside the bound would clamp silently (Greptile P2 on #287). NaN
@@ -54,7 +69,7 @@ fn compose_rate(cli_rate: f32, ssml_rate: f32) -> f32 {
     // intentional: NaN here means an upstream bug parsed `cli_rate` or
     // `ssml_rate` as not-a-number, and surfacing it on stderr beats
     // silently propagating NaN sample-rate params downstream.
-    if !(0.5..=2.0).contains(&raw) {
+    if !RATE_RANGE.contains(&raw) {
         crate::tts::warn::warn_once(
             "compose-rate-clamped",
             &format!(
@@ -124,12 +139,14 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             say_avspeech(opts.text, voice_id, speed, opts.format, opts.ssml)
         }
         EngineChoice::Vosk {
+            voice_id,
             model_dir,
             speaker_id,
             speed,
         } => say_vosk(
             &mut sessions::VoskCache::new(),
             opts.text,
+            voice_id,
             model_dir,
             speaker_id,
             speed,
@@ -138,12 +155,14 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
             opts.expand_abbrev,
         ),
         EngineChoice::Kokoro {
+            voice_id,
             model_path,
             voice_path,
             speed,
         } => say_kokoro(
             &mut sessions::TtsSessions::default(),
             opts.text,
+            voice_id,
             opts.lang,
             model_path,
             voice_path,
@@ -186,14 +205,53 @@ fn say_fluid_kokoro(
     if ssml {
         return synth_segments_fluid_kokoro(text, voice_id, speed, format);
     }
-    let (samples, sample_rate) =
-        super::fluid_kokoro::synthesize(text, voice_id, speed).map_err(|e| TtsError::Coded {
-            // Preserve a precise code from the engine chain (e.g.
-            // ScriptUnsupported for native-script input).
-            code: crate::errors::code_of(&e),
-            message: format!("fluid-kokoro: {e}"),
-        })?;
+    let mut sample_rate = super::fluid_kokoro::SAMPLE_RATE;
+    let mut synth = |t: &str| -> Result<Vec<f32>, TtsError> {
+        let (samples, rate) =
+            super::fluid_kokoro::synthesize(t, voice_id, speed).map_err(|e| TtsError::Coded {
+                // Preserve a precise code from the chain, e.g. ScriptUnsupported.
+                code: crate::errors::code_of(&e),
+                message: format!("fluid-kokoro: {e}"),
+            })?;
+        sample_rate = rate;
+        Ok(samples)
+    };
+    let chunks = fluid_plain_chunks(voice_id, text, speed)?;
+    let samples = if chunks.len() < 2 {
+        // The whole text, so an empty or unpronounceable input keeps its own error.
+        synth(text)?
+    } else {
+        let mut parts = Vec::with_capacity(chunks.len());
+        for chunk in &chunks {
+            parts.push(synth(chunk)?);
+        }
+        seam::join_chunks(parts, sample_rate)
+    };
     encode_or_fail(&samples, sample_rate, format)
+}
+
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn fluid_script_gate(voice_id: &str, text: &str) -> Result<(), TtsError> {
+    super::fluid_kokoro::ensure_script_supported(voice_id, text).map_err(|e| TtsError::Coded {
+        code: crate::errors::code_of(&e),
+        message: format!("fluid-kokoro: {e}"),
+    })
+}
+
+/// Gate the whole utterance once, then chunk the text FluidAudio will receive: a minority script must not be refused for dominating one chunk, and verbalized amounts must count against the frame budget.
+#[cfg(all(
+    feature = "system_kokoro",
+    target_os = "macos",
+    target_arch = "aarch64"
+))]
+fn fluid_plain_chunks(voice_id: &str, text: &str, speed: f32) -> Result<Vec<String>, TtsError> {
+    fluid_script_gate(voice_id, text)?;
+    let prepared = super::fluid_kokoro::prepare_text(voice_id, text);
+    Ok(seam::chunk_text(&prepared, seam::fluid_chunk_budget(speed)))
 }
 
 /// AVSpeech arm: does its own G2P + synthesis inside Swift; rejects SSML (#141).
@@ -211,8 +269,11 @@ fn say_avspeech(
             message: "SSML is not yet supported with macos-* voices (#141 follow-up)".into(),
         });
     }
-    let wav_bytes = avspeech::synthesize(text, voice_id, speed, None)
-        .map_err(|e| TtsError::SynthesisFailed(format!("avspeech: {e}")))?;
+    let wav_bytes =
+        avspeech::synthesize(text, voice_id, speed, None).map_err(|e| TtsError::Coded {
+            code: crate::errors::code_of(&e),
+            message: format!("avspeech: {e:#}"),
+        })?;
     transcode_to(&wav_bytes, format)
 }
 
@@ -221,6 +282,7 @@ fn say_avspeech(
 pub(crate) fn say_vosk(
     vosk: &mut sessions::VoskCache,
     text: &str,
+    voice_id: &str,
     model_dir: &Path,
     speaker_id: u32,
     speed: f32,
@@ -232,6 +294,7 @@ pub(crate) fn say_vosk(
         return synth_segments_vosk(
             vosk,
             text,
+            voice_id,
             model_dir,
             speaker_id,
             speed,
@@ -242,6 +305,7 @@ pub(crate) fn say_vosk(
     say_with_vosk(
         vosk,
         text,
+        voice_id,
         model_dir,
         speaker_id,
         speed,
@@ -257,6 +321,7 @@ pub(crate) fn say_vosk(
 pub(crate) fn say_kokoro(
     tts_sessions: &mut sessions::TtsSessions,
     text: &str,
+    voice_id: &str,
     lang: &str,
     model_path: &Path,
     voice_path: &Path,
@@ -276,16 +341,20 @@ pub(crate) fn say_kokoro(
             message: format!("ssml: {e:#}"),
         })?;
         if segments.is_empty() {
-            return Err(TtsError::SynthesisFailed(
-                "SSML had no speakable content".into(),
-            ));
+            return Err(TtsError::Coded {
+                code: crate::errors::ErrorCode::TextEmpty,
+                message: "SSML had no speakable content".into(),
+            });
         }
+        ensure_script_supported(voice_id, &speakable_text(&segments, IpaText::Replaced))?;
         segments
     } else if en::is_en(lang) {
+        ensure_script_supported(voice_id, text)?;
         // English: segment pipeline so IPA_LEXICON overrides bypass G2P;
         // letter-spell + STOP_LIST run inside en::normalize_segments (#244).
         vec![ssml::Segment::Text(text.to_string())]
     } else {
+        ensure_script_supported(voice_id, text)?;
         let ipa = g2p::text_to_ipa_cached(&mut tts_sessions.charsiu, text, lang)
             .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
         if ipa.trim().is_empty() {
@@ -321,11 +390,24 @@ fn kokoro_session<'s>(
         .map_err(|e| TtsError::SynthesisFailed(format!("{e:#}")))
 }
 
+/// What an engine with no IPA input speaks: a `<phoneme>` degrades to the text
+/// it wrapped, and a tag with no body has nothing left to say.
+fn no_ipa_unit<'a>(seg: Speakable<'a>) -> Option<&'a str> {
+    match seg {
+        Speakable::Text(t) | Speakable::Spell(t) => Some(t),
+        Speakable::Ipa { text, .. } => (!text.is_empty()).then_some(text),
+    }
+}
+
 /// One speakable segment on its way to a sink.
 enum Speakable<'a> {
     Text(&'a str),
     Spell(&'a str),
-    Ipa(&'a str),
+    /// The `<phoneme>` override and the text it wrapped, for sinks that take neither.
+    Ipa {
+        ph: &'a str,
+        text: &'a str,
+    },
 }
 
 /// Per-engine leaf synthesis for the shared SSML walker. `Break` silence,
@@ -339,7 +421,7 @@ enum Speakable<'a> {
 /// turns a merged run of those into samples.
 trait SegmentSink {
     fn sample_rate(&mut self) -> Result<u32, TtsError>;
-    /// `None` drops the segment — FluidAudio cannot accept IPA.
+    /// `None` drops the segment — a `<phoneme>` with no text to fall back on.
     fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError>;
     fn synth(&mut self, unit: &str, speed: f32) -> Result<Vec<f32>, TtsError>;
     fn emphasis_warning(&self) -> &'static str;
@@ -352,14 +434,15 @@ fn synth_segments(
     format: OutputFormat,
 ) -> Result<Vec<u8>, TtsError> {
     let sample_rate = sink.sample_rate()?;
-    let mut out: Vec<f32> = Vec::new();
+    let mut out = seam::SeamBuf::new(sample_rate);
     walk_segments(sink, segments, speed, sample_rate, &mut out)?;
     if out.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "no audio produced from SSML input".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "no audio produced from SSML input".into(),
+        });
     }
-    encode_or_fail(&out, sample_rate, format)
+    encode_or_fail(&out.finish(), sample_rate, format)
 }
 
 /// Punctuation that binds to the word before it, so no separator is inserted
@@ -394,20 +477,20 @@ fn push_unit(
 
 /// Whitespace is collapsed so the engine sees the same input wherever the
 /// segment boundaries happened to fall — a dropped unit between two spaced
-/// segments would otherwise leave a double space behind (FluidAudio drops
-/// `Ipa`), and on Kokoro each space is its own token.
+/// segments would otherwise leave a double space behind (a `<phoneme>` with an
+/// empty body drops), and on Kokoro each space is its own token.
 fn flush_run(
     sink: &mut dyn SegmentSink,
     run: &mut String,
     speed: f32,
-    out: &mut Vec<f32>,
+    out: &mut seam::SeamBuf,
 ) -> Result<(), TtsError> {
     let merged = run.split_whitespace().collect::<Vec<_>>().join(" ");
     run.clear();
     if merged.is_empty() {
         return Ok(());
     }
-    out.extend(sink.synth(&merged, speed)?);
+    out.push_synth(sink.synth(&merged, speed)?);
     Ok(())
 }
 
@@ -417,22 +500,28 @@ fn flush_run(
 /// per-utterance lead-in and tail padding, so a run split anywhere else would
 /// stack that padding into a mid-sentence pause and restart the intonation
 /// contour (#825).
+///
+/// The runs reach [`seam::SeamBuf`] rather than a raw sample buffer, so the two
+/// paddings a `<break>` would otherwise stack around its silence are clipped
+/// and the break lasts what the document asked for (T3-4).
 fn walk_segments(
     sink: &mut dyn SegmentSink,
     segments: &[ssml::Segment],
     speed: f32,
     sample_rate: u32,
-    out: &mut Vec<f32>,
+    out: &mut seam::SeamBuf,
 ) -> Result<(), TtsError> {
     let mut run = String::new();
     for seg in segments {
         match seg {
             ssml::Segment::Text(t) => push_unit(sink, &mut run, Speakable::Text(t))?,
             ssml::Segment::Spell(t) => push_unit(sink, &mut run, Speakable::Spell(t))?,
-            ssml::Segment::Ipa(ph) => push_unit(sink, &mut run, Speakable::Ipa(ph))?,
+            ssml::Segment::Ipa { ph, text } => {
+                push_unit(sink, &mut run, Speakable::Ipa { ph, text })?
+            }
             ssml::Segment::Break(dur) => {
                 flush_run(sink, &mut run, speed, out)?;
-                out.extend(silence_samples(*dur, sample_rate));
+                out.push_silence(silence_len(*dur, sample_rate));
             }
             // Defensive fallback: the en/ru normalizers convert Emphasis
             // upstream; skip the warning when suppress=true — level="none"
@@ -468,7 +557,7 @@ impl SegmentSink for KokoroSink<'_> {
     // Spell is G2P-routed like Text (the en normalizer expands it upstream).
     fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError> {
         let ipa = match seg {
-            Speakable::Ipa(ipa) => ipa.to_string(),
+            Speakable::Ipa { ph, .. } => ph.to_string(),
             Speakable::Text(t) | Speakable::Spell(t) => {
                 g2p::text_to_ipa_cached(self.charsiu, t, self.lang)
                     .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?
@@ -515,19 +604,24 @@ fn synth_segments_fluid_kokoro(
         message: format!("ssml: {e:#}"),
     })?;
     if segments.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "SSML had no speakable content".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "SSML had no speakable content".into(),
+        });
     }
+    fluid_script_gate(voice_id, &speakable_text(&segments, IpaText::Spoken))?;
     let synth = |t: &str, sp: f32| super::fluid_kokoro::synthesize_pcm(t, voice_id, sp);
-    let mut sink = FluidKokoroSink { synth: &synth };
+    let mut sink = FluidKokoroSink {
+        synth: &synth,
+        voice_id,
+    };
     synth_segments(&mut sink, &segments, speed, format)
 }
 
 /// `synth(text, speed)` turns a text chunk into f32 samples (the real impl
 /// calls `fluid_kokoro::synthesize_pcm`; tests inject a deterministic fake).
-/// FluidAudio does its own internal G2P, so `Spell` degrades to plain text
-/// (warn-once) and `Ipa` is skipped (warn-once) — it can't accept IPA.
+/// FluidAudio does its own internal G2P, so `Spell` degrades to plain text and
+/// `Ipa` to the text the tag wrapped (both warn-once) — it can't accept IPA.
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -535,6 +629,7 @@ fn synth_segments_fluid_kokoro(
 ))]
 struct FluidKokoroSink<'a> {
     synth: &'a dyn Fn(&str, f32) -> anyhow::Result<Vec<f32>>,
+    voice_id: &'a str,
 }
 
 #[cfg(all(
@@ -543,7 +638,22 @@ struct FluidKokoroSink<'a> {
     target_arch = "aarch64"
 ))]
 impl FluidKokoroSink<'_> {
+    /// A run past the frame cap is chunked like plain text and rejoined, so a
+    /// slow `<prosody rate>` cannot fail the utterance (T4-1).
     fn synth(&self, text: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
+        let text = &*super::fluid_kokoro::prepare_text(self.voice_id, text);
+        let chunks = seam::chunk_text(text, seam::fluid_chunk_budget(speed));
+        if chunks.len() > 1 {
+            let mut parts = Vec::with_capacity(chunks.len());
+            for chunk in &chunks {
+                parts.push(self.synth_one(chunk, speed)?);
+            }
+            return Ok(seam::join_chunks(parts, super::fluid_kokoro::SAMPLE_RATE));
+        }
+        self.synth_one(text, speed)
+    }
+
+    fn synth_one(&self, text: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
         (self.synth)(text, speed).map_err(|e| TtsError::Coded {
             // Preserve a precise code from the engine chain (e.g.
             // ScriptUnsupported for native-script input); plain synthesis
@@ -574,13 +684,13 @@ impl SegmentSink for FluidKokoroSink<'_> {
                 );
                 Some(t.to_string())
             }
-            Speakable::Ipa(_) => {
+            Speakable::Ipa { .. } => {
                 crate::tts::warn::warn_once(
                     "ipa-fluid-kokoro",
                     "SSML <phoneme alphabet=\"ipa\"> is not supported on FluidAudio Kokoro \
-                     (internal G2P only); skipping the phoneme segment",
+                     (internal G2P only); reading the contained text instead",
                 );
-                None
+                no_ipa_unit(seg).map(str::to_string)
             }
         })
     }
@@ -591,6 +701,47 @@ impl SegmentSink for FluidKokoroSink<'_> {
         "<emphasis> stress markers are honored only on ru-vosk-* voices; \
          stripping `+` from content for FluidAudio Kokoro"
     }
+}
+
+/// Whether an engine speaks the text a `<phoneme>` wraps (no IPA input) or the phonemes it supplies.
+#[derive(Clone, Copy)]
+enum IpaText {
+    Spoken,
+    Replaced,
+}
+
+/// The words an SSML utterance will actually phonemize, so a script gate counts those rather than the Latin tag names wrapping them.
+fn speakable_text(segments: &[ssml::Segment], ipa: IpaText) -> String {
+    fn walk(segments: &[ssml::Segment], ipa: IpaText, out: &mut String) {
+        for segment in segments {
+            match segment {
+                ssml::Segment::Text(t)
+                | ssml::Segment::Spell(t)
+                | ssml::Segment::Emphasis { content: t, .. } => {
+                    out.push_str(t);
+                    out.push(' ');
+                }
+                ssml::Segment::Ipa { text: t, .. } => {
+                    if matches!(ipa, IpaText::Spoken) {
+                        out.push_str(t);
+                        out.push(' ');
+                    }
+                }
+                ssml::Segment::ProsodyRate { content, .. } => walk(content, ipa, out),
+                ssml::Segment::Break(_) => {}
+            }
+        }
+    }
+    let mut out = String::new();
+    walk(segments, ipa, &mut out);
+    out
+}
+
+fn ensure_script_supported(voice_id: &str, text: &str) -> Result<(), TtsError> {
+    super::script::ensure_supported(voice_id, text).map_err(|e| TtsError::Coded {
+        code: crate::errors::code_of(&e),
+        message: format!("{e}"),
+    })
 }
 
 fn say_with_kokoro(
@@ -629,15 +780,18 @@ fn say_with_kokoro(
     encode_or_fail(&audio, kokoro::SAMPLE_RATE, format)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn say_with_vosk(
     vosk: &mut sessions::VoskCache,
     text: &str,
+    voice_id: &str,
     model_dir: &Path,
     speaker_id: u32,
     speed: f32,
     format: OutputFormat,
     expand_abbrev: bool,
 ) -> Result<Vec<u8>, TtsError> {
+    ensure_script_supported(voice_id, text)?;
     let normalized = ru::expand_text(text, expand_abbrev);
     let (audio, sample_rate) = vosk
         .infer(model_dir, &normalized, speaker_id, speed)
@@ -649,6 +803,7 @@ fn say_with_vosk(
 fn synth_segments_vosk(
     vosk: &mut sessions::VoskCache,
     text: &str,
+    voice_id: &str,
     model_dir: &Path,
     speaker_id: u32,
     speed: f32,
@@ -660,10 +815,12 @@ fn synth_segments_vosk(
         message: format!("ssml: {e:#}"),
     })?;
     if segments.is_empty() {
-        return Err(TtsError::SynthesisFailed(
-            "SSML had no speakable content".into(),
-        ));
+        return Err(TtsError::Coded {
+            code: crate::errors::ErrorCode::TextEmpty,
+            message: "SSML had no speakable content".into(),
+        });
     }
+    ensure_script_supported(voice_id, &speakable_text(&segments, IpaText::Spoken))?;
     let segments = ru::normalize_segments(segments, expand_abbrev);
     let mut sink = VoskSink {
         cache: vosk,
@@ -695,11 +852,9 @@ impl SegmentSink for VoskSink<'_> {
             .sample_rate(self.model_dir)
             .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))
     }
-    // Vosk owns its G2P, so every variant is plain text to it;
     // ru::normalize_segments expands Spell upstream.
     fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError> {
-        let (Speakable::Text(t) | Speakable::Spell(t) | Speakable::Ipa(t)) = seg;
-        Ok(Some(t.to_string()))
+        Ok(no_ipa_unit(seg).map(str::to_string))
     }
     fn synth(&mut self, unit: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
         self.infer(unit, speed)
@@ -766,8 +921,160 @@ fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow:
 
 #[cfg(test)]
 mod tests {
+    #[cfg(all(
+        feature = "system_kokoro",
+        target_os = "macos",
+        target_arch = "aarch64"
+    ))]
+    mod fluid_chunk_gate {
+        use crate::tts::say::fluid_plain_chunks;
+
+        #[test]
+        fn currency_expansion_is_chunked_on_the_text_fluidaudio_receives() {
+            let budget = crate::tts::seam::fluid_chunk_budget(0.5);
+            let text = "It cost $1,234,567.89, then $9,876,543.21, then $5,555,555.55 and finally $7,777,777.77 more.";
+            assert!(
+                text.chars().count() <= budget,
+                "the raw text must fit one chunk for this test to mean anything"
+            );
+            let chunks = fluid_plain_chunks("am_michael", text, 0.5).expect("speaks");
+            assert!(
+                chunks.len() >= 2,
+                "the verbalized amounts must split: {chunks:?}"
+            );
+            assert!(
+                chunks.iter().all(|c| c.chars().count() <= budget),
+                "{chunks:?}"
+            );
+        }
+
+        #[test]
+        fn a_prosody_run_is_chunked_on_the_verbalized_text() {
+            use std::cell::RefCell;
+            let log: RefCell<Vec<usize>> = RefCell::new(Vec::new());
+            let synth = |t: &str, _sp: f32| -> anyhow::Result<Vec<f32>> {
+                log.borrow_mut().push(t.chars().count());
+                Ok(vec![0.0; 10])
+            };
+            let sink = crate::tts::say::FluidKokoroSink {
+                synth: &synth,
+                voice_id: "am_michael",
+            };
+            let text = "It cost $1,234,567.89, then $9,876,543.21, then $5,555,555.55 and finally $7,777,777.77 more.";
+            sink.synth(text, 0.5).expect("speaks");
+            let budget = crate::tts::seam::fluid_chunk_budget(0.5);
+            let calls = log.borrow();
+            assert!(
+                calls.len() >= 2 && calls.iter().all(|n| *n <= budget),
+                "{calls:?}"
+            );
+        }
+
+        #[test]
+        fn a_minority_script_that_dominates_one_chunk_is_not_refused() {
+            let english = "The quick brown fox jumps over the lazy dog. ".repeat(6);
+            let text = format!("{english}Привет мир, как дела сегодня утром.");
+            let chunks = fluid_plain_chunks("am_michael", &text, 0.5)
+                .expect("a minority run warns, never refuses");
+            let last = chunks.last().expect("chunks");
+            assert!(
+                chunks.len() >= 2,
+                "the text must split for this test to mean anything: {chunks:?}"
+            );
+            assert!(
+                crate::tts::fluid_kokoro::ensure_script_supported("am_michael", last).is_err(),
+                "the last chunk must be Cyrillic-dominant on its own: {last:?}"
+            );
+        }
+    }
+
     use super::*;
 
+    #[test]
+    fn onnx_kokoro_does_not_gate_the_text_a_phoneme_override_replaces() {
+        // The ONNX arm synthesizes the IPA, so the wrapped text's script is not what it phonemizes.
+        let err = say_kokoro(
+            &mut sessions::TtsSessions::default(),
+            r#"<speak><phoneme alphabet="ipa" ph="pɹʲɪvʲet mʲir">Привет мир</phoneme></speak>"#,
+            "en-am_michael",
+            "en",
+            Path::new("/nonexistent/kokoro/model.onnx"),
+            Path::new("/nonexistent/kokoro/voice.bin"),
+            1.0,
+            OutputFormat::Wav,
+            true,
+            true,
+        )
+        .expect_err("the model is missing, so it fails later");
+        assert_ne!(
+            err.code(),
+            crate::errors::ErrorCode::ScriptUnsupported,
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn onnx_kokoro_refuses_an_unpronounceable_script_before_it_loads_a_model() {
+        let err = say_kokoro(
+            &mut sessions::TtsSessions::default(),
+            "Привет мир, как дела",
+            "en-am_michael",
+            "en",
+            Path::new("/nonexistent/kokoro/model.onnx"),
+            Path::new("/nonexistent/kokoro/voice.bin"),
+            1.0,
+            OutputFormat::Wav,
+            false,
+            true,
+        )
+        .expect_err("dominant Cyrillic on a Latin voice is refused");
+        assert_eq!(
+            err.code(),
+            crate::errors::ErrorCode::ScriptUnsupported,
+            "{err}"
+        );
+        assert!(format!("{err}").contains("en-am_michael"), "{err}");
+    }
+
+    #[test]
+    fn vosk_refuses_an_unpronounceable_script_before_it_loads_a_model() {
+        // The Vosk arm had no script gate at all, so Latin on a Russian voice became nonsense words (#492).
+        let err = say(SayOptions {
+            text: "Install Kesha Voice Kit today",
+            lang: "ru",
+            engine: EngineChoice::Vosk {
+                voice_id: "ru-vosk-m02",
+                model_dir: Path::new("/nonexistent/vosk-ru"),
+                speaker_id: 0,
+                speed: 1.0,
+            },
+            ssml: false,
+            format: OutputFormat::Wav,
+            expand_abbrev: true,
+        })
+        .expect_err("dominant Latin on a Cyrillic voice is refused");
+        assert_eq!(err.code(), crate::errors::ErrorCode::ScriptUnsupported);
+    }
+
+    #[test]
+    fn ssml_markup_is_not_counted_as_foreign_text() {
+        // The tag names are Latin and would outvote the Russian they wrap.
+        let err = say(SayOptions {
+            text: "<speak>Привет</speak>",
+            lang: "ru",
+            engine: EngineChoice::Vosk {
+                voice_id: "ru-vosk-m02",
+                model_dir: Path::new("/nonexistent/vosk-ru"),
+                speaker_id: 0,
+                speed: 1.0,
+            },
+            ssml: true,
+            format: OutputFormat::Wav,
+            expand_abbrev: true,
+        })
+        .expect_err("no model is staged, so it cannot succeed");
+        assert_ne!(err.code(), crate::errors::ErrorCode::ScriptUnsupported);
+    }
     #[test]
     fn prosody_rate_multiplies_and_clamps() {
         let cases = [
@@ -810,6 +1117,7 @@ mod tests {
         let _ = say_kokoro(
             &mut sessions::TtsSessions::default(),
             "hola",
+            "es-em_alex",
             "es",
             Path::new("/nonexistent/kokoro/model.onnx"),
             Path::new("/nonexistent/kokoro/voice.bin"),
@@ -829,6 +1137,7 @@ mod tests {
         let _ = say_kokoro(
             &mut sessions::TtsSessions::default(),
             "FBI",
+            "en-am_michael",
             "en",
             Path::new("/nonexistent/kokoro/model.onnx"),
             Path::new("/nonexistent/kokoro/voice.bin"),
@@ -841,6 +1150,38 @@ mod tests {
             !crate::tts::warn::was_warned(WARN_EXPAND_ABBREV_IGNORED),
             "English on Kokoro honors the flag; warning there would be the opposite lie"
         );
+    }
+
+    #[test]
+    fn an_engine_without_ipa_speaks_the_text_the_phoneme_wrapped() {
+        assert_eq!(
+            no_ipa_unit(Speakable::Ipa {
+                ph: "ˈkeʃa",
+                text: "Kesha"
+            }),
+            Some("Kesha"),
+            "the IPA would be read out letter by letter by a G2P that cannot take it"
+        );
+        assert_eq!(
+            no_ipa_unit(Speakable::Ipa {
+                ph: "ˈkeʃa",
+                text: ""
+            }),
+            None
+        );
+        assert_eq!(no_ipa_unit(Speakable::Text("hello")), Some("hello"));
+        assert_eq!(no_ipa_unit(Speakable::Spell("ВОЗ")), Some("ВОЗ"));
+    }
+
+    fn walked(
+        sink: &mut dyn SegmentSink,
+        segments: &[ssml::Segment],
+        speed: f32,
+        sample_rate: u32,
+    ) -> Vec<f32> {
+        let mut out = seam::SeamBuf::new(sample_rate);
+        walk_segments(sink, segments, speed, sample_rate, &mut out).unwrap();
+        out.finish()
     }
 
     /// Records every synthesized utterance and returns one sentinel sample
@@ -877,7 +1218,7 @@ mod tests {
                     t.to_string()
                 }
                 Speakable::Spell(t) => format!("spell:{t}"),
-                Speakable::Ipa(p) => format!("ipa:{p}"),
+                Speakable::Ipa { ph, .. } => format!("ipa:{ph}"),
             }))
         }
         fn synth(&mut self, unit: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
@@ -896,14 +1237,16 @@ mod tests {
     fn walker_routes_each_variant_to_its_leaf_and_sizes_breaks() {
         use std::time::Duration;
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
         let segs = [
             ssml::Segment::Text("ab".into()),
             ssml::Segment::Break(Duration::from_millis(250)), // 8 kHz → 2000 samples
             ssml::Segment::Spell("cde".into()),
-            ssml::Segment::Ipa("fg".into()),
+            ssml::Segment::Ipa {
+                ph: "fg".into(),
+                text: "eff gee".into(),
+            },
         ];
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        let out = walked(&mut sink, &segs, 1.0, 8_000);
         assert_eq!(
             sink.calls,
             vec![
@@ -929,8 +1272,7 @@ mod tests {
             ],
         };
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
-        walk_segments(&mut sink, std::slice::from_ref(&seg), 1.0, 8_000, &mut out).unwrap();
+        walked(&mut sink, std::slice::from_ref(&seg), 1.0, 8_000);
         // Two utterances, not one: <prosody rate> ends a merged run because
         // its content needs a different speed argument.
         assert_eq!(sink.calls.len(), 2, "{:?}", sink.calls);
@@ -946,15 +1288,7 @@ mod tests {
             }],
         };
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
-        walk_segments(
-            &mut sink,
-            std::slice::from_ref(&clamped),
-            1.0,
-            8_000,
-            &mut out,
-        )
-        .unwrap();
+        walked(&mut sink, std::slice::from_ref(&clamped), 1.0, 8_000);
         assert!((sink.calls[0].1 - 2.0).abs() < 1e-6, "{:?}", sink.calls);
     }
 
@@ -986,19 +1320,20 @@ mod tests {
         // segment, so `<say-as>` / `<phoneme>` before a period must not merge
         // as "… ." — raw-text engines would read the gap as a pause.
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
         let segs = [
-            ssml::Segment::Ipa("ˈiːpæm".into()),
+            ssml::Segment::Ipa {
+                ph: "ˈiːpæm".into(),
+                text: "EPAM".into(),
+            },
             ssml::Segment::Text(", and more.".into()),
         ];
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        walked(&mut sink, &segs, 1.0, 8_000);
         assert_eq!(sink.calls, vec![("ipa:ˈiːpæm, and more.".to_string(), 1.0)]);
     }
 
     #[test]
     fn a_dropped_unit_between_spaced_segments_leaves_no_double_space() {
-        // FluidAudio drops Ipa mid-run; the surrounding text keeps its own
-        // spacing, which would otherwise splice into "before  after".
+        // A dropped unit mid-run would otherwise splice into "before  after".
         struct DropIpaSink(Vec<String>);
         impl SegmentSink for DropIpaSink {
             fn sample_rate(&mut self) -> Result<u32, TtsError> {
@@ -1006,7 +1341,7 @@ mod tests {
             }
             fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError> {
                 Ok(match seg {
-                    Speakable::Ipa(_) => None,
+                    Speakable::Ipa { .. } => None,
                     Speakable::Text(t) | Speakable::Spell(t) => Some(t.to_string()),
                 })
             }
@@ -1020,13 +1355,15 @@ mod tests {
         }
 
         let mut sink = DropIpaSink(Vec::new());
-        let mut out = Vec::new();
         let segs = [
             ssml::Segment::Text("before ".into()),
-            ssml::Segment::Ipa("hˈaɪ".into()),
+            ssml::Segment::Ipa {
+                ph: "hˈaɪ".into(),
+                text: String::new(),
+            },
             ssml::Segment::Text(" after".into()),
         ];
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        walked(&mut sink, &segs, 1.0, 8_000);
         assert_eq!(sink.0, vec!["before after".to_string()]);
     }
 
@@ -1059,8 +1396,11 @@ mod tests {
             Ok(8_000)
         }
         fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError> {
-            let (Speakable::Text(t) | Speakable::Spell(t) | Speakable::Ipa(t)) = seg;
-            Ok(Some(t.to_string()))
+            let unit = match seg {
+                Speakable::Text(t) | Speakable::Spell(t) => t,
+                Speakable::Ipa { text, .. } => text,
+            };
+            Ok(Some(unit.to_string()))
         }
         fn synth(&mut self, _unit: &str, _speed: f32) -> Result<Vec<f32>, TtsError> {
             Ok(self.utterance())
@@ -1097,16 +1437,37 @@ mod tests {
         // rewrite. The user asked for no pause, so there must be none.
         let segs = [
             ssml::Segment::Text("The ".into()),
-            ssml::Segment::Ipa("ˈdʒeɪsən".into()),
+            ssml::Segment::Ipa {
+                ph: "ˈdʒeɪsən".into(),
+                text: "JSON".into(),
+            },
             ssml::Segment::Text(" file is ready.".into()),
         ];
         let mut sink = PaddedSink::new();
-        let mut out = Vec::new();
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        let out = walked(&mut sink, &segs, 1.0, 8_000);
         let dead = longest_interior_silence(&out);
         assert!(
             dead <= 800,
             "interior dead air of {} ms where none was requested",
+            dead / 8
+        );
+    }
+
+    #[test]
+    fn a_break_adds_only_the_silence_it_asked_for() {
+        use std::time::Duration;
+        // 500 ms at 8 kHz is 4000 samples; the stacked paddings around it were the ~800 ms of T3-4.
+        let segs = [
+            ssml::Segment::Text("before".into()),
+            ssml::Segment::Break(Duration::from_millis(500)),
+            ssml::Segment::Text("after".into()),
+        ];
+        let mut sink = PaddedSink::new();
+        let out = walked(&mut sink, &segs, 1.0, 8_000);
+        let dead = longest_interior_silence(&out);
+        assert!(
+            (4_000..=5_200).contains(&dead),
+            "a 500 ms <break> produced {} ms of silence",
             dead / 8
         );
     }
@@ -1120,8 +1481,7 @@ mod tests {
             ssml::Segment::Text("after".into()),
         ];
         let mut sink = PaddedSink::new();
-        let mut out = Vec::new();
-        walk_segments(&mut sink, &segs, 1.0, 8_000, &mut out).unwrap();
+        let out = walked(&mut sink, &segs, 1.0, 8_000);
         assert!(
             longest_interior_silence(&out) >= 4_000,
             "the 500 ms <break> was swallowed"
@@ -1135,8 +1495,7 @@ mod tests {
             suppress: true,
         };
         let mut sink = RecordingSink::new();
-        let mut out = Vec::new();
-        walk_segments(&mut sink, std::slice::from_ref(&seg), 1.0, 1_000, &mut out).unwrap();
+        walked(&mut sink, std::slice::from_ref(&seg), 1.0, 1_000);
         assert_eq!(sink.calls, vec![("дома".to_string(), 1.0)]);
     }
 
@@ -1144,11 +1503,7 @@ mod tests {
     fn synth_segments_rejects_empty_output_and_propagates_leaf_errors() {
         let mut sink = RecordingSink::new();
         let err = synth_segments(&mut sink, &[], 1.0, OutputFormat::Wav).unwrap_err();
-        assert!(
-            err.to_string()
-                .contains("no audio produced from SSML input"),
-            "{err}"
-        );
+        assert_eq!(err.code(), crate::errors::ErrorCode::TextEmpty, "{err}");
 
         for (fail_g2p, expected) in [(true, "boom"), (false, "kaboom")] {
             let mut failing = RecordingSink::new();
@@ -1348,24 +1703,27 @@ mod fluid_kokoro_ssml_tests {
         synth: &dyn Fn(&str, f32) -> anyhow::Result<Vec<f32>>,
         segs: &[Segment],
         speed: f32,
-        out: &mut Vec<f32>,
-    ) {
-        let mut sink = FluidKokoroSink { synth };
-        walk_segments(&mut sink, segs, speed, 24_000, out).unwrap();
+    ) -> Vec<f32> {
+        let mut sink = FluidKokoroSink {
+            synth,
+            voice_id: "am_michael",
+        };
+        let mut out = seam::SeamBuf::new(24_000);
+        walk_segments(&mut sink, segs, speed, 24_000, &mut out).unwrap();
+        out.finish()
     }
 
     #[test]
     fn text_and_break_concatenate_with_silence() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         // 24 kHz × 0.25 s = 6000 samples of silence between two text chunks.
         let segs = [
             Segment::Text("abc".into()),
             Segment::Break(Duration::from_millis(250)),
             Segment::Text("de".into()),
         ];
-        walk(&synth, &segs, 1.0, &mut out);
+        let out = walk(&synth, &segs, 1.0);
         assert_eq!(out.len(), 3 + 6000 + 2);
         let calls = log.borrow();
         assert_eq!(calls.len(), 2);
@@ -1377,13 +1735,12 @@ mod fluid_kokoro_ssml_tests {
     fn prosody_rate_threads_composed_speed_to_inner_text() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         // x-fast (1.5) wrapping the whole utterance, CLI rate 1.0 → effective 1.5.
         let seg = Segment::ProsodyRate {
             rate: 1.5,
             content: vec![Segment::Text("hi".into())],
         };
-        walk(&synth, std::slice::from_ref(&seg), 1.0, &mut out);
+        walk(&synth, std::slice::from_ref(&seg), 1.0);
         let calls = log.borrow();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, "hi");
@@ -1398,12 +1755,11 @@ mod fluid_kokoro_ssml_tests {
     fn emphasis_strips_plus_markers_before_synth() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         let seg = Segment::Emphasis {
             content: "д+ома".into(),
             suppress: false,
         };
-        walk(&synth, std::slice::from_ref(&seg), 1.0, &mut out);
+        walk(&synth, std::slice::from_ref(&seg), 1.0);
         let calls = log.borrow();
         assert_eq!(calls[0].0, "дома", "`+` stress markers must be stripped");
     }
@@ -1414,9 +1770,8 @@ mod fluid_kokoro_ssml_tests {
         // degrades to synthesizing the raw content (warn-once on the side).
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         let seg = Segment::Spell("ВОЗ".into());
-        walk(&synth, std::slice::from_ref(&seg), 1.0, &mut out);
+        let out = walk(&synth, std::slice::from_ref(&seg), 1.0);
         let calls = log.borrow();
         assert_eq!(calls.len(), 1, "Spell must synthesize its content as text");
         assert_eq!(calls[0].0, "ВОЗ");
@@ -1427,27 +1782,72 @@ mod fluid_kokoro_ssml_tests {
     fn dropped_ipa_mid_run_splices_the_surrounding_text_into_one_call() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
         let segs = [
             Segment::Text("before ".into()),
-            Segment::Ipa("həˈloʊ".into()),
+            Segment::Ipa {
+                ph: "həˈloʊ".into(),
+                text: String::new(),
+            },
             Segment::Text(" after".into()),
         ];
-        walk(&synth, &segs, 1.0, &mut out);
+        walk(&synth, &segs, 1.0);
         let calls = log.borrow();
         assert_eq!(calls.len(), 1, "the dropped Ipa must not split the run");
         assert_eq!(calls[0].0, "before after");
     }
 
     #[test]
-    fn ipa_segment_is_skipped_without_calling_synth() {
+    fn a_phoneme_speaks_the_text_it_wrapped() {
         let log = RefCell::new(Vec::new());
         let synth = recording_synth(&log);
-        let mut out = Vec::new();
-        // FluidAudio's internal G2P can't accept IPA; the segment is dropped.
-        let seg = Segment::Ipa("həˈloʊ".into());
-        walk(&synth, std::slice::from_ref(&seg), 1.0, &mut out);
-        assert!(out.is_empty(), "Ipa segment must produce no audio");
-        assert!(log.borrow().is_empty(), "synth must not be called for Ipa");
+        let segs = [
+            Segment::Text("Hello".into()),
+            Segment::Ipa {
+                ph: "ˈkeʃa".into(),
+                text: "Kesha".into(),
+            },
+            Segment::Text("world".into()),
+        ];
+        walk(&synth, &segs, 1.0);
+        let calls = log.borrow();
+        assert_eq!(
+            calls[0].0, "Hello Kesha world",
+            "the wrapped word must reach the engine, not the IPA and not nothing"
+        );
+    }
+
+    #[test]
+    fn a_phoneme_alone_in_the_document_still_produces_audio() {
+        let log = RefCell::new(Vec::new());
+        let synth = recording_synth(&log);
+        let seg = Segment::Ipa {
+            ph: "ˈkeʃa".into(),
+            text: "Kesha".into(),
+        };
+        let out = walk(&synth, std::slice::from_ref(&seg), 1.0);
+        assert_eq!(
+            out.len(),
+            "Kesha".chars().count(),
+            "expected audio for the wrapped text"
+        );
+    }
+
+    #[test]
+    fn a_phoneme_with_no_text_is_dropped_without_calling_synth() {
+        let log = RefCell::new(Vec::new());
+        let synth = recording_synth(&log);
+        let seg = Segment::Ipa {
+            ph: "həˈloʊ".into(),
+            text: String::new(),
+        };
+        let out = walk(&synth, std::slice::from_ref(&seg), 1.0);
+        assert!(
+            out.is_empty(),
+            "an empty <phoneme> body must produce no audio"
+        );
+        assert!(
+            log.borrow().is_empty(),
+            "synth must not be called for bare IPA"
+        );
     }
 }

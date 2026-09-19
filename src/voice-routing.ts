@@ -1,4 +1,5 @@
 import { detectTextLanguageEngine } from "./engine";
+import { listVoiceIds } from "./synth";
 
 /** The voice the Engine speaks with when `say` is given no `--voice` — mirrors `tts::voices::DEFAULT_VOICE_ID`. */
 export const DEFAULT_VOICE_ID = "en-am_michael";
@@ -39,6 +40,50 @@ const ONNX_KOKORO_DEFAULTS: Record<string, string> = {
   pt: "pt-pm_alex",
 };
 
+interface NativeScriptRoute {
+  /** AVSpeech locale as it appears in a `macos-*` voice id. */
+  locale: string;
+  /** Apple's male voice for the locale when it ships one, preferred at any quality variant (CLAUDE.md brand rule). */
+  preferredName?: string;
+  script: RegExp;
+}
+
+/**
+ * The Kokoro packs for these two languages accept Latin input only, so native-script text
+ * routed to them can only ever be refused (T2-10). AVSpeech reads both scripts natively.
+ */
+const NATIVE_SCRIPT_ROUTES: Record<string, NativeScriptRoute> = {
+  // macOS ships Lekha (female) as its only hi-IN voice; Rishi is en-IN. A documented exception, like Milena for ru.
+  hi: { locale: "hi-IN", script: /[ऀ-ॿ]/u },
+  ja: {
+    locale: "ja-JP",
+    preferredName: "Otoya",
+    script: /[぀-ヿ㐀-䶿一-鿿]/u,
+  },
+};
+
+const LATIN_LETTER = /[A-Za-z]/u;
+
+/** True when more of the text's letters are in `script` than in the Latin alphabet. */
+function dominantScript(text: string, script: RegExp): boolean {
+  let native = 0;
+  let latin = 0;
+  for (const ch of text) {
+    if (script.test(ch)) native++;
+    else if (LATIN_LETTER.test(ch)) latin++;
+  }
+  return native > latin;
+}
+
+/** The male voice for the locale at any quality variant, else the first one installed. */
+function avSpeechVoiceFor(voices: string[], route: NativeScriptRoute): string | undefined {
+  const forLocale = voices.filter(
+    (id) => id.startsWith("macos-") && id.includes(`.${route.locale}.`),
+  );
+  const preferred = route.preferredName && forLocale.find((id) => id.endsWith(`.${route.preferredName}`));
+  return preferred || forLocale[0];
+}
+
 export function pickVoiceForLang(
   code: string | undefined,
   confidence: number,
@@ -59,10 +104,49 @@ export function pickVoiceForLang(
   }
 }
 
-async function autoRouteVoice(text: string): Promise<string | undefined> {
-  if (!text) return undefined;
-  const detected = await detectTextLanguageEngine(text);
-  return pickVoiceForLang(detected?.code, detected?.confidence ?? 0);
+export interface ResolveSayVoiceOptions {
+  signal?: AbortSignal;
+  platform?: NodeJS.Platform;
+  arch?: NodeJS.Architecture;
+  /** The engine's `say --list-voices` union; injected so the routing decision is testable without an engine. */
+  listVoices?: (signal?: AbortSignal) => Promise<string[]>;
+}
+
+function baseLangOf(code: string | undefined): string {
+  return (code ?? "").toLowerCase().split(/[-_]/, 1)[0] ?? "";
+}
+
+/**
+ * Swaps a Kokoro voice that cannot phonemize the text's script for an installed AVSpeech
+ * voice that can. Any failure keeps the Kokoro voice, so the engine still refuses with its
+ * own hint rather than this silently changing what spoke.
+ */
+async function nativeScriptOverride(
+  lang: string,
+  text: string,
+  options: ResolveSayVoiceOptions,
+): Promise<string | undefined> {
+  const platform = options.platform ?? process.platform;
+  if (platform !== "darwin") return undefined;
+  const route = NATIVE_SCRIPT_ROUTES[lang];
+  if (!route || !dominantScript(text, route.script)) return undefined;
+  try {
+    const voices = options.listVoices
+      ? await options.listVoices(options.signal)
+      : await listVoiceIds({}, options.signal);
+    return avSpeechVoiceFor(voices, route);
+  } catch {
+    return undefined;
+  }
+}
+
+async function detectLang(
+  text: string,
+  options: ResolveSayVoiceOptions,
+): Promise<{ code?: string; confidence: number }> {
+  if (!text) return { confidence: 0 };
+  const detected = await detectTextLanguageEngine(text, { signal: options.signal });
+  return { code: detected?.code, confidence: detected?.confidence ?? 0 };
 }
 
 /**
@@ -72,13 +156,20 @@ async function autoRouteVoice(text: string): Promise<string | undefined> {
  * macOS text-language auto-detection > engine default (`undefined`). A language
  * hint the build has no voice for resolves to `undefined` (engine default)
  * rather than re-running detection — the user stated the language explicitly.
+ *
+ * This is the one routing point that sees the text, so it is where `ja`/`hi` in their
+ * native script leave the Latin-only Kokoro packs for AVSpeech (T2-10).
  */
 export async function resolveSayVoice(
   explicitVoice: string | undefined,
   langHint: string | undefined,
   text: string,
+  options: ResolveSayVoiceOptions = {},
 ): Promise<string | undefined> {
   if (explicitVoice !== undefined) return explicitVoice;
-  if (langHint !== undefined) return pickVoiceForLang(langHint, 1);
-  return autoRouteVoice(text);
+  const { code, confidence } =
+    langHint !== undefined ? { code: langHint, confidence: 1 } : await detectLang(text, options);
+  const voice = pickVoiceForLang(code, confidence, options.platform, options.arch);
+  if (confidence < 0.5) return voice;
+  return (await nativeScriptOverride(baseLangOf(code), text, options)) ?? voice;
 }

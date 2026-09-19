@@ -338,6 +338,8 @@ describe("dictation controller", () => {
     const transcriber = deferred<string>();
     const transcriberStop = vi.fn();
     const deps = createDeps({
+      // The timeout scales with measured capture length: a real clock drifts the 60 s under load.
+      now: () => 0,
       startTranscriber: vi.fn(() => ({
         done: transcriber.promise,
         stop: transcriberStop,

@@ -36,7 +36,7 @@ fn break_with_time_produces_silence_segment() {
     for s in &segs {
         match s {
             Segment::Text(_) => text_chunks += 1,
-            Segment::Ipa(_) => panic!("unexpected Ipa segment"),
+            Segment::Ipa { .. } => panic!("unexpected Ipa segment"),
             Segment::Spell(_) => unreachable!("parser does not emit Spell in this fixture"),
             Segment::Emphasis { .. } => {
                 unreachable!("parser does not emit Emphasis in this fixture")
@@ -113,9 +113,18 @@ fn doctype_inside_speak_is_rejected() {
 
 #[test]
 fn malformed_break_attribute_errors() {
-    // Invalid time designation (not "Ns" or "Nms") → upstream parser rejects.
-    let input = r#"<speak><break time="abc"/></speak>"#;
-    assert!(parse(input).is_err());
+    for bad in ["abc", "-1s", "1h"] {
+        let input = format!(r#"<speak><break time="{bad}"/></speak>"#);
+        let err = parse(&input).unwrap_err();
+        assert_eq!(
+            kesha_engine::errors::code_of(&err),
+            kesha_engine::errors::ErrorCode::SsmlInvalid,
+            "time=\"{bad}\": {err:#}"
+        );
+        let msg = format!("{err:#}");
+        assert!(msg.contains("<break time"), "time=\"{bad}\": {msg}");
+        assert!(msg.contains("500ms"), "time=\"{bad}\": {msg}");
+    }
 }
 
 #[test]
@@ -136,7 +145,7 @@ fn phoneme_with_ipa_alphabet_emits_ipa_segment_and_suppresses_inner_text() {
     let ipas: Vec<&str> = segs
         .iter()
         .filter_map(|s| match s {
-            Segment::Ipa(p) => Some(p.as_str()),
+            Segment::Ipa { ph, .. } => Some(ph.as_str()),
             _ => None,
         })
         .collect();
@@ -159,6 +168,18 @@ fn phoneme_with_ipa_alphabet_emits_ipa_segment_and_suppresses_inner_text() {
         all_text.contains("He said"),
         "outer text missing: {all_text:?}"
     );
+    let carried: Vec<&str> = segs
+        .iter()
+        .filter_map(|s| match s {
+            Segment::Ipa { text, .. } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        carried,
+        vec!["pneumonia"],
+        "the segment must carry the wrapped word for engines that cannot take IPA (T3-6)"
+    );
 }
 
 #[test]
@@ -166,7 +187,7 @@ fn phoneme_without_alphabet_defaults_to_ipa() {
     let segs = parse(r#"<speak><phoneme ph="həˈloʊ">hello</phoneme></speak>"#).unwrap();
     assert!(segs
         .iter()
-        .any(|s| matches!(s, Segment::Ipa(p) if p == "həˈloʊ")));
+        .any(|s| matches!(s, Segment::Ipa { ph, .. } if ph == "həˈloʊ")));
 }
 
 #[test]
@@ -175,7 +196,7 @@ fn phoneme_with_non_ipa_alphabet_falls_back_to_text() {
         .unwrap();
     // Non-IPA warn-strips: inner text flows as a Text segment so the
     // content still gets synthesized via G2P rather than dropped.
-    assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa(_))));
+    assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa { .. })));
     assert!(segs
         .iter()
         .any(|s| matches!(s, Segment::Text(t) if t.contains("hello"))));
@@ -184,7 +205,7 @@ fn phoneme_with_non_ipa_alphabet_falls_back_to_text() {
 #[test]
 fn phoneme_with_empty_ph_is_dropped_silently() {
     let segs = parse(r#"<speak>pre <phoneme ph="">hello</phoneme> post</speak>"#).unwrap();
-    assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa(_))));
+    assert!(segs.iter().all(|s| !matches!(s, Segment::Ipa { .. })));
     let all_text: String = segs
         .iter()
         .filter_map(|s| match s {
@@ -346,7 +367,10 @@ fn emphasis_wrapping_phoneme_does_not_double_emit() {
         .iter()
         .filter(|s| matches!(s, Segment::Emphasis { .. }))
         .count();
-    let ipa_count = segs.iter().filter(|s| matches!(s, Segment::Ipa(_))).count();
+    let ipa_count = segs
+        .iter()
+        .filter(|s| matches!(s, Segment::Ipa { .. }))
+        .count();
 
     assert_eq!(
         ipa_count, 1,
@@ -533,4 +557,30 @@ fn nested_prosody_emits_warning_and_drops_inner_attributes() {
         .collect::<Vec<_>>()
         .join("|");
     assert!(inner_text.contains("Hi"), "inner text lost: {inner_text}");
+}
+
+#[test]
+fn cdata_content_is_speakable_text() {
+    let segs = parse("<speak><![CDATA[hello there]]></speak>").unwrap();
+    let spoken: String = segs
+        .iter()
+        .filter_map(|s| match s {
+            Segment::Text(t) => Some(t.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(spoken.trim(), "hello there");
+}
+
+#[test]
+fn cdata_keeps_the_characters_it_exists_to_carry() {
+    let segs = parse("<speak>a <![CDATA[Kesha & co <b>]]> z</speak>").unwrap();
+    let spoken: String = segs
+        .iter()
+        .filter_map(|s| match s {
+            Segment::Text(t) => Some(t.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert!(spoken.contains("Kesha & co <b>"), "got {spoken:?}");
 }
