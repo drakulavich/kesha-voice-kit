@@ -16,12 +16,18 @@ function specExportedTypeNames(): string[] {
   return [...sentence[1]!.matchAll(/`([A-Za-z0-9_]+)`/g)].map((m) => m[1]!);
 }
 
+function missingExportNames(tscOutput: string): string[] {
+  return [...tscOutput.matchAll(/has no exported member '([A-Za-z0-9_]+)'/g)].map((m) => m[1]!);
+}
+
 function writeProbeProject(dir: string, typeNames: string[]): string {
   const importList = typeNames.join(",\n  ");
   const fields = typeNames.map((name) => `  ${name}: ${name};`).join("\n");
+  // A raw Windows path's backslashes read back as string escapes; forward slashes resolve on every platform.
+  const modulePath = repoPath("src/lib").replaceAll("\\", "/");
   writeFileSync(
     join(dir, "probe.ts"),
-    `import type {\n  ${importList},\n} from "${repoPath("src/lib")}";\n\nexport type Probe = {\n${fields}\n};\n`,
+    `import type {\n  ${importList},\n} from "${modulePath}";\n\nexport type Probe = {\n${fields}\n};\n`,
   );
   const tsconfigPath = join(dir, "tsconfig.json");
   writeFileSync(
@@ -73,6 +79,11 @@ describe("core surface", () => {
       proc.exited,
     ]);
 
-    expect(exitCode, `core surface lacks VadMode (spec lists it)\n${stdout}${stderr}`).toBe(0);
+    const missing = missingExportNames(`${stdout}${stderr}`);
+    const message =
+      missing.length > 0
+        ? `core surface lacks ${missing.join(", ")} (spec lists ${missing.length === 1 ? "it" : "them"})`
+        : `probe did not typecheck\n${stdout}${stderr}`;
+    expect(exitCode, message).toBe(0);
   }, 5000);
 });
