@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { probeEngineAvailability } from "../src/lib/kesha-bin";
+import {
+  probeEngineAvailability,
+  supportsLiveDictation,
+} from "../src/lib/kesha-bin";
 import type { ProbeDeps } from "../src/lib/kesha-bin";
 
 // One case per row of the probe matrix in the status-json-output design.
@@ -38,7 +41,89 @@ describe("probeEngineAvailability — structured status (#647)", () => {
       },
       hint: null,
     });
-    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({ ok: true });
+    expect(await probeEngineAvailability(kesha, { execFile })).toEqual({
+      ok: true,
+      features: ["tts"],
+    });
+  });
+
+  it("reports the engine's feature list so a caller can detect record.live (#947)", async () => {
+    const execFile = jsonStdout({
+      cliVersion: "1.29.1",
+      engine: {
+        installed: true,
+        path: "/x",
+        capabilities: {
+          protocolVersion: 3,
+          backend: "coreml",
+          features: ["transcribe", "record.live"],
+        },
+      },
+      hint: null,
+    });
+    const result = await probeEngineAvailability(kesha, { execFile });
+    expect(result.ok).toBe(true);
+    expect(result.features).toContain("record.live");
+    expect(result.cliVersion).toBe("1.29.1");
+  });
+
+  it("falls back when the payload's cliVersion is not a string (#947)", async () => {
+    for (const cliVersion of [1.28, null, ["1.28.0"], { major: 1 }]) {
+      const execFile = jsonStdout({
+        cliVersion,
+        engine: {
+          installed: true,
+          path: "/x",
+          capabilities: {
+            protocolVersion: 3,
+            backend: "coreml",
+            features: ["transcribe", "record.live"],
+          },
+        },
+        hint: null,
+      });
+      const result = await probeEngineAvailability(kesha, { execFile });
+      expect(result.ok).toBe(true);
+      expect(supportsLiveDictation(result)).toBe(false);
+    }
+  });
+
+  it("reports no features for an engine whose capabilities omit them", async () => {
+    const execFile = jsonStdout({
+      engine: {
+        installed: true,
+        path: "/x",
+        capabilities: { protocolVersion: 3, backend: "onnx" },
+      },
+      hint: null,
+    });
+    const result = await probeEngineAvailability(kesha, { execFile });
+    expect(result.ok).toBe(true);
+    expect(result.features).toEqual([]);
+  });
+
+  it("reports no features when the CLI is too old for status --json", async () => {
+    const result = await probeEngineAvailability(kesha, {
+      execFile: textStdout("Engine:\n  \u2713 Binary: /x\n"),
+    });
+    expect(result.ok).toBe(true);
+    expect(result.features).toBeFalsy();
+  });
+
+  it("ignores a features value that is not an array of strings", async () => {
+    for (const features of ["record.live", ["transcribe", 7], 42, null]) {
+      const execFile = jsonStdout({
+        engine: {
+          installed: true,
+          path: "/x",
+          capabilities: { protocolVersion: 3, backend: "coreml", features },
+        },
+        hint: null,
+      });
+      const result = await probeEngineAvailability(kesha, { execFile });
+      expect(result.ok).toBe(true);
+      expect(result.features).toEqual([]);
+    }
   });
 
   it("takes the hint from the payload when the engine is missing", async () => {
@@ -138,5 +223,82 @@ describe("probeEngineAvailability — structured status (#647)", () => {
       expect(result.ok).toBe(false);
       expect(result.reason).toBe("contract");
     }
+  });
+});
+
+describe("supportsLiveDictation (#947)", () => {
+  it("needs the engine feature and a CLI that accepts the flag", () => {
+    const features = ["transcribe", "record.live"];
+    expect(
+      supportsLiveDictation({ ok: true, features, cliVersion: "1.28.0" }),
+    ).toBe(true);
+    expect(
+      supportsLiveDictation({ ok: true, features, cliVersion: "1.29.1" }),
+    ).toBe(true);
+    // A prerelease of the same triple already carries `record --live`.
+    expect(
+      supportsLiveDictation({ ok: true, features, cliVersion: "1.28.0-alpha.1" }),
+    ).toBe(true);
+  });
+
+  it("refuses a CLI older than the release that shipped record --live", () => {
+    const features = ["transcribe", "record.live"];
+    for (const cliVersion of ["1.27.0", "1.24.9", "0.9.9", "1.2.0"]) {
+      expect(supportsLiveDictation({ ok: true, features, cliVersion })).toBe(
+        false,
+      );
+    }
+  });
+
+  it("refuses an unreported or unreadable CLI version", () => {
+    const features = ["transcribe", "record.live"];
+    expect(supportsLiveDictation({ ok: true, features })).toBe(false);
+    expect(
+      supportsLiveDictation({ ok: true, features, cliVersion: "unknown" }),
+    ).toBe(false);
+  });
+
+  it("refuses a version string that only starts like a version", () => {
+    const features = ["transcribe", "record.live"];
+    // A numeric prefix is not a version: whatever follows may mean anything.
+    for (const cliVersion of [
+      "1.28.0garbage",
+      "1.28.0.1",
+      "1.28.0 garbage",
+      "1.28.0/2.0.0",
+      "1.28",
+    ]) {
+      expect(supportsLiveDictation({ ok: true, features, cliVersion })).toBe(
+        false,
+      );
+    }
+  });
+
+  it("accepts the version shapes the CLI actually reports", () => {
+    const features = ["transcribe", "record.live"];
+    for (const cliVersion of [
+      "1.28.0",
+      "v1.28.0",
+      " 1.29.1 ",
+      "1.28.0-alpha.1",
+      "1.28.0+build.5",
+    ]) {
+      expect(supportsLiveDictation({ ok: true, features, cliVersion })).toBe(
+        true,
+      );
+    }
+  });
+
+  it("refuses an engine that does not advertise the feature", () => {
+    expect(
+      supportsLiveDictation({
+        ok: true,
+        features: ["transcribe"],
+        cliVersion: "1.29.1",
+      }),
+    ).toBe(false);
+    expect(supportsLiveDictation({ ok: true, cliVersion: "1.29.1" })).toBe(
+      false,
+    );
   });
 });

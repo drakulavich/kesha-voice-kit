@@ -14,7 +14,9 @@ Starts recording from the default microphone and shows a live view while you spe
 - **Auto-stop on silence** — after ~30 s without speech the status flips to Idle, and ~15 s later recording stops on its own; speaking again resets the timer.
 - **Stop and Transcribe** — or let the configured time limit end the session.
 
-Transcription runs locally (NVIDIA Parakeet TDT, multilingual) and the transcript is copied to the clipboard automatically. A running transcription can be cancelled from the action panel.
+Transcription runs locally (NVIDIA Parakeet TDT, multilingual) and the transcript is copied to the clipboard automatically.
+
+On Apple Silicon with an engine that supports live transcription, the audio is transcribed as you speak, so the transcript appears as soon as you stop and there is no separate transcription step to wait for or cancel. Elsewhere — Intel Macs, or an older CLI — the recording is transcribed afterwards as a second step, which can be cancelled from the action panel.
 
 ## Prerequisites
 

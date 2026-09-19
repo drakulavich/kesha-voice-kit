@@ -146,6 +146,10 @@ export interface ProbeDeps {
   ) => Promise<{ stdout: string; stderr: string }>;
 }
 
+export const RECORD_LIVE_FEATURE = "record.live";
+// The engine advertises the feature; `record --live` reached the CLI that spawns it in 1.28.0 (#947).
+export const RECORD_LIVE_MIN_CLI_VERSION = "1.28.0";
+
 export interface EnginePreflightResult {
   ok: boolean;
   hint?: string;
@@ -155,6 +159,45 @@ export interface EnginePreflightResult {
    * those users to re-download would fix nothing (#647).
    */
   reason?: "missing" | "unusable" | "contract";
+  /** Engine `features` from `kesha status --json`; absent when the CLI predates it. */
+  features?: string[];
+  /** `cliVersion` from `kesha status --json`; absent when the CLI predates it. */
+  cliVersion?: string;
+}
+
+/**
+ * Whether a live dictation session can be spawned against this CLI.
+ *
+ * Both halves are required and they version independently: the engine
+ * advertises `record.live`, but the CLI is what has to accept the `--live`
+ * flag, and citty ignores a flag it does not know — an engine newer than the
+ * CLI's pin would otherwise exit 2 on "kesha record requires --out <path>".
+ */
+export function supportsLiveDictation(
+  preflight: EnginePreflightResult,
+): boolean {
+  if (!preflight.features?.includes(RECORD_LIVE_FEATURE)) return false;
+  return atLeastVersion(preflight.cliVersion, RECORD_LIVE_MIN_CLI_VERSION);
+}
+
+function atLeastVersion(version: string | undefined, minimum: string): boolean {
+  const actual = parseVersion(version);
+  const floor = parseVersion(minimum);
+  if (!actual || !floor) return false;
+  for (let part = 0; part < actual.length; part++) {
+    if (actual[part] !== floor[part]) return actual[part] > floor[part];
+  }
+  return true;
+}
+
+// Anchored end: a numeric prefix is not a version, and only a semver prerelease or build suffix may follow.
+function parseVersion(
+  value: string | undefined,
+): [number, number, number] | null {
+  const match = value
+    ?.trim()
+    .match(/^v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?$/);
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null;
 }
 
 const MISSING_ENGINE_MARKER = "not installed";
@@ -210,6 +253,15 @@ function capabilitiesAreReadable(capabilities: unknown): boolean {
   );
 }
 
+// A malformed list degrades to "no features" so the caller falls back rather than guessing (#947).
+function readFeatures(capabilities: unknown): string[] {
+  const value = (capabilities as Record<string, unknown> | null)?.features;
+  if (!Array.isArray(value)) return [];
+  return value.every((entry) => typeof entry === "string")
+    ? (value as string[])
+    : [];
+}
+
 function readStructuredStatus(
   payload: Record<string, unknown>,
 ): EnginePreflightResult {
@@ -231,7 +283,9 @@ function readStructuredStatus(
   if (!capabilitiesAreReadable(capabilities)) {
     return { ok: false, reason: "unusable", hint: REPAIR_HINT };
   }
-  return { ok: true };
+  const cliVersion =
+    typeof payload.cliVersion === "string" ? payload.cliVersion : undefined;
+  return { ok: true, features: readFeatures(capabilities), cliVersion };
 }
 
 /**

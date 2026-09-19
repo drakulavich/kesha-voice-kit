@@ -35,6 +35,11 @@ export function transcribeTimeoutMs(recordingSeconds: number): number {
   );
 }
 
+// Live prints its transcript after the stop, so the recorder's 1500 ms ladder would destroy it (#947).
+export const LIVE_STOP_GRACE_MS = 10_000;
+export const LIVE_FORCE_KILL_MS = 15_000;
+export const LIVE_STDOUT_FLUSH_MS = 2_000;
+
 export function parseMaxSeconds(value: string | undefined): number {
   const raw = value?.trim() || String(DEFAULT_MAX_SECONDS);
   const parsed = Number(raw);
