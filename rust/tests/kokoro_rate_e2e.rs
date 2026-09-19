@@ -518,3 +518,74 @@ fn kokoro_ssml_prosody_rate_changes_duration() {
         tol * 100.0
     );
 }
+
+const SENTENCE: &str =
+    "The quick brown fox jumps over the lazy dog, then rests under the old oak trees.";
+
+/// 647 characters: one kesha chunk at `--rate 2.0` (budget 1125) of ~690 phonemes, past FluidAudio's 510 cap.
+fn eight_sentences() -> String {
+    [SENTENCE; 8].join(" ")
+}
+
+#[test]
+fn kokoro_long_text_at_a_fast_rate_synthesizes_past_the_phoneme_cap() {
+    // FluidAudio #790 dropped the phoneme chunking #712 added; the fork restores it (#1098).
+    let exe = PathBuf::from(common::engine_bin());
+    if !exe.exists() {
+        eprintln!("skipping: engine binary not found at {}", exe.display());
+        return;
+    }
+    if !ane_kokoro_ready() {
+        eprintln!(
+            "skipping: FluidAudio ANE Kokoro model + am_michael voice pack not staged \
+             (run `kesha install --tts`)"
+        );
+        return;
+    }
+
+    let tmp = tempfile::Builder::new()
+        .prefix("kesha-kokoro-long-")
+        .tempdir()
+        .unwrap();
+    let one = tmp.path().join("one-sentence.wav");
+    let all = tmp.path().join("eight-sentences.wav");
+    let text = eight_sentences();
+    let voice = "en-am_michael";
+    assert!(
+        text.chars().count() >= 600,
+        "the prompt must exceed the phoneme cap"
+    );
+
+    if !say_rate(&exe, SENTENCE, voice, "2.0", &one) {
+        return; // prerequisite missing — skip cleanly
+    }
+    if !say_rate(&exe, &text, voice, "2.0", &all) {
+        return;
+    }
+
+    let (dur_one, _) = wav_duration_and_samples(&one);
+    let (dur_all, samples_all) = wav_duration_and_samples(&all);
+    eprintln!(
+        "kokoro_long_text_at_a_fast_rate_synthesizes_past_the_phoneme_cap: {} chars at rate 2.0 -> \
+         {dur_all:.3}s ({} samples); one sentence -> {dur_one:.3}s",
+        text.chars().count(),
+        samples_all.len()
+    );
+
+    assert!(
+        peak(&samples_all) > 0.01,
+        "the long prompt produced (near-)silent audio (peak {})",
+        peak(&samples_all)
+    );
+    assert!(
+        dur_all >= 8.0,
+        "647 characters at rate 2.0 produced only {dur_all:.3}s of audio ({} samples at 24 kHz) — \
+         the text past the 510-phoneme cap was dropped (#1098)",
+        samples_all.len()
+    );
+    assert!(
+        dur_all >= 6.0 * dur_one,
+        "eight sentences ({dur_all:.3}s) are shorter than six times one ({dur_one:.3}s) — \
+         a chunk past the 510-phoneme cap is missing from the join (#1098)"
+    );
+}
