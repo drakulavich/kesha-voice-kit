@@ -444,24 +444,41 @@ mod tests {
             retryable,
             vec!["E_MODEL_DOWNLOAD", "E_DIARIZE_TIMEOUT", "E_INSTALL_RACE"]
         );
-        let origin = |c: &str| {
-            d.errors
-                .iter()
-                .find(|e| e.code == c)
-                .unwrap_or_else(|| panic!("{c} missing"))
-                .origin
-        };
-        assert_eq!(origin("E_ENGINE_SPAWN"), Origin::Cli);
-        assert_eq!(origin("E_ENGINE_PROTOCOL"), Origin::Cli);
-        assert_eq!(origin("E_INSTALL_RACE"), Origin::Cli);
-        assert_eq!(origin("E_INTERRUPTED"), Origin::Cli);
-        assert_eq!(origin("E_INVALID_ARG"), Origin::Both);
-        assert_eq!(origin("E_INPUT_NOT_FOUND"), Origin::Both);
-        assert_eq!(origin("E_INTERNAL"), Origin::Both);
-        assert_eq!(origin("E_UNSUPPORTED_PLATFORM"), Origin::Both);
-        assert_eq!(origin("E_MODEL_MISSING"), Origin::Both);
-        assert_eq!(origin("E_TEXT_EMPTY"), Origin::Both);
-        assert_eq!(origin("E_TEXT_TOO_LONG"), Origin::Both);
+        let mut both: Vec<&str> = d
+            .errors
+            .iter()
+            .filter(|e| e.origin == Origin::Both)
+            .map(|e| e.code)
+            .collect();
+        both.sort_unstable();
+        assert_eq!(
+            both,
+            vec![
+                "E_INPUT_NOT_FOUND",
+                "E_INTERNAL",
+                "E_INVALID_ARG",
+                "E_MODEL_MISSING",
+                "E_TEXT_EMPTY",
+                "E_TEXT_TOO_LONG",
+                "E_UNSUPPORTED_PLATFORM",
+            ]
+        );
+        let mut cli: Vec<&str> = d
+            .errors
+            .iter()
+            .filter(|e| e.origin == Origin::Cli)
+            .map(|e| e.code)
+            .collect();
+        cli.sort_unstable();
+        assert_eq!(
+            cli,
+            vec![
+                "E_ENGINE_PROTOCOL",
+                "E_ENGINE_SPAWN",
+                "E_INSTALL_RACE",
+                "E_INTERRUPTED",
+            ]
+        );
         assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 4);
     }
 
@@ -492,6 +509,11 @@ mod tests {
         assert!(s.contains("\"whenUngated\":\"drop\"") || !cfg!(feature = "tts"));
         assert!(!s.contains("\"whenUngated\":\"reject\""));
         assert!(s.contains("\"gate\":null"));
+    }
+
+    #[test]
+    fn rendered_json_carries_lowercase_origins() {
+        let s = render().unwrap();
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
         let origin_of_json = |c: &str| {
             v["errors"]

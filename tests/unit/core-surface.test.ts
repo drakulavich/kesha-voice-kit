@@ -82,8 +82,8 @@ describe("core surface", () => {
     const missing = missingExportNames(`${stdout}${stderr}`);
     const message =
       missing.length > 0
-        ? `core surface lacks ${missing.join(", ")} (spec lists ${missing.length === 1 ? "it" : "them"})`
+        ? `core surface lacks ${missing.join(", ")} (spec lists ${missing.length === 1 ? "it" : "them"})\n${stdout}${stderr}`
         : `probe did not typecheck\n${stdout}${stderr}`;
     expect(exitCode, message).toBe(0);
-  }, 5000);
+  });
 });
