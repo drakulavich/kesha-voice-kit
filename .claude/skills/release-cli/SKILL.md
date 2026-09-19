@@ -1,6 +1,6 @@
 ---
 name: release-cli
-description: Cuts a STABLE CLI release (vX.Y.Z-cli marker tag; not for beta or alpha markers, which this lane silently skips while burning the tag) — the `🚀 Release (CLI)` lane builds the Linux packages, publishes the marker release, and dispatches npm publish with provenance. Covers version alignment across package.json and server.json, why the tag must be pushed by a human, and how to verify from the registry rather than through a stale global install. Refuses to auto-run; user must explicitly invoke. For an engine release use release-engine.
+description: Cuts a STABLE CLI release (vX.Y.Z-cli marker tag; not for beta or alpha markers, which this lane silently skips while burning the tag) — the `🚀 Release (CLI)` lane builds the Linux packages, publishes the marker release, and dispatches npm publish with provenance. Covers version alignment across package.json and server.json, why the tag must be pushed by a human, and how to verify from the registry rather than through a stale global install. Refuses to auto-run; user must explicitly invoke. For an engine release use release-kesha.
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,7 @@ disable-model-invocation: true
 
 Cuts a **CLI** release. **NEVER auto-runs** — user invokes via `/release-cli vX.Y.Z-cli`.
 
-For an engine release (bare `vX.Y.Z`, GitHub Release only) use the **`release-engine`** skill. A full ship is `/release-engine` first, then this one: the CLI release is what carries the new engine pin to users, and what ships the Linux packages.
+For an engine release (bare `vX.Y.Z`, GitHub Release only) use the **`release-kesha`** skill. A full ship is `/release-kesha` first, then this one: the CLI release is what carries the new engine pin to users, and what ships the Linux packages.
 
 ## Inputs
 

@@ -1,14 +1,14 @@
 ---
-name: release-engine
+name: release-kesha
 description: Cuts a kesha-engine release (bare vX.Y.Z tag) per CLAUDE.md rules — pre-flight audits, engine-only version bump, annotated tag carrying the notes, draft validation with authenticated download, publish, then verify. Refuses to auto-run; user must explicitly invoke. Knows the workflow-frozen-at-the-tag trap, the gh-cli release-notes trap, and the draft-URL 404 trap. For a CLI release use release-cli.
 disable-model-invocation: true
 ---
 
-# release-engine
+# release-kesha
 
-Cuts a **kesha-engine** release. **NEVER auto-runs** — user invokes via `/release-engine vX.Y.Z`.
+Cuts a **kesha-engine** release. **NEVER auto-runs** — user invokes via `/release-kesha vX.Y.Z`.
 
-For a CLI release (`vX.Y.Z-cli`, npm) use the **`release-cli`** skill instead. The two are independent version lines; a full ship is usually `/release-engine` then `/release-cli`.
+For a CLI release (`vX.Y.Z-cli`, npm) use the **`release-cli`** skill instead. The two are independent version lines; a full ship is usually `/release-kesha` then `/release-cli`.
 
 ## Inputs
 
