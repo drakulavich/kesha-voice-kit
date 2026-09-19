@@ -15,6 +15,7 @@ import {
   forbidFindPipedToHead,
   forbidLinuxPackaging,
   forbidNixBuildInCiAggregator,
+  requireEveryJobInCiAggregator,
   requireJobTimeouts,
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
@@ -1686,6 +1687,36 @@ describe("requireRustTestCancelsSupersededRuns", () => {
     const path = join(tempDir("kesha-wf-"), "rust-test.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
+  });
+});
+
+describe("requireEveryJobInCiAggregator", () => {
+  test("passes on the real ci.yml", () => {
+    expect(requireEveryJobInCiAggregator(CI, parseRepoYaml(CI))).toEqual([]);
+  });
+
+  test("names each job the aggregator does not need", () => {
+    const doc = { jobs: { changes: {}, "file-sizes": {}, "unit-tests": {}, ci: { needs: ["changes", "unit-tests"] } } };
+    const errors = requireEveryJobInCiAggregator(CI, doc);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("`file-sizes`");
+  });
+
+  test("a single-string needs counts as a list of one", () => {
+    const doc = { jobs: { "unit-tests": {}, ci: { needs: "unit-tests" } } };
+    expect(requireEveryJobInCiAggregator(CI, doc)).toEqual([]);
+  });
+
+  test("ignores workflows other than ci.yml", () => {
+    const doc = { jobs: { "file-sizes": {}, ci: { needs: [] } } };
+    expect(requireEveryJobInCiAggregator(".github/workflows/rust-test.yml", doc)).toEqual([]);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  file-sizes:\n    runs-on: ubuntu-latest\n  ci:\n    needs: []\n";
+    const path = join(tempDir("kesha-wf-"), "ci.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("aggregator"))).toHaveLength(1);
   });
 });
 

@@ -1,13 +1,8 @@
 # kesha README screencast.
 #
-# Recorded against the Git LFS fixtures in tests/fixtures, never against real voice
+# Recorded against the committed fixtures in tests/fixtures, never against real voice
 # messages. That is the rule, not a convenience: the recording is published, so every
-# word in a frame must be a fixture's. Run `git lfs pull` first; without it the .ogg
-# files are pointer stubs and the transcribe step fails.
-#
-# docs/assets/demo.mp4 and docs/assets/demo.webp are plain files in git, not LFS: the
-# .gitattributes rules cover docs/assets/*.svg, docs/assets/*.png and *.gif, and neither
-# output matches, so a clone needs nothing extra before touching either.
+# word in a frame must be a fixture's.
 #
 # 1. Record the mp4. The `kesha` on PATH must be this checkout, not a globally installed
 #    package, so build a throwaway directory whose bin/kesha is a two-line sh wrapper:

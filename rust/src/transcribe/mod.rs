@@ -2268,9 +2268,7 @@ mod seam_long_form {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../tests/fixtures/benchmark-en")
             .join(name);
-        audio::load_audio(&path).unwrap_or_else(|e| {
-            panic!("load {name}: {e} — run `git lfs pull` if fixtures are pointer stubs")
-        })
+        audio::load_audio(&path).unwrap_or_else(|e| panic!("load {name}: {e}"))
     }
 
     fn keys(text: &str) -> Vec<String> {

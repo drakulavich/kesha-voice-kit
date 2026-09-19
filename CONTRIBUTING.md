@@ -11,9 +11,9 @@ just dev-setup           # checks toolchains/system deps, runs safe local setup
 ```
 
 `just dev-setup` is the one-command bootstrap: it auto-runs the safe,
-project-local steps (`bun install`, `bun link`, `git lfs pull`, and installs
-`cargo-nextest`) and **checks** for the system dependencies the Rust build needs
-(`protoc`, `libopus` + `pkg-config`, `libclang` on Linux, `git-lfs`), printing
+project-local steps (`bun install`, `bun link`, and installs `cargo-nextest`)
+and **checks** for the system dependencies the Rust build needs (`protoc`,
+`libopus` + `pkg-config`, `libclang` on Linux), printing
 the exact per-OS install command for anything missing. It never runs
 `brew`/`sudo apt-get` on your behalf, and it's safe to re-run. The manual
 equivalent:

@@ -1,10 +1,10 @@
-tests/fixtures/*.oga filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/*.wav filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/benchmark/*.mp3 filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/benchmark/*.oga filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/benchmark/*.ogg filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/benchmark/*.wav filter=lfs diff=lfs merge=lfs -text
-tests/fixtures/benchmark-en/*.ogg filter=lfs diff=lfs merge=lfs -text
-docs/assets/*.svg filter=lfs diff=lfs merge=lfs -text
-docs/assets/*.png filter=lfs diff=lfs merge=lfs -text
-*.gif filter=lfs diff=lfs merge=lfs -text
+tests/fixtures/*.oga binary
+tests/fixtures/*.wav binary
+tests/fixtures/benchmark/*.mp3 binary
+tests/fixtures/benchmark/*.oga binary
+tests/fixtures/benchmark/*.ogg binary
+tests/fixtures/benchmark/*.wav binary
+tests/fixtures/benchmark-en/*.ogg binary
+docs/assets/*.svg binary
+docs/assets/*.png binary
+*.gif binary

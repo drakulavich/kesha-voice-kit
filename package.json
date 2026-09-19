@@ -61,6 +61,7 @@
     "check:release-manifest": "bun .github/scripts/release-manifest.mjs --check",
     "check:versions": "bun .github/scripts/check-versions.ts",
     "check:engine-targets": "bun .github/scripts/check-engine-targets.ts",
+    "check:file-sizes": "bun .github/scripts/check-file-sizes.ts",
     "mutants:ts": "bun scripts/mutants-ts.ts"
   },
   "keywords": [

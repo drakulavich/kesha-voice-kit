@@ -121,6 +121,7 @@ preflight:
     bun run check:specs
     bun run check:engine-targets
     bun run check:release-manifest
+    bun run check:file-sizes
 
     if [ -n "$rust" ]; then
       echo "==> Rust gate"

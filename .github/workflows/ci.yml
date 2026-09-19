@@ -232,6 +232,20 @@ jobs:
           HEAD_COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: bun run check:engine-targets
 
+  # No path filter: a multi-megabyte binary can land in any directory, and this is the only gate between it and main now that Git LFS is gone.
+  file-sizes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: ⚖️ Check tracked file sizes
+        run: bun run check:file-sizes
+
   homebrew-formula:
     needs: changes
     if: needs.changes.outputs.homebrew == 'true'
@@ -402,8 +416,6 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: true
 
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
@@ -470,8 +482,6 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: true
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
       - name: 🔊 Setup integration backend
@@ -546,8 +556,6 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: true
 
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
@@ -601,8 +609,6 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: true
 
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
@@ -681,8 +687,6 @@ jobs:
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          lfs: true
 
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
@@ -928,6 +932,7 @@ jobs:
     needs:
       - changes
       - workflow-lint
+      - file-sizes
       - homebrew-formula
       - unit-tests
       - ts-coverage

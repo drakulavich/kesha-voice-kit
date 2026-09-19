@@ -18,7 +18,6 @@ fn a_plain_transcribe_narrates_its_progress_on_stderr() {
         return;
     }
     let path = fixture();
-    common::assert_not_lfs_pointer(&path);
 
     let out = Command::new(common::engine_bin())
         .arg("transcribe")

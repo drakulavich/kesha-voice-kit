@@ -475,7 +475,6 @@ mod tests {
             "{}/../tests/fixtures/benchmark-en/03-review-pull-request.ogg",
             env!("CARGO_MANIFEST_DIR")
         );
-        reject_lfs_pointer(Path::new(&fixture));
         let mut samples = crate::audio::load_audio(Path::new(&fixture)).expect("decode fixture");
         let mut endpoint = StreamingVad::load(
             &path,
@@ -498,7 +497,6 @@ mod tests {
             "{}/../tests/fixtures/silence.wav",
             env!("CARGO_MANIFEST_DIR")
         );
-        reject_lfs_pointer(Path::new(&silence_path));
         let silence =
             crate::audio::load_audio(Path::new(&silence_path)).expect("decode silence fixture");
         for _ in 0..3 {
@@ -589,69 +587,15 @@ mod tests {
         );
     }
 
-    /// An LFS pointer stub is still a valid `.ogg` path, so `load_audio` fails deep inside
-    /// symphonia's probe with a message that never mentions LFS — this turns that into the
-    /// actionable hint the fixtures-empty check further down was meant to give (#990 review).
-    fn reject_lfs_pointer(path: &Path) {
-        if let Ok(bytes) = std::fs::read(path) {
-            if bytes.starts_with(b"version https://git-lfs.github.com/spec") {
-                panic!(
-                    "{} is an LFS pointer stub, not audio — run `git lfs pull`",
-                    path.display()
-                );
-            }
-        }
-    }
-
-    /// The shared per-file step `load_benchmark_fixtures` calls — pulled out so a test can call
-    /// it directly and pin the `reject_lfs_pointer` call site itself, not just the standalone
-    /// function (round-2 review: deleting the call site left every existing test green).
     fn load_fixture(path: &Path) -> (String, Vec<f32>) {
-        reject_lfs_pointer(path);
         let name = path.file_name().unwrap().to_string_lossy().into_owned();
         let audio = crate::audio::load_audio(path).unwrap_or_else(|e| panic!("decode {name}: {e}"));
         (name, audio)
     }
 
-    #[test]
-    fn load_fixture_rejects_a_pointer_stub_and_accepts_real_audio() {
-        let dir = std::env::temp_dir().join(format!("kesha-vad-lfs-guard-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("temp dir");
-
-        let pointer = dir.join("pointer.ogg");
-        std::fs::write(
-            &pointer,
-            b"version https://git-lfs.github.com/spec/v1\noid sha256:deadbeef\nsize 12345\n",
-        )
-        .expect("write pointer stub");
-        let outcome = std::panic::catch_unwind(|| load_fixture(&pointer));
-
-        std::fs::remove_dir_all(&dir).ok();
-
-        let message = panic_message(&outcome);
-        assert!(
-            message.as_deref().is_some_and(|m| m.contains("LFS pointer stub")),
-            "expected the actionable LFS-pointer message before decoding, got: {message:?} — a decode-failure panic from a deleted guard call would satisfy is_err() too"
-        );
-    }
-
-    /// `catch_unwind`'s `Err` payload is a `Box<dyn Any>`, usually `String` or `&str` depending on
-    /// whether `panic!` formatted anything — checking only `is_err()` doesn't distinguish the
-    /// actionable LFS message from a decode failure that would panic anyway (round-2 review found
-    /// exactly that gap: deleting the guard call still "passed" a `.is_err()`-only assertion).
-    fn panic_message(outcome: &std::thread::Result<(String, Vec<f32>)>) -> Option<String> {
-        outcome.as_ref().err().map(|e| {
-            e.downcast_ref::<String>()
-                .cloned()
-                .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()))
-                .unwrap_or_else(|| "<non-string panic payload>".to_string())
-        })
-    }
-
     /// The benchmark corpus is 20 committed files (10 ru + 10 en); asserting non-empty pins
     /// "some fixtures found" rather than "the full corpus" — a directory silently dropped from
-    /// the loop, or half of it missing `git lfs pull`, stayed green under that weaker check
-    /// (#990 review).
+    /// the loop stayed green under that weaker check (#990 review).
     fn load_benchmark_fixtures() -> Vec<(String, Vec<f32>)> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -714,7 +658,7 @@ mod tests {
         assert_eq!(
             fixtures.len(),
             20,
-            "expected all 20 benchmark fixtures (10 ru + 10 en) — got {}: was a directory dropped, or is `git lfs pull` needed?",
+            "expected all 20 benchmark fixtures (10 ru + 10 en) — got {}: was a directory dropped?",
             fixtures.len()
         );
 
@@ -793,10 +737,7 @@ mod tests {
         };
 
         let fixtures = load_benchmark_fixtures();
-        assert!(
-            !fixtures.is_empty(),
-            "no benchmark fixtures found — run `git lfs pull`"
-        );
+        assert!(!fixtures.is_empty(), "no benchmark fixtures found");
         let corpus_secs: f32 = fixtures
             .iter()
             .map(|(_, a)| a.len() as f32 / SAMPLE_RATE as f32)
