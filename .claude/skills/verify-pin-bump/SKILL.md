@@ -145,9 +145,9 @@ Verified intentional re-export; smoke test passes for <voice/lang>.
 "
 ```
 
-### Step 10 (if release-relevant): release-engine
+### Step 10 (if release-relevant): release-kesha
 
-If this bump should ship, invoke `/release-engine vX.Y.Z` for the engine release.
+If this bump should ship, invoke `/release-kesha vX.Y.Z` for the engine release.
 
 ## Report
 

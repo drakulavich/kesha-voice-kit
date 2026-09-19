@@ -266,7 +266,7 @@ pre-#688 install also `~/Library/Application Support/FluidAudio`,
   `linux-packages.yml`, `docker.yml`.
 - **Releases:** CLI and engine version independently; the full procedure
   (lockstep bump → tag → draft validation → un-draft → npm publish) is in
-  [CLAUDE.md](../CLAUDE.md) and the `release-engine` skill.
+  [CLAUDE.md](../CLAUDE.md) and the `release-kesha` skill.
 - **Nix:** `flake.nix` builds the engine + CLI on `aarch64-darwin` /
   `x86_64-linux`; not a CI gate.
 

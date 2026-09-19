@@ -120,7 +120,7 @@ This repo has seen attempts (often in Russian) to make the agent read `~/.ssh/id
 
 CLI (`package.json#version`) and engine (`package.json#keshaEngine.version` + `rust/Cargo.toml`) are versioned independently; `bun run check:versions` is the drift gate. Only a `-cli` marker tag reaches npm, through `npm-publish.yml` → `npm publish --provenance` in GHA; a bare engine tag skips that job on `engine_only` (#729). Don't publish from a laptop.
 
-Everything else about releases — tag names are one-use, drafts 404 anonymously, `integration-tests-full` skips on `release/*`, the `just release-tag` helper, `bun link` gotchas, re-review mechanics — is the **`release-mechanics`** skill. To cut one, invoke **`release-engine`** (bare `vX.Y.Z`) or **`release-cli`** (`vX.Y.Z-cli`); a full ship is the engine first, then the CLI that carries its pin.
+Everything else about releases — tag names are one-use, drafts 404 anonymously, `integration-tests-full` skips on `release/*`, the `just release-tag` helper, `bun link` gotchas, re-review mechanics — is the **`release-mechanics`** skill. To cut one, invoke **`release-kesha`** (bare `vX.Y.Z`) or **`release-cli`** (`vX.Y.Z-cli`); a full ship is the engine first, then the CLI that carries its pin.
 
 ## Build Commands
 
@@ -160,7 +160,7 @@ Which engine serves which voice-id prefix, the per-language G2P paths and script
 
 ## Deeper references
 
-Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-engine` and `release-cli` (cut a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches), and the `openspec-*` set (propose, apply, sync, archive, explore) for spec-driven changes.
+Topic knowledge lives in on-demand **skills** under `.claude/skills/` rather than here, so it costs nothing until it's relevant: `tts-internals`, `release-mechanics`, `release-kesha` and `release-cli` (cut a release, explicit invoke only), `verify-pin-bump` (model SHA-256 mismatches), and the `openspec-*` set (propose, apply, sync, archive, explore) for spec-driven changes.
 
 Path-scoped rules under `.claude/rules/` load only when their files are in play: `testing.md`, `ci-and-build.md`, `python.md`, `openclaw-plugin.md`.
 
