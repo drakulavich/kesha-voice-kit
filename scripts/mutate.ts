@@ -56,35 +56,67 @@ function parseOptions(argv: string[], env: NodeJS.ProcessEnv): Options {
   return { timeoutSeconds, occurrences, file, find, replace, command };
 }
 
-function descendantsOf(pid: number): number[] {
-  const children = Bun.spawnSync(["pgrep", "-P", String(pid)], { stdout: "pipe", stderr: "ignore" })
-    .stdout.toString()
-    .split("\n")
-    .map(Number)
-    .filter((child) => Number.isInteger(child) && child > 0);
-  return children.flatMap((child) => [child, ...descendantsOf(child)]);
+/** Parent → children for every live process, or null when the table cannot be read; a null is treated as "no children" so the exit contract still holds. */
+function childrenByParent(): Map<number, number[]> | null {
+  try {
+    const table = Bun.spawnSync(["ps", "-eo", "pid=,ppid="], { stdout: "pipe", stderr: "ignore" });
+    if (!table.success) return null;
+    const children = new Map<number, number[]>();
+    for (const line of table.stdout.toString().split("\n")) {
+      const [pid, ppid] = line.trim().split(/\s+/).map(Number);
+      if (!pid || ppid === undefined) continue;
+      children.set(ppid, [...(children.get(ppid) ?? []), pid]);
+    }
+    return children;
+  } catch {
+    return null;
+  }
 }
 
-/** SIGKILL to the whole tree: a hung `Drop` in `child.wait()` (#956) outlives its parent's death and a polite signal alike. */
-function killTree(pid: number): void {
+function safeSignal(pid: number, signal: "SIGSTOP" | "SIGKILL"): void {
+  try {
+    process.kill(pid, signal);
+  } catch {
+    // Gone between the listing and the signal.
+  }
+}
+
+/** Freezes the tree before enumerating it — a stopped process cannot fork, so nothing spawned mid-sweep escapes — then SIGKILLs it leaves first, root last; a hung `Drop` in `child.wait()` (#956) outlives a polite signal. */
+function killTree(root: number): void {
   if (process.platform === "win32") {
-    Bun.spawnSync(["taskkill", "/PID", String(pid), "/T", "/F"], { stdout: "ignore", stderr: "ignore" });
+    Bun.spawnSync(["taskkill", "/PID", String(root), "/T", "/F"], { stdout: "ignore", stderr: "ignore" });
     return;
   }
-  for (const victim of [...descendantsOf(pid), pid]) {
-    try {
-      process.kill(victim, "SIGKILL");
-    } catch {
-      // Gone between the listing and the signal.
+  safeSignal(root, "SIGSTOP");
+  const frozen = new Set([root]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    const children = childrenByParent();
+    if (!children) break;
+    for (const parent of [...frozen]) {
+      for (const child of children.get(parent) ?? []) {
+        if (frozen.has(child)) continue;
+        safeSignal(child, "SIGSTOP");
+        frozen.add(child);
+        grew = true;
+      }
     }
   }
+  for (const pid of [...frozen].reverse()) safeSignal(pid, "SIGKILL");
 }
 
 let runningPid: number | null = null;
 let restoreMutated: (() => void) | null = null;
 
-async function runCommand(command: string[], timeoutSeconds: number): Promise<{ exitCode: number } | { timedOut: true }> {
-  const proc = Bun.spawn(command, { stdout: "inherit", stderr: "inherit" });
+type RunOutcome = { exitCode: number } | { timedOut: true } | { notStarted: string };
+
+async function runCommand(command: string[], timeoutSeconds: number): Promise<RunOutcome> {
+  let proc: ReturnType<typeof Bun.spawn>;
+  try {
+    proc = Bun.spawn(command, { stdout: "inherit", stderr: "inherit" });
+  } catch (error) {
+    return { notStarted: error instanceof Error ? error.message : String(error) };
+  }
   runningPid = proc.pid;
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -109,6 +141,12 @@ function onInterrupt(): void {
 function notAValidRun(message: string): never {
   console.error(`NOT A VALID RUN: ${message}`);
   process.exit(EXIT_NOT_A_VALID_RUN);
+}
+
+function exitCodeOf(outcome: RunOutcome, timeoutSeconds: number): number {
+  if ("notStarted" in outcome) notAValidRun(`the test command could not be started (${outcome.notStarted})`);
+  if ("timedOut" in outcome) notAValidRun(`the test command ran longer than ${timeoutSeconds} s — a hang is not a caught mutation`);
+  return outcome.exitCode;
 }
 
 /** 1-based line of each match start; a needle spanning lines is listed where it begins. */
@@ -150,13 +188,11 @@ async function main(): Promise<void> {
     process.exit(EXIT_REFUSED);
   }
 
-  const timedOut = `the test command ran longer than ${timeoutSeconds} s — a hang is not a caught mutation`;
   // A command that cannot build, find its crate or start at all exits non-zero on the mutated file too, and read as PINNED (#1155).
   console.error(`==> baseline on the unmodified ${file}; running: ${command.join(" ")}`);
-  const baseline = await runCommand(command, timeoutSeconds);
-  if ("timedOut" in baseline) notAValidRun(timedOut);
-  if (baseline.exitCode !== 0) {
-    notAValidRun(`the test command failed before any mutation (exit ${baseline.exitCode}) — fix the command, cwd or build first`);
+  const baseline = exitCodeOf(await runCommand(command, timeoutSeconds), timeoutSeconds);
+  if (baseline !== 0) {
+    notAValidRun(`the test command failed before any mutation (exit ${baseline}) — fix the command, cwd or build first`);
   }
 
   // A SIGKILL reaches no handler; the sidecar is what tells the next reader the tree is mutated, not edited (#1211).
@@ -166,7 +202,7 @@ async function main(): Promise<void> {
     rmSync(sidecar, { force: true });
     restoreMutated = null;
   };
-  let mutated: { exitCode: number } | { timedOut: true };
+  let mutated: RunOutcome;
   try {
     writeFileSync(file, source);
     console.error(`==> mutated ${file} (${replacements} occurrence${replacements === 1 ? "" : "s"}); running: ${command.join(" ")}`);
@@ -176,8 +212,7 @@ async function main(): Promise<void> {
     console.error(`==> restored ${file}`);
   }
 
-  if ("timedOut" in mutated) notAValidRun(timedOut);
-  if (mutated.exitCode === 0) {
+  if (exitCodeOf(mutated, timeoutSeconds) === 0) {
     console.error(`NOT PINNED: the mutation survived — nothing failed when '${find}' was replaced`);
     process.exit(EXIT_NOT_PINNED);
   }

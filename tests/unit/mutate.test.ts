@@ -91,6 +91,15 @@ describe("bun scripts/mutate.ts — the green baseline (#1155)", () => {
     expect(seen(s.log)).toEqual([ORIGINAL]);
   });
 
+  test("a test command that cannot be started is NOT A VALID RUN, exit 3, with the file untouched", async () => {
+    const s = scenario();
+    const run = await runMutate([s.target, NEEDLE, "", join(s.dir, "no-such-executable"), s.target]);
+    expect(run.exitCode).toBe(3);
+    expect(run.stderr).toContain("NOT A VALID RUN: the test command could not be started (");
+    expect(run.stderr).not.toContain("PINNED");
+    expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
+  });
+
   test("baseline green and mutated red is PINNED, exit 0, with the file restored", async () => {
     const s = scenario();
     const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
@@ -124,6 +133,22 @@ await child.exited;
 
 const SLEEP = "await Bun.sleep(60_000);\n";
 
+/** Forks a sleeper every 50 ms and records each pid, so a snapshot-then-kill sweep has a window to miss one. */
+const FORK_LOOP = `import { appendFileSync } from "node:fs";
+const [sleep, pids] = process.argv.slice(2);
+while (true) {
+  appendFileSync(pids!, String(Bun.spawn([process.execPath, sleep!]).pid) + "\\n");
+  await Bun.sleep(50);
+}
+`;
+
+/** Passes untouched; mutated, it hands the hang to a forking grandchild (argv: sleep, pids, own-pid file). */
+const FORK_WHEN_MUTATED = `${RECORD}if (text.includes("locked")) process.exit(0);
+const child = Bun.spawn([process.execPath, process.argv[4]!, process.argv[5]!, process.argv[6]!]);
+writeFileSync(process.argv[7]!, String(child.pid));
+await child.exited;
+`;
+
 describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
   posixTest("a mutated run that hangs is killed with its whole tree, restored, and NOT A VALID RUN, exit 3", async () => {
     const s = scenario();
@@ -141,6 +166,31 @@ describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
     expect(result.stderr).not.toContain("PINNED");
     expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
     expect(await waitForPidExit(grandchild)).toBe(true);
+  });
+
+  posixTest("a grandchild that keeps forking cannot outrun the kill: every process it recorded is gone", async () => {
+    const s = scenario();
+    const tester = s.script("fork-tester.ts", FORK_WHEN_MUTATED);
+    const loop = s.script("fork-loop.ts", FORK_LOOP);
+    const sleep = s.script("sleep.ts", SLEEP);
+    const pids = join(s.dir, "sleepers.pids");
+    const spawnerPid = join(s.dir, "spawner.pid");
+    const mutate = spawnMutate([
+      "--timeout", "2", s.target, NEEDLE, "", process.execPath, tester, s.target, s.log, loop, sleep, pids, spawnerPid,
+    ]);
+    const spawner = await waitForPidFile(spawnerPid);
+    expect(await waitForPidExit(mutate.pid)).toBe(true);
+    expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
+    const sleepers = readFileSync(pids, "utf8").trim().split("\n").map(Number).map(trackPid);
+    expect(sleepers.length).toBeGreaterThan(10);
+    expect(await waitForPidExit(spawner)).toBe(true);
+    const survivors: number[] = [];
+    for (const pid of sleepers) if (!(await waitForPidExit(pid))) survivors.push(pid);
+    // A survivor holds mutate's inherited stdio, so it is reaped before the streams are read and named after.
+    for (const pid of survivors) process.kill(pid, "SIGKILL");
+    const result = await mutate.result;
+    expect(result.exitCode).toBe(3);
+    expect(survivors).toEqual([]);
   });
 
   posixTest("MUTATE_TIMEOUT_SECONDS sets the default budget", async () => {
