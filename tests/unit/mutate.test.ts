@@ -157,3 +157,44 @@ describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
     expect(await waitForPidExit(grandchild)).toBe(true);
   });
 });
+
+const TWICE = "if (locked) return;\nrun();\nif (locked) return;\n";
+
+describe("bun scripts/mutate.ts — the occurrence guard (#1211)", () => {
+  test("a needle that occurs twice is refused, naming both lines, unless --occurrences names the count", async () => {
+    const s = scenario();
+    writeFileSync(s.target, TWICE);
+    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr).toContain(
+      `refusing: '${NEEDLE}' occurs 2 times in ${s.target} (lines 1, 3) — pass --occurrences 2 to replace all 2, or narrow the text`,
+    );
+    expect(readFileSync(s.target, "utf8")).toBe(TWICE);
+    expect(seen(s.log)).toEqual([]);
+  });
+
+  test("--occurrences matching the count replaces every match and reaches the PINNED verdict", async () => {
+    const s = scenario();
+    writeFileSync(s.target, TWICE);
+    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const run = await runMutate(["--occurrences", "2", s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain("PINNED: the mutation was caught");
+    expect(readFileSync(s.target, "utf8")).toBe(TWICE);
+    expect(seen(s.log)).toEqual([TWICE, "\nrun();\n\n"]);
+  });
+
+  test("--occurrences that disagrees with the count is refused naming both numbers", async () => {
+    const s = scenario();
+    writeFileSync(s.target, TWICE);
+    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const run = await runMutate(["--occurrences", "3", s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr).toContain(
+      `refusing: '${NEEDLE}' occurs 2 times in ${s.target} (lines 1, 3), not the 3 that --occurrences names`,
+    );
+    expect(readFileSync(s.target, "utf8")).toBe(TWICE);
+    expect(seen(s.log)).toEqual([]);
+  });
+});

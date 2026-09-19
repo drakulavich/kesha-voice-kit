@@ -15,35 +15,37 @@ const EXIT_NOT_PINNED = 1;
 const EXIT_REFUSED = 2;
 const EXIT_NOT_A_VALID_RUN = 3;
 const DEFAULT_TIMEOUT_SECONDS = 600;
-const USAGE = "usage: bun scripts/mutate.ts [--timeout S] <file> <find> <replace> <test-command>";
+const USAGE = "usage: bun scripts/mutate.ts [--timeout S] [--occurrences N] <file> <find> <replace> <test-command>";
 
-type Options = { timeoutSeconds: number; file: string; find: string; replace: string; command: string[] };
+type Options = { timeoutSeconds: number; occurrences: number | undefined; file: string; find: string; replace: string; command: string[] };
 
 function usage(message: string): never {
   console.error(`${message}\n${USAGE}`);
   process.exit(EXIT_REFUSED);
 }
 
-function positiveNumber(name: string, raw: string | undefined): number {
+function positiveNumber(name: string, raw: string | undefined, unit: string, integer = false): number {
   const value = Number(raw);
-  if (raw === undefined || raw === "" || !Number.isFinite(value) || value <= 0) {
-    usage(`${name} needs a positive number of seconds, got '${raw ?? ""}'`);
+  if (raw === undefined || raw === "" || !Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) {
+    usage(`${name} needs a positive ${unit}, got '${raw ?? ""}'`);
   }
   return value;
 }
 
 function parseOptions(argv: string[], env: NodeJS.ProcessEnv): Options {
   const envTimeout = env.MUTATE_TIMEOUT_SECONDS;
-  let timeoutSeconds = envTimeout === undefined ? DEFAULT_TIMEOUT_SECONDS : positiveNumber("MUTATE_TIMEOUT_SECONDS", envTimeout);
+  let timeoutSeconds = envTimeout === undefined ? DEFAULT_TIMEOUT_SECONDS : positiveNumber("MUTATE_TIMEOUT_SECONDS", envTimeout, "number of seconds");
+  let occurrences: number | undefined;
   const rest = [...argv];
   while (rest[0]?.startsWith("--")) {
     const flag = rest.shift()!;
-    if (flag === "--timeout") timeoutSeconds = positiveNumber("--timeout", rest.shift());
+    if (flag === "--timeout") timeoutSeconds = positiveNumber("--timeout", rest.shift(), "number of seconds");
+    else if (flag === "--occurrences") occurrences = positiveNumber("--occurrences", rest.shift(), "whole count", true);
     else usage(`unknown option ${flag}`);
   }
   const [file, find, replace, ...command] = rest;
   if (!file || find === undefined || replace === undefined || command.length === 0) usage("missing argument");
-  return { timeoutSeconds, file, find, replace, command };
+  return { timeoutSeconds, occurrences, file, find, replace, command };
 }
 
 function descendantsOf(pid: number): number[] {
@@ -88,13 +90,32 @@ function notAValidRun(message: string): never {
   process.exit(EXIT_NOT_A_VALID_RUN);
 }
 
+/** 1-based line of each match start; a needle spanning lines is listed where it begins. */
+function matchLines(source: string, find: string): number[] {
+  const lines: number[] = [];
+  for (let at = source.indexOf(find); at !== -1; at = source.indexOf(find, at + find.length)) {
+    lines.push(source.slice(0, at).split("\n").length);
+  }
+  return lines;
+}
+
 async function main(): Promise<void> {
-  const { timeoutSeconds, file, find, replace, command } = parseOptions(process.argv.slice(2), process.env);
+  const { timeoutSeconds, occurrences, file, find, replace, command } = parseOptions(process.argv.slice(2), process.env);
 
   const original = readFileSync(file, "utf8");
   const { replacements, source } = mutate(original, find, replace);
   if (replacements === 0) {
     console.error(`refusing: '${find}' does not occur in ${file} — an unapplied mutation proves nothing`);
+    process.exit(EXIT_REFUSED);
+  }
+  // #956: the second match sat in a cleanup path nobody meant to mutate, and the run hung there.
+  const where = `occurs ${replacements} time${replacements === 1 ? "" : "s"} in ${file} (lines ${matchLines(original, find).join(", ")})`;
+  if (occurrences === undefined && replacements > 1) {
+    console.error(`refusing: '${find}' ${where} — pass --occurrences ${replacements} to replace all ${replacements}, or narrow the text`);
+    process.exit(EXIT_REFUSED);
+  }
+  if (occurrences !== undefined && occurrences !== replacements) {
+    console.error(`refusing: '${find}' ${where}, not the ${occurrences} that --occurrences names`);
     process.exit(EXIT_REFUSED);
   }
 
