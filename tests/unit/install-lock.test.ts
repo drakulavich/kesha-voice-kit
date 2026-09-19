@@ -128,14 +128,15 @@ describe("acquireInstallLock (#997)", () => {
     const dir = tempDir("kesha-lock-handover-run-");
     const lockDir = `${binPath}.lock`;
     mkdirSync(lockDir, { recursive: true });
+    const crashed = "crashed-owner";
     // The crashed owner's record is a FIFO, so the waiter blocks inside its staleness check
     // until this test writes it. That turns "two waiters clear the same dead lock at once"
     // from a timing coincidence into something a test can state.
-    await Bun.spawn(["mkfifo", join(lockDir, "owner-crashed-owner.json")]).exited;
+    await Bun.spawn(["mkfifo", join(lockDir, `owner-${crashed}.json`)]).exited;
 
     const waiter = spawnWaiter(binPath, dir, { maxWaitMs: 1_000 });
     // Opening the write end returns only once the waiter has the read end open.
-    const fifo = openSync(join(lockDir, "owner-crashed-owner.json"), "w");
+    const fifo = openSync(join(lockDir, `owner-${crashed}.json`), "w");
 
     // The peer's takeover, completed while the waiter is still reading: the dead owner's lock
     // moves aside and a live one stands in its place.
@@ -147,7 +148,7 @@ describe("acquireInstallLock (#997)", () => {
     writeSync(
       fifo,
       JSON.stringify({
-        token: "crashed-owner",
+        token: crashed,
         pid: await deadPid(),
         host: hostname(),
         startedAt: Date.now(),
