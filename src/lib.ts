@@ -9,7 +9,7 @@ import { downloadEngine } from "./engine-install";
 import { KeshaError } from "./engine/events";
 
 export type { TranscribeOptions };
-export type { TranscriptionOutput, TranscriptionSegment, WordTiming } from "./engine";
+export type { TranscriptionOutput, TranscriptionSegment, VadMode, WordTiming } from "./engine";
 export { downloadEngine, downloadEngine as downloadModel };
 export { say, type SayOptions, SayError } from "./synth";
 export { KeshaError } from "./engine/events";

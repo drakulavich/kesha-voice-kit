@@ -58,8 +58,10 @@ code never needs sanitizing.
   or VAD model that `kesha install --diarize` / `--vad` has not placed, `E_TEXT_EMPTY` and
   `E_TEXT_TOO_LONG` from `kesha say` before any engine runs, and `E_INTERNAL` when the
   engine's transcription JSON cannot be read or the engine exits non-zero without reporting an
-  error event; all render exactly like the engine's own. `describe` still lists those three
-  as engine-only (#1202).
+  error event; all render exactly like the engine's own. `describe` publishes `E_MODEL_MISSING`,
+  `E_TEXT_EMPTY` and `E_TEXT_TOO_LONG` as `both` from the engine release that carries this
+  change (#1202); the recorded pact fixtures still show `engine` until the capability pacts are
+  re-recorded from that release (#1202).
 - **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
   engine and the TypeScript CLI: the CLI validates arguments, checks input
   existence up front and refuses a cache path it cannot write the engine into,

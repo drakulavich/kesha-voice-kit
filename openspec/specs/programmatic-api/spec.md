@@ -263,8 +263,7 @@ The Core API SHALL export the following TypeScript types: `TranscribeResult`,
 > (`src/lib.ts::TranscriptionSegment`). `TranscribeOptions` re-exported from
 > `src/transcribe.ts` (`src/lib.ts::TranscribeOptions`). `SayOptions`,
 > `SayError` re-exported from `src/synth.ts` (`src/lib.ts::SayError`).
-> `VadMode` is declared in `src/engine.ts::VadMode` and re-exported by
-> `src/transcribe.ts::VadMode`.*
+> `VadMode` re-exported from `src/engine.ts` (`src/lib.ts::VadMode`).*
 
 ### Requirement: Never-auto-download — all functions throw when prerequisites are missing
 
