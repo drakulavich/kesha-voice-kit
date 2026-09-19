@@ -25,7 +25,7 @@ The CLI (1.29.1) and the Engine (1.24.11) are versioned and tagged independently
 
 ## Impact
 
-`package.json`, `.github/scripts/check-versions.ts`, `.github/workflows/*` (23 → 4), `.github/scripts/*` (62 → ≤25), `packaging/homebrew/Formula/kesha-voice-kit.rb`, `flake.nix:173`, `docs/homebrew.md`, `docs/linux-packages.md`, `docs/release-manifest.md`, `docs/nix-install.md` (merged into `docs/distribution.md`), `openspec/specs/GLOSSARY.md` (`Channel`, `Prerelease`, `Pinned Engine version`), the `release-engine`, `release-cli` and `release-mechanics` skills (merged into one `release` skill), `CLAUDE.md` Releases section, `tests/unit/*release*`, `tests/integration/alpha-tag.test.ts`, `tests/integration/build-engine-tag-guard.test.ts`, `tests/integration/push-annotated-tag.test.ts`.
+`package.json`, `.github/scripts/check-versions.ts`, `.github/workflows/*` (23 → 4), `.github/scripts/*` (62 → ≤25), `packaging/homebrew/Formula/kesha-voice-kit.rb`, `flake.nix:173`, `docs/homebrew.md`, `docs/linux-packages.md`, `docs/release-manifest.md`, `docs/nix-install.md` (merged into `docs/distribution.md`), `openspec/specs/GLOSSARY.md` (`Channel`, `Prerelease`, `Pinned Engine version`), the `release-kesha`, `release-cli` and `release-mechanics` skills (merged into one `release` skill), `CLAUDE.md` Releases section, `tests/unit/*release*`, `tests/integration/alpha-tag.test.ts`, `tests/integration/build-engine-tag-guard.test.ts`, `tests/integration/push-annotated-tag.test.ts`.
 
 ## Non-goals
 
