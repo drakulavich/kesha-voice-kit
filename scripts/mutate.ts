@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 export type MutationResult = { replacements: number; source: string };
 
@@ -17,7 +17,14 @@ const EXIT_NOT_A_VALID_RUN = 3;
 const DEFAULT_TIMEOUT_SECONDS = 600;
 const USAGE = "usage: bun scripts/mutate.ts [--timeout S] [--occurrences N] <file> <find> <replace> <test-command>";
 
-type Options = { timeoutSeconds: number; occurrences: number | undefined; file: string; find: string; replace: string; command: string[] };
+type Options = {
+  timeoutSeconds: number;
+  occurrences: number | undefined;
+  file: string;
+  find: string;
+  replace: string;
+  command: string[];
+};
 
 function usage(message: string): never {
   console.error(`${message}\n${USAGE}`);
@@ -34,7 +41,8 @@ function positiveNumber(name: string, raw: string | undefined, unit: string, int
 
 function parseOptions(argv: string[], env: NodeJS.ProcessEnv): Options {
   const envTimeout = env.MUTATE_TIMEOUT_SECONDS;
-  let timeoutSeconds = envTimeout === undefined ? DEFAULT_TIMEOUT_SECONDS : positiveNumber("MUTATE_TIMEOUT_SECONDS", envTimeout, "number of seconds");
+  let timeoutSeconds =
+    envTimeout === undefined ? DEFAULT_TIMEOUT_SECONDS : positiveNumber("MUTATE_TIMEOUT_SECONDS", envTimeout, "number of seconds");
   let occurrences: number | undefined;
   const rest = [...argv];
   while (rest[0]?.startsWith("--")) {
@@ -66,12 +74,18 @@ function killTree(pid: number): void {
   for (const victim of [...descendantsOf(pid), pid]) {
     try {
       process.kill(victim, "SIGKILL");
-    } catch {}
+    } catch {
+      // Gone between the listing and the signal.
+    }
   }
 }
 
+let runningPid: number | null = null;
+let restoreMutated: (() => void) | null = null;
+
 async function runCommand(command: string[], timeoutSeconds: number): Promise<{ exitCode: number } | { timedOut: true }> {
   const proc = Bun.spawn(command, { stdout: "inherit", stderr: "inherit" });
+  runningPid = proc.pid;
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
@@ -82,7 +96,14 @@ async function runCommand(command: string[], timeoutSeconds: number): Promise<{ 
     return timedOut ? { timedOut } : { exitCode };
   } finally {
     clearTimeout(timer);
+    runningPid = null;
   }
+}
+
+function onInterrupt(): void {
+  if (runningPid !== null) killTree(runningPid);
+  restoreMutated?.();
+  notAValidRun("interrupted");
 }
 
 function notAValidRun(message: string): never {
@@ -101,7 +122,14 @@ function matchLines(source: string, find: string): number[] {
 
 async function main(): Promise<void> {
   const { timeoutSeconds, occurrences, file, find, replace, command } = parseOptions(process.argv.slice(2), process.env);
+  process.on("SIGINT", onInterrupt);
+  process.on("SIGTERM", onInterrupt);
 
+  const sidecar = `${file}.mutate-orig`;
+  if (existsSync(sidecar)) {
+    console.error(`refusing: a previous run was interrupted — restore with: mv ${sidecar} ${file}`);
+    process.exit(EXIT_REFUSED);
+  }
   const original = readFileSync(file, "utf8");
   const { replacements, source } = mutate(original, find, replace);
   if (replacements === 0) {
@@ -109,9 +137,12 @@ async function main(): Promise<void> {
     process.exit(EXIT_REFUSED);
   }
   // #956: the second match sat in a cleanup path nobody meant to mutate, and the run hung there.
-  const where = `occurs ${replacements} time${replacements === 1 ? "" : "s"} in ${file} (lines ${matchLines(original, find).join(", ")})`;
+  const lines = matchLines(original, find).join(", ");
+  const where = `occurs ${replacements} time${replacements === 1 ? "" : "s"} in ${file} (lines ${lines})`;
   if (occurrences === undefined && replacements > 1) {
-    console.error(`refusing: '${find}' ${where} — pass --occurrences ${replacements} to replace all ${replacements}, or narrow the text`);
+    console.error(
+      `refusing: '${find}' ${where} — pass --occurrences ${replacements} to replace all ${replacements}, or narrow the text`,
+    );
     process.exit(EXIT_REFUSED);
   }
   if (occurrences !== undefined && occurrences !== replacements) {
@@ -128,13 +159,20 @@ async function main(): Promise<void> {
     notAValidRun(`the test command failed before any mutation (exit ${baseline.exitCode}) — fix the command, cwd or build first`);
   }
 
+  // A SIGKILL reaches no handler; the sidecar is what tells the next reader the tree is mutated, not edited (#1211).
+  copyFileSync(file, sidecar);
+  restoreMutated = () => {
+    writeFileSync(file, original);
+    rmSync(sidecar, { force: true });
+    restoreMutated = null;
+  };
   let mutated: { exitCode: number } | { timedOut: true };
   try {
     writeFileSync(file, source);
     console.error(`==> mutated ${file} (${replacements} occurrence${replacements === 1 ? "" : "s"}); running: ${command.join(" ")}`);
     mutated = await runCommand(command, timeoutSeconds);
   } finally {
-    writeFileSync(file, original);
+    restoreMutated?.();
     console.error(`==> restored ${file}`);
   }
 

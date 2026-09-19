@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { mutate } from "../../scripts/mutate";
-import { pidIsAlive, waitForPidExit, waitForPidFile } from "../helpers/process";
+import { pidIsAlive, trackPid, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { tempDir } from "../helpers/temp-dir";
 
 describe("mutate", () => {
@@ -59,17 +59,18 @@ const text = readFileSync(target, "utf8");
 appendFileSync(log, text + ${JSON.stringify(SEPARATOR)});
 `;
 
-async function runMutate(
-  args: string[],
-  env: Record<string, string> = {},
-): Promise<{ exitCode: number; stderr: string; stdout: string }> {
+type Outcome = { exitCode: number; stderr: string; stdout: string };
+
+function spawnMutate(args: string[], env: Record<string, string> = {}): { pid: number; result: Promise<Outcome> } {
   const proc = Bun.spawn([process.execPath, MUTATE, ...args], { stdout: "pipe", stderr: "pipe", env: { ...process.env, ...env } });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
-  return { exitCode, stderr, stdout };
+  const result = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]).then(
+    ([stdout, stderr, exitCode]) => ({ exitCode, stderr, stdout }),
+  );
+  return { pid: trackPid(proc.pid), result };
+}
+
+function runMutate(args: string[], env: Record<string, string> = {}): Promise<Outcome> {
+  return spawnMutate(args, env).result;
 }
 
 function seen(log: string): string[] {
@@ -115,6 +116,7 @@ const posixTest = process.platform === "win32" ? test.skip : test;
 
 /** Passes on the untouched file and, once mutated, hangs in a grandchild the way a cleanup-path match did on #956. */
 const HANG_WHEN_MUTATED = `${RECORD}if (text.includes("locked")) process.exit(0);
+if (process.argv[6]) writeFileSync(process.argv[6], String(process.pid));
 const child = Bun.spawn([process.execPath, process.argv[4]!]);
 writeFileSync(process.argv[5]!, String(child.pid));
 await child.exited;
@@ -196,5 +198,67 @@ describe("bun scripts/mutate.ts — the occurrence guard (#1211)", () => {
     );
     expect(readFileSync(s.target, "utf8")).toBe(TWICE);
     expect(seen(s.log)).toEqual([]);
+  });
+});
+
+describe("bun scripts/mutate.ts — the sidecar (#1211)", () => {
+  function hanging(s: ReturnType<typeof scenario>): { args: string[]; childPid: string; grandchildPid: string } {
+    const hang = s.script("hang.ts", HANG_WHEN_MUTATED);
+    const sleep = s.script("sleep.ts", SLEEP);
+    const grandchildPid = join(s.dir, "grandchild.pid");
+    const childPid = join(s.dir, "child.pid");
+    return { args: [s.target, NEEDLE, "", process.execPath, hang, s.target, s.log, sleep, grandchildPid, childPid], childPid, grandchildPid };
+  }
+
+  posixTest("SIGTERM mid-run restores the file, removes the sidecar, kills the test tree and exits 3", async () => {
+    const s = scenario();
+    const sidecar = `${s.target}.mutate-orig`;
+    const { args, childPid, grandchildPid } = hanging(s);
+    const mutate = spawnMutate(args);
+    const grandchild = await waitForPidFile(grandchildPid);
+    const child = await waitForPidFile(childPid);
+    expect(readFileSync(s.target, "utf8")).toBe("\nrun();\n");
+    expect(readFileSync(sidecar, "utf8")).toBe(ORIGINAL);
+    process.kill(mutate.pid, "SIGTERM");
+    const result = await mutate.result;
+    expect(result.exitCode).toBe(3);
+    expect(result.stderr).toContain("NOT A VALID RUN: interrupted");
+    expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
+    expect(existsSync(sidecar)).toBe(false);
+    expect(await waitForPidExit(child)).toBe(true);
+    expect(await waitForPidExit(grandchild)).toBe(true);
+  });
+
+  posixTest("SIGKILL leaves the sidecar as evidence, and the next run refuses until it is restored", async () => {
+    const s = scenario();
+    const sidecar = `${s.target}.mutate-orig`;
+    const { args, childPid, grandchildPid } = hanging(s);
+    const mutate = spawnMutate(args);
+    const grandchild = await waitForPidFile(grandchildPid);
+    const child = await waitForPidFile(childPid);
+    process.kill(mutate.pid, "SIGKILL");
+    expect(await waitForPidExit(mutate.pid)).toBe(true);
+    expect(readFileSync(s.target, "utf8")).toBe("\nrun();\n");
+    expect(readFileSync(sidecar, "utf8")).toBe(ORIGINAL);
+    // The orphans hold mutate's inherited stdio, so its streams only close once they are gone.
+    for (const orphan of [child, grandchild]) process.kill(orphan, "SIGKILL");
+    expect(await waitForPidExit(child)).toBe(true);
+    expect(await waitForPidExit(grandchild)).toBe(true);
+    await mutate.result;
+
+    const rerun = await runMutate(args);
+    expect(rerun.exitCode).toBe(2);
+    expect(rerun.stderr).toContain(`a previous run was interrupted — restore with: mv ${sidecar} ${s.target}`);
+    expect(readFileSync(s.target, "utf8")).toBe("\nrun();\n");
+    expect(readFileSync(sidecar, "utf8")).toBe(ORIGINAL);
+    expect(seen(s.log)).toEqual([ORIGINAL, "\nrun();\n"]);
+  });
+
+  test("a run that finishes leaves no sidecar behind", async () => {
+    const s = scenario();
+    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
+    expect(run.exitCode).toBe(0);
+    expect(existsSync(`${s.target}.mutate-orig`)).toBe(false);
   });
 });
