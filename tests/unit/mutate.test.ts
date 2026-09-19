@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { mutate } from "../../scripts/mutate";
+import { pidIsAlive, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { tempDir } from "../helpers/temp-dir";
 
 describe("mutate", () => {
@@ -52,14 +53,17 @@ function scenario(): { dir: string; target: string; log: string; script: (name: 
   };
 }
 
-const RECORD = `import { appendFileSync, readFileSync } from "node:fs";
+const RECORD = `import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 const [target, log] = process.argv.slice(2);
 const text = readFileSync(target, "utf8");
 appendFileSync(log, text + ${JSON.stringify(SEPARATOR)});
 `;
 
-async function runMutate(args: string[]): Promise<{ exitCode: number; stderr: string; stdout: string }> {
-  const proc = Bun.spawn([process.execPath, MUTATE, ...args], { stdout: "pipe", stderr: "pipe" });
+async function runMutate(
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<{ exitCode: number; stderr: string; stdout: string }> {
+  const proc = Bun.spawn([process.execPath, MUTATE, ...args], { stdout: "pipe", stderr: "pipe", env: { ...process.env, ...env } });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -104,5 +108,52 @@ describe("bun scripts/mutate.ts — the green baseline (#1155)", () => {
     expect(run.stderr).toContain("NOT PINNED: the mutation survived");
     expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
     expect(seen(s.log)).toEqual([ORIGINAL, "\nrun();\n"]);
+  });
+});
+
+const posixTest = process.platform === "win32" ? test.skip : test;
+
+/** Passes on the untouched file and, once mutated, hangs in a grandchild the way a cleanup-path match did on #956. */
+const HANG_WHEN_MUTATED = `${RECORD}if (text.includes("locked")) process.exit(0);
+const child = Bun.spawn([process.execPath, process.argv[4]!]);
+writeFileSync(process.argv[5]!, String(child.pid));
+await child.exited;
+`;
+
+const SLEEP = "await Bun.sleep(60_000);\n";
+
+describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
+  posixTest("a mutated run that hangs is killed with its whole tree, restored, and NOT A VALID RUN, exit 3", async () => {
+    const s = scenario();
+    const hang = s.script("hang.ts", HANG_WHEN_MUTATED);
+    const sleep = s.script("sleep.ts", SLEEP);
+    const pidFile = join(s.dir, "grandchild.pid");
+    const started = Date.now();
+    const run = runMutate(["--timeout", "2", s.target, NEEDLE, "", process.execPath, hang, s.target, s.log, sleep, pidFile]);
+    const grandchild = await waitForPidFile(pidFile);
+    expect(pidIsAlive(grandchild)).toBe(true);
+    const result = await run;
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(result.exitCode).toBe(3);
+    expect(result.stderr).toContain("NOT A VALID RUN: the test command ran longer than 2 s — a hang is not a caught mutation");
+    expect(result.stderr).not.toContain("PINNED");
+    expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
+    expect(await waitForPidExit(grandchild)).toBe(true);
+  });
+
+  posixTest("MUTATE_TIMEOUT_SECONDS sets the default budget", async () => {
+    const s = scenario();
+    const hang = s.script("hang.ts", HANG_WHEN_MUTATED);
+    const sleep = s.script("sleep.ts", SLEEP);
+    const pidFile = join(s.dir, "grandchild.pid");
+    const run = runMutate([s.target, NEEDLE, "", process.execPath, hang, s.target, s.log, sleep, pidFile], {
+      MUTATE_TIMEOUT_SECONDS: "1",
+    });
+    const grandchild = await waitForPidFile(pidFile);
+    const result = await run;
+    expect(result.exitCode).toBe(3);
+    expect(result.stderr).toContain("NOT A VALID RUN: the test command ran longer than 1 s — a hang is not a caught mutation");
+    expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
+    expect(await waitForPidExit(grandchild)).toBe(true);
   });
 });
