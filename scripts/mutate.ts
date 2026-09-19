@@ -47,6 +47,7 @@ function parseOptions(argv: string[], env: NodeJS.ProcessEnv): Options {
   const rest = [...argv];
   while (rest[0]?.startsWith("--")) {
     const flag = rest.shift()!;
+    if (flag === "--") break;
     if (flag === "--timeout") timeoutSeconds = positiveNumber("--timeout", rest.shift(), "number of seconds");
     else if (flag === "--occurrences") occurrences = positiveNumber("--occurrences", rest.shift(), "whole count", true);
     else usage(`unknown option ${flag}`);

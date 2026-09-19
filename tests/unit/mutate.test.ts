@@ -312,3 +312,26 @@ describe("bun scripts/mutate.ts — the sidecar (#1211)", () => {
     expect(existsSync(`${s.target}.mutate-orig`)).toBe(false);
   });
 });
+
+describe("bun scripts/mutate.ts — argument shapes", () => {
+  const DASHED = "--dry-run\nrun();\n";
+
+  test("a find-string that begins with -- is a positional once the file has been named", async () => {
+    const s = scenario();
+    writeFileSync(s.target, DASHED);
+    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("--dry-run") ? 0 : 1);\n`);
+    const run = await runMutate([s.target, "--dry-run", "", process.execPath, check, s.target, s.log]);
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain("PINNED: the mutation was caught");
+    expect(readFileSync(s.target, "utf8")).toBe(DASHED);
+  });
+
+  test("an explicit -- ends the options and the positionals follow", async () => {
+    const s = scenario();
+    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const run = await runMutate(["--timeout", "30", "--", s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain("PINNED: the mutation was caught");
+    expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
+  });
+});
