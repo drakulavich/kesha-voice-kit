@@ -557,7 +557,7 @@ fn kokoro_long_text_at_a_fast_rate_synthesizes_past_the_phoneme_cap() {
     );
 
     if !say_rate(&exe, SENTENCE, voice, "2.0", &one) {
-        return; // prerequisite missing — skip cleanly
+        return;
     }
     if !say_rate(&exe, &text, voice, "2.0", &all) {
         return;
