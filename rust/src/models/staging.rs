@@ -220,7 +220,7 @@ fn stage_into(dir: &Path, manifest: &'static [ModelFile], no_cache: bool) -> Res
 /// FluidAudio's "already downloaded" check is directory-name based, so such a
 /// bundle is never repaired on its own: 0.14.8 fully fetched the
 /// `KokoroNoise.mlmodelc` it loaded and only partially fetched its
-/// `KokoroNoise_v2.mlmodelc` sibling, and 0.15.5 loads `_v2` — turning an
+/// `KokoroNoise_v2.mlmodelc` sibling, and 0.15.5 onward loads `_v2` — turning an
 /// upgrade on an existing cache into `Error in reading the MIL network` (#709,
 /// upstream #821/#826). Every Kokoro ANE bundle is CoreML ML Program format, so
 /// a missing `model.mil` means incomplete, never a valid alternative encoding.

@@ -373,7 +373,7 @@ asset check SHALL NOT require them.
 > `fluidaudio_ane_kokoro_dir()` and `fluidaudio_ane_zh_kokoro_dir()`, which sit
 > under `fluidaudio_kokoro_location()`, and `fluidaudio_kokoro_g2p_dir()`,
 > pinned because `G2PModel.shared` resolves it itself (fluidaudio-rs 4e488d7,
-> still true at upstream 0.15.5). `ANE_ZH_FILES` carries `g2pw/g2pw.mlmodelc`
+> still true at upstream 0.15.7). `ANE_ZH_FILES` carries `g2pw/g2pw.mlmodelc`
 > because upstream's `requiredModelsZh` checks the whole set before loading
 > anything, even though the disambiguator cannot activate at this pin.
 > `--plan` and `kesha doctor` preview only the English ANE chain and the

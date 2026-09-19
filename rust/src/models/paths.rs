@@ -124,7 +124,7 @@ pub fn fluidaudio_kokoro_cache_dir() -> Result<PathBuf> {
     Ok(fluidaudio_kokoro_location()?.dir)
 }
 
-/// FluidAudio's Kokoro ANE voice-pack cache directory. FluidAudio 0.15.5 reads voice packs
+/// FluidAudio's Kokoro ANE voice-pack cache directory. FluidAudio 0.15.7 reads voice packs
 /// from here local-first, so we pre-stage onnx-community packs into it and the full
 /// advertised Kokoro catalog (and the male `am_michael` default) resolve without a 404
 /// against the ANE bundle. Follows [`fluidaudio_kokoro_location`], so staging always lands
@@ -154,7 +154,7 @@ pub fn fluidaudio_ane_zh_kokoro_dir() -> Result<PathBuf> {
 /// The one FluidAudio directory `with_models_dir` cannot move: `G2PModel.shared`
 /// is a singleton that resolves `TtsCacheDirectory.ensure()/Models/kokoro`
 /// itself, so a copy anywhere else is invisible to it (fluidaudio-rs 4e488d7,
-/// still true at upstream 0.15.5). Staging elsewhere would leave English
+/// still true at upstream 0.15.7). Staging elsewhere would leave English
 /// synthesis failing with `G2PModelError.vocabLoadFailed`.
 #[cfg(all(
     feature = "system_kokoro",

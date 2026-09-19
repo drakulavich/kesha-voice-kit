@@ -21,7 +21,7 @@ use crate::fluid_stdout::with_silenced_stdout;
 /// second session on one manager returns the *first* session's transcript for
 /// any input at all — including silence and an empty session. Re-initialising
 /// builds a fresh manager (~97 ms once models are resident) and is the only
-/// reset upstream offers at fluidaudio-rs 0.14.8 / 0.15.5. Making the session
+/// reset upstream offers at fluidaudio-rs 0.14.8 through 0.15.7. Making the session
 /// non-reusable is what keeps that failure unreachable from here: it returns
 /// plausible text rather than an error, so nothing downstream would catch it.
 pub struct StreamingAsrSession {
