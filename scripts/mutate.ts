@@ -11,9 +11,17 @@ export function mutate(source: string, find: string, replace: string): MutationR
   return { replacements, source: replacements === 0 ? source : source.split(find).join(replace) };
 }
 
+const EXIT_NOT_PINNED = 1;
+const EXIT_REFUSED = 2;
+const EXIT_NOT_A_VALID_RUN = 3;
+
 function usage(message: string): never {
   console.error(`${message}\nusage: bun scripts/mutate.ts <file> <find> <replace> <test-command>`);
-  process.exit(2);
+  process.exit(EXIT_REFUSED);
+}
+
+async function runCommand(command: string[]): Promise<number> {
+  return Bun.spawn(command, { stdout: "inherit", stderr: "inherit" }).exited;
 }
 
 async function main(): Promise<void> {
@@ -24,14 +32,24 @@ async function main(): Promise<void> {
   const { replacements, source } = mutate(original, find, replace);
   if (replacements === 0) {
     console.error(`refusing: '${find}' does not occur in ${file} — an unapplied mutation proves nothing`);
-    process.exit(2);
+    process.exit(EXIT_REFUSED);
+  }
+
+  // A command that cannot build, find its crate or start at all exits non-zero on the mutated file too, and read as PINNED (#1155).
+  console.error(`==> baseline on the unmodified ${file}; running: ${command.join(" ")}`);
+  const baseline = await runCommand(command);
+  if (baseline !== 0) {
+    console.error(
+      `NOT A VALID RUN: the test command failed before any mutation (exit ${baseline}) — fix the command, cwd or build first`,
+    );
+    process.exit(EXIT_NOT_A_VALID_RUN);
   }
 
   let survived = false;
   try {
     writeFileSync(file, source);
     console.error(`==> mutated ${file} (${replacements} occurrence${replacements === 1 ? "" : "s"}); running: ${command.join(" ")}`);
-    survived = (await Bun.spawn(command, { stdout: "inherit", stderr: "inherit" }).exited) === 0;
+    survived = (await runCommand(command)) === 0;
   } finally {
     writeFileSync(file, original);
     console.error(`==> restored ${file}`);
@@ -39,7 +57,7 @@ async function main(): Promise<void> {
 
   if (survived) {
     console.error(`NOT PINNED: the mutation survived — nothing failed when '${find}' was replaced`);
-    process.exit(1);
+    process.exit(EXIT_NOT_PINNED);
   }
   console.error("PINNED: the mutation was caught");
 }
@@ -47,6 +65,6 @@ async function main(): Promise<void> {
 if (import.meta.main) {
   main().catch((error) => {
     console.error(`mutate: ${error instanceof Error ? error.message : String(error)}`);
-    process.exit(2);
+    process.exit(EXIT_REFUSED);
   });
 }
