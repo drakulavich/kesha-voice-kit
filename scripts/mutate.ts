@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-import { closeSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "node:fs";
+import { closeSync, fsyncSync, linkSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 
 export type MutationResult = { replacements: number; source: string };
 
@@ -92,7 +92,7 @@ const SWEEP_ROUNDS = 10;
 
 export type FrozenTree = { frozen: number[]; rounds: number; bounded: boolean };
 
-/** Stops the root, then every descendant a fresh table shows, until a round finds nothing new or `rounds` is spent: a stopped process cannot fork, so only an unstopped one can keep the set growing, and the bound is what guarantees the kill still happens. */
+/** Stops the root, then walks each fresh table transitively and stops every descendant it shows, re-reading until a read finds nothing new or `rounds` reads are spent: a stopped process cannot fork, so only an unstopped one can keep the set growing, and the bound is what guarantees the kill still happens. */
 export function collectFrozenTree(
   root: number,
   readChildren: () => Map<number, number[]> | null,
@@ -104,11 +104,12 @@ export function collectFrozenTree(
   for (let round = 1; round <= rounds; round++) {
     const children = readChildren() ?? new Map<number, number[]>();
     let grew = false;
-    for (const parent of [...frozen]) {
-      for (const child of children.get(parent) ?? []) {
+    for (const queue = [...frozen]; queue.length > 0; ) {
+      for (const child of children.get(queue.shift()!) ?? []) {
         if (frozen.has(child)) continue;
         stop(child);
         frozen.add(child);
+        queue.push(child);
         grew = true;
       }
     }
@@ -145,19 +146,45 @@ function refuse(message: string): never {
   process.exit(EXIT_REFUSED);
 }
 
-/** Creates the sidecar exclusively and fills it with the original before anything else happens, so two runs on one file cannot both pass the check and the second cannot record the first's mutation as "original" (#1241 review). */
+export type SidecarFs = {
+  openSync(file: string, flags: "wx"): number;
+  writeSync(fd: number, buffer: Buffer, offset: number, length: number): number;
+  fsyncSync(fd: number): void;
+  closeSync(fd: number): void;
+  linkSync(from: string, to: string): void;
+  unlinkSync(file: string): void;
+};
+
+const nodeFs: SidecarFs = { openSync, writeSync, fsyncSync, closeSync, linkSync, unlinkSync };
+
+/** The sidecar is only ever seen holding the whole original: the bytes go to a same-directory temp file first and `link` publishes it in one step, refusing (EEXIST) rather than overwriting — a `rename` would replace a sidecar another run still owns. */
+export function publishSidecar(sidecar: string, content: string, fs: SidecarFs = nodeFs, pid = process.pid): "published" | "exists" {
+  const tmp = `${sidecar}.${pid}.tmp`;
+  const fd = fs.openSync(tmp, "wx");
+  try {
+    const bytes = Buffer.from(content);
+    for (let written = 0; written < bytes.length; ) {
+      written += fs.writeSync(fd, bytes, written, bytes.length - written);
+    }
+    fs.fsyncSync(fd);
+    fs.closeSync(fd);
+    fs.linkSync(tmp, sidecar);
+    return "published";
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return "exists";
+    throw error;
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+}
+
+/** Publishes the sidecar before anything else happens, so two runs on one file cannot both pass the check and the second cannot record the first's mutation as "original" (#1241 review). */
 function acquireSidecar(file: string, original: string): void {
   const sidecar = `${file}.mutate-orig`;
-  let fd: number;
-  try {
-    fd = openSync(sidecar, "wx");
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  if (publishSidecar(sidecar, original) === "exists") {
     refuse(`a previous run was interrupted — restore with: mv ${sidecar} ${file}`);
   }
   ownedSidecar = sidecar;
-  writeSync(fd, original);
-  closeSync(fd);
 }
 
 type RunOutcome = { exitCode: number } | { timedOut: true } | { notStarted: string };

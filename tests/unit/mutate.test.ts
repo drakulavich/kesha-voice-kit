@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { collectFrozenTree, mutate } from "../../scripts/mutate";
+import { collectFrozenTree, mutate, publishSidecar, type SidecarFs } from "../../scripts/mutate";
 import { pidIsAlive, trackPid, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { tempDir } from "../helpers/temp-dir";
 
@@ -29,6 +29,74 @@ describe("mutate", () => {
   });
 });
 
+/** An in-memory file system whose writes land at most three bytes at a time. */
+function shortWritingFs(linkError?: string): { fs: SidecarFs; files: Map<string, Buffer>; log: string[] } {
+  const files = new Map<string, Buffer>();
+  const open = new Map<number, string>();
+  const log: string[] = [];
+  let nextFd = 3;
+  const fs: SidecarFs = {
+    openSync(file) {
+      files.set(file, Buffer.alloc(0));
+      open.set(nextFd, file);
+      return nextFd++;
+    },
+    writeSync(fd, buffer, offset, length) {
+      const written = Math.min(3, length);
+      const file = open.get(fd)!;
+      files.set(file, Buffer.concat([files.get(file)!, buffer.subarray(offset, offset + written)]));
+      return written;
+    },
+    fsyncSync(fd) {
+      log.push(`fsync ${open.get(fd)}`);
+    },
+    closeSync(fd) {
+      log.push(`close ${open.get(fd)}`);
+      open.delete(fd);
+    },
+    linkSync(from, to) {
+      log.push(`link ${from} -> ${to}`);
+      if (linkError) throw Object.assign(new Error(linkError), { code: linkError });
+      files.set(to, files.get(from)!);
+    },
+    unlinkSync(file) {
+      log.push(`unlink ${file}`);
+      files.delete(file);
+    },
+  };
+  return { fs, files, log };
+}
+
+describe("publishSidecar", () => {
+  const CONTENT = "if (locked) return;\nrun();\n";
+
+  test("writes every byte through short writes, syncs, and only then links the sidecar into place", () => {
+    const { fs, files, log } = shortWritingFs();
+    expect(publishSidecar("/t/a.ts.mutate-orig", CONTENT, fs, 42)).toBe("published");
+    expect(files.get("/t/a.ts.mutate-orig")?.toString()).toBe(CONTENT);
+    expect([...files.keys()]).toEqual(["/t/a.ts.mutate-orig"]);
+    expect(log).toEqual([
+      "fsync /t/a.ts.mutate-orig.42.tmp",
+      "close /t/a.ts.mutate-orig.42.tmp",
+      "link /t/a.ts.mutate-orig.42.tmp -> /t/a.ts.mutate-orig",
+      "unlink /t/a.ts.mutate-orig.42.tmp",
+    ]);
+  });
+
+  test("an existing sidecar is left alone and the temp file is removed", () => {
+    const { fs, files, log } = shortWritingFs("EEXIST");
+    expect(publishSidecar("/t/a.ts.mutate-orig", CONTENT, fs, 42)).toBe("exists");
+    expect([...files.keys()]).toEqual([]);
+    expect(log.at(-1)).toBe("unlink /t/a.ts.mutate-orig.42.tmp");
+  });
+
+  test("any other link failure removes the temp file and propagates", () => {
+    const { fs, files } = shortWritingFs("EACCES");
+    expect(() => publishSidecar("/t/a.ts.mutate-orig", CONTENT, fs, 42)).toThrow("EACCES");
+    expect([...files.keys()]).toEqual([]);
+  });
+});
+
 describe("collectFrozenTree", () => {
   test("a tree that grows on every read is still returned after the round bound", () => {
     let next = 100;
@@ -43,14 +111,22 @@ describe("collectFrozenTree", () => {
     expect(sweep.rounds).toBe(10);
     expect(sweep.bounded).toBe(true);
     expect(sweep.frozen[0]).toBe(1);
-    expect(sweep.frozen.length).toBe(11);
+    expect(sweep.frozen.length).toBe(12);
     expect(stopped).toEqual(sweep.frozen);
+  });
+
+  test("one snapshot is walked transitively, so depth costs no rounds", () => {
+    const chain = new Map<number, number[]>();
+    for (let pid = 1; pid < 16; pid++) chain.set(pid, [pid + 1]);
+    const sweep = collectFrozenTree(1, () => chain, () => {}, 10);
+    expect(sweep.frozen).toEqual(Array.from({ length: 16 }, (_, i) => i + 1));
+    expect(sweep).toMatchObject({ rounds: 2, bounded: false });
   });
 
   test("a tree that stops growing ends the sweep early, and an unreadable table ends it at the root", () => {
     const fixed = new Map<number, number[]>([[1, [2, 3]], [3, [4]]]);
     const sweep = collectFrozenTree(1, () => fixed, () => {}, 10);
-    expect(sweep).toEqual({ frozen: [1, 2, 3, 4], rounds: 3, bounded: false });
+    expect(sweep).toEqual({ frozen: [1, 2, 3, 4], rounds: 2, bounded: false });
     expect(collectFrozenTree(1, () => null, () => {}, 10)).toEqual({ frozen: [1], rounds: 1, bounded: false });
   });
 });
@@ -204,19 +280,22 @@ describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
     const mutate = spawnMutate([
       "--timeout", "2", s.target, NEEDLE, "", process.execPath, tester, s.target, s.log, loop, sleep, pids, spawnerPid,
     ]);
-    const spawner = await waitForPidFile(spawnerPid);
-    expect(await waitForPidExit(mutate.pid)).toBe(true);
-    expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
-    const sleepers = readFileSync(pids, "utf8").trim().split("\n").map(Number).map(trackPid);
-    const survivors: number[] = [];
+    const recorded: number[] = [];
     try {
+      const spawner = await waitForPidFile(spawnerPid);
+      recorded.push(spawner);
+      expect(await waitForPidExit(mutate.pid)).toBe(true);
+      expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
+      const sleepers = readFileSync(pids, "utf8").trim().split("\n").map(Number).map(trackPid);
+      recorded.push(...sleepers);
       expect(sleepers.length).toBeGreaterThan(10);
       expect(await waitForPidExit(spawner)).toBe(true);
+      const survivors: number[] = [];
       for (const pid of sleepers) if (!(await waitForPidExit(pid))) survivors.push(pid);
       expect(survivors).toEqual([]);
     } finally {
       // A survivor holds mutate's inherited stdio, so the streams below only close once every recorded pid is gone.
-      for (const pid of [spawner, ...sleepers]) try { process.kill(pid, "SIGKILL"); } catch {}
+      for (const pid of recorded) if (pid > 0) try { process.kill(pid, "SIGKILL"); } catch {}
     }
     expect((await mutate.result).exitCode).toBe(3);
   });
@@ -344,6 +423,19 @@ process.exit(text.includes("locked") ? 0 : 1);
     const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(0);
     expect(readFileSync(seenSidecar, "utf8")).toBe(ORIGINAL);
+  });
+
+  test("a pre-existing sidecar refuses the run, keeps its bytes, and leaves no temp file", async () => {
+    const s = scenario();
+    const sidecar = `${s.target}.mutate-orig`;
+    writeFileSync(sidecar, "the bytes a crashed run saved");
+    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr).toContain(`a previous run was interrupted — restore with: mv ${sidecar} ${s.target}`);
+    expect(readFileSync(sidecar, "utf8")).toBe("the bytes a crashed run saved");
+    expect(readdirSync(s.dir).filter((name) => name.includes("mutate-orig"))).toEqual(["target.ts.mutate-orig"]);
+    expect(seen(s.log)).toEqual([]);
   });
 
   test("a run that finishes leaves no sidecar behind", async () => {
