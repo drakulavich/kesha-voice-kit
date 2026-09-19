@@ -168,7 +168,7 @@ describe("isSwept", () => {
     },
   );
 
-  test.each(["src/engine.ts", "justfile", ".claude/settings.json", "docs/assets/demo.gif"])(
+  test.each(["src/engine.ts", "justfile", ".claude/settings.json", "docs/assets/demo.webp"])(
     "ignores %s",
     (path) => {
       expect(isSwept(path)).toBe(false);

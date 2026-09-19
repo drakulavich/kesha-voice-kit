@@ -19,7 +19,7 @@
 - **Small Rust engine** — single ~65MB binary, no ffmpeg, no Python, no native Node addons
 
 <p align="center">
-  <img src="https://github.com/drakulavich/kesha-voice-kit/raw/main/demo.gif" alt="kesha demo — English + Russian transcription with automatic language detection" width="800">
+  <img src="https://github.com/drakulavich/kesha-voice-kit/raw/main/docs/assets/demo.webp" alt="kesha demo: an English voice message transcribed, a Russian one as JSON with automatic language detection, then text-to-speech into a wav" width="800">
 </p>
 
 ## Quick Start
