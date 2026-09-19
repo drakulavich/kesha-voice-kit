@@ -519,7 +519,7 @@ macro_rules! ane_en_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/",
                 "ANE/",
                 $rel
             ),
@@ -643,19 +643,19 @@ pub(super) const ANE_EN_FILES: &[ModelFile] = &[
     ),
     ane_en_file!(
         "KokoroVocoder.mlmodelc/analytics/coremldata.bin",
-        "8c7c1a25a46ad46b1068905ece8f841c4bd23df23306551bad175d0da28ae74b"
+        "1cc4f1e6436597c6d458a845570d9d0ace458813ff90f225d08e0e713496b463"
     ),
     ane_en_file!(
         "KokoroVocoder.mlmodelc/coremldata.bin",
-        "e73aaf146c7543c0f75f544ac52e3287fa4eaa7e9a04bf3ac6a94d0023f16c00"
+        "71bac80d2f2f077fefc0d66cdc39c0faaa96540b3a6149093ef29de01b1f8764"
     ),
     ane_en_file!(
         "KokoroVocoder.mlmodelc/metadata.json",
-        "0c3decd8c05850a80964fda07e3f9be17030fcb0724e223ea5b187d370a821b1"
+        "a8e768f151225a52476d35f6ab90805ae00f1f78b83be4ca21327029c800c183"
     ),
     ane_en_file!(
         "KokoroVocoder.mlmodelc/model.mil",
-        "c42be65f1e0b502dc80aba3173df1cbb02e1c8f474c550feb0f6d83c3128aae7"
+        "52f2febec45094e78a5948a3a47f023be8fc57cfd48cc99e8d4c358a13674ef2"
     ),
     ane_en_file!(
         "KokoroVocoder.mlmodelc/weights/weight.bin",
@@ -701,7 +701,7 @@ macro_rules! kokoro_g2p_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/",
                 "",
                 $rel
             ),
@@ -784,7 +784,7 @@ macro_rules! ane_zh_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/",
                 "ANE-zh/",
                 $rel
             ),
@@ -912,19 +912,19 @@ pub(super) const ANE_ZH_FILES: &[ModelFile] = &[
     ),
     ane_zh_file!(
         "KokoroVocoder.mlmodelc/analytics/coremldata.bin",
-        "12bf39f5117a2fe2645b0158d75d71a99b328b237f1add55a1511d0e2ee3b456"
+        "80953c7c1509d2f2d16e822a1a64e173addf98810e34df868c340bd184e10d56"
     ),
     ane_zh_file!(
         "KokoroVocoder.mlmodelc/coremldata.bin",
-        "24ad83fed32d94eff2b3d9d70159140057ebad500b2a7f8fb54b0be0204b1cd2"
+        "64c49e62863d689ca4482681373e6466cc6cdb02edadd30c5a33ab19dc9e7ab3"
     ),
     ane_zh_file!(
         "KokoroVocoder.mlmodelc/metadata.json",
-        "56a46a2f4f9015b6845b0e39c544be4d9923f00a48d5dd0ea58905dd0e336ba4"
+        "9275b838abe7ca664ecfe3822c9c1f1c116b5ecc992a69f649b1b619243300fc"
     ),
     ane_zh_file!(
         "KokoroVocoder.mlmodelc/model.mil",
-        "d55193676724a4bcaf0d419146994fa651ee6061d458edfd88dee518dff9268c"
+        "50da6295d0bebec8bba55bdc07ce15d774b9041c95fd2178c0f601f579e3e965"
     ),
     ane_zh_file!(
         "KokoroVocoder.mlmodelc/weights/weight.bin",
@@ -997,7 +997,7 @@ macro_rules! ane_zh_asset {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/",
                 $remote
             ),
             sha256: $sha,
@@ -1010,8 +1010,8 @@ macro_rules! ane_zh_asset {
 /// publishes them under `ANE-zh/assets/` and reads them from `<repoDir>/g2p/`.
 ///
 /// The jieba HMM tables `ensureMandarinJiebaHmm` also wants are not staged —
-/// upstream never published them, so that fetch fails and segmentation falls
-/// back to FMM by design.
+/// upstream first published them at this pin (FluidAudio#919) and kesha does
+/// not stage them yet, so that fetch fails and segmentation falls back to FMM.
 #[cfg(all(
     feature = "system_kokoro",
     target_os = "macos",
@@ -1659,7 +1659,7 @@ mod tts_tests {
                 );
                 assert!(
                     f.url.starts_with(
-                        "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/c94edcb4b671856795458645cd389c0a9184e8bb/"
+                        "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/"
                     ),
                     "{f:?} must come from the FluidInference repo FluidAudio itself uses"
                 );
