@@ -4,13 +4,10 @@
  * was the only thing it produced; this is what keeps a multi-megabyte fixture from landing in git
  * instead. Large corpora ship as a release asset with a SHA-256 pin.
  */
-import { lstatSync } from "node:fs";
-import { join } from "node:path";
-
 export const LIMIT_BYTES = 1_048_576;
 
-/** Raycast store listing screenshots: 2000x1250 PNGs the store reads from the repo, 2 MiB each and no fixture. */
-export const EXEMPT_PREFIXES = ["raycast/metadata/"];
+/** The Raycast store reads its 2000x1250 listing screenshot from here: 2 144 887 bytes of PNG, no fixture. */
+export const EXEMPT_PATHS = ["raycast/metadata/kesha-voice-kit-1.png"];
 
 export interface TrackedFile {
   path: string;
@@ -23,32 +20,52 @@ export function oversized(entries: TrackedFile[], limitBytes: number): TrackedFi
     .sort((a, b) => b.bytes - a.bytes || a.path.localeCompare(b.path));
 }
 
-export async function trackedFiles(cwd: string): Promise<TrackedFile[]> {
-  const proc = Bun.spawn(["git", "ls-files", "-z"], { cwd, stdout: "pipe", stderr: "pipe" });
+async function run(cwd: string, argv: string[], stdin: string): Promise<string> {
+  const proc = Bun.spawn(argv, { cwd, stdin: Buffer.from(stdin), stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  if (exitCode !== 0) throw new Error(`git ls-files failed (exit ${exitCode}) in ${cwd}: ${stderr.trim()}`);
+  if (exitCode !== 0) throw new Error(`${argv.join(" ")} failed (exit ${exitCode}) in ${cwd}: ${stderr.trim()}`);
+  return stdout;
+}
 
-  const files: TrackedFile[] = [];
-  for (const path of stdout.split("\0")) {
-    if (path === "") continue;
-    try {
-      files.push({ path, bytes: lstatSync(join(cwd, path)).size });
-    } catch (err) {
-      // Deleted in the working tree but still in the index: nothing on disk to measure.
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    }
+/** Sizes come from the index blobs, not the worktree: the index is what a push ships, and a deleted worktree copy hides nothing. */
+export async function trackedFiles(cwd: string): Promise<TrackedFile[]> {
+  const oidOf = new Map<string, string>();
+  for (const line of (await run(cwd, ["git", "ls-files", "-z", "--stage"], "")).split("\0")) {
+    if (line === "") continue;
+    const match = /^(\d{6}) ([0-9a-f]{40,64}) \d\t(.+)$/s.exec(line);
+    if (!match) throw new Error(`git ls-files --stage: unparsable entry ${JSON.stringify(line)}`);
+    const [, mode = "", oid = "", path = ""] = match;
+    // A symlink's blob is its target text and a gitlink is another repository's commit; neither ships bytes here.
+    if (mode === "120000" || mode === "160000") continue;
+    oidOf.set(path, oid);
   }
-  return files;
+
+  const sizeOf = new Map<string, number>();
+  const batch = await run(
+    cwd,
+    ["git", "cat-file", "--batch-check=%(objectname) %(objectsize)"],
+    [...new Set(oidOf.values())].map((oid) => `${oid}\n`).join(""),
+  );
+  for (const line of batch.split("\n")) {
+    if (line === "") continue;
+    const [oid = "", size = ""] = line.split(" ");
+    if (!/^\d+$/.test(size)) throw new Error(`git cat-file --batch-check: ${line}`);
+    sizeOf.set(oid, Number(size));
+  }
+
+  return [...oidOf].map(([path, oid]) => {
+    const bytes = sizeOf.get(oid);
+    if (bytes === undefined) throw new Error(`no size for ${path} (${oid})`);
+    return { path, bytes };
+  });
 }
 
 if (import.meta.main) {
-  const tracked = (await trackedFiles(process.cwd())).filter(
-    ({ path }) => !EXEMPT_PREFIXES.some((prefix) => path.startsWith(prefix)),
-  );
+  const tracked = (await trackedFiles(process.cwd())).filter(({ path }) => !EXEMPT_PATHS.includes(path));
   const large = oversized(tracked, LIMIT_BYTES);
   if (large.length > 0) {
     console.error(

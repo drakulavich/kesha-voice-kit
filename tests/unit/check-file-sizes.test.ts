@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { oversized } from "../../.github/scripts/check-file-sizes";
 import { REPO_ROOT } from "../helpers/repo";
@@ -34,13 +34,23 @@ describe("oversized", () => {
   });
 });
 
-async function git(cwd: string, ...args: string[]): Promise<void> {
-  const proc = Bun.spawn(["git", ...args], { cwd, stdout: "ignore", stderr: "pipe" });
-  const stderr = await new Response(proc.stderr).text();
+async function git(cwd: string, ...args: string[]): Promise<string> {
+  const proc = Bun.spawn(["git", ...args], { cwd, stdin: "ignore", stdout: "pipe", stderr: "pipe" });
+  const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
   if ((await proc.exited) !== 0) throw new Error(`git ${args.join(" ")} failed: ${stderr}`);
+  return stdout.trim();
 }
 
-async function check(tracked: Record<string, number>, untracked: Record<string, number> = {}) {
+async function blobOf(dir: string, bytes: number): Promise<string> {
+  const proc = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: Buffer.alloc(bytes), stdout: "pipe" });
+  return (await new Response(proc.stdout).text()).trim();
+}
+
+async function check(
+  tracked: Record<string, number>,
+  untracked: Record<string, number> = {},
+  afterAdd: (dir: string) => Promise<void> = async () => {},
+) {
   const dir = tempDir("file-sizes-");
   await git(dir, "init", "-q");
   const write = (files: Record<string, number>) => {
@@ -52,6 +62,7 @@ async function check(tracked: Record<string, number>, untracked: Record<string, 
   write(tracked);
   await git(dir, "add", "-A");
   write(untracked);
+  await afterAdd(dir);
   const proc = Bun.spawn(["bun", SCRIPT], { cwd: dir, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
@@ -84,12 +95,38 @@ describe("check:file-sizes against a repository", () => {
     expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
   });
 
-  // The Raycast store reads its 2000x1250 listing screenshots (2 MiB PNGs, no fixture) from raycast/metadata.
-  test("a Raycast store screenshot is exempt, the same bytes anywhere else are not", async () => {
-    expect((await check({ "raycast/metadata/kesha-voice-kit-2.png": MIB * 2 })).exitCode).toBe(0);
+  // The Raycast store reads its 2000x1250 listing screenshot (a 2 MiB PNG, no fixture) from raycast/metadata.
+  test("the one Raycast store screenshot is exempt, a second file beside it is not", async () => {
+    expect((await check({ "raycast/metadata/kesha-voice-kit-1.png": MIB * 2 })).exitCode).toBe(0);
 
-    const { exitCode, stderr } = await check({ "raycast/assets/kesha-voice-kit-2.png": MIB * 2 });
+    const { exitCode, stderr } = await check({ "raycast/metadata/kesha-voice-kit-2.png": MIB * 2 });
     expect(exitCode).toBe(1);
-    expect(stderr).toContain("raycast/assets/kesha-voice-kit-2.png");
+    expect(stderr).toContain("raycast/metadata/kesha-voice-kit-2.png");
+  });
+
+  test("a staged blob over the limit is reported even after the worktree copy is deleted", async () => {
+    const { exitCode, stderr } = await check({ "tests/fixtures/staged.ogg": MIB + 1 }, {}, async (dir) => {
+      rmSync(join(dir, "tests/fixtures/staged.ogg"));
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("tests/fixtures/staged.ogg");
+    expect(stderr).toContain(`${MIB + 1} bytes`);
+  });
+
+  test("a symlink entry is ignored, whatever its target text weighs", async () => {
+    const { exitCode, stderr } = await check({}, {}, async (dir) => {
+      await git(dir, "update-index", "--add", "--cacheinfo", `120000,${await blobOf(dir, MIB + 1)},link`);
+    });
+
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+  });
+
+  test("a gitlink (submodule) entry is ignored", async () => {
+    const { exitCode, stderr } = await check({}, {}, async (dir) => {
+      await git(dir, "update-index", "--add", "--cacheinfo", "160000,0123456789abcdef0123456789abcdef01234567,sub");
+    });
+
+    expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
   });
 });
