@@ -60,7 +60,11 @@ appendFileSync(log, text + ${JSON.stringify(SEPARATOR)});
 
 async function runMutate(args: string[]): Promise<{ exitCode: number; stderr: string; stdout: string }> {
   const proc = Bun.spawn([process.execPath, MUTATE, ...args], { stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exitCode] = await Promise.all([proc.stdout.text(), proc.stderr.text(), proc.exited]);
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
   return { exitCode, stderr, stdout };
 }
 
