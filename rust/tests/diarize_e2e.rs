@@ -201,7 +201,7 @@ fn a_clip_below_the_diarizer_floor_keeps_its_transcript() {
         "/../tests/fixtures/benchmark-en/01-check-email.ogg"
     );
     let samples = kesha_engine::audio::load_audio_truncated(fixture, 0.9)
-        .expect("committed fixture must decode — run `git lfs pull` in a fresh checkout");
+        .expect("committed fixture must decode");
     let short = tmp.path().join("short.wav");
     write_wav_16k(&samples, &short);
 

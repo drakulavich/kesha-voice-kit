@@ -476,14 +476,6 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../tests/fixtures/benchmark-en/03-review-pull-request.ogg"
         );
-        // The fixture is a Git LFS asset; on a checkout without LFS materialized
-        // the path is a ~130-byte pointer, not audio. Fail with an actionable
-        // message instead of a cryptic decode panic.
-        let bytes = std::fs::read(wav).expect("read sentence fixture");
-        assert!(
-            !bytes.starts_with(b"version https://git-lfs"),
-            "fixture is an unmaterialized Git LFS pointer — run `git lfs pull` before this test"
-        );
         let samples = crate::audio::load_audio(Path::new(wav)).expect("decode sentence fixture");
 
         // Declared first so it drops last — after the backend's CoreML teardown.
@@ -530,11 +522,6 @@ mod tests {
         let wav = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../tests/fixtures/benchmark-en/01-check-email.ogg"
-        );
-        let bytes = std::fs::read(wav).expect("read sentence fixture");
-        assert!(
-            !bytes.starts_with(b"version https://git-lfs"),
-            "fixture is an unmaterialized Git LFS pointer — run `git lfs pull` before this test"
         );
         let samples = crate::audio::load_audio(Path::new(wav)).expect("decode sentence fixture");
 

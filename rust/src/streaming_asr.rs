@@ -238,11 +238,6 @@ mod tests {
 
     fn fixture_samples(name: &str) -> Vec<f32> {
         let path = format!("{}/../tests/fixtures/{name}", env!("CARGO_MANIFEST_DIR"));
-        let bytes = std::fs::read(&path).expect("read fixture");
-        assert!(
-            !bytes.starts_with(b"version https://git-lfs"),
-            "fixture is an unmaterialized Git LFS pointer — run `git lfs pull` first"
-        );
         crate::audio::load_audio(std::path::Path::new(&path)).expect("decode fixture")
     }
 
