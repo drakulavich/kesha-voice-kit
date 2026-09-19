@@ -43,7 +43,7 @@ macro_rules! fluid_voice {
     };
 }
 
-// FluidAudio 0.15.5 voice snapshot plus the multilingual Kokoro voice packs
+// FluidAudio 0.15.7 voice snapshot plus the multilingual Kokoro voice packs
 // validated against the ANE cache. Keep this list in sync with the FluidAudio
 // pin in the fluidaudio-rs git rev (rust/Cargo.toml) whenever it changes.
 const VOICES: &[VoiceSpec] = &[
@@ -280,9 +280,10 @@ fn with_kokoro<R>(voice_id: &str, f: impl FnOnce(&FluidAudio) -> Result<R>) -> R
 /// the model's native level.
 ///
 /// The samples come from `synthesizeDetailed` rather than FluidAudio's WAV
-/// wrapper, which peak-normalizes English and Mandarin to 0 dBFS irreversibly
-/// (#718). That also keeps the audio in f32 end to end instead of round-tripping
-/// through the wrapper's 16-bit PCM.
+/// wrapper, which keeps the audio in f32 end to end instead of round-tripping
+/// through the wrapper's 16-bit PCM. Until 0.15.7 the wrapper also peak-normalized
+/// English and Mandarin to 0 dBFS irreversibly (#718); both paths now sit at the
+/// model's native level, and the f32 path is what keeps it that way here.
 pub fn synthesize(text: &str, voice_id: &str, speed: f32) -> Result<(Vec<f32>, u32)> {
     if text.is_empty() {
         anyhow::bail!("fluid-kokoro: text is empty");
@@ -472,7 +473,7 @@ mod tests {
 
     #[test]
     fn han_on_the_zh_voice_and_romanized_input_everywhere_still_pass() {
-        // zh Han is served by FluidAudio 0.15.5's Mandarin KokoroAne variant (#492).
+        // zh Han is served by FluidAudio 0.15.7's Mandarin KokoroAne variant (#492).
         ensure_script_supported("zm_050", "你好我叫凯沙").expect("zh native ok");
         ensure_script_supported("zm_050", "\u{20000}").expect("zh extension B ok");
         ensure_script_supported("hm_omega", "Namaste! Mera naam Kesha hai.").expect("romanized hi");
@@ -795,10 +796,10 @@ mod tests {
     }
 
     /// English comes back at the model's native level, not peak-normalized to
-    /// 0 dBFS (#718). A peak of exactly 1.0 means the WAV wrapper's slam is back
-    /// in the path — which is unrecoverable downstream, so this is the only place
-    /// it can be caught. Needs the ANE bundle, so it self-reports rather than
-    /// running everywhere.
+    /// 0 dBFS (#718). A peak of exactly 1.0 means a 0 dBFS slam is back in the
+    /// path (the WAV wrapper's left upstream at 0.15.7) — which is unrecoverable
+    /// downstream, so this is the only place it can be caught. Needs the ANE
+    /// bundle, so it self-reports rather than running everywhere.
     #[test]
     #[ignore = "needs `kesha install --tts en`; run locally on darwin-arm64"]
     fn synthesize_returns_samples_at_the_native_level() {

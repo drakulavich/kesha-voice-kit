@@ -340,7 +340,7 @@ pub(super) fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
 
 /// FluidAudio ANE Kokoro voice packs (`system_kokoro` darwin path, #475).
 ///
-/// FluidAudio 0.15.5's `KokoroAneManager` resolves `<voice>.bin` LOCAL-FIRST
+/// FluidAudio 0.15.7's `KokoroAneManager` resolves `<voice>.bin` LOCAL-FIRST
 /// from its own cache (`~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/`)
 /// before any download. The ANE bundle only ships `af_heart`, so `am_michael`
 /// (kesha's male brand default) and the rest of the advertised Kokoro catalog
@@ -488,14 +488,14 @@ pub(super) const ANE_KOKORO_VOICES: &[ModelFile] = &[
     ),
     // re-pinned (#492): removed the flat `zm_yunjian.bin`
     // (was sha de48a00bdbf3649f07162269a2b6e0513604389bfac8a2e6c75cb34b323ad6fa).
-    // zh (Mandarin) voices are NOT staged here — the FluidAudio 0.15.5 `.mandarin`
+    // zh (Mandarin) voices are NOT staged here — the FluidAudio 0.15.7 `.mandarin`
     // KokoroAne variant fetches its own `ANE-zh/` bundle (nested `voices/<id>.bin`)
     // on first synth, and those ids are numbered (e.g. zm_050), not the
     // onnx-community names. A flat kesha-staged pack would be unused. See
     // `tts::fluid_kokoro` zh-* voices.
 ];
 
-/// Everything FluidAudio 0.15.5 fetches for itself on a first `kesha say`, so
+/// Everything FluidAudio 0.15.7 fetches for itself on a first `kesha say`, so
 /// that `kesha install --tts` can put it there instead (#823).
 ///
 /// Without this, `KokoroAneManager.initialize` pulls the 7-stage ANE chain, the
@@ -662,24 +662,24 @@ pub(super) const ANE_EN_FILES: &[ModelFile] = &[
         "6d1f96eb50218ab687b12d6d862d2ae854c12b7165c3cd9b6b5cef261ef02ff1"
     ),
     ane_en_file!(
-        "KokoroTail.mlmodelc/analytics/coremldata.bin",
-        "7dd3d6b8cfbcdcac37b46f6eb1312b842b972dc75f7cb9968f349fedfc0d77db"
+        "KokoroTail_v2.mlmodelc/analytics/coremldata.bin",
+        "a06e4b91c2b8a8be3ff701558a5f1f6484921f948202663fe6df78f248d42222"
     ),
     ane_en_file!(
-        "KokoroTail.mlmodelc/coremldata.bin",
-        "f28f17e4217d7ec1bed48bff4c65287169daa9198315f6fffb00a1483831f5d3"
+        "KokoroTail_v2.mlmodelc/coremldata.bin",
+        "527271f6df56cc308a5f89374c92108aef7b837ab15f0ba4900d555588dbd905"
     ),
     ane_en_file!(
-        "KokoroTail.mlmodelc/metadata.json",
+        "KokoroTail_v2.mlmodelc/metadata.json",
         "7708ecc145eecf8e3ef5ef8979ea7a4f77d04c8da787454c6d9190e5300fc50b"
     ),
     ane_en_file!(
-        "KokoroTail.mlmodelc/model.mil",
+        "KokoroTail_v2.mlmodelc/model.mil",
         "b0b8fd573bac76ba7eb85730eeb25538fc7f1c666ecbf939fd4b3a4ad4495ad7"
     ),
     ane_en_file!(
-        "KokoroTail.mlmodelc/weights/weight.bin",
-        "2d4877b5d2725a9f017653e391638bee1262d1877a080bce09726aae128fecb2"
+        "KokoroTail_v2.mlmodelc/weights/weight.bin",
+        "8ede31ec20df7d86a124287ac12d13507651e2a693e9d4f35f0e7f92cba422c7"
     ),
     ane_en_file!(
         "vocab.json",
@@ -931,24 +931,24 @@ pub(super) const ANE_ZH_FILES: &[ModelFile] = &[
         "daa560673b32e3efce3ca99299d083c42c5844dd8022a8a847c23f2d00b20c6b"
     ),
     ane_zh_file!(
-        "KokoroTail.mlmodelc/analytics/coremldata.bin",
+        "KokoroTail_v2.mlmodelc/analytics/coremldata.bin",
         "cbffea509dfcba72fae7a9dc7ae424e19f8af08eabc70360fe30fd7c1de09151"
     ),
     ane_zh_file!(
-        "KokoroTail.mlmodelc/coremldata.bin",
+        "KokoroTail_v2.mlmodelc/coremldata.bin",
         "94e611a84f91c7b135b031a0f978cc47b0edab42912e68a86c3f3e78f9edf6a0"
     ),
     ane_zh_file!(
-        "KokoroTail.mlmodelc/metadata.json",
+        "KokoroTail_v2.mlmodelc/metadata.json",
         "d3c8a18ae48455281d614c098658c606174c2f02f594022232d427ac7070c899"
     ),
     ane_zh_file!(
-        "KokoroTail.mlmodelc/model.mil",
+        "KokoroTail_v2.mlmodelc/model.mil",
         "05abf10a8c6fdc77a614948a1d2a8b2374ac71daf2b24aaee077044067fde15f"
     ),
     ane_zh_file!(
-        "KokoroTail.mlmodelc/weights/weight.bin",
-        "1865207df8b7608f3fd443b5a3c744634a8942ccc917b5c8734818d569c0f4eb"
+        "KokoroTail_v2.mlmodelc/weights/weight.bin",
+        "242d455874b12c81bd09919d22cbd3d863242dc7a19b726dfff08142d59f2971"
     ),
     ane_zh_file!(
         "vocab.json",
@@ -1577,7 +1577,7 @@ mod tts_tests {
             "KokoroProsody.mlmodelc",
             "KokoroNoise_v2.mlmodelc",
             "KokoroVocoder.mlmodelc",
-            "KokoroTail.mlmodelc",
+            "KokoroTail_v2.mlmodelc",
         ];
         // A CoreML ML Program bundle is only loadable with all five of these;
         // `model.mil` missing is exactly the half-fetch #709 was about.
