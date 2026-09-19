@@ -265,7 +265,10 @@ fn origin_of(code: ErrorCode) -> Origin {
         ErrorCode::InputNotFound
         | ErrorCode::InvalidArg
         | ErrorCode::UnsupportedPlatform
-        | ErrorCode::Internal => Origin::Both,
+        | ErrorCode::Internal
+        | ErrorCode::ModelMissing
+        | ErrorCode::TextEmpty
+        | ErrorCode::TextTooLong => Origin::Both,
         _ => Origin::Engine,
     }
 }
@@ -456,7 +459,9 @@ mod tests {
         assert_eq!(origin("E_INPUT_NOT_FOUND"), Origin::Both);
         assert_eq!(origin("E_INTERNAL"), Origin::Both);
         assert_eq!(origin("E_UNSUPPORTED_PLATFORM"), Origin::Both);
-        assert_eq!(origin("E_MODEL_MISSING"), Origin::Engine);
+        assert_eq!(origin("E_MODEL_MISSING"), Origin::Both);
+        assert_eq!(origin("E_TEXT_EMPTY"), Origin::Both);
+        assert_eq!(origin("E_TEXT_TOO_LONG"), Origin::Both);
         assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 4);
     }
 
@@ -487,5 +492,20 @@ mod tests {
         assert!(s.contains("\"whenUngated\":\"drop\"") || !cfg!(feature = "tts"));
         assert!(!s.contains("\"whenUngated\":\"reject\""));
         assert!(s.contains("\"gate\":null"));
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        let origin_of_json = |c: &str| {
+            v["errors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|e| e["code"] == c)
+                .unwrap_or_else(|| panic!("{c} missing"))["origin"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(origin_of_json("E_MODEL_MISSING"), "both");
+        assert_eq!(origin_of_json("E_TEXT_EMPTY"), "both");
+        assert_eq!(origin_of_json("E_TEXT_TOO_LONG"), "both");
     }
 }
