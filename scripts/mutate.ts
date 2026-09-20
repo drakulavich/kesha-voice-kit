@@ -37,6 +37,10 @@ function usage(message: string): never {
   process.exit(EXIT_REFUSED);
 }
 
+function counted(n: number, noun: string, plural = `${noun}s`): string {
+  return `${n} ${n === 1 ? noun : plural}`;
+}
+
 function positiveNumber(name: string, raw: string | undefined, unit: string, integer = false): number {
   const value = Number(raw);
   if (raw === undefined || raw === "" || !Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) {
@@ -125,9 +129,8 @@ function killTree(root: number): void {
     return;
   }
   const tree = collectFrozenTree(root, childrenByParent, (pid) => safeSignal(pid, "SIGSTOP"), SWEEP_ROUNDS);
-  console.error(
-    `==> froze ${tree.frozen.length} process${tree.frozen.length === 1 ? "" : "es"} in ${tree.rounds} round${tree.rounds === 1 ? "" : "s"}${tree.bounded ? ` (bound of ${SWEEP_ROUNDS} hit; a descendant was still forking)` : ""}`,
-  );
+  const bound = tree.bounded ? ` (bound of ${SWEEP_ROUNDS} hit; a descendant was still forking)` : "";
+  console.error(`==> froze ${counted(tree.frozen.length, "process", "processes")} in ${counted(tree.rounds, "round")}${bound}`);
   for (const pid of [...tree.frozen].reverse()) safeSignal(pid, "SIGKILL");
 }
 
@@ -250,7 +253,7 @@ async function main(): Promise<void> {
   if (replacements === 0) refuse(`'${find}' does not occur in ${file} — an unapplied mutation proves nothing`);
   // #956: the second match sat in a cleanup path nobody meant to mutate, and the run hung there.
   const lines = matchLines(original, find).join(", ");
-  const where = `occurs ${replacements} time${replacements === 1 ? "" : "s"} in ${file} (lines ${lines})`;
+  const where = `occurs ${counted(replacements, "time")} in ${file} (lines ${lines})`;
   if (occurrences === undefined && replacements > 1) {
     refuse(`'${find}' ${where} — pass --occurrences ${replacements} to replace all ${replacements}, or narrow the text`);
   }
@@ -273,7 +276,7 @@ async function main(): Promise<void> {
   let mutated: RunOutcome;
   try {
     writeFileSync(file, source);
-    console.error(`==> mutated ${file} (${replacements} occurrence${replacements === 1 ? "" : "s"}); running: ${command.join(" ")}`);
+    console.error(`==> mutated ${file} (${counted(replacements, "occurrence")}); running: ${command.join(" ")}`);
     mutated = await runCommand(command, timeoutSeconds);
   } finally {
     restoreMutated?.();
