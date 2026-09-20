@@ -53,7 +53,8 @@ symphonia-adapter-libopus = "0.2"
 rubato = "2"
 
 # HTTP downloads
-ureq = "3"
+# <3.4: ureq#1194 re-anchors timeouts, breaking download_request's per-stall budget (#776, #893)
+ureq = ">=3.3, <3.4"
 dirs = "6"
 # Bounded thread pool for concurrent model fetches (#178). Rayon's blocking
 # threads fit ureq's blocking API; we cap the pool at 4 workers ourselves.
