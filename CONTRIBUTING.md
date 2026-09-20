@@ -223,10 +223,15 @@ just mutate src/voice-routing.ts "!code || confidence < 0.5" "!code || confidenc
 just mutate rust/src/errors.rs "<find>" "<replace>" cargo nextest run --manifest-path rust/Cargo.toml --all-targets -E "test(errors)"
 ```
 
-Exit codes: 0 PINNED, 1 NOT PINNED, 2 usage or refusal (needle absent, or more
-occurrences than `--occurrences` allows), 3 NOT A VALID RUN (baseline red,
-timeout, or a command that could not start). Record the rows in the PR the way
-`docs/mutation-evidence/` does when a review asks for proof.
+Exit codes: 0 PINNED, 1 NOT PINNED, 2 usage or refusal (needle absent, or
+occurring more or fewer times than `--occurrences N` says — it is an exact
+count, not a ceiling — or a sidecar left behind), 3 NOT A VALID RUN (baseline
+red, timeout — `--timeout S`, default 600 s, or `MUTATE_TIMEOUT_SECONDS` —
+interrupted, or a command that could not start). A run cut short leaves
+`<file>.mutate-orig` beside the mutated file as evidence; the next run refuses
+until you restore it yourself with `mv <file>.mutate-orig <file>`. Record the
+rows in the PR the way `docs/mutation-evidence/` does when a review asks for
+proof.
 
 The whole-file lanes (`mutants-ts` on Stryker, `mutants-rust` on
 cargo-mutants) were retired in #1212 and #1213: the TypeScript verdicts
