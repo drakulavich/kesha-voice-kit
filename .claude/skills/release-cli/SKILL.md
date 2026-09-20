@@ -131,10 +131,10 @@ The landing page lives on the `gh-pages` branch (Pages deploys from it; a `main`
 **Version numbers are fetched by `script.js`, never typed.** The hero eyebrow reads the newest stable `-cli` marker and the newest bare engine tag from the GitHub releases API at page load (#1040). The page must carry no version literal; the check that must print nothing:
 
 ```bash
-git fetch origin gh-pages && git show origin/gh-pages:index.html | grep -nE '\bv[0-9]+\.[0-9]+(\.[0-9]+)?\b'
+git fetch origin gh-pages && git show origin/gh-pages:index.html | sed -e ':a' -e '$!N' -e '$!ba' -e 's/<[^>]*>//g' | grep -nE '\bv?[0-9]+\.[0-9]+\.[0-9]+\b|\bv[0-9]+\.[0-9]+\b'
 ```
 
-The word boundaries keep the GitHub-mark SVG path (`...2.13v3.16c0...`) out of the match; a hit in prose is reworded, not exempted.
+The `sed` strips every tag (the multi-line ones too) so the check reads visible text only: the GitHub-mark SVG path (`...2.13v3.16c0...`) cannot false-positive, and an unprefixed `1.26.0` in prose is caught as well as a `v1.28`. Line numbers are those of the stripped text. A hit is reworded, not exempted.
 
 ## Hard rules
 
