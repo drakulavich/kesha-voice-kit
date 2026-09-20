@@ -56,9 +56,9 @@ worktree-rm slug: root-checkout-only
     git worktree remove ".worktrees/$1"
     git worktree prune
 
-# Prove a guard is pinned: replace text, run the tests, restore. Refuses when the text does not occur (#1075)
+# Prove a guard is pinned: `just mutate [--timeout S] [--occurrences N] <file> <find> <replace> <test…>` — green baseline, mutate, restore (#1075, #1155, #1211)
 [positional-arguments]
-mutate file find replace +test:
+mutate +args:
     bun scripts/mutate.ts "$@"
 
 # Run all tests
