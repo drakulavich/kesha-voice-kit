@@ -124,6 +124,18 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 
 `main` must carry the next *unreleased* CLI version (#691), and this release just consumed the current one. Open a follow-up PR bumping `package.json#version`, `server.json#version`, and `server.json#packages[0].version` to the next minor. Skipping this step is how #802 happened: the alpha derivation kept emitting `X.Y.Z-alpha.N` for an already-released `X.Y.Z`, so the next labelled merge would point `@alpha` at a version older than `@latest`.
 
+### Step 7 — Refresh the site
+
+The landing page lives on the `gh-pages` branch (Pages deploys from it; a `main` PR cannot touch it). Every user-visible feature this release adds gets a line on it: a card in the feature grid or a sentence on the card that already covers the area, worded from the release notes, never invented. Retire a `badge-new` that no longer is. Branch off `origin/gh-pages`, open the PR with `--base gh-pages`.
+
+**Version numbers are fetched by `script.js`, never typed.** The hero eyebrow reads the newest stable `-cli` marker and the newest bare engine tag from the GitHub releases API at page load (#1040). The page must carry no version literal; the check that must print nothing:
+
+```bash
+git fetch origin gh-pages && git show origin/gh-pages:index.html | grep -nE '\bv[0-9]+\.[0-9]+(\.[0-9]+)?\b'
+```
+
+The word boundaries keep the GitHub-mark SVG path (`...2.13v3.16c0...`) out of the match; a hit in prose is reworded, not exempted.
+
 ## Hard rules
 
 - NEVER `npm publish` from a laptop — GHA owns it, with provenance.
@@ -134,6 +146,7 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 - NEVER write release notes after the release is published.
 - NEVER ship a CLI whose `keshaEngine.version` has no published release.
 - User-facing install/upgrade text says bun, never npm.
+- NEVER type a version number into the site; `script.js` fetches it.
 
 ## Output
 
@@ -144,6 +157,7 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 - dist-tag: latest        Provenance: yes
 - Linux packages: .deb + .rpm on the marker release
 - Engine pin: A.B.C (verified published)
+- Site: gh-pages PR <url> (features added; version grep prints nothing)
 
 Verified from the registry: version ✓ pin ✓ install ✓ transcribe ✓
 ```
