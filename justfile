@@ -1,13 +1,6 @@
-# The widened set measures the ANE + diarize surfaces; `system_kokoro` cfg-excludes the ONNX-Kokoro
-# ones, so those need a second pass with FEATURES=tts. No recipe measures both — they are exclusive.
-FEATURES := "tts,system_kokoro,system_diarize"
 ALL := ""
 TTS := ""
 TTS_FLAG := if TTS == "" { "" } else { "--tts" }
-# Two seam_long_form tests cost 60-120 s each and only exercise transcribe/, so every mutant
-# outside it pays ~50 s for nothing. TEST_FILTER="" runs everything (nextest rejects an empty
-# filterset, so the recipe substitutes all()) — use it when mutating transcribe/ itself.
-TEST_FILTER := "not test(seam_long_form)"
 
 # Show available recipes
 default:
@@ -154,21 +147,6 @@ verify-darwin-full:
     cd rust && cargo clippy --all-targets \
         --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
         --no-default-features -- -D warnings
-
-# `--in-place` is not optional: models/manifest.rs include_str!s a file above the crate, so the copy build fails.
-# FEATURES and TEST_FILTER stay interpolated: they are set by whoever types the command, while
-# FILE is the argument a script or agent passes through.
-# Mutation-test one engine file, e.g. just mutants-rust src/errors.rs
-[positional-arguments]
-mutants-rust FILE:
-    @command -v cargo-mutants >/dev/null || { echo "install it: cargo install --locked cargo-mutants" >&2; exit 2; }
-    @git diff --quiet -- rust || { echo "rust/ has uncommitted changes; --in-place mutates the tree" >&2; exit 2; }
-    cd rust && cargo mutants --in-place -f "$1" --features {{ FEATURES }} -- -E '{{ if TEST_FILTER == "" { "all()" } else { TEST_FILTER } }}'
-
-# Mutation-test src/, scripts/ or .github/scripts/ against whichever suites import them, e.g. just mutants-ts src/engine.ts
-[positional-arguments]
-mutants-ts *FILES:
-    bun scripts/mutants-ts.ts "$@"
 
 # Run smoke tests against fixtures; just TTS=1 smoke-test covers the TTS fixtures too
 smoke-test:

@@ -213,42 +213,33 @@ Coverage tells you code was *executed*. Mutation testing tells you whether the
 tests would *notice* if behaviour changed. A surviving mutant is a missing
 assertion, not a score to inflate.
 
-Scoped runs stay usable because they only re-run the suites that reach the
-mutated file:
+The one sanctioned tool is `just mutate`: name the guard, name the mutation,
+name the test, and it proves the pair in seconds. It runs the test once on the
+untouched file and demands green, applies the mutation, restores the file, and
+exits 0 only when the mutation was caught:
 
 ```bash
-just mutants-ts src/voice-routing.ts                           # TypeScript (Stryker + Bun)
-just mutants-ts --with-integration src/engine.ts src/cli/main.ts # several files
-just mutants-ts --with-integration src/foo.ts # include integration suites (slower)
-
-just mutants-ts .github/scripts/check-workflows.ts             # the CI gates are mutable too
-just mutants-ts .github/scripts/npm-dist-tag.mjs               # so is the .mjs release path
-
-just mutants-rust src/errors.rs # Rust: cargo-mutants; clean rust/ tree required
+just mutate src/voice-routing.ts "!code || confidence < 0.5" "!code || confidence < 0" bun test tests/unit/voice-routing.test.ts
+just mutate rust/src/errors.rs "<find>" "<replace>" cargo nextest run --manifest-path rust/Cargo.toml --all-targets -E "test(errors)"
 ```
 
-Or via npm scripts: `bun run mutants:ts -- src/voice-routing.ts`.
+Exit codes: 0 PINNED, 1 NOT PINNED, 2 usage or refusal (needle absent, or more
+occurrences than `--occurrences` allows), 3 NOT A VALID RUN (baseline red,
+timeout, or a command that could not start). Record the rows in the PR the way
+`docs/mutation-evidence/` does when a review asks for proof.
 
-Mutable roots are `src/`, `scripts/` and `.github/scripts/`, in `.ts` or `.mjs`
-— the gates enforce the rules in CLAUDE.md and the release path is written in
-`.mjs`, so both earn the same measurement (#1091). Selection is by import, so a
-suite that only *spawns* a script cannot be found automatically; the run says so
-and exits non-zero rather than reporting zero mutants, and it only points at
-`--with-integration` when an integration suite would actually reach the source.
-
-The default TypeScript roots are `tests/unit/` only. For engine spawn, CLI
-contracts, or install hints, pass `--with-integration` so the relevant
-integration suites are measured. `mutants-rust` runs in place: install its tool
-once with `cargo install --locked cargo-mutants`, keep `rust/` clean, and
-override its default `tts,system_kokoro,system_diarize` features with `just
-FEATURES=tts mutants-rust …` when appropriate.
-
-Treat survivors on critical paths (engine spawn, capability checks, install
-hints, stdout/stderr contracts, voice routing) as real design debt. Leave
-equivalent or intentionally untestable mutants alone; the goal is stronger
-assertions, not 100% kill rate. The behavioural, structure-insensitive test
-quality bar is in [`CLAUDE.md`](./CLAUDE.md) under "TESTS COME FIRST, AND ARE
-JUDGED BY WHAT THEY CATCH"; mutation commands and survivor triage live here.
+The whole-file lanes (`mutants-ts` on Stryker, `mutants-rust` on
+cargo-mutants) were retired in #1212 and #1213: the TypeScript verdicts
+were not reproducible between runs and a whole-file run cost up to 30 minutes,
+and the Rust lane yielded little on a crate already at 96.8% while `--in-place`
+left an interrupted mutation in the working tree looking like an ordinary edit.
+The survivor classes they taught remain the triage rule: the argv synthesised
+for the engine subprocess (retired as a contract in #163), TTY write cadence and
+code unreachable by construction are correct to leave alive. Treat survivors on
+critical paths (engine spawn, capability checks, install hints, stdout/stderr
+contracts, voice routing) as real design debt. The behavioural,
+structure-insensitive test quality bar is in [`CLAUDE.md`](./CLAUDE.md) under
+"TESTS COME FIRST, AND ARE JUDGED BY WHAT THEY CATCH".
 
 Handy loops:
 
