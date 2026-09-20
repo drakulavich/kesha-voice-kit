@@ -149,6 +149,12 @@ function refuse(message: string): never {
   process.exit(EXIT_REFUSED);
 }
 
+function notAValidRun(message: string): never {
+  releaseSidecar();
+  console.error(`NOT A VALID RUN: ${message}`);
+  process.exit(EXIT_NOT_A_VALID_RUN);
+}
+
 export type SidecarFs = {
   openSync(file: string, flags: "wx"): number;
   writeSync(fd: number, buffer: Buffer, offset: number, length: number): number;
@@ -218,12 +224,6 @@ function onInterrupt(): void {
   if (runningPid !== null) killTree(runningPid);
   restoreMutated?.();
   notAValidRun("interrupted");
-}
-
-function notAValidRun(message: string): never {
-  releaseSidecar();
-  console.error(`NOT A VALID RUN: ${message}`);
-  process.exit(EXIT_NOT_A_VALID_RUN);
 }
 
 function exitCodeOf(outcome: RunOutcome, timeoutSeconds: number): number {
