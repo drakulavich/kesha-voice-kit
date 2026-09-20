@@ -161,6 +161,9 @@ const text = readFileSync(target, "utf8");
 appendFileSync(log, text + ${JSON.stringify(SEPARATOR)});
 `;
 
+/** Passes on the untouched file and fails once the needle is gone: the test of a guard that is pinned. */
+const FAILS_WHEN_MUTATED = `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`;
+
 type Outcome = { exitCode: number; stderr: string; stdout: string };
 
 function spawnMutate(args: string[], env: Record<string, string> = {}): { pid: number; result: Promise<Outcome> } {
@@ -204,7 +207,7 @@ describe("bun scripts/mutate.ts — the green baseline (#1155)", () => {
 
   test("baseline green and mutated red is PINNED, exit 0, with the file restored", async () => {
     const s = scenario();
-    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const check = s.script("check.ts", FAILS_WHEN_MUTATED);
     const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(0);
     expect(run.stderr).toContain("PINNED: the mutation was caught");
@@ -323,7 +326,7 @@ describe("bun scripts/mutate.ts — the occurrence guard (#1211)", () => {
   test("a needle that occurs twice is refused, naming both lines, unless --occurrences names the count", async () => {
     const s = scenario();
     writeFileSync(s.target, TWICE);
-    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const check = s.script("check.ts", FAILS_WHEN_MUTATED);
     const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(2);
     expect(run.stderr).toContain(
@@ -336,7 +339,7 @@ describe("bun scripts/mutate.ts — the occurrence guard (#1211)", () => {
   test("--occurrences matching the count replaces every match and reaches the PINNED verdict", async () => {
     const s = scenario();
     writeFileSync(s.target, TWICE);
-    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const check = s.script("check.ts", FAILS_WHEN_MUTATED);
     const run = await runMutate(["--occurrences", "2", s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(0);
     expect(run.stderr).toContain("PINNED: the mutation was caught");
@@ -347,7 +350,7 @@ describe("bun scripts/mutate.ts — the occurrence guard (#1211)", () => {
   test("--occurrences that disagrees with the count is refused naming both numbers", async () => {
     const s = scenario();
     writeFileSync(s.target, TWICE);
-    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const check = s.script("check.ts", FAILS_WHEN_MUTATED);
     const run = await runMutate(["--occurrences", "3", s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(2);
     expect(run.stderr).toContain(
@@ -429,7 +432,7 @@ process.exit(text.includes("locked") ? 0 : 1);
     const s = scenario();
     const sidecar = `${s.target}.mutate-orig`;
     writeFileSync(sidecar, "the bytes a crashed run saved");
-    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const check = s.script("check.ts", FAILS_WHEN_MUTATED);
     const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(2);
     expect(run.stderr).toContain(`a previous run was interrupted — restore with: mv ${sidecar} ${s.target}`);
@@ -440,7 +443,7 @@ process.exit(text.includes("locked") ? 0 : 1);
 
   test("a run that finishes leaves no sidecar behind", async () => {
     const s = scenario();
-    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const check = s.script("check.ts", FAILS_WHEN_MUTATED);
     const run = await runMutate([s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(0);
     expect(existsSync(`${s.target}.mutate-orig`)).toBe(false);
@@ -462,7 +465,7 @@ describe("bun scripts/mutate.ts — argument shapes", () => {
 
   test("an explicit -- ends the options and the positionals follow", async () => {
     const s = scenario();
-    const check = s.script("check.ts", `${RECORD}process.exit(text.includes("locked") ? 0 : 1);\n`);
+    const check = s.script("check.ts", FAILS_WHEN_MUTATED);
     const run = await runMutate(["--timeout", "30", "--", s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(0);
     expect(run.stderr).toContain("PINNED: the mutation was caught");
