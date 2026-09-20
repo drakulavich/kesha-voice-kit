@@ -120,10 +120,19 @@
       .then((releases) => {
         if (!Array.isArray(releases)) return;
         const stable = releases.filter(
-          (rel) => rel && !rel.draft && !rel.prerelease && typeof rel.tag_name === 'string'
+          (rel) =>
+            rel &&
+            !rel.draft &&
+            !rel.prerelease &&
+            typeof rel.tag_name === 'string' &&
+            typeof rel.published_at === 'string'
         );
-        const cli = stable.find((rel) => /^v\d+\.\d+\.\d+-cli$/.test(rel.tag_name));
-        const engine = stable.find((rel) => /^v\d+\.\d+\.\d+$/.test(rel.tag_name));
+        const latest = (pattern) =>
+          stable
+            .filter((rel) => pattern.test(rel.tag_name))
+            .reduce((best, rel) => (!best || rel.published_at > best.published_at ? rel : best), null);
+        const cli = latest(/^v\d+\.\d+\.\d+-cli$/);
+        const engine = latest(/^v\d+\.\d+\.\d+$/);
         if (!cli || !engine) return;
         const cliVersion = cli.tag_name.replace(/^v/, '').replace(/-cli$/, '');
         const engineVersion = engine.tag_name.replace(/^v/, '');
