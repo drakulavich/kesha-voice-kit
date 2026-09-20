@@ -112,7 +112,7 @@
         <div class="container hero__inner">
           <div class="eyebrow">
             <span class="eyebrow__dot"></span>
-            <span>v1.24.10 engine · v1.28 Bun CLI · MIT · macOS · Linux · Windows</span>
+            <span id="release-versions">MIT · macOS · Linux · Windows</span>
           </div>
 
           <h1 class="hero__title">
@@ -251,14 +251,13 @@
                   <path d="M12 20c0-3 2.5-5 5-5s5 2 5 5" />
                 </svg>
               </div>
-              <span class="badge-new">New</span>
               <h3>Speaker diarization</h3>
               <p>
                 Drop a meeting recording in, get back timestamped segments tagged with a stable
                 speaker ID. Powered by FluidAudio’s Sortformer model running on the Apple Neural
-                Engine via a Swift sidecar — ~4.6× real-time on a 71-minute Zoom call. v1.19
-                gives the cold ANE warmup extra headroom so the first <code>--speakers</code> call
-                on a fresh process no longer hits a false timeout.
+                Engine via a Swift sidecar — ~4.6× real-time on a 71-minute Zoom call. The cold
+                ANE warmup gets extra headroom so the first <code>--speakers</code> call on a
+                fresh process does not hit a false timeout.
               </p>
               <ul class="chip-row" role="list">
                 <li>--speakers</li>
@@ -382,7 +381,6 @@
                   <path d="M9 21h6" />
                 </svg>
               </div>
-              <span class="badge-new">New</span>
               <h3>Live dictation with recovery</h3>
               <p>
                 On darwin-arm64, <code>kesha record --live</code> prints the microphone transcript
@@ -407,7 +405,6 @@
                   <path d="M9 12l2 2 4-4" />
                 </svg>
               </div>
-              <span class="badge-new">New</span>
               <h3>Privacy-safe diagnostic logs</h3>
               <p>
                 Opt-in local-only command events with paths and user-supplied text redacted.
@@ -431,15 +428,17 @@
                   <path d="M12 3a13 13 0 0 1 0 18M12 3a13 13 0 0 0 0 18" />
                 </svg>
               </div>
-              <span class="badge-new">v1.24</span>
               <h3>Multilingual TTS</h3>
               <p>
                 Install TTS only when you need it. Kokoro powers English and multilingual voices
                 through CoreML/ANE on Apple Silicon and ONNX on Linux/Windows; Russian uses
                 Vosk-TTS. <strong>Chinese, Japanese, and Hindi are darwin-arm64 only;</strong>
-                Chinese accepts Han text, while Hindi requires romanized Latin input and Japanese
-                requires romaji (Devanagari and kana/kanji are rejected). Use <code>--lang</code>
-                on Linux and Windows rather than relying on macOS auto-routing.
+                Chinese accepts Han text, while the Kokoro Hindi and Japanese voices take
+                romanized input. Devanagari or kana/kanji text auto-routes to an installed macOS
+                system voice; a script the chosen voice cannot speak is refused as
+                <code>E_SCRIPT_UNSUPPORTED</code> with a hint naming the script to transliterate
+                into. Use <code>--lang</code> on Linux and Windows rather than relying on macOS
+                auto-routing.
               </p>
               <ul class="chip-row" role="list">
                 <li>en · es · fr · it · pt</li>
@@ -449,7 +448,7 @@
               </ul>
             </article>
 
-            <article class="feature">
+            <article class="feature feature--wide">
               <div class="feature__icon" aria-hidden="true">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
                   <path d="M12 9v4" />
@@ -457,19 +456,49 @@
                   <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                 </svg>
               </div>
-              <span class="badge-new">v1.22</span>
-              <h3>Structured error taxonomy</h3>
+              <span class="badge-new">New</span>
+              <h3>Structured errors and events</h3>
               <p>
                 Every failure path prints a stable, machine-readable <code>error [CODE]: …</code>
-                line. <code>kesha-engine --error-codes-json</code> dumps the whole taxonomy; a
-                docs drift gate keeps <code>docs/errors.md</code> honest. Agents and CI can branch
-                on <em>why</em> something failed instead of regexing log soup.
+                line, and every engine progress, warning, or debug line on stderr is one NDJSON
+                event the CLI renders for you. <code>kesha-engine describe</code> publishes the
+                whole contract — flags, feature gates, the error taxonomy — and the CLI checks
+                each argv against it before spawning, so an unknown flag is refused with a
+                did-you-mean and exit 2. A run stopped by Ctrl-C or a signal reports
+                <code>E_INTERRUPTED</code>. Agents and CI can branch on <em>why</em> something
+                failed instead of regexing log soup.
               </p>
               <ul class="chip-row" role="list">
                 <li>stable codes</li>
-                <li>--error-codes-json</li>
-                <li>exit codes</li>
-                <li>agent-friendly</li>
+                <li>kesha-engine describe</li>
+                <li>NDJSON events</li>
+                <li>E_INTERRUPTED</li>
+              </ul>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M3 10.5 12 3l9 7.5" />
+                  <path d="M5 9.5V21h14V9.5" />
+                  <path d="M10 21v-6h4v6" />
+                </svg>
+              </div>
+              <span class="badge-new">New</span>
+              <h3>One home for every state file</h3>
+              <p>
+                Set <code>KESHA_HOME</code> and the model cache, diagnostic logs, the stats
+                database, and MCP audio all live under one directory with the same layout on
+                every platform: <code>cache/</code>, <code>logs/</code>,
+                <code>stats.sqlite</code>, <code>mcp-audio/</code>. A per-location variable such
+                as <code>KESHA_CACHE_DIR</code> still wins; unset, nothing changes and nothing is
+                migrated. <code>kesha status --json</code> and <code>kesha doctor --json</code>
+                report each path with its source.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>KESHA_HOME</li>
+                <li>cache · logs · stats</li>
+                <li>status --json paths</li>
               </ul>
             </article>
 
@@ -486,7 +515,7 @@
                 A single Rust binary for macOS arm64, Linux x64, and Windows x64. FluidAudio
                 (CoreML) on Apple Silicon via dedicated sidecars (diarization, TTS, language
                 detection); ort (ONNX) elsewhere. Symphonia decodes WAV, MP3, OGG/Opus, FLAC,
-                AAC, M4A; pure-Rust <code>opus</code> + <code>flacenc</code> handle encode
+                AAC, M4A, AIFF; pure-Rust <code>opus</code> + <code>flacenc</code> handle encode
                 — royalty-free codecs, no C dep, no patent exposure. Linux <code>.deb</code> and
                 <code>.rpm</code> packages signed with Sigstore.
                 <strong>No ffmpeg. No Python. No native Node addons.</strong>
@@ -850,7 +879,7 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
             <p class="section-sub">
               Each model is best-in-class for its task and runs through
               <code>kesha-engine</code> — Rust, with CoreML sidecars on Apple Silicon and ONNX
-              everywhere else. Nine multilingual voices ship in one bundle as of v1.22.
+              everywhere else. Nine multilingual voices ship in one bundle.
             </p>
           </header>
 
@@ -959,7 +988,7 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
             <a href="https://github.com/pdeljanov/Symphonia" target="_blank" rel="noopener"
               >Symphonia</a
             >
-            — WAV, MP3, OGG/Opus, FLAC, AAC, M4A.
+            — WAV, MP3, OGG/Opus, FLAC, AAC, M4A, AIFF.
           </p>
         </div>
       </section>
@@ -1053,8 +1082,9 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
               </div>
               <h3>Raycast</h3>
               <p>
-                macOS launcher commands: transcribe selected audio, speak the clipboard. From the
-                <code>raycast/</code> directory.
+                macOS launcher commands: dictate through <code>kesha record --live</code>,
+                transcribe selected audio, speak the clipboard. From the <code>raycast/</code>
+                directory.
               </p>
               <a
                 href="https://github.com/drakulavich/kesha-voice-kit/tree/main/raycast"

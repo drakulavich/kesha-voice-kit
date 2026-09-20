@@ -112,6 +112,26 @@
       .catch(() => {});
   }
 
+  // --- Release versions (best effort, same API; the span keeps its text on failure)
+  const versionsEl = document.getElementById('release-versions');
+  if (versionsEl) {
+    fetch('https://api.github.com/repos/drakulavich/kesha-voice-kit/releases?per_page=30')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((releases) => {
+        if (!Array.isArray(releases)) return;
+        const stable = releases.filter(
+          (rel) => rel && !rel.draft && !rel.prerelease && typeof rel.tag_name === 'string'
+        );
+        const cli = stable.find((rel) => /^v\d+\.\d+\.\d+-cli$/.test(rel.tag_name));
+        const engine = stable.find((rel) => /^v\d+\.\d+\.\d+$/.test(rel.tag_name));
+        if (!cli || !engine) return;
+        const cliVersion = cli.tag_name.replace(/^v/, '').replace(/-cli$/, '');
+        const engineVersion = engine.tag_name.replace(/^v/, '');
+        versionsEl.textContent = `v${engineVersion} engine · v${cliVersion} Bun CLI · ${versionsEl.textContent}`;
+      })
+      .catch(() => {});
+  }
+
   // --- Reveal on scroll (subtle) -----------------------------------------
   const io = 'IntersectionObserver' in window
     ? new IntersectionObserver(

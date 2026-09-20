@@ -719,7 +719,8 @@ button,
   );
   pointer-events: none;
 }
-.feature--rust {
+.feature--rust,
+.feature--wide {
   grid-column: span 4;
 }
 .feature--openclaw {
@@ -728,8 +729,9 @@ button,
 /* Layout sequence:
    row 1: feature--lg — Speech-to-text (span 6)
    row 2: feature--lg — Speaker diarization (span 6)
-   rows 3–4: 6 features (each span 2 = 12)
-   row 5: feature--rust (4) + feature--openclaw (2) = 6 */
+   rows 3–5: 9 features (each span 2 = 18)
+   row 6: feature--wide (4) + one feature (2) = 6
+   row 7: feature--rust (4) + feature--openclaw (2) = 6 */
 
 .badge-new {
   position: absolute;
@@ -802,11 +804,11 @@ button,
 
 @media (max-width: 960px) {
   .feature-grid { grid-template-columns: 1fr 1fr; }
-  .feature, .feature--lg, .feature--rust, .feature--openclaw { grid-column: span 2; }
+  .feature, .feature--lg, .feature--rust, .feature--wide, .feature--openclaw { grid-column: span 2; }
 }
 @media (max-width: 600px) {
   .feature-grid { grid-template-columns: 1fr; }
-  .feature, .feature--lg, .feature--rust, .feature--openclaw { grid-column: span 1; }
+  .feature, .feature--lg, .feature--rust, .feature--wide, .feature--openclaw { grid-column: span 1; }
 }
 
 /* ---------------- Benchmark ---------------- */
@@ -920,6 +922,7 @@ button,
   flex-direction: column;
   gap: var(--space-3);
   position: relative;
+  min-width: 0;
 }
 .step__num {
   font-family: var(--font-mono);
