@@ -194,7 +194,7 @@
       "title": "Model or voice not installed",
       "category": "model",
       "retryable": false,
-      "origin": "engine"
+      "origin": "both"
     },
     {
       "code": "E_MODEL_DOWNLOAD",
@@ -243,14 +243,14 @@
       "title": "Empty synthesis text",
       "category": "tts",
       "retryable": false,
-      "origin": "engine"
+      "origin": "both"
     },
     {
       "code": "E_TEXT_TOO_LONG",
       "title": "Synthesis text too long",
       "category": "tts",
       "retryable": false,
-      "origin": "engine"
+      "origin": "both"
     },
     {
       "code": "E_VOICE_UNKNOWN",
@@ -327,6 +327,13 @@
       "title": "Another install reached the same cache first",
       "category": "internal",
       "retryable": true,
+      "origin": "cli"
+    },
+    {
+      "code": "E_INTERRUPTED",
+      "title": "The run was cancelled by a signal or by its caller",
+      "category": "platform",
+      "retryable": false,
       "origin": "cli"
     }
   ],
