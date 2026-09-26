@@ -25,7 +25,7 @@ jobs:
         with:
           persist-credentials: false
       - name: 🔍 Scan
-        uses: hashgraph-online/ai-plugin-scanner-action@5d61e023a366e2895da0bd4679a91edc9918d3e7 # v1.2.685
+        uses: hashgraph-online/ai-plugin-scanner-action@1c7b18e191376dd17550d4bff41fd8c9f71e4ca8 # v1.2.691
         with:
           plugin_dir: "."
           min_score: 80

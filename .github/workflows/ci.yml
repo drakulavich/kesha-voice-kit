@@ -212,7 +212,7 @@ jobs:
 
       # check:recipes parses `just --dump`; without a `just` here it fails loudly rather than
       # skipping, which is the point — a silently-skipped gate is the drift it exists to catch.
-      - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: just@1.58.0
 
