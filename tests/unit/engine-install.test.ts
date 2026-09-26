@@ -303,6 +303,31 @@ describe("waitUntilSpawnable (#216)", () => {
     }
   });
 
+  spawnFixtureTest("an unspawnable KESHA_ENGINE_BIN keeps its override advice, once, in one coded line", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-override-"));
+    const saved = process.env.KESHA_ENGINE_BIN;
+    try {
+      const binPath = join(dir, "engine");
+      writeFileSync(binPath, "not executable");
+      chmodSync(binPath, 0o644);
+      process.env.KESHA_ENGINE_BIN = binPath;
+      let caught: unknown;
+      try {
+        await waitUntilSpawnable(binPath, 1_000);
+      } catch (err) {
+        caught = err;
+      }
+      const rendered = errorMessage(caught);
+      expect(rendered.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`")).toHaveLength(2);
+      expect(rendered.split("error [")).toHaveLength(2);
+      expect(rendered.split("\n")).toHaveLength(2);
+    } finally {
+      if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // A lock cannot be taken on demand, so the path carries the lock's errno: a non-executable file
   // fails to spawn with a message quoting that path, which the classifier reads as transient.
   spawnFixtureTest("an engine still locked at the deadline is E_ENGINE_SPAWN, exit 1, with the fix as its hint", async () => {
