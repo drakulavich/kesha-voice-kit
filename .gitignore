@@ -8,6 +8,8 @@ rust/target/
 .worktrees/
 tmp-lang-id-output/
 .venv/
+__pycache__/
+*.pyc
 benchmark-results.json
 .omc/
 coverage/
