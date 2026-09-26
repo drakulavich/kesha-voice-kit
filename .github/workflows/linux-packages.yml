@@ -7,6 +7,7 @@ on:
       - packaging/**
       - .github/scripts/build-linux-packages.mjs
       - .github/scripts/linux-package-names.mjs
+      - .github/scripts/install-nfpm.sh
       - .github/scripts/verify-linux-packages.sh
       - .github/workflows/linux-packages.yml
       - .github/workflows/build-engine.yml
@@ -28,6 +29,7 @@ on:
       - packaging/**
       - .github/scripts/build-linux-packages.mjs
       - .github/scripts/linux-package-names.mjs
+      - .github/scripts/install-nfpm.sh
       - .github/scripts/verify-linux-packages.sh
       - .github/workflows/linux-packages.yml
       - .github/actions/linux-packages/action.yml
