@@ -86,10 +86,12 @@ export function resolveEngineVersionFlag(raw: unknown): string | undefined {
   const value = String(raw).trim();
   if (isSemver(value)) return value;
   const hint = /^v\d/.test(value)
-    ? ' Drop the leading "v" — that belongs to the release tag, not the version.'
-    : "";
-  throw new Error(
-    `--engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "${value}".${hint}`,
+    ? 'drop the leading "v" — that belongs to the release tag, not the version.'
+    : undefined;
+  throw new KeshaError(
+    "E_INVALID_ARG",
+    `--engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "${value}".`,
+    hint === undefined ? {} : { hint },
   );
 }
 

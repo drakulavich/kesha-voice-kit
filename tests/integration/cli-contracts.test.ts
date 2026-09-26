@@ -2400,7 +2400,9 @@ exit 2
     expectContract(invalid, {
       exitCode: 2,
       stdoutEmpty: true,
-      stderrContains: ["--engine-version needs an exact SemVer 2.0 version"],
+      stderrContains: [
+        'error [E_INVALID_ARG]: --engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "latest".',
+      ],
     });
 
     // `init` is the guided path; an override is an expert action and stays off it (#738).

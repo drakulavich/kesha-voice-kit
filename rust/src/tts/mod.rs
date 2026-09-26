@@ -64,7 +64,51 @@ pub enum TtsError {
     },
 }
 
+/// A model file that is present but will not load; `kesha install --tts` re-verifies and re-fetches it.
+pub(crate) fn model_load_failed(
+    model: &str,
+    path: &Path,
+    cause: impl std::fmt::Display,
+) -> anyhow::Error {
+    anyhow::Error::new(crate::errors::CodedError {
+        code: crate::errors::ErrorCode::ModelLoad,
+        message: format!(
+            "{model} model {} failed to load ({cause}); reinstall it: kesha install --tts",
+            path.display()
+        ),
+    })
+}
+
+/// Only the file step is `E_MODEL_LOAD`: a builder failure is the ONNX Runtime, which reinstalling a model cannot fix.
+pub(crate) fn open_session(
+    model: &str,
+    path: &Path,
+    builder: ort::Result<ort::session::builder::SessionBuilder>,
+) -> anyhow::Result<ort::session::Session> {
+    let mut builder = builder
+        .map_err(|e| anyhow::anyhow!("ONNX Runtime could not create a session for {model}: {e}"))?;
+    match builder.commit_from_file(path) {
+        Ok(session) => Ok(session),
+        // An absent `--model` path is not a load failure; tts_smoke pins its exit 4.
+        Err(e) if !path.exists() => Err(e.into()),
+        Err(e) => Err(model_load_failed(model, path, e)),
+    }
+}
+
 impl TtsError {
+    /// Keeps a code attached deeper in `e` instead of collapsing it to `E_INTERNAL`.
+    pub(crate) fn from_engine(stage: &str, e: anyhow::Error) -> Self {
+        match crate::errors::code_of(&e) {
+            crate::errors::ErrorCode::Internal => {
+                TtsError::SynthesisFailed(format!("{stage}: {e}"))
+            }
+            code => TtsError::Coded {
+                code,
+                message: format!("{e:#}"),
+            },
+        }
+    }
+
     /// Stable taxonomy code for this synthesis failure.
     pub fn code(&self) -> crate::errors::ErrorCode {
         use crate::errors::ErrorCode;
@@ -127,6 +171,19 @@ pub struct SayOptions<'a> {
 mod code_tests {
     use super::*;
     use crate::errors::ErrorCode;
+
+    #[test]
+    fn a_session_builder_failure_is_not_blamed_on_the_model_file() {
+        let model = tempfile::NamedTempFile::new().unwrap();
+        let err = open_session(
+            "Kokoro",
+            model.path(),
+            Err(ort::Error::new("runtime unavailable")),
+        )
+        .expect_err("a builder failure must fail the load");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::Internal, "{err:#}");
+        assert!(!format!("{err:#}").contains("reinstall"), "{err:#}");
+    }
 
     #[test]
     fn tts_error_maps_to_codes() {

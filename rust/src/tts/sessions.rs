@@ -40,7 +40,7 @@ impl KokoroSession {
     /// Voice embeddings are loaded lazily on first use.
     pub fn load(model_path: &Path) -> anyhow::Result<Self> {
         let tokenizer = Tokenizer::load().map_err(|e| anyhow::anyhow!("tokenizer load: {e}"))?;
-        let kokoro = Kokoro::load(model_path).map_err(|e| anyhow::anyhow!("kokoro load: {e}"))?;
+        let kokoro = Kokoro::load(model_path)?;
         Ok(Self {
             kokoro,
             model_path: model_path.to_path_buf(),
@@ -56,7 +56,7 @@ impl KokoroSession {
         if self.model_path == path {
             return Ok(());
         }
-        self.kokoro = Kokoro::load(path).map_err(|e| anyhow::anyhow!("kokoro reload: {e}"))?;
+        self.kokoro = Kokoro::load(path)?;
         self.model_path = path.to_path_buf();
         Ok(())
     }
@@ -134,7 +134,7 @@ impl KokoroSlot {
                 sess.ensure_model(model_path).context("kokoro reload")?;
                 sess
             }
-            slot => slot.insert(KokoroSession::load(model_path).context("kokoro load")?),
+            slot => slot.insert(KokoroSession::load(model_path)?),
         })
     }
 }

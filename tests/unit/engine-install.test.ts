@@ -18,7 +18,7 @@ import { tmpdir } from "os";
 import { defaultEngineBinPath } from "../../src/paths";
 import { engineVersion } from "../../src/package-info";
 import { isDarwinArm64 } from "../../src/engine-targets";
-import { KeshaError } from "../../src/engine/events";
+import { exitCodeFor, KeshaError } from "../../src/engine/events";
 import { errorMessage } from "../../src/error-utils";
 import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
@@ -278,6 +278,79 @@ describe("waitUntilSpawnable (#216)", () => {
         waitUntilSpawnable(join(dir, "does-not-exist"), 60_000),
       ).rejects.toThrow(/could not be started/);
       expect(Date.now() - startedAt).toBeLessThan(5_000);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("an engine that never starts is E_ENGINE_SPAWN, exit 1, with the fix as its hint", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-coded-"));
+    try {
+      const binPath = join(dir, "does-not-exist");
+      let caught: unknown;
+      try {
+        await waitUntilSpawnable(binPath, 1_000);
+      } catch (err) {
+        caught = err;
+      }
+      expect(errorMessage(caught)).toBe(
+        `error [E_ENGINE_SPAWN]: Downloaded the engine to ${binPath} but it could not be started: the binary is gone\n` +
+          `  hint: delete ${dir} and re-run \`kesha install\`.`,
+      );
+      expect(exitCodeFor(caught)).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  spawnFixtureTest("an unspawnable KESHA_ENGINE_BIN keeps its override advice, once, in one coded line", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-override-"));
+    const saved = process.env.KESHA_ENGINE_BIN;
+    try {
+      const binPath = join(dir, "engine");
+      writeFileSync(binPath, "not executable");
+      chmodSync(binPath, 0o644);
+      process.env.KESHA_ENGINE_BIN = binPath;
+      let caught: unknown;
+      try {
+        await waitUntilSpawnable(binPath, 1_000);
+      } catch (err) {
+        caught = err;
+      }
+      const rendered = errorMessage(caught);
+      expect(rendered.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`")).toHaveLength(2);
+      expect(rendered.split("error [")).toHaveLength(2);
+      expect(rendered.split("\n")).toHaveLength(2);
+    } finally {
+      if (saved === undefined) delete process.env.KESHA_ENGINE_BIN;
+      else process.env.KESHA_ENGINE_BIN = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A lock cannot be taken on demand, so the path carries the lock's errno: a non-executable file
+  // fails to spawn with a message quoting that path, which the classifier reads as transient.
+  spawnFixtureTest("an engine still locked at the deadline is E_ENGINE_SPAWN, exit 1, with the fix as its hint", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-locked-"));
+    try {
+      mkdirSync(join(dir, "EBUSY"));
+      const binPath = join(dir, "EBUSY", "engine");
+      writeFileSync(binPath, "not executable");
+      chmodSync(binPath, 0o644);
+      let caught: unknown;
+      try {
+        await waitUntilSpawnable(binPath, 150);
+      } catch (err) {
+        caught = err;
+      }
+      const rendered = errorMessage(caught);
+      expect(rendered).toStartWith(`error [E_ENGINE_SPAWN]: Downloaded the engine to ${binPath} but it is still locked after 0s: `);
+      expect(rendered).toEndWith(
+        `\n  hint: a security scanner is likely holding the file. Re-run \`kesha install\`, ` +
+          `or exclude ${join(dir, "EBUSY")} from real-time scanning.`,
+      );
+      expect(rendered.split("\n")).toHaveLength(2);
+      expect(exitCodeFor(caught)).toBe(1);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

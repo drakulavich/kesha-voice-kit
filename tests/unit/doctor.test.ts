@@ -1171,6 +1171,33 @@ describe("doctor separates corrupt components from missing ones", () => {
   });
 });
 
+describe("doctor on an unspawnable KESHA_ENGINE_BIN", () => {
+  let restore: () => void = () => {};
+  beforeEach(() => {
+    restore = saveEngineEnv();
+  });
+  afterEach(() => restore());
+
+  // Reinstalling cannot fix an override that points at a broken file, so its own advice must survive the probe.
+  posixEngineTest("names the override as the thing to fix, once, without a nested error line", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-bad-override-"));
+    try {
+      const binPath = join(dir, "kesha-engine");
+      writeFileSync(binPath, "not an executable");
+      chmodSync(binPath, 0o644);
+      process.env.HOME = dir;
+      process.env.KESHA_ENGINE_BIN = binPath;
+      process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
+      process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+      const probeError = (await collectDoctorReport()).engine.probeError ?? "";
+      expect(probeError.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`")).toHaveLength(2);
+      expect(probeError).not.toContain("error [");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("doctor and status agree on the disk total (#790)", () => {
   const savedEnv = {
     HOME: process.env.HOME,

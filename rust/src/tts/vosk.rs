@@ -40,7 +40,7 @@ impl Vosk {
             .to_str()
             .with_context(|| format!("vosk model path is not utf-8: {}", model_dir.display()))?;
         let model = Model::new(Some(dir_str), None, None)
-            .map_err(|e| anyhow::anyhow!("loading vosk model from {}: {e}", dir_str))?;
+            .map_err(|e| super::model_load_failed("Vosk", model_dir, e))?;
         let sample_rate = model.config.audio.sample_rate;
         Ok(Self {
             model,

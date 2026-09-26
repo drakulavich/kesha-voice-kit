@@ -55,10 +55,7 @@ impl Charsiu {
     pub fn load(dir: &Path) -> Result<Self> {
         let open = |name: &str| -> Result<Session> {
             let path = dir.join(name);
-            Session::builder()
-                .map_err(|e| anyhow::anyhow!("ort: failed to create session builder: {e}"))?
-                .commit_from_file(&path)
-                .map_err(|e| anyhow::anyhow!("ort: failed to load {}: {e}", path.display()))
+            crate::tts::open_session("CharsiuG2P", &path, Session::builder())
         };
         Ok(Self {
             encoder: open("encoder_model.onnx")?,

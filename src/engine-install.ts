@@ -553,9 +553,10 @@ export async function waitUntilSpawnable(binPath: string, deadlineMs = 60_000): 
     lastError = health.status === "unusable" ? health.detail : "the binary is gone";
     // Only a lock is worth waiting out — a missing or corrupt binary never becomes spawnable.
     if (!isTransientSpawnLock(lastError)) {
-      throw new Error(
-        `Downloaded the engine to ${binPath} but it could not be started: ${lastError}\n` +
-          `  Fix: delete ${dirname(binPath)} and re-run \`kesha install\`.`,
+      throw new KeshaError(
+        "E_ENGINE_SPAWN",
+        `Downloaded the engine to ${binPath} but it could not be started: ${lastError}`,
+        { hint: `delete ${dirname(binPath)} and re-run \`kesha install\`.` },
       );
     }
     if (Date.now() + delay > deadline) break;
@@ -567,11 +568,15 @@ export async function waitUntilSpawnable(binPath: string, deadlineMs = 60_000): 
     delay = Math.min(delay * 2, 2_000);
   }
 
-  throw new Error(
+  throw new KeshaError(
+    "E_ENGINE_SPAWN",
     `Downloaded the engine to ${binPath} but it is still locked after ` +
-      `${Math.round(deadlineMs / 1000)}s: ${lastError}\n` +
-      `  Fix: a security scanner is likely holding the file. Re-run \`kesha install\`, ` +
-      `or exclude ${dirname(binPath)} from real-time scanning.`,
+      `${Math.round(deadlineMs / 1000)}s: ${lastError}`,
+    {
+      hint:
+        "a security scanner is likely holding the file. Re-run `kesha install`, " +
+        `or exclude ${dirname(binPath)} from real-time scanning.`,
+    },
   );
 }
 

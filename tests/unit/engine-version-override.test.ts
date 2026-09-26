@@ -11,6 +11,7 @@ import {
 } from "../../src/engine-install";
 import { resolveEngineVersionFlag } from "../../src/cli/install";
 import { engineVersion } from "../../src/package-info";
+import { errorMessage } from "../../src/error-utils";
 import { describeJson, expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 
 const OVERRIDE = "9.9.9-alpha.1";
@@ -107,7 +108,16 @@ describe("resolveEngineVersionFlag", () => {
   });
 
   test("a tag-shaped value names the leading v as the problem", () => {
-    expect(() => resolveEngineVersionFlag("v1.24.8")).toThrow(/leading "v"/);
+    let caught: unknown;
+    try {
+      resolveEngineVersionFlag("v1.24.8");
+    } catch (err) {
+      caught = err;
+    }
+    expect(errorMessage(caught)).toBe(
+      'error [E_INVALID_ARG]: --engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "v1.24.8".\n' +
+        '  hint: drop the leading "v" — that belongs to the release tag, not the version.',
+    );
   });
 });
 
