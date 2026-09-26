@@ -17,6 +17,7 @@ import { KeshaError } from "../../src/engine/events";
 import { describeDocument, describeJson, saveEngineEnv } from "../helpers/fake-engine";
 import { errorMessage } from "../../src/error-utils";
 import { tempDir } from "../helpers/temp-dir";
+import { waitForPidExit, waitForPidFile } from "../helpers/process";
 
 describe("SayOptions type contract", () => {
   const oggOpusOptions: SayOptions = {
@@ -273,6 +274,44 @@ describe("say on protocol 4", () => {
     }
     expect(written.join("")).toContain("proto=4");
   });
+});
+
+describe("an abort mid-run", () => {
+  const posixIt = process.platform === "win32" ? it.skip : it;
+
+  function hangingEngine(pidFile: string): string {
+    const path = join(tempDir("kesha-synth-abort-"), "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\necho $$ > "${pidFile}"\nexec sleep 30\n`,
+    );
+    chmodSync(path, 0o755);
+    return path;
+  }
+
+  const runs: Array<[string, (signal: AbortSignal) => Promise<unknown>]> = [
+    ["say", (signal) => say({ text: "hi", signal })],
+    ["listVoiceIds", (signal) => listVoiceIds({}, signal)],
+  ];
+  for (const [name, run] of runs) {
+    posixIt(`${name} rejects with E_INTERRUPTED and leaves no engine running`, async () => {
+      const pidFile = join(tempDir("kesha-synth-abort-pid-"), "engine.pid");
+      const restore = saveEngineEnv();
+      process.env.KESHA_ENGINE_BIN = hangingEngine(pidFile);
+      try {
+        const controller = new AbortController();
+        const pending = run(controller.signal).then(() => null, (e: unknown) => e as KeshaError);
+        const pid = await waitForPidFile(pidFile);
+        controller.abort();
+        const err = await pending;
+        expect(err).toBeInstanceOf(KeshaError);
+        expect(err!.code).toBe("E_INTERRUPTED");
+        expect(await waitForPidExit(pid)).toBe(true);
+      } finally {
+        restore();
+      }
+    }, 15_000);
+  }
 });
 
 describe("say input preflight", () => {
