@@ -121,6 +121,12 @@ function replacePinnedSha256(source: string, assetName: string, sha256: string):
   return source.split(matches[0]![0]).join(`${matches[0]![1]}"${sha256}"`);
 }
 
+function replacePinsVersion(source: string, version: string): string {
+  const matches = [...source.matchAll(/export const PINNED_ASSET_SHA256_VERSION = "[^"]*";/g)];
+  if (matches.length !== 1) throw new Error("src/engine-targets.ts must declare PINNED_ASSET_SHA256_VERSION exactly once");
+  return source.split(matches[0]![0]).join(`export const PINNED_ASSET_SHA256_VERSION = "${version}";`);
+}
+
 function parsePackage(source: string): { version: string; keshaEngine: { version: string } } {
   const pkg = asRecord(JSON.parse(source), "package.json");
   const engine = asRecord(pkg.keshaEngine, "package.json#keshaEngine");
@@ -204,6 +210,7 @@ export function buildPostEngineReleaseFollowup(input: FollowupInput): Followup {
     if (!sha256) throw new Error(`release SHA256SUMS does not list ${assetName}`);
     targetSource = replacePinnedSha256(targetSource, assetName, sha256);
   }
+  targetSource = replacePinsVersion(targetSource, version);
 
   const pkg = parsePackage(input.packageSource);
   if (pkg.keshaEngine.version !== version) {

@@ -21,6 +21,8 @@ const targetSource = `const ENGINE_TARGETS: Record<string, EngineTarget> = {
   },
 };
 
+export const PINNED_ASSET_SHA256_VERSION = "1.24.10";
+
 export const PINNED_ASSET_SHA256: Readonly<Record<string, string>> = {
   "kesha-engine-darwin-arm64": "0000000000000000000000000000000000000000000000000000000000000000",
   "kesha-engine-linux-x64": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -104,6 +106,7 @@ describe("buildPostEngineReleaseFollowup", () => {
       expect(result.prBody).toContain(sha);
     }
     expect(result.targetSource).not.toContain("0000000000000000000000000000000000000000000000000000000000000000");
+    expect(result.targetSource).toContain('export const PINNED_ASSET_SHA256_VERSION = "1.24.11";');
     expect(JSON.parse(result.packageSource)).toMatchObject({
       version: "1.30.0",
       keshaEngine: { version: "1.24.11" },

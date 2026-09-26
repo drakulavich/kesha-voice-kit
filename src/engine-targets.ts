@@ -32,11 +32,13 @@ const ENGINE_TARGETS: Record<string, EngineTarget> = {
 };
 
 /**
- * SHA-256 of every asset `kesha install` downloads from the pinned engine release: the three
- * engines and the darwin-arm64 sidecars. The installer refuses a download that hashes to
+ * SHA-256 of every asset `kesha install` downloads from engine release `PINNED_ASSET_SHA256_VERSION`:
+ * the three engines and the darwin-arm64 sidecars. The installer refuses a download that hashes to
  * anything else, as the model manifest does (#174). `check:engine-targets` verifies them against
- * the release's SHA256SUMS, and the post-release follow-up rewrites them.
+ * that release's SHA256SUMS, and the post-release follow-up rewrites them with their version.
  */
+export const PINNED_ASSET_SHA256_VERSION = "1.26.0";
+
 export const PINNED_ASSET_SHA256: Readonly<Record<string, string>> = {
   "kesha-engine-darwin-arm64": "8244953e1bd37941c0ea18b2e2432cfe1cae71160bb79fd88b605f27707140b9",
   "kesha-engine-linux-x64": "1bb1ec4eafb99680374402206307ecf7cbc1b6ebc2f06dc0af74f7c5e848a553",

@@ -10,6 +10,7 @@ import {
   isDarwinArm64,
   parseSha256Sums,
   PINNED_ASSET_SHA256,
+  PINNED_ASSET_SHA256_VERSION,
   targetKey,
 } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
@@ -40,6 +41,19 @@ interface ExpectedSha256 {
   source: string;
 }
 
+export interface AssetPins {
+  version: string;
+  sha256: Readonly<Record<string, string>>;
+}
+
+/** Without `--engine-version` nothing but the maintainer can make an unverifiable pinned release verifiable. */
+function unverifiableFix(version: string): string {
+  return version === engineVersion
+    ? `report it at https://github.com/${GITHUB_REPO}/issues: the pinned engine release v${version} must publish its checksums.`
+    : `pick a release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases), or run ` +
+        `\`kesha install\` without --engine-version to install the pinned v${engineVersion}.`;
+}
+
 async function fetchSha256Sums(version: string): Promise<Map<string, string>> {
   const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/SHA256SUMS`;
   let res: Response;
@@ -53,28 +67,39 @@ async function fetchSha256Sums(version: string): Promise<Map<string, string>> {
   if (!res.ok) {
     throw new Error(
       `Cannot verify engine v${version}: release v${version} publishes no SHA256SUMS (HTTP ${res.status}), ` +
-        "so its binaries cannot be checked before they are installed.\n" +
-        `  Fix: pick a release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases), or run ` +
-        `\`kesha install\` without --engine-version to install the pinned v${engineVersion}.`,
+        `so its binaries cannot be checked before they are installed.\n  Fix: ${unverifiableFix(version)}`,
     );
   }
   return parseSha256Sums(await res.text());
 }
 
-/** The pin for the pinned release; the release's own SHA256SUMS, fetched once, for an `--engine-version` override. */
-function releaseChecksums(version: string): (assetName: string) => Promise<ExpectedSha256> {
+/**
+ * The pins for the release they were recorded from, never the network; any other release, including
+ * the pinned engine while its pins still describe the previous one, against its own SHA256SUMS.
+ */
+export function releaseChecksums(
+  version: string,
+  pins: AssetPins = { version: PINNED_ASSET_SHA256_VERSION, sha256: PINNED_ASSET_SHA256 },
+): (assetName: string) => Promise<ExpectedSha256> {
   let sums: Promise<Map<string, string>> | undefined;
   return async (assetName) => {
-    const pinned = version === engineVersion ? PINNED_ASSET_SHA256[assetName] : undefined;
-    if (pinned) return { sha256: pinned, source: "its pinned SHA-256" };
+    if (version === pins.version) {
+      const pinned = pins.sha256[assetName];
+      if (!pinned) throw new Error(`No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete.\n  Fix: report it at https://github.com/${GITHUB_REPO}/issues.`);
+      return { sha256: pinned, source: "its pinned SHA-256" };
+    }
+    if (!sums && version === engineVersion) {
+      log.warn(
+        `The SHA-256 pins in this CLI describe engine v${pins.version}, not v${version}; ` +
+          `verifying against the SHA256SUMS of release v${version} instead.`,
+      );
+    }
     sums ??= fetchSha256Sums(version);
     const sha256 = (await sums).get(assetName);
     if (!sha256) {
       throw new Error(
         `Cannot verify ${assetName}: the SHA256SUMS of release v${version} does not list it, ` +
-          "so it cannot be checked before it is installed.\n" +
-          `  Fix: run \`kesha install\` without --engine-version to install the pinned v${engineVersion}, ` +
-          `or report the incomplete release at https://github.com/${GITHUB_REPO}/issues.`,
+          `so it cannot be checked before it is installed.\n  Fix: ${unverifiableFix(version)}`,
       );
     }
     return { sha256, source: `the SHA-256 in the SHA256SUMS of release v${version}` };
@@ -114,7 +139,7 @@ async function rejectMismatchedDownload(
  */
 async function cachedAssetMatchesPin(path: string, assetName: string, what: string, version: string): Promise<boolean> {
   // KESHA_ENGINE_BIN names the user's own build, which no release pin describes.
-  if (version !== engineVersion || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
+  if (version !== PINNED_ASSET_SHA256_VERSION || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
   const expected = await engineChecksums.forRelease(version)(assetName);
   const actual = await sha256OfFile(path);
   if (actual === expected.sha256) return true;
