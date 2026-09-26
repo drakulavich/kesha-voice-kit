@@ -52,7 +52,7 @@ just worktree-rm <slug>
 
 - There is no local pre-push gate: push, then gate on CI for the full head SHA. Run locally only what your change needs (`bun run lint`, the tests you touched, `just rust-test`).
 - Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
-- The default feature set does not build darwin code: `rust/src/tts/**` and anything fluidaudio-rs-adjacent (`system_kokoro` / `system_diarize` / `system_text_lang`) compile only under `just verify-darwin-full`, which `rust-test.yml` runs.
+- `just rust-test` builds the default features only: the darwin-gated paths (`system_kokoro` / `system_diarize` / `system_text_lang`, anything fluidaudio-rs-adjacent) compile only under `just verify-darwin-full`, which `rust-test.yml` runs.
 
 Rust toolchain quirks (the pinned `rust-toolchain.toml`, rustfmt, libclang) and language gotchas: `docs/runbooks/rust-gotchas.md`.
 
