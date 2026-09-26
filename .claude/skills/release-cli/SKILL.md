@@ -124,6 +124,18 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 
 `main` must carry the next *unreleased* CLI version (#691), and this release just consumed the current one. Open a follow-up PR bumping `package.json#version`, `server.json#version`, and `server.json#packages[0].version` to the next minor. Skipping this step is how #802 happened: the alpha derivation kept emitting `X.Y.Z-alpha.N` for an already-released `X.Y.Z`, so the next labelled merge would point `@alpha` at a version older than `@latest`.
 
+### Step 7 — Refresh the site
+
+The landing page lives on the `gh-pages` branch (Pages deploys from it; a `main` PR cannot touch it). Every user-visible feature this release adds gets a line on it: a card in the feature grid or a sentence on the card that already covers the area, worded from the release notes, never invented. Retire a `badge-new` that no longer is. Branch off `origin/gh-pages`, open the PR with `--base gh-pages`. A release with no user-visible feature and no badge to retire changes nothing on the site; say so in the Output line.
+
+**Version numbers are fetched by `script.js`, never typed.** The hero eyebrow reads the newest stable `-cli` marker and the newest bare engine tag from the GitHub releases API at page load (#1040). The page must carry no version literal; run the check on the branch you are proposing, in its worktree, before pushing — it must print nothing:
+
+```bash
+sed -e ':a' -e '$!N' -e '$!ba' -e 's/<[^>]*>//g' index.html | grep -nE '\bv?[0-9]+\.[0-9]+\.[0-9]+\b|\bv[0-9]+\.[0-9]+\b'
+```
+
+The `sed` strips every tag (the multi-line ones too) so the check reads visible text only: the GitHub-mark SVG path (`...2.13v3.16c0...`) cannot false-positive, and an unprefixed `1.26.0` in prose is caught as well as a `v1.28`. Line numbers are those of the stripped text. A hit is reworded, not exempted.
+
 ## Hard rules
 
 - NEVER `npm publish` from a laptop — GHA owns it, with provenance.
@@ -134,6 +146,7 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 - NEVER write release notes after the release is published.
 - NEVER ship a CLI whose `keshaEngine.version` has no published release.
 - User-facing install/upgrade text says bun, never npm.
+- NEVER type a version number into the site; `script.js` fetches it.
 
 ## Output
 
@@ -144,6 +157,8 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 - dist-tag: latest        Provenance: yes
 - Linux packages: .deb + .rpm on the marker release
 - Engine pin: A.B.C (verified published)
+- Site: gh-pages PR <url> (<what changed>; version grep prints nothing)
+  or:   unchanged (no user-visible feature, no badge to retire)
 
 Verified from the registry: version ✓ pin ✓ install ✓ transcribe ✓
 ```
