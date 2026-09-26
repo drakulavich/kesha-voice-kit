@@ -3,12 +3,15 @@ import { createHash } from "crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import {
+  engineChecksums,
   getEngineBinaryName,
   getVersionMarkerPath,
   installEngine,
   readInstalledEngineVersion,
+  releaseChecksums,
   SIDECARS,
 } from "../../src/engine-install";
+import { log } from "../../src/log";
 import { getEngineBinPath } from "../../src/engine";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
@@ -24,6 +27,7 @@ exit 0
 `;
 
 const savedFetch = globalThis.fetch;
+const savedWarn = log.warn;
 let releaseCacheIsolation: () => void = () => {};
 
 // The fake engine is a shell script, which Windows cannot spawn.
@@ -37,6 +41,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = savedFetch;
+  log.warn = savedWarn;
   releaseCacheIsolation();
 });
 
@@ -78,7 +83,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
   // The release's own SHA256SUMS vouches for the served bytes here, so only the pin can refuse them.
   posixTest("the pinned release refuses a binary whose hash is not the pin, and keeps no copy of it", async () => {
     const binPath = stageEngineDir();
-    stubRelease(sumsLine(sha256(ENGINE)));
+    const urls = stubRelease(sumsLine(sha256(ENGINE)));
 
     const err = await installEngine().then(
       () => null,
@@ -88,6 +93,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).toContain(`expected sha256`);
     expect((err as Error).message).toContain(`got ${sha256(ENGINE)}`);
+    expect(urls.filter((u) => u.endsWith("/SHA256SUMS"))).toEqual([]);
     expect(existsSync(binPath)).toBe(false);
     expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
   }, 30_000);
@@ -253,5 +259,47 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     await installEngine();
 
     expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
+  }, 30_000);
+});
+
+/** Pins recorded for an older engine than the one this CLI pins: the window between an engine release and its pins PR. */
+function stalePins(): string[] {
+  const warnings: string[] = [];
+  log.warn = (msg: string) => void warnings.push(msg);
+  engineChecksums.forRelease = (version) => releaseChecksums(version, { version: "0.0.1", sha256: {} });
+  return warnings;
+}
+
+describe("pins recorded for an older engine fall back to the pinned release's own SHA256SUMS", () => {
+  posixTest("a matching SHA256SUMS installs, and says the pins were stale", async () => {
+    const binPath = stageEngineDir();
+    const warnings = stalePins();
+    stubRelease(sumsLine(sha256(ENGINE)));
+
+    await installEngine();
+
+    expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
+    expect(warnings).toContain(
+      `The SHA-256 pins in this CLI describe engine v0.0.1, not v${engineVersion}; ` +
+        `verifying against the SHA256SUMS of release v${engineVersion} instead.`,
+    );
+  }, 30_000);
+
+  posixTest("a mismatching SHA256SUMS refuses", async () => {
+    const binPath = stageEngineDir();
+    stalePins();
+    stubRelease(sumsLine(sha256("a different binary")));
+
+    await expect(installEngine()).rejects.toThrow(`SHA256SUMS of release v${engineVersion}`);
+    expect(existsSync(binPath)).toBe(false);
+  }, 30_000);
+
+  posixTest("a missing SHA256SUMS refuses", async () => {
+    const binPath = stageEngineDir();
+    stalePins();
+    stubRelease(null);
+
+    await expect(installEngine()).rejects.toThrow(`release v${engineVersion} publishes no SHA256SUMS`);
+    expect(existsSync(binPath)).toBe(false);
   }, 30_000);
 });
