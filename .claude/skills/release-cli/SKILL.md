@@ -157,7 +157,8 @@ The `sed` strips every tag (the multi-line ones too) so the check reads visible 
 - dist-tag: latest        Provenance: yes
 - Linux packages: .deb + .rpm on the marker release
 - Engine pin: A.B.C (verified published)
-- Site: gh-pages PR <url> (<what changed>; version grep prints nothing) | unchanged
+- Site: gh-pages PR <url> (<what changed>; version grep prints nothing)
+  or:   unchanged (no user-visible feature, no badge to retire)
 
 Verified from the registry: version ✓ pin ✓ install ✓ transcribe ✓
 ```
