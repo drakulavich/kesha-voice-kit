@@ -1303,6 +1303,23 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     });
   });
 
+  fakeEngineTest("a binary replaced after missing the deadline is probed again even when its mtime is restored", async () => {
+    const path = join(tempDir("kesha-engine-replaced-"), "kesha-engine");
+    writeFileSync(path, "#!/bin/sh\nwhile :; do sleep 1; done\n");
+    chmodSync(path, 0o755);
+    const stamp = 1_700_000_000;
+    utimesSync(path, stamp, stamp);
+    await withEngineEnv(path, async () => {
+      expect(await getEngineCapabilities(300)).toBeNull();
+      writeFileSync(
+        path,
+        `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ backend: "onnx", features: ["tts"] })}'\n  exit 0\nfi\nexit 2\n`,
+      );
+      utimesSync(path, stamp, stamp);
+      expect(await getEngineCapabilities(300)).toMatchObject({ backend: "onnx" });
+    });
+  });
+
   fakeEngineTest("an advertised tts language list survives the probe", async () => {
     const payload = describeJson({
       backend: "onnx",
