@@ -117,6 +117,7 @@ jobs:
               - '.github/actions/**'
               - '.github/scripts/install-ffmpeg.sh'
               - '.github/scripts/install-kesha-backend.sh'
+              - '.github/scripts/mark-engine-version.ts'
               - '.github/workflows/build-engine.yml'
             real_engine_e2e:
               - 'rust/**'
@@ -146,6 +147,7 @@ jobs:
               - '.github/scripts/smoke-synthesis.ts'
               - '.github/scripts/assert-transcript.ts'
               - '.github/scripts/assert-install-warmup.ts'
+              - '.github/scripts/assert-coreml-rejected.sh'
             tts_e2e:
               - 'rust/**'
               - 'package.json'
@@ -331,12 +333,16 @@ jobs:
 
       - name: 🧪 Unit tests
         shell: bash
-        run: mkdir -p test-results && bun run test:unit --reporter=junit --reporter-outfile=test-results/unit-${{ matrix.os }}.xml
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+        run: mkdir -p test-results && bun run test:unit --reporter=junit --reporter-outfile="test-results/unit-$MATRIX_OS.xml"
 
       - name: 📊 Test summary
         if: always()
         shell: bash
-        run: bun .github/scripts/junit-to-markdown.ts "Unit Tests (${{ matrix.os }})" test-results/unit-${{ matrix.os }}.xml >> $GITHUB_STEP_SUMMARY
+        env:
+          MATRIX_OS: ${{ matrix.os }}
+        run: bun .github/scripts/junit-to-markdown.ts "Unit Tests ($MATRIX_OS)" "test-results/unit-$MATRIX_OS.xml" >> $GITHUB_STEP_SUMMARY
 
       - name: 📤 Upload test results
         if: always()
@@ -356,9 +362,11 @@ jobs:
         if: always()
         continue-on-error: true
         shell: bash
+        env:
+          MATRIX_OS: ${{ matrix.os }}
         run: |
           bun .github/scripts/upload-flakiness.ts \
-            "test-results/unit-${{ matrix.os }}.xml" bun Laputa/kesha-voice-kit
+            "test-results/unit-$MATRIX_OS.xml" bun Laputa/kesha-voice-kit
 
   ts-coverage:
     needs: [changes, unit-tests]
@@ -650,19 +658,9 @@ jobs:
         shell: bash
         run: bun .github/scripts/smoke-synthesis.ts kesha-win-synth
 
-      # Only meaningful without KESHA_ENGINE_BIN, which makes performInstall skip the pre-flight.
       - name: 🚫 Reject --coreml on Windows
         shell: bash
-        run: |
-          if kesha install --coreml 2> coreml-reject.log; then
-            echo "FAIL: \`kesha install --coreml\` succeeded on Windows" >&2
-            exit 1
-          fi
-          grep -qi onnx coreml-reject.log || {
-            echo "FAIL: rejection did not name the ONNX backend" >&2
-            cat coreml-reject.log >&2
-            exit 1
-          }
+        run: bash .github/scripts/assert-coreml-rejected.sh
 
   release-branch-engine-smoke:
     # P1.11: a release branch cannot download its own engine — the tag does not exist until
@@ -710,11 +708,7 @@ jobs:
 
       - name: 🧾 Mark local engine version
         shell: bash
-        run: |
-          bun -e '
-            const pkg = await Bun.file("package.json").json();
-            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
-          '
+        run: bun .github/scripts/mark-engine-version.ts
 
       # Its own key was restore-only and nothing ever wrote it, so every run cold-downloaded ~3.5GB.
       - name: 🔊 Install models through local backend
