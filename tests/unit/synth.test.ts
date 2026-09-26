@@ -312,6 +312,29 @@ describe("an abort mid-run", () => {
       }
     }, 15_000);
   }
+
+  // listVoiceIds hands its signal to the describe run; say did not, so a cold describe outlived the abort.
+  posixIt("say aborted while the engine is still describing itself rejects and leaves no engine running", async () => {
+    const dir = tempDir("kesha-say-abort-describe-");
+    const pidFile = join(dir, "describe.pid");
+    const path = join(dir, "kesha-engine");
+    writeFileSync(path, `#!/bin/sh\necho $$ > "${pidFile}"\nexec sleep 30\n`);
+    chmodSync(path, 0o755);
+    const restore = saveEngineEnv();
+    process.env.KESHA_ENGINE_BIN = path;
+    try {
+      const controller = new AbortController();
+      const pending = say({ text: "hi", signal: controller.signal }).then(() => null, (e: unknown) => e as KeshaError);
+      const pid = await waitForPidFile(pidFile);
+      controller.abort();
+      const err = await Promise.race([pending, Bun.sleep(5_000).then(() => "still running" as const)]);
+      expect(err).not.toBe("still running");
+      expect((err as KeshaError).code).toBe("E_INTERRUPTED");
+      expect(await waitForPidExit(pid)).toBe(true);
+    } finally {
+      restore();
+    }
+  }, 15_000);
 });
 
 describe("say input preflight", () => {
