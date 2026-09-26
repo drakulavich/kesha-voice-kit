@@ -19,7 +19,6 @@ COPY openclaw.plugin.json openclaw-plugin.cjs ./
 
 RUN chmod +x /app/bin/kesha.js \
   && ln -s /app/bin/kesha.js /usr/local/bin/kesha \
-  && ln -s /app/bin/kesha.js /usr/local/bin/parakeet \
   && mkdir -p /cache/kesha /work \
   && chown -R bun:bun /app /cache /work
 
