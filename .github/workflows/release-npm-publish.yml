@@ -75,25 +75,18 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           actual=$(jq -r .version package.json)
-          if [ "$VERSION" != "$actual" ]; then
-            echo "::error::Release implies version $VERSION but package.json says $actual" >&2
-            exit 1
-          fi
+          [ "$VERSION" = "$actual" ] || { echo "::error::Release implies version $VERSION but package.json says $actual" >&2; exit 1; }
           echo "package.json version $actual matches the release — OK"
 
       # Idempotent guard: if this exact version is already on npm, skip the publish
       # rather than failing, so a re-run no-ops cleanly after a successful publish.
+      # Both guards stay inline: they run from `inputs.ref`, a historical checkout that may predate any new script.
       - name: Check npm registry for prior publish
         id: registry
         run: |
-          name=$(jq -r .name package.json)
-          version=$(jq -r .version package.json)
-          if npm view "$name@$version" version >/dev/null 2>&1; then
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-            echo "$name@$version is already on npm — publish step will be skipped."
-          else
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
-          fi
+          spec="$(jq -r '.name + "@" + .version' package.json)"
+          if npm view "$spec" version >/dev/null 2>&1; then published=true; echo "$spec is already on npm — publish step will be skipped."; else published=false; fi
+          echo "already_published=$published" >> "$GITHUB_OUTPUT"
 
       - name: Publish to npm with provenance
         if: steps.registry.outputs.already_published == 'false'
