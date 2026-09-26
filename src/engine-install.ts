@@ -20,7 +20,7 @@ import { log } from "./log";
 import { engineVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { createLiveStatus, streamResponseToFile } from "./progress";
-import { registerProcessTree } from "./process-tree";
+import { interruptedRun, registerProcessTree } from "./process-tree";
 import { DEFAULT_VOICE_ID } from "./voice-routing";
 import {
   getVersionMarkerPath,
@@ -411,6 +411,8 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
       log.warn("FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow.");
       return;
     }
+    const interrupted = interruptedRun(exitCode);
+    if (interrupted) throw interrupted;
     if (exitCode !== 0 || events.invalid.length > 0 || events.error) {
       const err = engineFailure("say", events, exitCode);
       log.warn(
@@ -424,6 +426,7 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
       `FluidAudio Kokoro warmed (${Math.round(performance.now() - startedAt)}ms).`,
     );
   } catch (e) {
+    if (e instanceof KeshaError && e.code === "E_INTERRUPTED") throw e;
     log.warn(
       `FluidAudio Kokoro warmup failed (${errorMessage(e)}); ` +
         "first `kesha say en-*` may still be slow.",
