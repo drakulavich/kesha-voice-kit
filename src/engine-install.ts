@@ -231,7 +231,8 @@ async function downloadSidecar(
   }
 }
 
-async function warmDarwinKokoro(binPath: string): Promise<void> {
+/** `timeoutMs` exists for tests; install always uses the default. */
+export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Promise<void> {
   if (!isDarwinArm64()) return;
   // Kokoro now runs in-engine (FluidAudio CoreML, system_kokoro) — warm it by
   // exercising the engine's own `say`, not a sidecar. The first synthesis
@@ -259,7 +260,7 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
     timedOut = true;
     tree.terminate();
     tree.forceKillAfterGrace();
-  }, 180_000);
+  }, timeoutMs);
 
   try {
     const [events, exitCode] = await Promise.all([
