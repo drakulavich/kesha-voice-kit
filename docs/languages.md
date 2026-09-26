@@ -58,8 +58,8 @@ Languages marked **darwin-arm64** below require a darwin-arm64 engine build (Flu
 | 4 | French | `fr` | 🇫🇷 | Kokoro (`fr-*`) | all | female voice only (`fr-ff_siwis`) |
 | 5 | Italian | `it` | 🇮🇹 | Kokoro (`it-*`) | all | FluidAudio CoreML on darwin-arm64, CharsiuG2P ONNX elsewhere |
 | 6 | Portuguese | `pt` | 🇧🇷 | Kokoro (`pt-*`) | all | Brazilian (`pt-pm_alex`) |
-| 7 | Hindi | `hi` | 🇮🇳 | Kokoro (`hi-*`) | darwin-arm64 | Kokoro reads romanized (Latin) input only; on macOS, native Devanagari with no `--voice` routes to the AVSpeech `hi-IN` voice (Lekha) when it is installed, while an explicit `--voice hi-*` refuses it with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
-| 8 | Japanese | `ja` | 🇯🇵 | Kokoro (`ja-*`) | darwin-arm64 | Kokoro reads romaji (Latin) input only; on macOS, native kana/kanji with no `--voice` routes to an installed AVSpeech `ja-JP` voice (Otoya preferred), while an explicit `--voice ja-*` refuses it with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
+| 7 | Hindi | `hi` | 🇮🇳 | Kokoro (`hi-*`) | darwin-arm64 | Kokoro reads romanized (Latin) input only; on macOS, text that is mostly Devanagari with no `--voice` routes to the AVSpeech `hi-IN` voice (Lekha) when it is installed, while an explicit `--voice hi-*` refuses it with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
+| 8 | Japanese | `ja` | 🇯🇵 | Kokoro (`ja-*`) | darwin-arm64 | Kokoro reads romaji (Latin) input only; on macOS, text that is mostly kana/kanji with no `--voice` routes to an installed AVSpeech `ja-JP` voice (Otoya preferred), while an explicit `--voice ja-*` refuses it with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
 | 9 | Chinese | `zh` | 🇨🇳 | Kokoro (`zh-*`) | darwin-arm64 | native Han supported through FluidAudio's Mandarin KokoroAne variant |
 | — | *(system voices)* | — | 🍎 | AVSpeech (`macos-*`) | macOS | any of the 180+ voices already installed on your Mac; zero model download |
 
