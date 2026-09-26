@@ -26,6 +26,12 @@ export type ExecutableHealth =
  * The timeout guards against a binary that starts but never exits; macOS Gatekeeper can take
  * several seconds to scan a freshly written binary on its first run, so it is generous.
  */
+/** Message plus hint, not the rendered error: a caller wrapping it would otherwise nest a second code line. */
+function spawnFailureDetail(err: unknown): string {
+  if (!(err instanceof Error)) return String(err);
+  return err instanceof KeshaError && err.hint ? `${err.message}; ${err.hint}` : err.message;
+}
+
 export async function probeExecutable(
   binPath: string,
   args: string[] = [],
@@ -36,8 +42,7 @@ export async function probeExecutable(
   try {
     proc = spawnEngineProcess(binPath, args, ["ignore", "ignore", "ignore"]);
   } catch (err) {
-    // The raw message: a rendered one would nest its own code and hint inside the caller's error.
-    return { status: "unusable", detail: err instanceof Error ? err.message : String(err) };
+    return { status: "unusable", detail: spawnFailureDetail(err) };
   }
   const tree = registerProcessTree(proc);
 
