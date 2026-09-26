@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { errorMessage } from "./error-utils";
 import {
+  ENGINE_PROBE_TIMEOUT_MS,
   getDescribe,
   getEngineBinPath,
   spawnEngineProcess,
@@ -14,8 +15,6 @@ export type ExecutableHealth =
   | { status: "ok" }
   | { status: "missing" }
   | { status: "unusable"; detail: string };
-
-const PROBE_TIMEOUT_MS = 15_000;
 
 /**
  * Proves a downloaded binary actually executes — existence is not health (#770).
@@ -48,7 +47,7 @@ export async function probeExecutable(
     timedOut = true;
     tree.terminate();
     forceKillTimer = tree.forceKillAfterGrace();
-  }, PROBE_TIMEOUT_MS);
+  }, ENGINE_PROBE_TIMEOUT_MS);
   try {
     await proc.exited;
   } finally {
@@ -58,7 +57,7 @@ export async function probeExecutable(
   }
 
   if (timedOut) {
-    return { status: "unusable", detail: `no exit within ${PROBE_TIMEOUT_MS / 1000}s` };
+    return { status: "unusable", detail: `no exit within ${ENGINE_PROBE_TIMEOUT_MS / 1000}s` };
   }
   if (proc.signalCode) return { status: "unusable", detail: `killed by ${proc.signalCode}` };
   return { status: "ok" };
@@ -73,7 +72,7 @@ export async function probeExecutable(
  */
 export async function readExecutableVersion(
   binPath: string,
-  timeoutMs = PROBE_TIMEOUT_MS,
+  timeoutMs = ENGINE_PROBE_TIMEOUT_MS,
 ): Promise<string | null> {
   if (!existsSync(binPath)) return null;
 
@@ -132,7 +131,7 @@ const MUTE_DETAIL = "reports no capabilities";
  * that could not be made to answer (`unusable`), not one that answered nothing (`mute`).
  */
 export async function engineFunctionalHealth(
-  timeoutMs = PROBE_TIMEOUT_MS,
+  timeoutMs = ENGINE_PROBE_TIMEOUT_MS,
 ): Promise<EngineFunctionalHealth> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

@@ -7,7 +7,7 @@ import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { abortOnSignal, engineAbortError, interruptedRun, pendingInterruption, registerProcessTree } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
-import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
+import { engineFailure, KeshaError, readEvents, renderError, type ErrorEvent } from "./engine/events";
 import {
   describeToCapabilities,
   parseDescribe,
@@ -233,13 +233,39 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
   return doc;
 }
 
-/** Capabilities view for the screens that predate `describe`; null when the engine cannot be read. */
-export async function getEngineCapabilities(opts: RunEngineOptions = {}): Promise<EngineCapabilities | null> {
+/** Generous because macOS Gatekeeper can take several seconds to scan a freshly written binary on its first run. */
+export const ENGINE_PROBE_TIMEOUT_MS = 15_000;
+
+let unansweredDescribe: string | null = null;
+
+/** ctime is part of it because utimes cannot set it back after a replacement that restores mtime. */
+function binaryIdentity(binPath: string): string {
+  const st = statSync(binPath, { throwIfNoEntry: false });
+  return st ? `${binPath}:${st.ino}:${st.size}:${st.ctimeMs}` : `${binPath}:missing`;
+}
+
+/** Capabilities view for the screens that predate `describe`; null when the engine cannot be read within the deadline. */
+export async function getEngineCapabilities(timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<EngineCapabilities | null> {
+  const binPath = getEngineBinPath();
+  const identity = binaryIdentity(binPath);
+  // `install --plan` probes twice; a binary that already let one deadline pass is not waited on again.
+  if (unansweredDescribe === identity) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return describeToCapabilities(await getDescribe(opts));
+    return describeToCapabilities(await getDescribe({ signal: controller.signal }));
   } catch (err) {
-    if (err instanceof KeshaError) return null;
-    throw err;
+    if (!(err instanceof KeshaError)) throw err;
+    if (controller.signal.aborted) {
+      unansweredDescribe = identity;
+      log.warn(
+        `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s; ` +
+          "continuing without its capabilities — re-run `kesha install` to replace it",
+      );
+    }
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -550,7 +576,14 @@ export async function detectAudioLanguageEngine(
   if (!isEngineInstalled()) return null;
   const run = await runEngine(["detect-lang", audioPath], opts);
   // The tolerant form: a noisy onnxruntime warning must not blind a best-effort guess.
-  if (reportedFailure(run)) return null;
+  if (reportedFailure(run)) {
+    const cause = run.error ? renderError(run.error) : `kesha-engine detect-lang exited with code ${run.exitCode}`;
+    log.warn(
+      `Audio language detection failed: ${cause}\n` +
+        "  Fix: run `kesha install` to reinstall the engine and its language-ID model.",
+    );
+    return null;
+  }
   return parseLangResult(run.stdout);
 }
 

@@ -15,7 +15,10 @@ import {
   getEngineBinaryName,
   installEngine,
   SIDECARS,
+  warmDarwinKokoro,
 } from "../../src/engine-install";
+import { log } from "../../src/log";
+import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { KeshaError } from "../../src/engine/events";
 import { engineVersion } from "../../src/package-info";
@@ -451,6 +454,34 @@ describe("Kokoro warmup follows the languages asked for", () => {
 
     expect(engineInvocations().some((a) => a.startsWith("say"))).toBe(true);
   }, 60_000);
+});
+
+describe("a Kokoro warmup that outlives its timeout", () => {
+  darwinArmTest("is force-killed with its tree, and the install goes on with one warning", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-warm-stuck-"));
+    tempDirs.push(dir);
+    const binPath = join(dir, "kesha-engine");
+    const pidFile = join(dir, "say.pid");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh\ncase "$1" in\n  describe) printf '%s\\n' ${shQuote(PLAIN_CAPS)}; exit 0 ;;\n  say) echo $$ > ${shQuote(pidFile)}; ${stubbornShell("TERM")} ;;\nesac\nexit 2\n`,
+    );
+    chmodSync(binPath, 0o755);
+    process.env.KESHA_ENGINE_BIN = binPath;
+    const warnings: string[] = [];
+    const savedWarn = log.warn;
+    log.warn = (msg: string) => void warnings.push(msg);
+    const startedAt = performance.now();
+    try {
+      await warmDarwinKokoro(binPath, 200);
+    } finally {
+      log.warn = savedWarn;
+    }
+
+    expect(performance.now() - startedAt).toBeLessThan(5_000);
+    expect(await waitForPidExit(await waitForPidFile(pidFile))).toBe(true);
+    expect(warnings).toEqual(["FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow."]);
+  }, 30_000);
 });
 
 describe("sidecar failures cannot fail the engine install", () => {
