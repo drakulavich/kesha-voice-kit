@@ -424,7 +424,7 @@ mod tests {
 
     // Regression: below FluidAudio's ~0.25 s floor this was E_INTERNAL; ONNX transcribes it (#995).
     #[test]
-    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    #[ignore = "needs cached CoreML Parakeet models + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]
     fn a_sub_second_file_transcribes_instead_of_erroring() {
         if skip_without_ane("a_sub_second_file_transcribes_instead_of_erroring") {
             return;
@@ -440,11 +440,9 @@ mod tests {
 
     // A file no backend can transcribe is the caller's, not an engine fault (#995).
     #[test]
-    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    #[ignore = "needs cached CoreML Parakeet models; CI's coreml-regression runs it, locally `just ane-tests`"]
     fn an_undecodable_file_is_coded_bad_audio() {
-        if skip_without_ane("an_undecodable_file_is_coded_bad_audio") {
-            return;
-        }
+        // 0.1 s is under FluidAudio's floor, so it is refused before inference and no ANE is needed.
         let alac = Path::new(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/tests/fixtures/alac.m4a"
@@ -467,7 +465,7 @@ mod tests {
     // the 2nd+ one-shot call collapsed to a degenerate prefix (usually "."). A
     // one-shot call must be independent of prior calls.
     #[test]
-    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    #[ignore = "needs cached CoreML Parakeet models + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]
     fn transcribe_samples_is_stateless_across_calls() {
         if skip_without_ane("transcribe_samples_is_stateless_across_calls") {
             return;
@@ -510,11 +508,11 @@ mod tests {
     /// grouping actually satisfies it on real speech, so the gate passes words
     /// through rather than silently dropping every one of them (#720).
     ///
-    /// Deliberately outside `coreml-regression`'s two-test allowlist in
+    /// Deliberately outside `coreml-regression`'s filter in
     /// `rust-test.yml`: that job runs on a virtualized runner with no Neural
     /// Engine, and this needs a real one.
     #[test]
-    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    #[ignore = "needs cached CoreML Parakeet models + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]
     fn real_speech_yields_words_the_segmenting_paths_will_accept() {
         if skip_without_ane("real_speech_yields_words_the_segmenting_paths_will_accept") {
             return;

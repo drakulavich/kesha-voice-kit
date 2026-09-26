@@ -83,6 +83,10 @@ coverage-rust:
 rust-test *ARGS:
     cd rust && cargo nextest run --features tts "$@"
 
+# Every ignored test in the CoreML modules, with a missing Neural Engine a failure (#841); macOS arm64 after kesha install --tts en
+ane-tests:
+    cd rust && KESHA_REQUIRE_ANE_TESTS=1 cargo nextest run --no-default-features --features coreml,system_kokoro --run-ignored ignored-only -E 'test(backend::fluidaudio::) + test(streaming_asr::) + test(tts::fluid_kokoro::)'
+
 # #990's VAD session-threading measurement, printed: needs VAD_MODEL staged (kesha install --vad)
 vad-bench:
     cd rust && VAD_MODEL="${VAD_MODEL:-$HOME/.cache/kesha/models/silero-vad/silero_vad.onnx}" cargo nextest run --release --features tts --run-ignored ignored-only --no-capture -E 'test(vad_990_measurement)'
