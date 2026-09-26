@@ -695,42 +695,8 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
-        with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: 🎧 Install system audio deps
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
-
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        if: runner.os == 'Windows'
-
-      - name: 🔗 Pin MSVC linker
-        if: runner.os == 'Windows'
-        shell: pwsh
-        # Git for Windows ships a GNU link.exe that shadows MSVC's under `shell: bash` (rust-test.yml).
-        run: |
-          $linkPath = (Get-Command link.exe |
-            Where-Object { $_.Source -notlike "*Git*usr*" } |
-            Select-Object -First 1).Source
-          if (-not $linkPath) { Write-Error "MSVC link.exe not found"; exit 1 }
-          Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linkPath"
-
-      - name: 🎧 Allow legacy cmake_minimum_required
-        if: runner.os == 'Windows'
-        shell: pwsh
-        # opusic-sys falls back to a cmake build of vendored libopus whose CMakeLists predates cmake 4.
-        run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
+      - name: 🦀 Setup Rust
+        uses: ./.github/actions/setup-rust
 
       - name: 🦀 Build local engine
         shell: bash
@@ -807,30 +773,11 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      - name: 🦀 Setup Rust
+        uses: ./.github/actions/setup-rust
         with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
-          # Flush caches poisoned before #554, when this lane ran on
-          # macos-latest/Xcode 16.4: their build-script `rustc-link-search`
-          # hardcoded that Xcode's clang resource dir, so the link step failed
-          # with `clang_rt.osx not found` even after the Xcode 16.2 pin. Bump
-          # this discriminator if the stale path ever resurfaces.
+          # Flushes caches poisoned before #554, whose build scripts hardcoded Xcode 16.4's clang dir; bump if it resurfaces.
           key: xcode-16.2
-          # ci.yml runs on push to main, so this lane keeps a main-scoped entry
-          # every PR restores — the one rust cache that already worked that way.
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: 🎧 Install system Opus
-        # audiopus_sys / opusic-sys fall back to a cmake build of vendored
-        # libopus when pkg-config can't locate it, and the vendored
-        # CMakeLists.txt is incompatible with macOS runner cmake ≥4. Install
-        # the system lib so pkg-config succeeds and cmake never runs.
-        run: brew install opus pkg-config
 
       - name: 🦀 Build kesha-engine from source (with TTS)
         env:

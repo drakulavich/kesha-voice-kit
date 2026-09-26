@@ -51,13 +51,15 @@ export function readRustToolchainPin(): { pin?: RustToolchainPin; errors: string
  * repository toolchain file. Keep every explicit action invocation aligned with that file.
  */
 export function requirePinnedRustToolchain(path: string, document: unknown, pin: RustToolchainPin): string[] {
-  const jobs = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs;
-  if (!jobs || typeof jobs !== "object") return [];
+  const jobs = (document as { jobs?: Record<string, { steps?: unknown[] }> })?.jobs ?? {};
+  const compositeSteps = (document as { runs?: { steps?: unknown[] } })?.runs?.steps;
+  const owners = Object.entries(jobs).map(([job, definition]) => [job, definition?.steps] as const);
+  if (Array.isArray(compositeSteps)) owners.push(["runs", compositeSteps]);
 
   const errors: string[] = [];
-  for (const [job, definition] of Object.entries(jobs)) {
-    if (!Array.isArray(definition?.steps)) continue;
-    for (const step of definition.steps as Step[]) {
+  for (const [job, steps] of owners) {
+    if (!Array.isArray(steps)) continue;
+    for (const step of steps as Step[]) {
       if (typeof step?.uses !== "string" || !step.uses.startsWith("dtolnay/rust-toolchain@")) continue;
 
       if (step.with?.toolchain !== pin.channel) {

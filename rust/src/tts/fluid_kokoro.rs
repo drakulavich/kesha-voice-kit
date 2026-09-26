@@ -801,7 +801,7 @@ mod tests {
     /// downstream, so this is the only place it can be caught. Needs the ANE
     /// bundle, so it self-reports rather than running everywhere.
     #[test]
-    #[ignore = "needs `kesha install --tts en`; run locally on darwin-arm64"]
+    #[ignore = "needs `kesha install --tts en` + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]
     fn synthesize_returns_samples_at_the_native_level() {
         let (samples, sample_rate) = synthesize("Hello world", "am_michael", 1.0).expect("synth");
         assert_eq!(sample_rate, SAMPLE_RATE);

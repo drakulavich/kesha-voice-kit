@@ -1,0 +1,68 @@
+name: Setup Rust
+description: Install the pinned Rust toolchain, restore the cargo cache, and install what the engine links against (Opus; MSVC on Windows)
+
+inputs:
+  extra-components:
+    description: Comma-separated rustup components beyond rustfmt and clippy
+    required: false
+    default: ""
+  cache:
+    description: "'false' skips Swatinem/rust-cache"
+    required: false
+    default: "true"
+  shared-key:
+    description: rust-cache shared-key, for jobs that share one entry
+    required: false
+    default: ""
+  key:
+    description: rust-cache key discriminator
+    required: false
+    default: ""
+  save-if:
+    description: Whether rust-cache saves; PR-scoped entries only serve re-runs of that PR (#741)
+    required: false
+    default: ${{ github.ref == 'refs/heads/main' }}
+
+runs:
+  using: composite
+  steps:
+    - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      with:
+        toolchain: "1.94.1"
+        components: rustfmt,clippy,${{ inputs.extra-components }}
+
+    # Before the MSVC and cmake steps: rust-cache hashes CARGO*/CMAKE* env vars into its key.
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      if: inputs.cache == 'true'
+      with:
+        workspaces: rust
+        shared-key: ${{ inputs.shared-key }}
+        key: ${{ inputs.key }}
+        save-if: ${{ inputs.save-if }}
+
+    - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+      if: runner.os == 'Windows'
+
+    - name: Pin MSVC linker
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: '& "$env:GITHUB_WORKSPACE/.github/scripts/pin-msvc-linker.ps1"'
+
+    # audiopus_sys / opusic-sys fall back to a vendored libopus whose CMakeLists predates cmake 4 unless pkg-config finds it (#224).
+    - name: Install system Opus (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
+
+    - name: Install system Opus (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: brew install opus pkg-config
+
+    # Windows has no pkg-config to find it, so the cmake fallback is forgiven instead of vcpkg.
+    - name: Allow legacy cmake_minimum_required (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
