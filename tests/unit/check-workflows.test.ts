@@ -12,7 +12,9 @@ import {
   collectRustReferenceTargets,
   collectRustSources,
   collectRuleSources,
+  forbidExpressionsInRun,
   forbidFindPipedToHead,
+  forbidLongInlineRun,
   forbidLinuxPackaging,
   forbidNixBuildInCiAggregator,
   requireEveryJobInCiAggregator,
@@ -1765,5 +1767,92 @@ describe("forbidNixBuildInCiAggregator", () => {
     const path = join(tempDir("kesha-wf-"), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("nix-build"))).toHaveLength(1);
+  });
+});
+
+const WORKFLOW_AND_ACTION_FILES = [".github/workflows", ".github/actions"].flatMap((dir) =>
+  readdirSync(repoPath(dir), { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && /\.ya?ml$/.test(entry))
+    .map((entry) => `${dir}/${entry.replaceAll("\\", "/")}`),
+);
+
+describe("forbidLongInlineRun", () => {
+  const errorsFor = (steps: unknown[]) => forbidLongInlineRun(CI, job("lint", steps));
+
+  test("passes on every workflow and composite action in the repo", () => {
+    for (const path of WORKFLOW_AND_ACTION_FILES) {
+      expect([path, forbidLongInlineRun(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
+  });
+
+  test("fails on a four-line script and names the step and its count", () => {
+    const errors = errorsFor([{ name: "long", run: "a\nb\nc\nd\n" }]);
+    expect(errors).toEqual([expect.stringContaining("`lint` step `long` has 4 script lines")]);
+  });
+
+  test("counts neither blank lines nor comment lines", () => {
+    expect(errorsFor([{ run: "# why\na\n\n  # more\nb\n\t\nc\n" }])).toEqual([]);
+  });
+
+  test("names an unnamed step by position", () => {
+    expect(errorsFor([{ run: "ls" }, { run: "a\nb\nc\nd" }])[0]).toContain("step 2");
+  });
+
+  test("checks the steps of a composite action", () => {
+    const action = { runs: { using: "composite", steps: [{ name: "x", shell: "bash", run: "a\nb\nc\nd" }] } };
+    expect(forbidLongInlineRun(".github/actions/x/action.yml", action)).toHaveLength(1);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  j:\n    steps:\n      - run: |\n          a\n          b\n          c\n          d\n";
+    const path = join(tempDir("kesha-wf-"), "long.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("script lines"))).toHaveLength(1);
+  });
+});
+
+describe("forbidExpressionsInRun", () => {
+  const errorsFor = (steps: unknown[]) => forbidExpressionsInRun(CI, job("lint", steps));
+
+  test("passes on every workflow and composite action in the repo", () => {
+    for (const path of WORKFLOW_AND_ACTION_FILES) {
+      expect([path, forbidExpressionsInRun(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
+  });
+
+  test("fails on an expression in the script and quotes it", () => {
+    const errors = errorsFor([{ name: "tag", run: 'echo "${{ inputs.tag }}"' }]);
+    expect(errors).toEqual([expect.stringContaining("`lint` step `tag` interpolates `${{ inputs.tag }}`")]);
+  });
+
+  test("fails on an expression inside a shell comment, which Actions substitutes too", () => {
+    expect(errorsFor([{ run: "# ${{ github.event.pull_request.title }}\ntrue" }])).toHaveLength(1);
+  });
+
+  test("fails on a run that is one whole expression", () => {
+    expect(errorsFor([{ run: "${{ inputs.command }}" }])).toHaveLength(1);
+  });
+
+  test("allows expressions in if, with, env and the step name", () => {
+    const step = {
+      name: "${{ matrix.os }}",
+      if: "${{ inputs.x != '' }}",
+      env: { TAG: "${{ inputs.tag }}" },
+      with: { path: "${{ inputs.path }}" },
+      run: 'echo "$TAG"',
+    };
+    expect(errorsFor([step])).toEqual([]);
+  });
+
+  test("checks the steps of a composite action", () => {
+    const action = { runs: { using: "composite", steps: [{ shell: "bash", run: "echo ${{ inputs.x }}" }] } };
+    expect(forbidExpressionsInRun(".github/actions/x/action.yml", action)).toHaveLength(1);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  j:\n    steps:\n      - run: echo ${{ github.sha }}\n";
+    const path = join(tempDir("kesha-wf-"), "expr.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("interpolates"))).toHaveLength(1);
   });
 });
