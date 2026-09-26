@@ -2076,7 +2076,7 @@ exit 2
     const run = await runCli(["install", "--tts", "en"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
 
     const warning =
-      "FluidAudio Kokoro warmup skipped (kesha-engine say does not accept --out); first `kesha say en-*` may still be slow.";
+      "FluidAudio Kokoro warmup skipped (error [E_INVALID_ARG]: kesha-engine say does not accept --out); first `kesha say en-*` may still be slow.";
     expectContract(run, { exitCode: 0, stdoutContains: ["Backend installed successfully"], stderrContains: [warning] });
     expect(run.stderr.split(warning).length - 1).toBe(1);
     expect(existsSync(sayMarker)).toBe(false);

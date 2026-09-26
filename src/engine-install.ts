@@ -13,6 +13,7 @@ import { engineVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { createLiveStatus, streamResponseToFile } from "./progress";
 import { registerProcessTree } from "./process-tree";
+import { DEFAULT_VOICE_ID } from "./voice-routing";
 import {
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
@@ -238,21 +239,26 @@ async function warmDarwinKokoro(binPath: string): Promise<void> {
   if (!existsSync(binPath)) return;
 
   const outPath = join(tmpdir(), `kesha-kokoro-warmup-${process.pid}.wav`);
+  let args: string[];
+  try {
+    const validated = validateArgv(["say", "--voice", DEFAULT_VOICE_ID, "--out", outPath, "Kesha warmup."], await getDescribe());
+    for (const warning of validated.warnings) log.warn(warning);
+    args = validated.argv;
+  } catch (e) {
+    log.warn(`FluidAudio Kokoro warmup skipped (${errorMessage(e)}); first \`kesha say en-*\` may still be slow.`);
+    return;
+  }
   log.progress("Warming FluidAudio Kokoro CoreML cache...");
 
   const startedAt = performance.now();
-  const proc = spawnEngineProcess(
-    binPath,
-    ["say", "--voice", "en-am_michael", "--out", outPath, "Kesha warmup."],
-    ["ignore", "pipe", "pipe"],
-    protocolEnv(),
-  );
+  const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"], protocolEnv());
   const tree = registerProcessTree(proc);
 
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    proc.kill();
+    tree.terminate();
+    tree.forceKillAfterGrace();
   }, 180_000);
 
   try {
