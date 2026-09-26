@@ -115,7 +115,7 @@
   // --- Release versions (best effort, same API; the span keeps its text on failure)
   const versionsEl = document.getElementById('release-versions');
   if (versionsEl) {
-    fetch('https://api.github.com/repos/drakulavich/kesha-voice-kit/releases?per_page=30')
+    fetch('https://api.github.com/repos/drakulavich/kesha-voice-kit/releases?per_page=100')
       .then((r) => (r.ok ? r.json() : null))
       .then((releases) => {
         if (!Array.isArray(releases)) return;
