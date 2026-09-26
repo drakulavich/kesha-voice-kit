@@ -21,8 +21,12 @@ pub struct Kokoro {
 
 impl Kokoro {
     pub fn load(model_path: &Path) -> anyhow::Result<Self> {
-        let session = Session::builder()?.commit_from_file(model_path)?;
-        Ok(Self { session })
+        match Session::builder().and_then(|mut b| b.commit_from_file(model_path)) {
+            Ok(session) => Ok(Self { session }),
+            // An absent `--model` path is not a load failure; tts_smoke pins its exit 4.
+            Err(e) if !model_path.exists() => Err(e.into()),
+            Err(e) => Err(super::model_load_failed("Kokoro", model_path, e)),
+        }
     }
 
     /// `style` must be exactly 256 floats; returns mono f32 audio at [`SAMPLE_RATE`].

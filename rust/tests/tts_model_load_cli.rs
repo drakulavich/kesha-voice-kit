@@ -66,13 +66,7 @@ fn a_truncated_kokoro_model_is_a_model_load_failure_with_a_reinstall_hint() {
 fn a_truncated_charsiu_g2p_model_is_a_model_load_failure_with_a_reinstall_hint() {
     let dir = tempfile::tempdir().unwrap();
     let cache = dir.path().join("cache");
-    for file in [
-        "encoder_model.onnx",
-        "decoder_model.onnx",
-        "decoder_with_past_model.onnx",
-    ] {
-        write_truncated(&cache.join("models/g2p/byt5-tiny").join(file));
-    }
+    stage_truncated_charsiu(&cache);
     let model = dir.path().join("kokoro/model.onnx");
     let voice = dir.path().join("kokoro/voice.bin");
     write_truncated(&model);
@@ -96,6 +90,22 @@ fn a_truncated_charsiu_g2p_model_is_a_model_load_failure_with_a_reinstall_hint()
 fn a_truncated_vosk_model_is_a_model_load_failure_with_a_reinstall_hint() {
     let dir = tempfile::tempdir().unwrap();
     let cache = dir.path().join("cache");
+    stage_truncated_vosk(&cache);
+    let out = say(&["--voice", "ru-vosk-m02", "привет"], &cache);
+    assert_model_load(&out, "Vosk model");
+}
+
+fn stage_truncated_charsiu(cache: &Path) {
+    for file in [
+        "encoder_model.onnx",
+        "decoder_model.onnx",
+        "decoder_with_past_model.onnx",
+    ] {
+        write_truncated(&cache.join("models/g2p/byt5-tiny").join(file));
+    }
+}
+
+fn stage_truncated_vosk(cache: &Path) {
     let vosk = cache.join("models/vosk-ru");
     for file in [
         "model.onnx",
@@ -106,6 +116,39 @@ fn a_truncated_vosk_model_is_a_model_load_failure_with_a_reinstall_hint() {
     ] {
         write_truncated(&vosk.join(file));
     }
-    let out = say(&["--voice", "ru-vosk-m02", "привет"], &cache);
+}
+
+// The SSML walker loads Kokoro before G2P, so this one needs a graph that loads: the committed mini.
+#[test]
+fn a_truncated_charsiu_g2p_model_under_ssml_is_a_model_load_failure() {
+    let mini = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/mini-models/kokoro");
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("cache");
+    stage_truncated_charsiu(&cache);
+    let out = say(
+        &[
+            "--model",
+            mini.join("model.onnx").to_str().unwrap(),
+            "--voice-file",
+            mini.join("am_michael.bin").to_str().unwrap(),
+            "--lang",
+            "es",
+            "--ssml",
+            "<speak>hola</speak>",
+        ],
+        &cache,
+    );
+    assert_model_load(&out, "CharsiuG2P model");
+}
+
+#[test]
+fn a_truncated_vosk_model_under_ssml_is_a_model_load_failure() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache = dir.path().join("cache");
+    stage_truncated_vosk(&cache);
+    let out = say(
+        &["--voice", "ru-vosk-m02", "--ssml", "<speak>привет</speak>"],
+        &cache,
+    );
     assert_model_load(&out, "Vosk model");
 }

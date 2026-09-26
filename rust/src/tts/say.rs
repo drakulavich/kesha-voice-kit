@@ -356,7 +356,7 @@ pub(crate) fn say_kokoro(
     } else {
         ensure_script_supported(voice_id, text)?;
         let ipa = g2p::text_to_ipa_cached(&mut tts_sessions.charsiu, text, lang)
-            .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?;
+            .map_err(|e| TtsError::from_engine("g2p", e))?;
         if ipa.trim().is_empty() {
             return Err(TtsError::SynthesisFailed(
                 "no phonemes produced for input (empty after G2P)".into(),
@@ -387,7 +387,7 @@ fn kokoro_session<'s>(
     model_path: &Path,
 ) -> Result<&'s mut sessions::KokoroSession, TtsError> {
     slot.get(model_path)
-        .map_err(|e| TtsError::SynthesisFailed(format!("{e:#}")))
+        .map_err(|e| TtsError::from_engine("kokoro", e))
 }
 
 /// What an engine with no IPA input speaks: a `<phoneme>` degrades to the text
@@ -560,7 +560,7 @@ impl SegmentSink for KokoroSink<'_> {
             Speakable::Ipa { ph, .. } => ph.to_string(),
             Speakable::Text(t) | Speakable::Spell(t) => {
                 g2p::text_to_ipa_cached(self.charsiu, t, self.lang)
-                    .map_err(|e| TtsError::SynthesisFailed(format!("g2p: {e}")))?
+                    .map_err(|e| TtsError::from_engine("g2p", e))?
             }
         };
         Ok(Some(ipa))
@@ -795,7 +795,7 @@ fn say_with_vosk(
     let normalized = ru::expand_text(text, expand_abbrev);
     let (audio, sample_rate) = vosk
         .infer(model_dir, &normalized, speaker_id, speed)
-        .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))?;
+        .map_err(|e| TtsError::from_engine("vosk", e))?;
     encode_or_fail(&audio, sample_rate, format)
 }
 
@@ -850,7 +850,7 @@ impl SegmentSink for VoskSink<'_> {
     fn sample_rate(&mut self) -> Result<u32, TtsError> {
         self.cache
             .sample_rate(self.model_dir)
-            .map_err(|e| TtsError::SynthesisFailed(format!("vosk: {e}")))
+            .map_err(|e| TtsError::from_engine("vosk", e))
     }
     // ru::normalize_segments expands Spell upstream.
     fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError> {
