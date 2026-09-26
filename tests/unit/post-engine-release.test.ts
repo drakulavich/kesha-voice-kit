@@ -20,7 +20,29 @@ const targetSource = `const ENGINE_TARGETS: Record<string, EngineTarget> = {
     sizeBytes: 3,
   },
 };
+
+export const PINNED_ASSET_SHA256_VERSION = "1.24.10";
+
+export const PINNED_ASSET_SHA256: Readonly<Record<string, string>> = {
+  "kesha-engine-darwin-arm64": "0000000000000000000000000000000000000000000000000000000000000000",
+  "kesha-engine-linux-x64": "0000000000000000000000000000000000000000000000000000000000000000",
+  "kesha-engine-windows-x64.exe": "0000000000000000000000000000000000000000000000000000000000000000",
+  "say-avspeech-darwin-arm64": "0000000000000000000000000000000000000000000000000000000000000000",
+  "kesha-textlang-darwin-arm64": "0000000000000000000000000000000000000000000000000000000000000000",
+};
 `;
+
+const PUBLISHED_SHA256: Record<string, string> = {
+  "kesha-engine-darwin-arm64": "1111111111111111111111111111111111111111111111111111111111111111",
+  "kesha-engine-linux-x64": "2222222222222222222222222222222222222222222222222222222222222222",
+  "kesha-engine-windows-x64.exe": "3333333333333333333333333333333333333333333333333333333333333333",
+  "say-avspeech-darwin-arm64": "4444444444444444444444444444444444444444444444444444444444444444",
+  "kesha-textlang-darwin-arm64": "5555555555555555555555555555555555555555555555555555555555555555",
+};
+
+const sha256Sums = Object.entries(PUBLISHED_SHA256)
+  .map(([name, sha]) => `${sha}  ./${name}\n`)
+  .join("");
 
 const packageSource = JSON.stringify({
   name: "kesha",
@@ -70,6 +92,7 @@ describe("buildPostEngineReleaseFollowup", () => {
       release: { isDraft: false, isPrerelease: false, assets: assets() },
       manifest: manifest(),
       targetSource,
+      sha256Sums,
       packageSource,
       serverSource,
     });
@@ -78,6 +101,12 @@ describe("buildPostEngineReleaseFollowup", () => {
     expect(result.targetSource).toContain("sizeBytes: 64_000_001");
     expect(result.targetSource).toContain("sizeBytes: 65_000_002");
     expect(result.targetSource).toContain("sizeBytes: 66_000_003");
+    for (const [name, sha] of Object.entries(PUBLISHED_SHA256)) {
+      expect(result.targetSource).toContain(`"${name}": "${sha}"`);
+      expect(result.prBody).toContain(sha);
+    }
+    expect(result.targetSource).not.toContain("0000000000000000000000000000000000000000000000000000000000000000");
+    expect(result.targetSource).toContain('export const PINNED_ASSET_SHA256_VERSION = "1.24.11";');
     expect(JSON.parse(result.packageSource)).toMatchObject({
       version: "1.30.0",
       keshaEngine: { version: "1.24.11" },
@@ -98,10 +127,26 @@ describe("buildPostEngineReleaseFollowup", () => {
         release: { isDraft: false, isPrerelease: false, assets: publishedAssets },
         manifest: manifest(),
         targetSource,
+        sha256Sums,
         packageSource,
         serverSource,
       }),
     ).toThrow(/missing signed asset/i);
+  });
+
+  test("refuses a release whose SHA256SUMS does not list a pinned asset instead of keeping the old pin", () => {
+    expect(() =>
+      buildPostEngineReleaseFollowup({
+        tag: "v1.24.11",
+        cliReleasePublished: true,
+        release: { isDraft: false, isPrerelease: false, assets: assets() },
+        manifest: manifest(),
+        targetSource,
+        sha256Sums: sha256Sums.split("\n").filter((line) => !line.endsWith("say-avspeech-darwin-arm64")).join("\n"),
+        packageSource,
+        serverSource,
+      }),
+    ).toThrow(/SHA256SUMS does not list say-avspeech-darwin-arm64/);
   });
 
   test("refuses a source pin that does not identify the published tag", () => {
@@ -112,6 +157,7 @@ describe("buildPostEngineReleaseFollowup", () => {
         release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
         targetSource,
+        sha256Sums,
         packageSource: packageSource.replace("1.24.11", "1.24.12"),
         serverSource,
       }),
@@ -126,6 +172,7 @@ describe("buildPostEngineReleaseFollowup", () => {
         release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
         targetSource,
+        sha256Sums,
         packageSource,
         serverSource: serverSource.replaceAll("1.29.0", "1.28.0"),
       }),
@@ -140,6 +187,7 @@ describe("buildPostEngineReleaseFollowup", () => {
         release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
         targetSource,
+        sha256Sums,
         packageSource,
         serverSource,
       }),

@@ -22,7 +22,7 @@ import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/proces
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { KeshaError } from "../../src/engine/events";
 import { engineVersion } from "../../src/package-info";
-import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 
 /** The thrown KeshaError, so a test can assert on code and hint rather than on prose. */
 async function failure(run: () => Promise<unknown>): Promise<KeshaError> {
@@ -155,6 +155,7 @@ function stageEmptyEngineDir(prefix: string): string {
 function stubRelease(stub: EngineStub = {}): string[] {
   const urls: string[] = [];
   const body = engineScript(stub);
+  expectServedBody(() => body);
   globalThis.fetch = (async (input: Request | URL | string) => {
     urls.push(String(input instanceof Request ? input.url : input));
     return new Response(body, {
@@ -489,6 +490,7 @@ describe("sidecar failures cannot fail the engine install", () => {
     const binPath = stageEmptyEngineDir("kesha-sidecar-404-");
     const body = engineScript();
     const binaryName = getEngineBinaryName();
+    expectServedBody(() => body);
     globalThis.fetch = (async (input: Request | URL | string) => {
       const url = String(input instanceof Request ? input.url : input);
       return url.endsWith(binaryName)
@@ -509,6 +511,7 @@ describe("sidecar failures cannot fail the engine install", () => {
     const binPath = stageEmptyEngineDir("kesha-sidecar-throws-");
     const body = engineScript();
     const binaryName = getEngineBinaryName();
+    expectServedBody(() => body);
     globalThis.fetch = (async (input: Request | URL | string) => {
       const url = String(input instanceof Request ? input.url : input);
       if (!url.endsWith(binaryName)) throw new Error("socket hang up");

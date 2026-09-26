@@ -80,13 +80,25 @@ pub(crate) fn charsiu_ipa(
     g.to_ipa(&normalized, lang)
 }
 
+/// `G2P::new` parses ~20 MB of embedded JSON (~200 ms), so build it once per dialect per process.
+fn misaki_g2p(lang: misaki_rs::Language) -> &'static misaki_rs::G2P {
+    use misaki_rs::{Language, G2P};
+    use std::sync::LazyLock;
+    static US: LazyLock<G2P> = LazyLock::new(|| G2P::new(Language::EnglishUS));
+    static GB: LazyLock<G2P> = LazyLock::new(|| G2P::new(Language::EnglishGB));
+    match lang {
+        Language::EnglishUS => &US,
+        Language::EnglishGB => &GB,
+    }
+}
+
 /// Run misaki-rs and strip the U+200D zero-width joiners it inserts for
 /// diphthong cohesion — Kokoro/Piper vocabs don't include them. Errors from
 /// the embedded G2P (e.g. corrupted lexicon, internal panic surfaced via
 /// poisoned mutex) propagate so callers don't synthesize silent audio
 /// indistinguishable from an empty utterance.
 fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
-    let g2p = misaki_rs::G2P::new(lang);
+    let g2p = misaki_g2p(lang);
     let (ipa, _) = g2p
         .g2p(text)
         .map_err(|e| anyhow::anyhow!("misaki-rs g2p failed: {e:?}"))?;
@@ -193,5 +205,15 @@ mod tests {
         );
         // ZWJ stripping is a pipeline-owned property, not a misaki one.
         assert!(!ipa.contains('\u{200d}'), "ZWJ leaked: {ipa:?}");
+    }
+
+    #[test]
+    fn english_ipa_is_stable_across_repeated_and_interleaved_dialects() {
+        let text = "I say tomato. The schedule for Tuesday is ready.";
+        let us = "ˌI sˈeɪ təmˈeɪɾoʊ   ðə skˈɛdʒuːl fɔːɹ tˈuzdˌA ɪz ɹˈɛdi";
+        let gb = "ˌI sˈeɪ təmˈɑːtəʊ   ðə ʃˈɛdjuːl fɔː tjˈuːzdA ɪz ɹˈɛdi";
+        for (lang, want) in [("en-us", us), ("en-gb", gb), ("en", us), ("en-uk", gb)] {
+            assert_eq!(text_to_ipa(text, lang).unwrap(), want, "{lang}");
+        }
     }
 }

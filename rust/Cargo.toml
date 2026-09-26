@@ -85,7 +85,7 @@ text-processing-rs = { git = "https://github.com/FluidInference/text-processing-
 hound = "3.5"
 thiserror = { version = "2", optional = true }
 sha2 = "0.10"
-ssml-parser = { version = "0.1", optional = true }
+ssml-parser = { version = "0.3", optional = true }
 
 # Opus encoding for `kesha say --format ogg-opus` (#223). Encode drives the
 # `opusic-sys` FFI — the SAME libopus `symphonia-adapter-libopus` links for

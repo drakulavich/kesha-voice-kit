@@ -250,7 +250,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    #[ignore = "needs cached CoreML Parakeet models + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]
     fn streaming_session_transcribes_a_chunked_fixture() {
         let samples = fixture_samples("benchmark-en/03-review-pull-request.ogg");
         let text = transcribe_streaming(&samples);
@@ -263,7 +263,7 @@ mod tests {
     /// Regression for the upstream defect documented at [`StreamingAsrSession`]:
     /// a second session must transcribe what *it* was fed, not repeat the first.
     #[test]
-    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    #[ignore = "needs cached CoreML Parakeet models + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]
     fn each_session_transcribes_its_own_audio() {
         let first =
             transcribe_streaming(&fixture_samples("benchmark-en/03-review-pull-request.ogg"));
@@ -282,7 +282,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "needs cached CoreML Parakeet models + Apple Neural Engine; run with --run-ignored on macOS arm64"]
+    #[ignore = "needs cached CoreML Parakeet models + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]
     fn a_silent_session_transcribes_to_nothing() {
         let text = transcribe_streaming(&vec![0.0f32; TARGET_SAMPLE_RATE as usize * 3]);
         assert!(text.trim().is_empty(), "silence produced text: {text:?}");
