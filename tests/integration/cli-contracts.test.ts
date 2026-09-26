@@ -17,7 +17,7 @@ import { engineVersion } from "../../src/package-info";
 import { engineTarget } from "../../src/engine-targets";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
 import { pidIsAlive, stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
-import { describeJson, writeTranscribingEngine } from "../helpers/fake-engine";
+import { describeDocument, describeJson, writeTranscribingEngine } from "../helpers/fake-engine";
 import {
   DEFAULT_TIMEOUT_MS,
   installFakeDiarizeModel,
@@ -2050,6 +2050,36 @@ process.exit(99);
 
     expect(result.exitCode).toBe(130);
     expect(result.engineStopped).toBe(true);
+  });
+
+  test("an engine whose describe rejects the Kokoro warmup argv is not spawned for it, and install still succeeds", async () => {
+    if (process.platform !== "darwin" || process.arch !== "arm64") return;
+    const dir = makeTempDir("kesha-cli-contract-warmup-argv-");
+    const sayMarker = join(dir, "say-called");
+    const doc = describeDocument({ backend: "coreml", profile: "darwin", features: ["tts"] });
+    delete doc.commands.say!.flags.out;
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(
+      enginePath,
+      `#!/bin/sh
+case "$1" in
+  describe) printf '%s\\n' '${JSON.stringify(doc)}'; exit 0 ;;
+  install) exit 0 ;;
+  say) : > "${sayMarker}"; exit 0 ;;
+esac
+exit 2
+`,
+    );
+    chmodSync(enginePath, 0o755);
+    markFakeEngineInstalled(enginePath);
+
+    const run = await runCli(["install", "--tts", "en"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
+
+    const warning =
+      "FluidAudio Kokoro warmup skipped (kesha-engine say does not accept --out); first `kesha say en-*` may still be slow.";
+    expectContract(run, { exitCode: 0, stdoutContains: ["Backend installed successfully"], stderrContains: [warning] });
+    expect(run.stderr.split(warning).length - 1).toBe(1);
+    expect(existsSync(sayMarker)).toBe(false);
   });
 
   test("early transcription failure does not start audio language detection", async () => {
