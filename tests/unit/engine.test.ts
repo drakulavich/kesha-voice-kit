@@ -1366,6 +1366,22 @@ describe("the capability probe stays in step with the installed binary", () => {
     });
   });
 
+  // #1258: whole seconds, because a Date-based restore drops the sub-millisecond part and changes mtimeMs.
+  fakeEngineTest("a binary replaced with its mtime restored is not served from the cache", async () => {
+    const dir = tempDir("kesha-engine-recache-mtime-");
+    const stamp = 1_700_000_000;
+    const path = capsEngine(dir, ["transcribe.segments"]);
+    utimesSync(path, stamp, stamp);
+    await withEngineEnv(path, async () => {
+      expect((await getDescribe()).features).toEqual(["transcribe.segments"]);
+
+      capsEngine(dir, ["transcribe.segments", "transcribe.itn"]);
+      utimesSync(path, stamp, stamp);
+
+      expect((await getDescribe()).features).toEqual(["transcribe.segments", "transcribe.itn"]);
+    });
+  });
+
   fakeEngineTest("a missing binary reads as no capabilities rather than throwing", async () => {
     const missing = join(tempDir("kesha-engine-absent-"), "kesha-engine");
     await withEngineEnv(missing, async () => {
