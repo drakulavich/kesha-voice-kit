@@ -1,5 +1,4 @@
 import { existsSync } from "fs";
-import { errorMessage } from "./error-utils";
 import {
   ENGINE_PROBE_TIMEOUT_MS,
   getDescribe,
@@ -37,7 +36,8 @@ export async function probeExecutable(
   try {
     proc = spawnEngineProcess(binPath, args, ["ignore", "ignore", "ignore"]);
   } catch (err) {
-    return { status: "unusable", detail: errorMessage(err) };
+    // The raw message: a rendered one would nest its own code and hint inside the caller's error.
+    return { status: "unusable", detail: err instanceof Error ? err.message : String(err) };
   }
   const tree = registerProcessTree(proc);
 
