@@ -464,7 +464,7 @@ describe("a Kokoro warmup that outlives its timeout", () => {
     const pidFile = join(dir, "say.pid");
     writeFileSync(
       binPath,
-      `#!/bin/sh\ncase "$1" in\n  describe) printf '%s\\n' ${shQuote(PLAIN_CAPS)}; exit 0 ;;\n  say) echo $ > ${shQuote(pidFile)}; ${stubbornShell("TERM")} ;;\nesac\nexit 2\n`,
+      `#!/bin/sh\ncase "$1" in\n  describe) printf '%s\\n' ${shQuote(PLAIN_CAPS)}; exit 0 ;;\n  say) echo $$ > ${shQuote(pidFile)}; ${stubbornShell("TERM")} ;;\nesac\nexit 2\n`,
     );
     chmodSync(binPath, 0o755);
     process.env.KESHA_ENGINE_BIN = binPath;
