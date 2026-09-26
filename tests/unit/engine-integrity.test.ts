@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
-import { tmpdir } from "os";
 import {
   getEngineBinaryName,
   getVersionMarkerPath,
@@ -13,6 +12,7 @@ import {
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
 import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
+import { tempDir } from "../helpers/temp-dir";
 
 const OVERRIDE = "9.9.9-alpha.1";
 const ENGINE = `#!/bin/sh
@@ -23,7 +23,6 @@ exit 0
 `;
 
 const savedFetch = globalThis.fetch;
-const tempDirs: string[] = [];
 let releaseCacheIsolation: () => void = () => {};
 
 // The fake engine is a shell script, which Windows cannot spawn.
@@ -38,7 +37,6 @@ beforeEach(() => {
 afterEach(() => {
   globalThis.fetch = savedFetch;
   releaseCacheIsolation();
-  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
 function sha256(text: string): string {
@@ -46,8 +44,7 @@ function sha256(text: string): string {
 }
 
 function stageEngineDir(): string {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-integrity-"));
-  tempDirs.push(dir);
+  const dir = tempDir("kesha-integrity-");
   mkdirSync(join(dir, "bin"), { recursive: true });
   const binPath = join(dir, "bin", "kesha-engine");
   process.env.KESHA_ENGINE_BIN = binPath;
@@ -155,8 +152,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
 
   posixTest("kesha install renders the refusal and exits 1", async () => {
     const binPath = stageEngineDir();
-    const dir = mkdtempSync(join(tmpdir(), "kesha-integrity-cli-"));
-    tempDirs.push(dir);
+    const dir = tempDir("kesha-integrity-cli-");
     const script = join(dir, "install.ts");
     writeFileSync(
       script,
