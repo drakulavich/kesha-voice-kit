@@ -70,6 +70,25 @@ describe("process leak guard", () => {
     expect(await waitForPidExit(pid)).toBe(true);
   });
 
+  /** #1160: `kill(pid, 0)` succeeds on an exited child its parent has not reaped yet. */
+  posix("counts an exited but unreaped child as gone", async () => {
+    const parent = Bun.spawn(["sh", "-c", "sh -c 'exit 0' & echo $!; exec sleep 30"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    try {
+      const zombie = Number(new TextDecoder().decode((await parent.stdout.getReader().read()).value));
+      const stat = () => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(zombie)]).stdout.toString();
+      for (let i = 0; i < 200 && !stat().startsWith("Z"); i++) await Bun.sleep(10);
+      expect(stat()).toStartWith("Z");
+
+      expect(pidIsAlive(zombie)).toBe(false);
+    } finally {
+      parent.kill("SIGKILL");
+      await parent.exited;
+    }
+  });
+
   /** #1131: an interrupted run reaches no hook at all, so the fixture has to end itself. */
   posix("expires on its own clock when no reaper ever signals it", async () => {
     const pid = spawnStubborn("kesha-engine-leak-guard-fixture", 2);

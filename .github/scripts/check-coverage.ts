@@ -31,10 +31,10 @@ type FileCoverage = {
 const presets: Record<PresetName, CoveragePreset> = {
   ts: {
     title: "TypeScript Coverage",
-    minTotalLines: 70,
+    minTotalLines: 75,
     minFileLines: {
       "src/cli/main.ts": 35,
-      "src/cli/say.ts": 50,
+      "src/cli/say.ts": 75,
       // Sat at 15 while the file measured 65.9%, so a fourfold collapse would still pass (#847 audit).
       "src/engine-install.ts": 60,
       "src/engine.ts": 80,
@@ -42,7 +42,7 @@ const presets: Record<PresetName, CoveragePreset> = {
   },
   rust: {
     title: "Rust Coverage",
-    minTotalLines: 70,
+    minTotalLines: 80,
     minFileLines: {},
   },
 };
