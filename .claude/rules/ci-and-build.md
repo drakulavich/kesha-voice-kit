@@ -37,3 +37,5 @@ env:
   INPUT_TAG: ${{ inputs.tag }}
 run: echo "tag=$INPUT_TAG" >> "$GITHUB_OUTPUT"
 ```
+
+`bun run check:workflows` enforces this and the 3-line cap on `run:` (`forbidExpressionsInRun`, `forbidLongInlineRun`) over workflows and composite actions: any `${{` in the parsed `run:` scalar fails, shell comments included, while `if:`, `with:`, `env:` and `name:` are free. Lines count as a reader sees them, blanks and `#` comments excluded. A step that must stay inline (it runs before checkout, or from a historical `inputs.ref`) folds to three lines rather than taking an exemption.

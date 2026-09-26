@@ -7,12 +7,15 @@ import {
   checkFile,
   namedFilterOf,
   checkFlakeNix,
+  checkShellScripts,
   collectCacheWriters,
   collectManifestSources,
   collectRustReferenceTargets,
   collectRustSources,
   collectRuleSources,
+  forbidExpressionsInRun,
   forbidFindPipedToHead,
+  forbidLongInlineRun,
   forbidLinuxPackaging,
   forbidNixBuildInCiAggregator,
   requireEveryJobInCiAggregator,
@@ -1765,5 +1768,155 @@ describe("forbidNixBuildInCiAggregator", () => {
     const path = join(tempDir("kesha-wf-"), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("nix-build"))).toHaveLength(1);
+  });
+});
+
+const WORKFLOW_AND_ACTION_FILES = [".github/workflows", ".github/actions"].flatMap((dir) =>
+  readdirSync(repoPath(dir), { recursive: true })
+    .filter((entry): entry is string => typeof entry === "string" && /\.ya?ml$/.test(entry))
+    .map((entry) => `${dir}/${entry.replaceAll("\\", "/")}`),
+);
+
+describe("forbidLongInlineRun", () => {
+  const errorsFor = (steps: unknown[]) => forbidLongInlineRun(CI, job("lint", steps));
+
+  test("passes on every workflow and composite action in the repo", () => {
+    for (const path of WORKFLOW_AND_ACTION_FILES) {
+      expect([path, forbidLongInlineRun(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
+  });
+
+  test("fails on a four-line script and names the step and its count", () => {
+    const errors = errorsFor([{ name: "long", run: "a\nb\nc\nd\n" }]);
+    expect(errors).toEqual([expect.stringContaining("`lint` step `long` has 4 script lines")]);
+  });
+
+  test("counts neither blank lines nor comment lines", () => {
+    expect(errorsFor([{ run: "# why\na\n\n  # more\nb\n\t\nc\n" }])).toEqual([]);
+  });
+
+  test("names an unnamed step by position", () => {
+    expect(errorsFor([{ run: "ls" }, { run: "a\nb\nc\nd" }])[0]).toContain("step 2");
+  });
+
+  test("checks the steps of a composite action", () => {
+    const action = { runs: { using: "composite", steps: [{ name: "x", shell: "bash", run: "a\nb\nc\nd" }] } };
+    expect(forbidLongInlineRun(".github/actions/x/action.yml", action)).toHaveLength(1);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  j:\n    steps:\n      - run: |\n          a\n          b\n          c\n          d\n";
+    const path = join(tempDir("kesha-wf-"), "long.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("script lines"))).toHaveLength(1);
+  });
+});
+
+describe("forbidExpressionsInRun", () => {
+  const errorsFor = (steps: unknown[]) => forbidExpressionsInRun(CI, job("lint", steps));
+
+  test("passes on every workflow and composite action in the repo", () => {
+    for (const path of WORKFLOW_AND_ACTION_FILES) {
+      expect([path, forbidExpressionsInRun(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
+  });
+
+  test("fails on an expression in the script and quotes it", () => {
+    const errors = errorsFor([{ name: "tag", run: 'echo "${{ inputs.tag }}"' }]);
+    expect(errors).toEqual([expect.stringContaining("`lint` step `tag` interpolates `${{ inputs.tag }}`")]);
+  });
+
+  test("fails on an expression inside a shell comment, which Actions substitutes too", () => {
+    expect(errorsFor([{ run: "# ${{ github.event.pull_request.title }}\ntrue" }])).toHaveLength(1);
+  });
+
+  test("fails on a run that is one whole expression", () => {
+    expect(errorsFor([{ run: "${{ inputs.command }}" }])).toHaveLength(1);
+  });
+
+  test("fails on an unmatched expression opener", () => {
+    expect(errorsFor([{ run: "echo '${{ inputs.tag'" }])).toHaveLength(1);
+  });
+
+  test("allows expressions in if, with, env and the step name", () => {
+    const step = {
+      name: "${{ matrix.os }}",
+      if: "${{ inputs.x != '' }}",
+      env: { TAG: "${{ inputs.tag }}" },
+      with: { path: "${{ inputs.path }}" },
+      run: 'echo "$TAG"',
+    };
+    expect(errorsFor([step])).toEqual([]);
+  });
+
+  test("checks the steps of a composite action", () => {
+    const action = { runs: { using: "composite", steps: [{ shell: "bash", run: "echo ${{ inputs.x }}" }] } };
+    expect(forbidExpressionsInRun(".github/actions/x/action.yml", action)).toHaveLength(1);
+  });
+
+  test("the file gate actually runs it", () => {
+    const yaml = "on: push\njobs:\n  j:\n    steps:\n      - run: echo ${{ github.sha }}\n";
+    const path = join(tempDir("kesha-wf-"), "expr.yml");
+    writeFileSync(path, yaml);
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("interpolates"))).toHaveLength(1);
+  });
+});
+
+// Extracted run: bodies leave the YAML the step-level pipefail and find|head rules read (#1083, #1088).
+describe("checkShellScripts", () => {
+  const scriptsIn = (files: Record<string, string>) => {
+    const dir = tempDir("kesha-sh-");
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body);
+    return checkShellScripts(dir);
+  };
+
+  test("passes on every script in the repo", () => {
+    expect(checkShellScripts(repoPath(".github/scripts"))).toEqual([]);
+  });
+
+  test("fails on a script that never turns pipefail on", () => {
+    const errors = scriptsIn({ "a.sh": "#!/usr/bin/env bash\nset -eu\nls | tee out\n" });
+    expect(errors).toEqual([expect.stringContaining("a.sh: never sets `-o pipefail`")]);
+  });
+
+  test("accepts pipefail however set spells it", () => {
+    expect(scriptsIn({ "a.sh": "set -euo pipefail\n", "b.sh": "set -e\nset -o pipefail\n" })).toEqual([]);
+  });
+
+  test("does not accept a pipefail setting that only appears in an unreachable branch", () => {
+    const errors = scriptsIn({ "a.sh": "if false; then\n  set -o pipefail\nfi\necho ready | tee out\n" });
+    expect(errors).toEqual([expect.stringContaining("never sets `-o pipefail`")]);
+  });
+
+  test("fails on find piped into head", () => {
+    const errors = scriptsIn({ "a.sh": "set -euo pipefail\nfind . -name x | head -1\n" });
+    expect(errors).toEqual([expect.stringContaining("pipes `find` into `head`")]);
+  });
+
+  test("ignores files that are not shell scripts", () => {
+    expect(scriptsIn({ "a.ts": "console.log(1)\n" })).toEqual([]);
+  });
+
+  test("check:workflows runs it over .github/scripts end-to-end", async () => {
+    const dir = tempDir("kesha-main-");
+    mkdirSync(join(dir, ".github/workflows"), { recursive: true });
+    mkdirSync(join(dir, ".github/scripts"), { recursive: true });
+    mkdirSync(join(dir, ".github/actions"), { recursive: true });
+    mkdirSync(join(dir, "tests/unit"), { recursive: true });
+    writeFileSync(
+      join(dir, ".github/workflows/probe.yml"),
+      "on: push\njobs:\n  probe:\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n    steps: []\n",
+    );
+    writeFileSync(join(dir, ".github/scripts/probe.sh"), "set -eu\n");
+
+    const proc = Bun.spawn(["bun", join(REPO_ROOT, ".github/scripts/check-workflows.ts")], {
+      cwd: dir,
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+    const stderr = await new Response(proc.stderr).text();
+
+    expect(await proc.exited).toBe(1);
+    expect(stderr).toContain("probe.sh: never sets");
   });
 });

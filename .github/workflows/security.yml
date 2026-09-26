@@ -74,15 +74,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-        run: |
-          {
-            echo "## cargo-deny findings ($(date -u +%Y-%m-%d))"
-            echo
-            echo "The weekly advisory re-check failed. Run \`cd rust && cargo deny check\` locally and triage into \`rust/deny.toml\`."
-            echo
-            echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          } > /tmp/audit-body.md
-          bash .github/scripts/upsert-audit-issue.sh /tmp/audit-body.md
+        run: bash .github/scripts/report-cargo-deny.sh
       - name: Fail job if deny failed on PR
         if: github.event_name != 'schedule' && steps.deny.outcome == 'failure'
         run: |
@@ -114,15 +106,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-        run: |
-          {
-            echo "## bun audit findings ($(date -u +%Y-%m-%d))"
-            echo
-            echo "The weekly JS advisory re-check failed. Run \`bun audit --audit-level=high\` locally and resolve (\`bun update\` or a patched dependency release)."
-            echo
-            echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          } > /tmp/bun-audit-body.md
-          bash .github/scripts/upsert-audit-issue.sh /tmp/bun-audit-body.md "JS security audit findings (weekly)"
+        run: bash .github/scripts/report-bun-audit.sh
       - name: Fail job if audit failed on PR
         if: github.event_name != 'schedule' && steps.audit.outcome == 'failure'
         run: |

@@ -76,26 +76,14 @@ runs:
       shell: bash
       env:
         FFMPEG_PROVIDER: ${{ inputs.ffmpeg-provider }}
-      run: |
-        case "$FFMPEG_PROVIDER" in
-          apt) sudo apt-get update -qq && sudo apt-get install -y ffmpeg ;;
-          brew) which ffmpeg || brew install ffmpeg ;;
-          skip) exit 0 ;;
-          *) echo "Unsupported ffmpeg provider: $FFMPEG_PROVIDER" >&2; exit 1 ;;
-        esac
+      run: bash .github/scripts/install-ffmpeg.sh
 
     - name: 🔊 Install kesha backend
       shell: bash
       env:
         INSTALL_ARGS: ${{ inputs.install-args }}
         INSTALL_LOG: ${{ inputs.install-log }}
-      run: |
-        bun link
-        if [ -n "$INSTALL_LOG" ]; then
-          kesha install $INSTALL_ARGS 2>&1 | tee "$INSTALL_LOG"
-        else
-          kesha install $INSTALL_ARGS
-        fi
+      run: bash .github/scripts/install-kesha-backend.sh
 
     # A cold install that silently reused a cached binary would green while testing nothing.
     - name: 🧊 Assert the engine really downloaded

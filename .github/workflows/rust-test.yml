@@ -69,6 +69,7 @@ jobs:
               - 'rust/Cargo.lock'
               - 'tests/fixtures/benchmark-en/03-review-pull-request.ogg'
               - '.github/workflows/rust-test.yml'
+              - '.github/scripts/coreml-regression.sh'
               - '.github/actions/setup-rust/**'
 
   # GitHub scopes a cache written during a pull_request run to that PR's merge
@@ -190,7 +191,7 @@ jobs:
 
       - name: Run tests
         shell: bash
-        run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "${{ runner.os }}"
+        run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "$RUNNER_OS"
 
       - name: 📤 Upload JUnit
         if: always()
@@ -430,18 +431,7 @@ jobs:
             parakeet-coreml-models-v2-${{ runner.os }}-
 
       - name: 🧪 CoreML decoder-state regression
-        run: |
-          cd rust
-          # Without this nextest swallows a passing test's output, and the ANE gate's
-          # "this guard did not run" line is exactly that (#841).
-          # `system_diarize` rides along because `transcribe::diarize` compiles under no other
-          # lane, so its tests only ever got clippy'd; they are pure and cost 0.14 s (#999).
-          # `fluid_stdout` and `transcribe::diarize` build under no other lane, so both are selected by module (#1072).
-          cargo nextest run \
-            --no-default-features --features coreml,system_diarize \
-            --run-ignored all \
-            --success-output immediate \
-            -E 'test(transcribe_samples_is_stateless_across_calls) + test(a_sub_second_file_transcribes_instead_of_erroring) + test(an_undecodable_file_is_coded_bad_audio) + test(transcribe::diarize::) + test(fluid_stdout::)'
+        run: bash .github/scripts/coreml-regression.sh
 
       - name: 📤 Upload JUnit
         if: always()

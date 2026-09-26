@@ -20,6 +20,7 @@ const dirs = [".github/workflows", ".github/actions"];
 const RUST_TOOLCHAIN_FILE = "rust-toolchain.toml";
 const FLAKE_NIX = "flake.nix";
 const RUST_BUILD_SCRIPT = "rust/build.rs";
+const SCRIPTS_DIR = ".github/scripts";
 
 export type RustToolchainPin = {
   channel: string;
@@ -458,6 +459,58 @@ export function forbidFindPipedToHead(path: string, contents: string): string[] 
   if (logical !== "") check();
 
   return errors;
+}
+
+/** Every `run:` step of a workflow's jobs, or of a composite action's `runs.steps`, with its owner's name. */
+function runSteps(document: unknown): { owner: string; label: string; run: string }[] {
+  const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
+  const groups: [string, unknown][] =
+    jobs && typeof jobs === "object"
+      ? Object.entries(jobs).map(([name, job]) => [name, job?.steps])
+      : [["runs", (document as { runs?: { steps?: unknown } })?.runs?.steps]];
+  return groups.flatMap(([owner, steps]) =>
+    Array.isArray(steps)
+      ? (steps as Step[]).flatMap((step, at) =>
+          typeof step?.run === "string"
+            ? [{ owner, run: step.run, label: typeof step.name === "string" ? `\`${step.name}\`` : `${at + 1}` }]
+            : [],
+        )
+      : [],
+  );
+}
+
+const MAX_INLINE_RUN_LINES = 3;
+
+/** Non-empty, non-comment lines, the way a reader sizes a script; heredoc bodies count like any other line. */
+export function scriptLineCount(run: string): number {
+  return run.split("\n").filter((line) => line.trim() !== "" && !line.trim().startsWith("#")).length;
+}
+
+export function forbidLongInlineRun(path: string, document: unknown): string[] {
+  return runSteps(document).flatMap(({ owner, label, run }) => {
+    const lines = scriptLineCount(run);
+    return lines > MAX_INLINE_RUN_LINES
+      ? [
+          `${path}: \`${owner}\` step ${label} has ${lines} script lines — an inline \`run:\` holds at most ${MAX_INLINE_RUN_LINES}; ` +
+            "extract it to `.github/scripts/` (Bun/TS for logic, sh for thin glue) and pass inputs through `env:`",
+        ]
+      : [];
+  });
+}
+
+/**
+ * Fails on any `${{` in a parsed `run:` scalar. Actions substitutes expressions into the script text before
+ * the shell parses it, so the match covers every YAML quoting style and shell comments too — a value with a
+ * newline escapes a `#` line. Expressions in `if:`, `with:`, `env:` and `name:` never reach a shell (#291).
+ */
+export function forbidExpressionsInRun(path: string, document: unknown): string[] {
+  return runSteps(document).flatMap(({ owner, label, run }) =>
+    [...run.matchAll(/\$\{\{(?:.*?\}\}|)/gs)].map(
+      ([expression]) =>
+        `${path}: \`${owner}\` step ${label} interpolates \`${expression}\` into its script — Actions substitutes it ` +
+          "before the shell parses the line; route it through `env:` and read the variable instead (#291)",
+    ),
+  );
 }
 
 /**
@@ -1162,6 +1215,8 @@ export function checkFile(
       ...requireDarwinSmokeCoversBothEngines(path, document),
       ...forbidLinuxPackaging(path, contents),
       ...forbidFindPipedToHead(path, contents),
+      ...forbidLongInlineRun(path, document),
+      ...forbidExpressionsInRun(path, document),
       ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
@@ -1202,6 +1257,32 @@ export function checkFlakeNix(path: string): string[] {
   return forbidFindPipedToHead(path, readFileSync(path, "utf8"));
 }
 
+/** Extracted `run:` bodies leave the YAML the step-level pipefail and find|head rules read, so each script answers for both itself (#1083, #1088). */
+export function checkShellScripts(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".sh"))
+    .sort()
+    .flatMap((name) => {
+      const path = join(dir, name);
+      const contents = readFileSync(path, "utf8");
+      const commands = contents
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== "" && !line.startsWith("#"));
+      const initialOptions: string[] = [];
+      for (const command of commands) {
+        if (!/^set\s/.test(command)) break;
+        initialOptions.push(command);
+      }
+      const pipefail = initialOptions.some((line) => /^set\s+(?:-\w*\s+)*-\w*o\s+pipefail\b/.test(line));
+      return [
+        ...(pipefail ? [] : [`${path}: never sets \`-o pipefail\`, so a failed stage inside a pipeline passes silently (#1083)`]),
+        ...forbidFindPipedToHead(path, contents),
+      ];
+    });
+}
+
 function main(): void {
   const files = dirs.flatMap((dir) => collectYamlFiles(dir)).sort();
   if (files.length === 0) {
@@ -1220,6 +1301,7 @@ function main(): void {
     ...rustToolchainErrors,
     ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, sources)),
     ...checkFlakeNix(FLAKE_NIX),
+    ...checkShellScripts(SCRIPTS_DIR),
   ];
   for (const error of errors) console.error(error);
 

@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { buildPostEngineReleaseFollowup, releaseIsPublished } from "../../.github/scripts/post-engine-release";
 import { decideFollowup, ownsTag, refuseConcurrentFollowup } from "../../.github/scripts/post-release-guard";
-import { parseRepoYaml } from "../helpers/repo";
+import { parseRepoYaml, readRepoFile } from "../helpers/repo";
+
+/** A step's own `run:` text plus the body of any `.github/scripts/*.sh` it hands off to. */
+function runText(step: { run?: string }): string {
+  const script = /\bbash (\.github\/scripts\/[\w.-]+\.sh)\b/.exec(step.run ?? "")?.[1];
+  return `${step.run ?? ""}\n${script ? readRepoFile(script) : ""}`;
+}
 
 const targetSource = `const ENGINE_TARGETS: Record<string, EngineTarget> = {
   "darwin-arm64": {
@@ -261,10 +267,10 @@ describe("post-engine-release workflow", () => {
     expect(workflow.on.workflow_dispatch.inputs.tag.required).toBe(true);
     expect(job.permissions).toMatchObject({ contents: "write", "pull-requests": "write" });
     expect(job.concurrency.group).toContain("post-engine-release");
-    expect(job.steps.some((step: { run?: string }) => step.run?.includes("--state all"))).toBe(true);
-    expect(job.steps.some((step: { run?: string }) => step.run?.includes("post-engine-release.ts"))).toBe(true);
-    expect(job.steps.some((step: { run?: string }) => step.run?.includes("git switch -c"))).toBe(true);
-    expect(job.steps.some((step: { run?: string }) => step.run?.includes("gh pr create"))).toBe(true);
+    expect(job.steps.some((step: { run?: string }) => runText(step).includes("--state all"))).toBe(true);
+    expect(job.steps.some((step: { run?: string }) => runText(step).includes("post-engine-release.ts"))).toBe(true);
+    expect(job.steps.some((step: { run?: string }) => runText(step).includes("git switch -c"))).toBe(true);
+    expect(job.steps.some((step: { run?: string }) => runText(step).includes("gh pr create"))).toBe(true);
   });
 
   // Every validating step here pipes — `{ bun run check:versions; ... } | tee` and
@@ -278,6 +284,10 @@ describe("post-engine-release workflow", () => {
     const steps = workflow.jobs.follow_up.steps as { shell?: string; run?: string }[];
     expect(steps.filter((step) => step.run !== undefined).length).toBeGreaterThan(0);
     for (const step of steps) expect(step.shell ?? "bash").toBe("bash");
+    // A step that hands off to a script leaves pipefail to that script, which bash runs without the step's flags.
+    for (const step of steps.filter((step) => /\bbash \.github\/scripts\//.test(step.run ?? ""))) {
+      expect(runText(step)).toContain("set -euo pipefail");
+    }
   });
 
   test("only a stable engine tag is owned by the follow-up", () => {

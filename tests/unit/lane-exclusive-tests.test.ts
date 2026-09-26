@@ -5,6 +5,7 @@ import { parseRepoYaml } from "../helpers/repo";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const WORKFLOW = ".github/workflows/rust-test.yml";
+const LANE_SCRIPT = ".github/scripts/coreml-regression.sh";
 
 // Modules `cfg`-gated to features only `coreml-regression` builds: every other lane either
 // compiles default features, so these are gated out, or stops at cargo check / clippy. A
@@ -16,7 +17,8 @@ function read(relative: string): string {
 }
 
 function laneFilter(): string {
-  const match = /-E '([^']+)'/.exec(read(WORKFLOW));
+  expect(read(WORKFLOW)).toContain(`run: bash ${LANE_SCRIPT}`);
+  const match = /-E '([^']+)'/.exec(read(LANE_SCRIPT));
   expect(match).not.toBeNull();
   return match![1]!;
 }

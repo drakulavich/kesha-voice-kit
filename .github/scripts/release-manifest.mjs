@@ -182,8 +182,13 @@ function validateSourceConsistency(manifest) {
 
   // The bash validator must ship the exact grammar string, so the two languages cannot drift (#685).
   assertIncludes(workflow, ENGINE_TAG_ERE, ".github/workflows/build-engine.yml");
-  assertIncludes(workflow, "SHA256SUMS", ".github/workflows/build-engine.yml");
-  assertIncludes(workflow, ".sigstore.json", ".github/workflows/build-engine.yml");
+  for (const [script, token] of [
+    [".github/scripts/release-checksums.sh", "SHA256SUMS"],
+    [".github/scripts/sign-release-assets.sh", ".sigstore.json"],
+  ]) {
+    assertIncludes(workflow, script, ".github/workflows/build-engine.yml");
+    assertIncludes(readFileSync(script, "utf8"), token, script);
+  }
 
   const names = new Set();
   for (const a of manifest.assets) {

@@ -54,19 +54,13 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
 
-      # Shape check runs before the tag reaches any filesystem/argv site; `-cli` marker tags are the CLI's, not ours (#685).
+      # Inline, not a script: this job runs from `inputs.ref`, which may predate any new script. `-cli` marker tags are the CLI's (#685).
       - name: Validate tag shape and uniqueness
         env:
           INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if ! [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(beta|alpha)\.[0-9]+)?$ ]]; then
-            echo "::error::Tag '$INPUT_TAG' must match vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-alpha.N (CLI marker tags ending in -cli are not supported by this workflow)"
-            exit 1
-          fi
-          if git rev-parse "refs/tags/$INPUT_TAG" >/dev/null 2>&1; then
-            echo "::error::Tag $INPUT_TAG already exists. Tag names are one-use (CLAUDE.md → TAG NAMES ARE ONE-USE) — bump patch and retry."
-            exit 1
-          fi
+          [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(beta|alpha)\.[0-9]+)?$ ]] || { echo "::error::Tag '$INPUT_TAG' must match vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-alpha.N (CLI marker tags ending in -cli are not supported by this workflow)"; exit 1; }
+          if git rev-parse "refs/tags/$INPUT_TAG" >/dev/null 2>&1; then echo "::error::Tag $INPUT_TAG already exists. Tag names are one-use (CLAUDE.md → TAG NAMES ARE ONE-USE) — bump patch and retry."; exit 1; fi
           echo "Tag $INPUT_TAG passes shape + uniqueness checks."
 
       # `inputs.tag` and `inputs.notes` flow through `env:` rather than direct
@@ -148,32 +142,28 @@ jobs:
 
       - name: Build release binary
         shell: bash
-        run: cd rust && cargo build --release --target ${{ matrix.target }} --features ${{ matrix.features }} --no-default-features
+        env:
+          ENGINE_TARGET: ${{ matrix.target }}
+          ENGINE_FEATURES: ${{ matrix.features }}
+        run: cd rust && cargo build --release --target "$ENGINE_TARGET" --features "$ENGINE_FEATURES" --no-default-features
       - name: Prepare artifact
         shell: bash
+        env:
+          ENGINE_TARGET: ${{ matrix.target }}
+          RUNNER_IMAGE: ${{ matrix.os }}
+          ENGINE_BINARY: ${{ matrix.binary }}
         run: |
-          src="rust/target/${{ matrix.target }}/release/kesha-engine"
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then src="${src}.exe"; fi
-          cp "$src" "${{ matrix.binary }}"
+          src="rust/target/$ENGINE_TARGET/release/kesha-engine"
+          if [ "$RUNNER_IMAGE" = "windows-latest" ]; then src="${src}.exe"; fi
+          cp "$src" "$ENGINE_BINARY"
 
-      # system_tts (#141): the Swift AVSpeechSynthesizer sidecar lives in
-      # the build-script's OUT_DIR (rust/target/<target>/release/build/
-      # kesha-engine-<hash>/out/say-avspeech). cargo doesn't expose a
-      # stable path for it, so glob it out. Stage it next to the matrix
-      # binary so the smoke-test step's sibling-lookup finds it, then
-      # copy to the release artifact name.
+      # system_tts (#141): the Swift AVSpeechSynthesizer sidecar lives in the build script's OUT_DIR.
       - name: Stage AVSpeech sidecar (macOS)
         if: matrix.os == 'macos-14'
         shell: bash
-        run: |
-          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name say-avspeech -type f -print -quit)
-          if [ -z "$sidecar" ]; then
-            echo "say-avspeech sidecar not found — system_tts feature may not have compiled" >&2
-            exit 1
-          fi
-          echo "Sidecar at: $sidecar"
-          cp "$sidecar" ./say-avspeech              # sibling-next-to-engine for smoke test
-          cp "$sidecar" say-avspeech-darwin-arm64    # release artifact name
+        env:
+          ENGINE_TARGET: ${{ matrix.target }}
+        run: bash .github/scripts/stage-darwin-sidecar.sh say-avspeech "system_tts feature may not have compiled"
 
       # NOTE: Kokoro TTS (#207) and Sortformer diarization (#199) no longer
       # ship as Swift sidecars — both run in-engine via native fluidaudio-rs,
@@ -187,73 +177,16 @@ jobs:
       - name: Stage kesha-textlang sidecar (macOS)
         if: matrix.os == 'macos-14'
         shell: bash
-        run: |
-          sidecar=$(find "rust/target/${{ matrix.target }}/release/build" -name kesha-textlang -type f -print -quit)
-          if [ -z "$sidecar" ]; then
-            echo "kesha-textlang sidecar not found — build.rs::build_text_lang_helper may have failed" >&2
-            exit 1
-          fi
-          echo "Sidecar at: $sidecar"
-          cp "$sidecar" ./kesha-textlang                # sibling-next-to-engine for smoke test
-          cp "$sidecar" kesha-textlang-darwin-arm64     # release artifact name
+        env:
+          ENGINE_TARGET: ${{ matrix.target }}
+        run: bash .github/scripts/stage-darwin-sidecar.sh kesha-textlang "build.rs::build_text_lang_helper may have failed"
 
       - name: Smoke-test binary
         shell: bash
-        # Assert `tts` is in the capabilities — otherwise a future feature-flag
-        # regression (e.g. matrix row silently drops `tts`) would ship a
-        # release binary missing `kesha say`. Past incident this guards
-        # against: v1.1.0 → v1.1.3, see CLAUDE.md "BUILD-ENGINE FEATURE
-        # MATRIX MIRRORS CARGO DEFAULTS".
-        #
-        # macOS additionally checks that `say --list-voices` surfaces at
-        # least one `macos-*` entry (AVSpeech Swift sidecar) and one
-        # FluidAudio-backed Kokoro voice (in-engine via system_kokoro). A
-        # broken AVSpeech sidecar or a Kokoro-less engine fails the build
-        # instead of shipping in a release.
-        run: |
-          chmod +x "${{ matrix.binary }}"
-          caps=$("./${{ matrix.binary }}" describe)
-          echo "$caps"
-          # Scope the match to the feature array: `describe` also publishes the error
-          # taxonomy and the gate table, which carry the literals "tts" and
-          # "transcribe.diarize" whatever was compiled in, so a whole-document grep
-          # passes on a binary missing the feature — the exact drift this step catches.
-          feats() { echo "$caps" | grep -o '"features":\[[^]]*\]'; }
-          feats | grep -q '"tts"' || {
-            echo "expected tts in describe features, got: $caps" >&2
-            exit 1
-          }
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
-            voices=$("./${{ matrix.binary }}" say --list-voices)
-            echo "$voices" | grep -q '^macos-' || {
-              echo "expected at least one macos-* voice, got:" >&2
-              echo "$voices" >&2
-              exit 1
-            }
-            echo "$voices" | grep -q '^en-am_michael' || {
-              echo "expected FluidAudio Kokoro voice en-am_michael, got:" >&2
-              echo "$voices" >&2
-              exit 1
-            }
-            # #199: same matrix-drift guard as `tts` above. transcribe.diarize
-            # is gated on system_diarize; if a future matrix edit drops the
-            # feature, this assertion is the last gate before a release.
-            feats | grep -q '"transcribe\.diarize"' || {
-              echo "expected transcribe.diarize in describe features, got: $caps" >&2
-              exit 1
-            }
-            # text-lang sidecar e2e: exercise the spawn → stdin → JSON
-            # contract end-to-end so a broken sidecar packaging fails the
-            # build instead of shipping in a release. `detect-text-lang`
-            # accepts the text as argv (not stdin) — argv is forwarded into
-            # the sidecar's stdin inside the Rust glue.
-            lang_json=$("./${{ matrix.binary }}" detect-text-lang "Hello world from the smoke test")
-            echo "$lang_json"
-            echo "$lang_json" | grep -q '"code"' || {
-              echo "expected detect-text-lang to emit JSON with a 'code' field, got: $lang_json" >&2
-              exit 1
-            }
-          fi
+        env:
+          ENGINE_BINARY: ${{ matrix.binary }}
+          RUNNER_IMAGE: ${{ matrix.os }}
+        run: bash .github/scripts/smoke-engine-binary.sh
 
       # The smoke above proves the artifact starts and advertises `tts`, not that it synthesises (#671, #636).
       # darwin synthesises in `darwin-synthesis-smoke` instead — macos-14's CoreML cannot run the vocoder (#678).
@@ -270,11 +203,7 @@ jobs:
       - name: 🧾 Mark staged engine version
         if: matrix.os != 'macos-14'
         shell: bash
-        run: |
-          bun -e '
-            const pkg = await Bun.file("package.json").json();
-            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
-          '
+        run: bun .github/scripts/mark-engine-version.ts
 
       - name: 🔊 Install English TTS models
         if: matrix.os != 'macos-14'
@@ -295,7 +224,9 @@ jobs:
       - name: Inspect macOS dynamic deps
         if: matrix.os == 'macos-14'
         shell: bash
-        run: otool -L "${{ matrix.binary }}" && otool -l "${{ matrix.binary }}" | grep -A2 LC_RPATH || true
+        env:
+          ENGINE_BINARY: ${{ matrix.binary }}
+        run: otool -L "$ENGINE_BINARY" && otool -l "$ENGINE_BINARY" | grep -A2 LC_RPATH || true
 
       - name: Upload engine artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -364,11 +295,7 @@ jobs:
       # Load-bearing: on a version mismatch `downloadEngine` fetches the published engine, whose tag does not exist yet.
       - name: 🧾 Mark staged engine version
         shell: bash
-        run: |
-          bun -e '
-            const pkg = await Bun.file("package.json").json();
-            await Bun.write(`${process.env.KESHA_ENGINE_BIN}.version`, `${pkg.keshaEngine.version}\n`);
-          '
+        run: bun .github/scripts/mark-engine-version.ts
 
       # FluidAudio owns `~/.cache/fluidaudio` — the ANE voice packs install stages, plus the bundle it self-fetches.
       # Left out of the `kesha-models-tts-v3` share on purpose: this row caches a second path the other
@@ -470,26 +397,14 @@ jobs:
 
       - name: Generate release checksums
         shell: bash
-        run: |
-          cd release-assets
-          tmp="$(mktemp)"
-          find . -maxdepth 1 -type f ! -name '*.sigstore.json' ! -name 'SHA256SUMS' -print0 \
-            | sort -z \
-            | xargs -0 sha256sum > "$tmp"
-          mv "$tmp" SHA256SUMS
-          cat SHA256SUMS
+        run: bash .github/scripts/release-checksums.sh release-assets
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Sign release assets
         shell: bash
-        run: |
-          cd release-assets
-          while IFS= read -r -d '' asset; do
-            name="${asset#./}"
-            cosign sign-blob --yes --bundle "${name}.sigstore.json" "$name"
-          done < <(find . -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
+        run: bash .github/scripts/sign-release-assets.sh release-assets
 
       # Runs last, right before GitHub resolves the tag to whatever commit it names now — a re-point during the SBOM/download/sign window above is the same #1108/#1115 bug moved later (review round 3, Greptile P1); querying origin live and peeling `^{}` avoids both the stale-local-ref and tag-object-vs-commit traps (round 2 P1/P2), though a same-commit re-annotation still passes.
       - name: Verify tag has not been superseded
@@ -497,10 +412,7 @@ jobs:
           TAG_NAME: ${{ github.ref_name }}
         run: |
           current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"
-          if [ "$current" != "$GITHUB_SHA" ]; then
-            echo "::error::tag $TAG_NAME now points at $current, but this run was triggered for $GITHUB_SHA — the tag was re-pointed mid-build. Refusing to publish a release built from a superseded commit."
-            exit 1
-          fi
+          [ "$current" = "$GITHUB_SHA" ] || { echo "::error::tag $TAG_NAME now points at $current, but this run was triggered for $GITHUB_SHA — the tag was re-pointed mid-build. Refusing to publish a release built from a superseded commit."; exit 1; }
 
       # Always a draft: releases here are immutable, and an asset uploaded after publication 422s.
       - name: Create draft release with binaries
