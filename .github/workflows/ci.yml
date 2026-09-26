@@ -334,6 +334,7 @@ jobs:
 
       - name: 📤 Upload test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-${{ matrix.os }}
@@ -381,6 +382,7 @@ jobs:
 
       - name: 📤 Upload TS coverage
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-ts
@@ -430,6 +432,7 @@ jobs:
 
       - name: 📤 Upload test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-integration
@@ -515,6 +518,7 @@ jobs:
         run: bun .github/scripts/junit-to-markdown.ts "Integration Tests — full (macos)" test-results/integration-full.xml >> $GITHUB_STEP_SUMMARY
       - name: 📤 Upload test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-integration-full
@@ -858,6 +862,7 @@ jobs:
 
       - name: 📤 Upload test results
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-results-tts-e2e
