@@ -133,11 +133,15 @@ This re-downloads from the published release rather than re-using the draft bina
 
 ```bash
 gh workflow run capability-pact.yml --ref main -f record=true
-gh run watch <run-id> --exit-status
-gh run download <run-id> -D "$SCRATCH/pacts"   # three capability-pact-<target> artifacts, two files each
+sleep 5   # the dispatched run takes a moment to be listed
+RUN=$(gh run list --workflow capability-pact.yml --event workflow_dispatch --limit 1 --json databaseId --jq ".[0].databaseId")
+gh run watch "$RUN" --exit-status
+PACTS=$(mktemp -d) && gh run download "$RUN" -D "$PACTS"   # three capability-pact-<target> artifacts, two files each
 ```
 
 In a worktree, copy all six files over `tests/fixtures/capabilities/` unchanged — never hand-edit a recording. If `tests/unit/capabilities-pact.test.ts` goes red, read the diff against the recording first; only when the released binary really changed a published contract (a new error code, a moved `origin`) update the test's expected lists and any `docs/errors.md` sentence describing them in the same PR. If `just preflight` is red only on `check:engine-targets`, put the three `sizeBytes` from `gh release view vX.Y.Z --json assets` in the same PR.
+
+Merge the pact PR before the hand-off, so the scheduled pact run never meets a stale recording.
 
 Then hand off to **`/release-cli`** so the pin reaches users.
 
