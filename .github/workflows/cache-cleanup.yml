@@ -44,10 +44,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         # --all handles listing, paging past the 100-entry cap, and deleting;
         # --succeed-on-no-caches keeps "the PR cached nothing" from failing the
         # job. Any other failure (auth, rate limit) still exits non-zero rather
         # than reading as "nothing to reclaim".
         run: |
           gh cache delete --all --succeed-on-no-caches \
-            --ref "refs/pull/${{ github.event.pull_request.number }}/merge"
+            --ref "refs/pull/$PR_NUMBER/merge"
