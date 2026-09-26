@@ -85,6 +85,7 @@ describe("process leak guard", () => {
       expect(pidIsAlive(zombie)).toBe(false);
     } finally {
       parent.kill("SIGKILL");
+      await parent.exited;
     }
   });
 
