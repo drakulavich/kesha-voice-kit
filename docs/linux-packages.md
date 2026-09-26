@@ -84,11 +84,11 @@ Packaging uses [nFPM](https://nfpm.goreleaser.com/) to emit both formats from
 the same config.
 
 ```bash
-go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.4
+.github/scripts/install-nfpm.sh "$HOME/.local/nfpm" && export PATH="$HOME/.local/nfpm:$PATH"
 node .github/scripts/build-linux-packages.mjs
 .github/scripts/verify-linux-packages.sh
 ```
 
-CI runs those same two commands through `.github/actions/linux-packages`, from
+The installer fetches the pinned nFPM release binary (Linux x86-64) and refuses it unless its SHA-256 matches. CI runs the same three commands through `.github/actions/linux-packages`, from
 both `linux-packages.yml` (on `main`) and `release-cli.yml` (on a
 `vX.Y.Z-cli` tag, which is what publishes them).
