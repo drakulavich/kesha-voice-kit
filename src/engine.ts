@@ -236,14 +236,20 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
 /** Generous because macOS Gatekeeper can take several seconds to scan a freshly written binary on its first run. */
 export const ENGINE_PROBE_TIMEOUT_MS = 15_000;
 
-let unansweredDescribe: { binPath: string; mtime: number | undefined } | null = null;
+let unansweredDescribe: string | null = null;
+
+/** ctime is part of it because utimes cannot set it back after a replacement that restores mtime. */
+function binaryIdentity(binPath: string): string {
+  const st = statSync(binPath, { throwIfNoEntry: false });
+  return st ? `${binPath}:${st.ino}:${st.size}:${st.ctimeMs}` : `${binPath}:missing`;
+}
 
 /** Capabilities view for the screens that predate `describe`; null when the engine cannot be read within the deadline. */
 export async function getEngineCapabilities(timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<EngineCapabilities | null> {
   const binPath = getEngineBinPath();
-  const mtime = statSync(binPath, { throwIfNoEntry: false })?.mtimeMs;
+  const identity = binaryIdentity(binPath);
   // `install --plan` probes twice; a binary that already let one deadline pass is not waited on again.
-  if (unansweredDescribe?.binPath === binPath && unansweredDescribe.mtime === mtime) return null;
+  if (unansweredDescribe === identity) return null;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -251,7 +257,7 @@ export async function getEngineCapabilities(timeoutMs = ENGINE_PROBE_TIMEOUT_MS)
   } catch (err) {
     if (!(err instanceof KeshaError)) throw err;
     if (controller.signal.aborted) {
-      unansweredDescribe = { binPath, mtime };
+      unansweredDescribe = identity;
       log.warn(
         `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s; ` +
           "continuing without its capabilities — re-run `kesha install` to replace it",
