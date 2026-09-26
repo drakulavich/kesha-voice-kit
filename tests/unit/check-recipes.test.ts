@@ -153,7 +153,7 @@ describe("isSwept", () => {
     "README.md",
     "CONTRIBUTING.md",
     "docs/architecture.md",
-    ".claude/commands/preflight.md",
+    ".claude/commands/worktree.md",
     ".claude/skills/release-mechanics/SKILL.md",
     ".github/workflows/rust-test.yml",
   ])("sweeps %s", (path) => {
@@ -161,7 +161,11 @@ describe("isSwept", () => {
   });
 
   // Historical records: they describe what was true when written, not what is true now.
-  test.each(["docs/superpowers/specs/2026-05-30-lanes.md", "docs/plans/completed/2026-05-11-nix.md"])(
+  test.each([
+    "docs/superpowers/specs/2026-05-30-lanes.md",
+    "docs/plans/completed/2026-05-11-nix.md",
+    "docs/mutation-evidence/issue-1105.md",
+  ])(
     "excludes %s",
     (path) => {
       expect(isSwept(path)).toBe(false);
@@ -180,7 +184,7 @@ describe("sweptFiles", () => {
   const files = sweptFiles(REPO_ROOT);
 
   test("finds the files #797 names", () => {
-    for (const path of ["CLAUDE.md", "docs/architecture.md", ".claude/commands/preflight.md"]) {
+    for (const path of ["CLAUDE.md", "docs/architecture.md", ".claude/commands/worktree.md"]) {
       expect(files).toContain(path);
     }
   });
@@ -390,7 +394,7 @@ describe("unguardedPipelines", () => {
     expect(unguardedPipelines(withShell(["-c", "pipefail"]))).toHaveLength(1);
   });
 
-  // `preflight`'s own spelling. The status of `"$(a | b)"` is still the pipeline's, and reading the
+  // The status of `"$(a | b)"` is still the pipeline's, and reading the
   // whole double-quoted run as data missed every pipeline the justfile actually contains.
   test("a pipeline inside a quoted command substitution is shell, not data", () => {
     const piped = [
@@ -448,7 +452,6 @@ describe("the repository's own references", () => {
     expect([...found].sort()).toEqual([
       "dev-setup",
       "mutate",
-      "preflight",
       "release",
       "release-tag",
       "rust-test",

@@ -48,11 +48,11 @@ cd -                              # cleanup runs from the root checkout, not the
 just worktree-rm <slug>
 ```
 
-### VERIFY BEFORE PUSHING
+### CI IS THE GATE
 
-- `just preflight` before every push — the executable definition of the default gate: TS and every `check:*` CI runs, always; the Rust gate when `rust/**` changed; the CoreML check when `rust/src/backend/**` changed; `just ALL=1 preflight` runs every gate regardless of the diff. `tests/unit/preflight-parity.test.ts` keeps that list equal to what the pull-request workflows invoke, because a shell-injecting recipe once passed a green preflight and was caught only in CI. Read the recipe rather than reconstructing the commands.
+- There is no local pre-push gate: push, then gate on CI for the full head SHA. Run locally only what your change needs (`bun run lint`, the tests you touched, `just rust-test`).
 - Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
-- `preflight` does **not** build the darwin feature set, so it goes green on code that never compiled: touching `rust/src/tts/**` or anything fluidaudio-rs-adjacent (`system_kokoro` / `system_diarize` / `system_text_lang`) also needs `just verify-darwin-full`, the recipe `rust-test.yml` runs.
+- The default feature set does not build darwin code: `rust/src/tts/**` and anything fluidaudio-rs-adjacent (`system_kokoro` / `system_diarize` / `system_text_lang`) compile only under `just verify-darwin-full`, which `rust-test.yml` runs.
 
 Rust toolchain quirks (the pinned `rust-toolchain.toml`, rustfmt, libclang) and language gotchas: `docs/runbooks/rust-gotchas.md`.
 
