@@ -84,7 +84,7 @@ text-processing-rs = { git = "https://github.com/FluidInference/text-processing-
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
 hound = "3.5"
 thiserror = { version = "2", optional = true }
-sha2 = "0.10"
+sha2 = "0.11"
 ssml-parser = { version = "0.3", optional = true }
 
 # Opus encoding for `kesha say --format ogg-opus` (#223). Encode drives the

@@ -236,7 +236,10 @@ mod tests {
         use sha2::{Digest, Sha256};
         match std::fs::read(path) {
             Ok(bytes) => {
-                let mut hex = format!("{:x}", Sha256::digest(&bytes));
+                let mut hex: String = Sha256::digest(&bytes)
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
                 hex.truncate(16);
                 hex
             }
