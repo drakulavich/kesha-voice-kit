@@ -2,7 +2,7 @@ import { dirname, join, resolve, sep } from "path";
 import { errorMessage } from "./error-utils";
 import { homedir, tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
-import { getDescribe, getEngineBinPath, protocolEnv, spawnEngineProcess } from "./engine";
+import { getDescribe, getEngineBinPath } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import {
   engineTarget,
@@ -14,13 +14,14 @@ import {
   targetKey,
 } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, KeshaError, readEvents, type StderrOutcome } from "./engine/events";
+import { engineFailure, KeshaError } from "./engine/events";
+import { runEngineProcess } from "./engine/spawn";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
 import { engineVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { createLiveStatus, streamResponseToFile } from "./progress";
-import { interruptedRun, registerProcessTree } from "./process-tree";
+import { interruptedRun } from "./process-tree";
 import { DEFAULT_VOICE_ID } from "./voice-routing";
 import {
   getVersionMarkerPath,
@@ -391,23 +392,13 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
   log.progress("Warming FluidAudio Kokoro CoreML cache...");
 
   const startedAt = performance.now();
-  const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"], protocolEnv());
-  const tree = registerProcessTree(proc);
-
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    tree.terminate();
-    tree.forceKillAfterGrace();
-  }, timeoutMs);
-
   try {
-    const [events, exitCode] = await Promise.all([
-      readEvents(proc.stderr as ReadableStream<Uint8Array>),
-      proc.exited,
-    ]);
+    const { exitCode, aborted, events } = await runEngineProcess(binPath, args, {
+      stdio: ["ignore", "ignore", "pipe"],
+      signal: AbortSignal.timeout(timeoutMs),
+    });
 
-    if (timedOut) {
+    if (aborted) {
       log.warn("FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow.");
       return;
     }
@@ -426,14 +417,13 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
       `FluidAudio Kokoro warmed (${Math.round(performance.now() - startedAt)}ms).`,
     );
   } catch (e) {
-    if (e instanceof KeshaError && e.code === "E_INTERRUPTED") throw e;
+    // A launch failure was never the warmup's to swallow, and an interrupt is the user's.
+    if (e instanceof KeshaError && (e.code === "E_INTERRUPTED" || e.code === "E_ENGINE_SPAWN")) throw e;
     log.warn(
       `FluidAudio Kokoro warmup failed (${errorMessage(e)}); ` +
         "first `kesha say en-*` may still be slow.",
     );
   } finally {
-    clearTimeout(timer);
-    tree.dispose();
     try {
       rmSync(outPath, { force: true });
     } catch {
@@ -748,15 +738,13 @@ async function validateInstallRequest(
 /** Runs `kesha-engine install` to download/verify models. */
 async function runEngineModelInstall(binPath: string, installArgs: string[]): Promise<void> {
   log.progress("Installing models...");
-  const proc = spawnEngineProcess(binPath, installArgs, ["inherit", "inherit", "pipe"], protocolEnv());
-  const tree = registerProcessTree(proc);
   // The byte percentage repaints one row; `GET`/`OK`/`retrying` are discrete steps that must stay in the log.
   const status = createLiveStatus();
-  let events: StderrOutcome;
-  let exitCode: number;
+  let run: Awaited<ReturnType<typeof runEngineProcess>>;
   try {
-    [events, exitCode] = await Promise.all([
-      readEvents(proc.stderr as ReadableStream<Uint8Array>, {
+    run = await runEngineProcess(binPath, installArgs, {
+      stdio: ["inherit", "inherit", "pipe"],
+      sinks: {
         onProgress: (line, event) => {
           if (event.pct !== undefined) {
             status.update(line);
@@ -769,14 +757,12 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
           status.clear();
           log.warn(line);
         },
-      }),
-      proc.exited,
-    ]);
+      },
+    });
   } finally {
     status.clear();
-    tree.dispose();
   }
-
+  const { exitCode, events } = run;
   if (events.error || events.invalid.length > 0) throw engineFailure("install", events, exitCode);
   if (exitCode !== 0) {
     // Nothing coded and nothing off-protocol: the engine failed without saying why, so neither do we.
