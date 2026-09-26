@@ -1834,6 +1834,10 @@ describe("forbidExpressionsInRun", () => {
     expect(errorsFor([{ run: "${{ inputs.command }}" }])).toHaveLength(1);
   });
 
+  test("fails on an unmatched expression opener", () => {
+    expect(errorsFor([{ run: "echo '${{ inputs.tag'" }])).toHaveLength(1);
+  });
+
   test("allows expressions in if, with, env and the step name", () => {
     const step = {
       name: "${{ matrix.os }}",
@@ -1877,6 +1881,11 @@ describe("checkShellScripts", () => {
 
   test("accepts pipefail however set spells it", () => {
     expect(scriptsIn({ "a.sh": "set -euo pipefail\n", "b.sh": "set -e\nset -o pipefail\n" })).toEqual([]);
+  });
+
+  test("does not accept a pipefail setting that only appears in an unreachable branch", () => {
+    const errors = scriptsIn({ "a.sh": "if false; then\n  set -o pipefail\nfi\necho ready | tee out\n" });
+    expect(errors).toEqual([expect.stringContaining("never sets `-o pipefail`")]);
   });
 
   test("fails on find piped into head", () => {

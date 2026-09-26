@@ -505,7 +505,7 @@ export function forbidLongInlineRun(path: string, document: unknown): string[] {
  */
 export function forbidExpressionsInRun(path: string, document: unknown): string[] {
   return runSteps(document).flatMap(({ owner, label, run }) =>
-    [...run.matchAll(/\$\{\{.*?\}\}/gs)].map(
+    [...run.matchAll(/\$\{\{(?:.*?\}\}|)/gs)].map(
       ([expression]) =>
         `${path}: \`${owner}\` step ${label} interpolates \`${expression}\` into its script — Actions substitutes it ` +
           "before the shell parses the line; route it through `env:` and read the variable instead (#291)",
@@ -1266,7 +1266,16 @@ export function checkShellScripts(dir: string): string[] {
     .flatMap((name) => {
       const path = join(dir, name);
       const contents = readFileSync(path, "utf8");
-      const pipefail = /^\s*set\s+(?:-\w*\s+)*-\w*o\s+pipefail\b/m.test(contents);
+      const commands = contents
+        .split("\n")
+        .map((line) => line.trim())
+        .filter((line) => line !== "" && !line.startsWith("#"));
+      const initialOptions: string[] = [];
+      for (const command of commands) {
+        if (!/^set\s/.test(command)) break;
+        initialOptions.push(command);
+      }
+      const pipefail = initialOptions.some((line) => /^set\s+(?:-\w*\s+)*-\w*o\s+pipefail\b/.test(line));
       return [
         ...(pipefail ? [] : [`${path}: never sets \`-o pipefail\`, so a failed stage inside a pipeline passes silently (#1083)`]),
         ...forbidFindPipedToHead(path, contents),
