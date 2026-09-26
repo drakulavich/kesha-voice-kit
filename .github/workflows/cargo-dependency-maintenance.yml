@@ -23,13 +23,14 @@ concurrency:
 jobs:
   checklist:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # An install failure only degrades the report; the script records it and still opens the checklist.
       - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         continue-on-error: true
+        timeout-minutes: 5
         with:
           tool: cargo-outdated@0.19.0
 
