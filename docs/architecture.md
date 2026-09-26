@@ -23,6 +23,10 @@ binary downloaded from GitHub Releases during `kesha install`. The two are
 `package.json#keshaEngine.version`). The engine pin is what every unattended
 path resolves; `kesha install --engine-version <version>` installs one named
 release instead, for that invocation only ([CONTRIBUTING.md](../CONTRIBUTING.md)).
+Every downloaded engine and sidecar is checked against a SHA-256 before it is made
+executable, and deleted on a mismatch: the pinned release against the hashes in
+`src/engine-targets.ts`, an `--engine-version` release against its own `SHA256SUMS`,
+which a release without one fails outright rather than installing unverified.
 
 ## Runtime data flow
 

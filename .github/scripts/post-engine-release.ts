@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from "node:fs";
-import { engineTargetEntries } from "../../src/engine-targets";
+import { engineTargetEntries, parseSha256Sums, PINNED_ASSET_SHA256 } from "../../src/engine-targets";
 import { cmp, isStableVersion, parseSemver } from "../../src/semver.mjs";
 
 const REPO = "drakulavich/kesha-voice-kit";
@@ -25,6 +25,8 @@ type FollowupInput = {
   release: Release;
   manifest: Manifest;
   targetSource: string;
+  /** The release's SHA256SUMS asset, verbatim. */
+  sha256Sums: string;
   packageSource: string;
   serverSource: string;
 };
@@ -109,6 +111,16 @@ function replaceTargetSize(source: string, assetName: string, size: number): str
   return source.replace(pattern, `$1${size.toLocaleString("en-US").replaceAll(",", "_")}`);
 }
 
+function replacePinnedSha256(source: string, assetName: string, sha256: string): string {
+  const escaped = assetName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`("${escaped}":\\s*)"[0-9a-f]{64}"`, "g");
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) {
+    throw new Error(`src/engine-targets.ts must contain exactly one PINNED_ASSET_SHA256 entry for ${assetName}`);
+  }
+  return source.split(matches[0]![0]).join(`${matches[0]![1]}"${sha256}"`);
+}
+
 function parsePackage(source: string): { version: string; keshaEngine: { version: string } } {
   const pkg = asRecord(JSON.parse(source), "package.json");
   const engine = asRecord(pkg.keshaEngine, "package.json#keshaEngine");
@@ -137,12 +149,20 @@ function replaceServerVersions(source: string, currentCliVersion: string, versio
   return `${JSON.stringify(server, null, 2)}\n`;
 }
 
-function formatProvenance(tag: string, nextCliVersion: string, releaseAssets: Map<string, ReleaseAsset>): string {
+function formatProvenance(
+  tag: string,
+  nextCliVersion: string,
+  releaseAssets: Map<string, ReleaseAsset>,
+  sums: Map<string, string>,
+): string {
   const lines = engineTargetEntries().map(({ target }) => {
     const size = releaseAssets.get(target.assetName)?.size;
     if (size === undefined) throw new Error(`release is missing engine asset ${target.assetName}`);
     return `- \`${target.assetName}\`: ${size.toLocaleString("en-US")} bytes`;
   });
+  for (const assetName of Object.keys(PINNED_ASSET_SHA256)) {
+    lines.push(`- \`${assetName}\`: sha256 \`${sums.get(assetName)}\``);
+  }
   return `Automated post-release follow-up for engine [\`${tag}\`](https://github.com/${REPO}/releases/tag/${tag}).
 
 ## Provenance
@@ -178,6 +198,12 @@ export function buildPostEngineReleaseFollowup(input: FollowupInput): Followup {
     }
     targetSource = replaceTargetSize(targetSource, target.assetName, asset.size);
   }
+  const sums = parseSha256Sums(input.sha256Sums);
+  for (const assetName of Object.keys(PINNED_ASSET_SHA256)) {
+    const sha256 = sums.get(assetName);
+    if (!sha256) throw new Error(`release SHA256SUMS does not list ${assetName}`);
+    targetSource = replacePinnedSha256(targetSource, assetName, sha256);
+  }
 
   const pkg = parsePackage(input.packageSource);
   if (pkg.keshaEngine.version !== version) {
@@ -204,7 +230,7 @@ export function buildPostEngineReleaseFollowup(input: FollowupInput): Followup {
     targetSource,
     packageSource,
     serverSource,
-    prBody: formatProvenance(input.tag, nextCliVersion, releaseAssets),
+    prBody: formatProvenance(input.tag, nextCliVersion, releaseAssets, sums),
   };
 }
 
@@ -261,6 +287,11 @@ async function main(): Promise<void> {
   const manifestAsset = assets.find((asset) => asset.name === "kesha-release-manifest.json");
   if (!manifestAsset?.browser_download_url) throw new Error(`release ${tag} has no kesha-release-manifest.json asset`);
   const manifest = parseManifest(await fetchJson(manifestAsset.browser_download_url, token));
+  const sumsAsset = assets.find((asset) => asset.name === "SHA256SUMS");
+  if (!sumsAsset?.browser_download_url) throw new Error(`release ${tag} has no SHA256SUMS asset`);
+  const sumsResponse = await fetch(sumsAsset.browser_download_url, { redirect: "follow" });
+  if (!sumsResponse.ok) throw new Error(`SHA256SUMS download failed (${sumsResponse.status}) for ${tag}`);
+  const sha256Sums = await sumsResponse.text();
   const targetSource = readFileSync("src/engine-targets.ts", "utf8");
   const packageSource = readFileSync("package.json", "utf8");
   const serverSource = readFileSync("server.json", "utf8");
@@ -275,6 +306,7 @@ async function main(): Promise<void> {
     },
     manifest,
     targetSource,
+    sha256Sums,
     packageSource,
     serverSource,
   });

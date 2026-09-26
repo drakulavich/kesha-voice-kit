@@ -8,7 +8,7 @@ import { engineFunctionalHealth, probeExecutable } from "../../src/engine-health
 import { getEngineCapabilities } from "../../src/engine";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
-import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 
 // #770: an interrupted `kesha install` left a truncated binary that the kernel refuses to
 // load, while the `.version` marker still vouched for it. Every repair path then failed.
@@ -109,6 +109,7 @@ function stubRelease(withSidecars = false): string[] {
   const urls: string[] = [];
   const binaryName = getEngineBinaryName();
   const served = [binaryName, ...(withSidecars ? SIDECARS.map((s) => s.assetName) : [])];
+  expectServedBody(() => WORKING_ENGINE);
   globalThis.fetch = (async (input: Request | URL | string) => {
     const url = String(input instanceof Request ? input.url : input);
     urls.push(url);

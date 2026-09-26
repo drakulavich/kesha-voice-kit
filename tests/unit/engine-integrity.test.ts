@@ -1,14 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
 import {
   getEngineBinaryName,
   getVersionMarkerPath,
   installEngine,
   readInstalledEngineVersion,
+  SIDECARS,
 } from "../../src/engine-install";
+import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
 import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
 
@@ -26,6 +28,8 @@ let releaseCacheIsolation: () => void = () => {};
 
 // The fake engine is a shell script, which Windows cannot spawn.
 const posixTest = process.platform === "win32" ? test.skip : test;
+/** Sidecars are only ever fetched on darwin-arm64. */
+const sidecarTest = isDarwinArm64() ? test : test.skip;
 
 beforeEach(() => {
   releaseCacheIsolation = isolateEngineCache();
@@ -60,7 +64,7 @@ function stubRelease(sums: string | null): string[] {
     if (url.endsWith("/SHA256SUMS")) {
       return sums === null ? new Response("Not Found", { status: 404 }) : new Response(sums, { status: 200 });
     }
-    if (url.endsWith(`/${binaryName}`)) {
+    if (url.endsWith(`/${binaryName}`) || SIDECARS.some((s) => url.endsWith(`/${s.assetName}`))) {
       return new Response(ENGINE, { status: 200, headers: { "content-length": String(ENGINE.length) } });
     }
     return new Response("Not Found", { status: 404 });
@@ -131,6 +135,22 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     );
     expect(urls.filter((u) => u.endsWith(`/${getEngineBinaryName()}`))).toEqual([]);
     expect(existsSync(binPath)).toBe(false);
+  }, 30_000);
+
+  sidecarTest("a sidecar that does not match is discarded while the verified engine still installs", async () => {
+    const binPath = stageEngineDir();
+    const [mismatched, matching] = SIDECARS;
+    stubRelease(
+      sumsLine(sha256(ENGINE)) +
+        `${sha256("not the served sidecar")}  ./${mismatched!.assetName}\n` +
+        `${sha256(ENGINE)}  ./${matching!.assetName}\n`,
+    );
+
+    await installEngine({ version: OVERRIDE });
+
+    expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
+    expect(existsSync(join(dirname(binPath), mismatched!.fileBasename))).toBe(false);
+    expect(existsSync(join(dirname(binPath), matching!.fileBasename))).toBe(true);
   }, 30_000);
 
   posixTest("kesha install renders the refusal and exits 1", async () => {

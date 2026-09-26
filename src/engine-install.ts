@@ -4,7 +4,14 @@ import { homedir, tmpdir } from "os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
 import { getDescribe, getEngineBinPath, protocolEnv, spawnEngineProcess } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
-import { engineTarget, engineTargetEntries, isDarwinArm64, targetKey } from "./engine-targets";
+import {
+  engineTarget,
+  engineTargetEntries,
+  isDarwinArm64,
+  parseSha256Sums,
+  PINNED_ASSET_SHA256,
+  targetKey,
+} from "./engine-targets";
 import { validateArgv } from "./engine/describe";
 import { engineFailure, KeshaError, readEvents, type StderrOutcome } from "./engine/events";
 import { acquireInstallLock } from "./install-lock";
@@ -15,6 +22,7 @@ import { createLiveStatus, streamResponseToFile } from "./progress";
 import { registerProcessTree } from "./process-tree";
 import { DEFAULT_VOICE_ID } from "./voice-routing";
 import {
+  getVersionMarkerPath,
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
 } from "./engine-version-marker";
@@ -26,6 +34,79 @@ export {
 } from "./engine-version-marker";
 
 const GITHUB_REPO = "drakulavich/kesha-voice-kit";
+
+interface ExpectedSha256 {
+  sha256: string;
+  source: string;
+}
+
+async function fetchSha256Sums(version: string): Promise<Map<string, string>> {
+  const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/SHA256SUMS`;
+  let res: Response;
+  try {
+    res = await fetch(url, { redirect: "follow" });
+  } catch (e) {
+    throw new Error(
+      `Failed to fetch SHA256SUMS for release v${version}: ${errorMessage(e)}\n  Fix: Check your network connection and try again`,
+    );
+  }
+  if (!res.ok) {
+    throw new Error(
+      `Cannot verify engine v${version}: release v${version} publishes no SHA256SUMS (HTTP ${res.status}), ` +
+        "so its binaries cannot be checked before they are installed.\n" +
+        `  Fix: pick a release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases), or run ` +
+        `\`kesha install\` without --engine-version to install the pinned v${engineVersion}.`,
+    );
+  }
+  return parseSha256Sums(await res.text());
+}
+
+/** The pin for the pinned release; the release's own SHA256SUMS, fetched once, for an `--engine-version` override. */
+function releaseChecksums(version: string): (assetName: string) => Promise<ExpectedSha256> {
+  let sums: Promise<Map<string, string>> | undefined;
+  return async (assetName) => {
+    const pinned = version === engineVersion ? PINNED_ASSET_SHA256[assetName] : undefined;
+    if (pinned) return { sha256: pinned, source: "its pinned SHA-256" };
+    sums ??= fetchSha256Sums(version);
+    const sha256 = (await sums).get(assetName);
+    if (!sha256) {
+      throw new Error(
+        `Cannot verify ${assetName}: the SHA256SUMS of release v${version} does not list it, ` +
+          "so it cannot be checked before it is installed.\n" +
+          `  Fix: run \`kesha install\` without --engine-version to install the pinned v${engineVersion}, ` +
+          `or report the incomplete release at https://github.com/${GITHUB_REPO}/issues.`,
+      );
+    }
+    return { sha256, source: `the SHA-256 in the SHA256SUMS of release v${version}` };
+  };
+}
+
+/** Tests that serve a stand-in engine replace `forRelease`, the way they replace `fetch`. */
+export const engineChecksums = { forRelease: releaseChecksums };
+
+async function sha256OfFile(path: string): Promise<string> {
+  const hasher = new Bun.CryptoHasher("sha256");
+  for await (const chunk of Bun.file(path).stream()) hasher.update(chunk);
+  return hasher.digest("hex");
+}
+
+/** Deletes a download that does not hash to `expected` and returns the refusal; null when it matches. */
+async function rejectMismatchedDownload(
+  path: string,
+  what: string,
+  version: string,
+  expected: ExpectedSha256,
+): Promise<string | null> {
+  const actual = await sha256OfFile(path);
+  if (actual === expected.sha256) return null;
+  rmSync(path, { force: true });
+  return (
+    `${what} from release v${version} does not match ${expected.source}: ` +
+    `expected sha256 ${expected.sha256}, got ${actual}. The download was corrupted or altered, ` +
+    "so it was deleted instead of installed.\n" +
+    `  Fix: re-run \`kesha install\`; if the mismatch persists, report it at https://github.com/${GITHUB_REPO}/issues.`
+  );
+}
 
 export function getEngineBinaryName(
   platform: string = process.platform,
@@ -195,11 +276,20 @@ async function downloadSidecar(
   spec: SidecarSpec,
   binPath: string,
   version: string,
+  checksums: (assetName: string) => Promise<ExpectedSha256>,
 ): Promise<void> {
   if (!isDarwinArm64()) return;
 
   const sidecarPath = join(dirname(binPath), spec.fileBasename);
   const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/${spec.assetName}`;
+
+  let expected: ExpectedSha256;
+  try {
+    expected = await checksums(spec.assetName);
+  } catch (e) {
+    log.warn(`Could not verify ${spec.displayName} (${errorMessage(e)}); ${spec.unavailableHint}.`);
+    return;
+  }
 
   let res: Response;
   try {
@@ -221,6 +311,11 @@ async function downloadSidecar(
   // Catch stream/chmod failures so a sidecar error can't poison the engine install.
   try {
     await streamResponseToFile(res, sidecarPath, spec.displayName);
+    const refusal = await rejectMismatchedDownload(sidecarPath, `${spec.displayName} ${spec.assetName}`, version, expected);
+    if (refusal) {
+      log.warn(`${refusal}\n  ${spec.displayName} not installed; ${spec.unavailableHint}.`);
+      return;
+    }
     chmodSync(sidecarPath, 0o755);
     darwinTrustBinary(sidecarPath, spec.displayName);
     log.success(`${spec.displayName} installed (${spec.availableHint}).`);
@@ -365,6 +460,7 @@ async function refreshCachedEngine(
   // Top up missing or broken sidecars (pre-#141/#199 cached binaries never had them);
   // skip on read-only fs (Nix-store) to avoid confusing "install failed" warnings.
   if (canWriteEngineDir) {
+    const checksums = engineChecksums.forRelease(version);
     await Promise.all(
       SIDECARS.map(async (spec) => {
         const path = join(engineDir, spec.fileBasename);
@@ -372,7 +468,7 @@ async function refreshCachedEngine(
         // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
         if (existsSync(path)) darwinTrustBinary(path, spec.displayName);
         if (await sidecarNeedsDownload(spec, engineDir)) {
-          await downloadSidecar(spec, binPath, version);
+          await downloadSidecar(spec, binPath, version, checksums);
         }
       }),
     );
@@ -473,12 +569,21 @@ async function fetchEngineBinary(
   mkdirSync(dirname(binPath), { recursive: true });
 
   // Overlap sidecar fetches with the engine fetch (~15-30s saved on cold install).
+  const checksums = engineChecksums.forRelease(version);
   const sidecarPromises = SIDECARS.map((s) =>
-    downloadSidecar(s, binPath, version),
+    downloadSidecar(s, binPath, version, checksums),
   );
   // If the engine fetch throws, silence in-flight sidecar rejections so unhandledRejection doesn't obscure the engine error.
   const muteSidecarRejections = () =>
     sidecarPromises.forEach((p) => p.catch(() => {}));
+
+  let expected: ExpectedSha256;
+  try {
+    expected = await checksums(binaryName);
+  } catch (e) {
+    muteSidecarRejections();
+    throw e;
+  }
 
   let res: Response;
   try {
@@ -499,6 +604,12 @@ async function fetchEngineBinary(
   }
 
   await streamResponseToFile(res, binPath, "kesha-engine binary");
+  const refusal = await rejectMismatchedDownload(binPath, `kesha-engine binary ${binaryName}`, version, expected);
+  if (refusal) {
+    muteSidecarRejections();
+    rmSync(getVersionMarkerPath(binPath), { force: true });
+    throw new Error(refusal);
+  }
   chmodSync(binPath, 0o755);
   darwinTrustBinary(binPath, "kesha-engine binary");
   // Marker last: writing it first sends the retry down the cacheValid branch, which never waits.

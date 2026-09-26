@@ -1,7 +1,9 @@
+import { createHash } from "crypto";
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import type { DescribeDocument, FlagSchema, TtsLanguageCapability } from "../../src/engine/describe";
+import { engineChecksums } from "../../src/engine-install";
 import { tempDir } from "./temp-dir";
 
 const ENGINE_ENV = ["KESHA_ENGINE_BIN", "KESHA_CACHE_DIR", "KESHA_HOME", "HOME", "KESHA_MODEL_MIRROR"] as const;
@@ -59,8 +61,23 @@ export function isolateEngineCache(): () => void {
   delete process.env.KESHA_ENGINE_BIN;
   return () => {
     restore();
+    engineChecksums.forRelease = realChecksums;
     rmSync(dir, { recursive: true, force: true });
   };
+}
+
+const realChecksums = engineChecksums.forRelease;
+
+/**
+ * Makes the installer expect the SHA-256 of the stand-in body a test serves for a release, since no
+ * stub can hash to the real pins. `isolateEngineCache`'s undo restores the real check, which
+ * `engine-integrity.test.ts` covers.
+ */
+export function expectServedBody(bodyFor: (version: string) => string): void {
+  engineChecksums.forRelease = (version) => async () => ({
+    sha256: createHash("sha256").update(bodyFor(version)).digest("hex"),
+    source: "the SHA-256 of the body this test serves",
+  });
 }
 
 type Row = [command: string, flag: string, schema: FlagSchema];

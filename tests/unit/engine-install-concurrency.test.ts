@@ -4,7 +4,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { installEngine, readInstalledEngineVersion } from "../../src/engine-install";
 import { log } from "../../src/log";
-import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 
 const VERSION_A = "9.9.9-alpha.1";
 const VERSION_B = "9.9.8";
@@ -70,6 +70,7 @@ function stageEngineDir(prefix: string): string {
 
 /** Serves a stub engine that reports the version its own release URL names. */
 function stubReleases(extraInstallBody = ""): void {
+  expectServedBody((version) => engineScript(engineLog, version, extraInstallBody));
   globalThis.fetch = (async (input: Request | URL | string): Promise<Response> => {
     const url = String(input instanceof Request ? input.url : input);
     const version = /\/download\/v([^/]+)\//.exec(url)?.[1] ?? "0.0.0";
@@ -110,7 +111,9 @@ function spawnPeerInstall(version: string, holdSecs: number) {
   writeFileSync(
     script,
     `import { installEngine } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
+      `import { expectServedBody } from ${JSON.stringify(join(import.meta.dir, "../helpers/fake-engine.ts"))};\n` +
       `const body = ${JSON.stringify(body)};\n` +
+      `expectServedBody(() => body);\n` +
       `globalThis.fetch = (async () => new Response(body, { status: 200, headers: { "content-length": String(Buffer.byteLength(body)) } })) as typeof fetch;\n` +
       `await installEngine({ version: ${JSON.stringify(version)} });\n`,
   );
