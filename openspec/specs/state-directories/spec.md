@@ -96,7 +96,7 @@ When `KESHA_HOME` is set, the CLI SHALL place its state under it with the same l
 - THEN the Engine's recovery recording lands under `/tmp/kesha-demo/cache/recordings/`
 - AND `~/.cache/kesha/recordings/` is not written
 
-> *Technical Note — forwarding happens in `src/engine.ts::spawnEngineProcess`, which every
+> *Technical Note — forwarding happens in `src/engine/spawn.ts::spawnEngineProcess`, which every
 > Engine spawn goes through (`runEngine`, `recordEngine`, the install spawn, `say`, and the
 > health probes): it sets `KESHA_CACHE_DIR` on the child environment only when the resolved
 > cache's source is `KESHA_HOME`, leaving a user-set `KESHA_CACHE_DIR` untouched. The Engine

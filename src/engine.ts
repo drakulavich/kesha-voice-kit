@@ -5,9 +5,9 @@ import { installHint } from "./install-hint";
 import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
-import { abortOnSignal, engineAbortError, interruptedRun, pendingInterruption, registerProcessTree } from "./process-tree";
-import { resolveStatePaths } from "./state-paths";
-import { engineFailure, KeshaError, readEvents, renderError, type ErrorEvent } from "./engine/events";
+import { engineAbortError, interruptedRun } from "./process-tree";
+import { runEngineProcess, spawnHint } from "./engine/spawn";
+import { engineFailure, KeshaError, renderError, type ErrorEvent } from "./engine/events";
 import {
   describeToCapabilities,
   parseDescribe,
@@ -16,7 +16,6 @@ import {
   type DescribeDocument,
   type EngineCapabilities,
   type TtsLanguageCapability,
-  PROTOCOL_VERSION,
 } from "./engine/describe";
 
 export type { EngineCapabilities, TtsLanguageCapability };
@@ -75,51 +74,6 @@ export function isEngineInstalled(): boolean {
   return existsSync(getEngineBinPath());
 }
 
-type SpawnStdioEntry = "inherit" | "pipe" | "ignore";
-export type SpawnStdio = [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry];
-
-/** The env for a spawn whose stderr is parsed as protocol 4 events. */
-export function protocolEnv(): Record<string, string | undefined> {
-  return { ...process.env, KESHA_PROTOCOL: String(PROTOCOL_VERSION) };
-}
-
-function spawnHint(): string {
-  return process.env.KESHA_ENGINE_BIN
-    ? "KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`"
-    : "run `kesha install`";
-}
-
-/** The engine reads only `KESHA_CACHE_DIR`; it gets the root the CLI resolved whenever that differs from the raw value. */
-function withResolvedCacheDir(env: Record<string, string | undefined>): Record<string, string | undefined> {
-  const cache = resolveStatePaths(env).cacheDir;
-  const raw = env.KESHA_CACHE_DIR;
-  if (cache.source === "default") {
-    if (raw === undefined) return env;
-    const { KESHA_CACHE_DIR: _empty, ...rest } = env;
-    return rest;
-  }
-  return raw === cache.path ? env : { ...env, KESHA_CACHE_DIR: cache.path };
-}
-
-/** `Bun.spawn` throws synchronously on ENOENT/EACCES; every launch failure becomes `E_ENGINE_SPAWN`. */
-export function spawnEngineProcess(
-  binPath: string,
-  args: string[],
-  stdio: SpawnStdio,
-  env: Record<string, string | undefined> = process.env,
-): ReturnType<typeof Bun.spawn> {
-  const interrupted = pendingInterruption();
-  if (interrupted) throw interrupted;
-  try {
-    // `env` is passed explicitly: Bun snapshots process.env at startup otherwise (#874).
-    return Bun.spawn([binPath, ...args], { detached: true, stdio, env: withResolvedCacheDir(env) });
-  } catch (err) {
-    throw new KeshaError("E_ENGINE_SPAWN", `failed to launch kesha-engine at ${binPath}: ${errorMessage(err)}`, {
-      hint: spawnHint(),
-    });
-  }
-}
-
 export interface RunEngineOptions {
   signal?: AbortSignal;
   /** Text for the subprocess's stdin. Nothing a user typed may become an argv element: a NUL byte or a megabyte of it makes the spawn itself fail (#T1-1). */
@@ -138,52 +92,26 @@ interface EngineRun {
   invalid: string[];
 }
 
-/** An engine that refuses the run before reading closes the pipe; that EPIPE is its answer, reported by the exit status and stderr below. */
-async function writeEngineStdin(proc: ReturnType<typeof Bun.spawn>, text: string): Promise<void> {
-  const sink = proc.stdin as Bun.FileSink;
-  try {
-    sink.write(text);
-    await sink.end();
-  } catch (err) {
-    log.debug(`stdin write failed: ${errorMessage(err)}`);
-  }
-}
-
 async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<EngineRun> {
-  if (opts.signal?.aborted) throw engineAbortError();
-  const binPath = getEngineBinPath();
-  const startedAt = performance.now();
-  log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  const stdio: SpawnStdio = [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"];
-  const proc = spawnEngineProcess(binPath, args, stdio, protocolEnv());
-  const tree = registerProcessTree(proc);
-  const cancel = abortOnSignal(tree, opts.signal);
-  if (opts.stdin !== undefined) await writeEngineStdin(proc, opts.stdin);
-  let stdout: string;
-  let events: Awaited<ReturnType<typeof readEvents>>;
-  let exitCode: number;
-  try {
-    [stdout, events, exitCode] = await Promise.all([
-      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
-      readEvents(proc.stderr as ReadableStream<Uint8Array>, { onProgress: opts.onProgressLine }),
-      proc.exited,
-    ]);
-  } finally {
-    cancel.dispose();
-    tree.dispose();
-  }
-  log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
-  if (cancel.aborted) {
+  const run = await runEngineProcess(getEngineBinPath(), args, {
+    stdio: [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    stdin: opts.stdin,
+    readStdout: (stream) => new Response(stream).text(),
+    sinks: { onProgress: opts.onProgressLine },
+    signal: opts.signal,
+  });
+  if (run.aborted) {
     log.debug(`aborted args=${JSON.stringify(args)}`);
     throw engineAbortError();
   }
-  const interrupted = interruptedRun(exitCode);
+  const interrupted = interruptedRun(run.exitCode);
   if (interrupted) throw interrupted;
+  const { events } = run;
   const stderr = events.stderr.trim();
   // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
-  if (exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
+  if (run.exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
     process.stderr.write(`${stderr}\n`);
-  return { stdout: stdout.trim(), stderr, exitCode, error: events.error, invalid: events.invalid };
+  return { stdout: run.stdout.trim(), stderr, exitCode: run.exitCode, error: events.error, invalid: events.invalid };
 }
 
 /** The run failed and said so: a non-zero status, or an error event whatever the status. */
@@ -512,25 +440,20 @@ const RECORD_TICK = /^Listening\.\.\. \d+s$/;
 const RECORD_OUTCOME = /^(Recorded .+ \(\d+ Hz, \d+ channels?, \d+ frames\)|No speech detected\.)$/;
 
 export async function recordEngine(target: RecordTarget, maxSeconds: number): Promise<void> {
-  const binPath = getEngineBinPath();
-  const args = buildRecordArgs(target, maxSeconds);
-  const startedAt = performance.now();
-  log.debug(`spawn ${binPath} ${args.join(" ")}`);
-  // stdout is piped rather than inherited so the row can be closed before the engine's transcript
-  // lands: the engine owned both streams and closed its own row until #1181 deleted the painter.
-  const proc = spawnEngineProcess(binPath, args, ["inherit", "pipe", "pipe"], protocolEnv());
-  const tree = registerProcessTree(proc);
   const status = createLiveStatus();
-  let events: Awaited<ReturnType<typeof readEvents>>;
-  let exitCode: number;
+  let run: Awaited<ReturnType<typeof runEngineProcess>>;
   try {
-    [, events, exitCode] = await Promise.all([
-      forwardStdout(proc.stdout as ReadableStream<Uint8Array>, status, () => {
-        // Nobody is reading the transcript any more, so the microphone has no reason to stay open (#1187).
-        log.debug("stdout closed by the reader; stopping the recording");
-        proc.kill("SIGTERM");
-      }),
-      readEvents(proc.stderr as ReadableStream<Uint8Array>, {
+    // stdout is piped rather than inherited so the row can be closed before the engine's transcript
+    // lands: the engine owned both streams and closed its own row until #1181 deleted the painter.
+    run = await runEngineProcess(getEngineBinPath(), buildRecordArgs(target, maxSeconds), {
+      stdio: ["inherit", "pipe", "pipe"],
+      readStdout: (stream, proc) =>
+        forwardStdout(stream, status, () => {
+          // Nobody is reading the transcript any more, so the microphone has no reason to stay open (#1187).
+          log.debug("stdout closed by the reader; stopping the recording");
+          proc.kill("SIGTERM");
+        }),
+      sinks: {
         onProgress: (line) => {
           if (RECORD_TICK.test(line)) {
             status.update(line);
@@ -544,14 +467,12 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
           status.clear();
           log.warn(line);
         },
-      }),
-      proc.exited,
-    ]);
+      },
+    });
   } finally {
     status.clear();
-    tree.dispose();
   }
-  log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms args=${JSON.stringify(args)}`);
+  const { exitCode, events } = run;
   // An interrupt is how a live recording normally ends, so its status is success and its stderr is not a failure.
   const signalled = target.live && SIGNALLED_LIVE_EXIT_CODES.has(exitCode);
   // A clean interrupt delivers the transcript and exits 128+signal saying nothing (rust/src/cli/record.rs:82),

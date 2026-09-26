@@ -1,14 +1,8 @@
 import { existsSync } from "fs";
-import {
-  ENGINE_PROBE_TIMEOUT_MS,
-  getDescribe,
-  getEngineBinPath,
-  spawnEngineProcess,
-  type EngineCapabilities,
-} from "./engine";
+import { ENGINE_PROBE_TIMEOUT_MS, getDescribe, getEngineBinPath, type EngineCapabilities } from "./engine";
 import { describeToCapabilities } from "./engine/describe";
 import { KeshaError } from "./engine/events";
-import { registerProcessTree } from "./process-tree";
+import { runEngineProcess } from "./engine/spawn";
 
 export type ExecutableHealth =
   | { status: "ok" }
@@ -38,33 +32,20 @@ export async function probeExecutable(
 ): Promise<ExecutableHealth> {
   if (!existsSync(binPath)) return { status: "missing" };
 
-  let proc: ReturnType<typeof Bun.spawn>;
+  let run: Awaited<ReturnType<typeof runEngineProcess>>;
   try {
-    proc = spawnEngineProcess(binPath, args, ["ignore", "ignore", "ignore"]);
+    run = await runEngineProcess(binPath, args, {
+      stdio: ["ignore", "ignore", "ignore"],
+      signal: AbortSignal.timeout(ENGINE_PROBE_TIMEOUT_MS),
+    });
   } catch (err) {
     return { status: "unusable", detail: spawnFailureDetail(err) };
   }
-  const tree = registerProcessTree(proc);
 
-  let timedOut = false;
-  let forceKillTimer: Timer | undefined;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    tree.terminate();
-    forceKillTimer = tree.forceKillAfterGrace();
-  }, ENGINE_PROBE_TIMEOUT_MS);
-  try {
-    await proc.exited;
-  } finally {
-    clearTimeout(timer);
-    tree.dispose();
-    if (!timedOut && forceKillTimer) clearTimeout(forceKillTimer);
-  }
-
-  if (timedOut) {
+  if (run.aborted) {
     return { status: "unusable", detail: `no exit within ${ENGINE_PROBE_TIMEOUT_MS / 1000}s` };
   }
-  if (proc.signalCode) return { status: "unusable", detail: `killed by ${proc.signalCode}` };
+  if (run.signalCode) return { status: "unusable", detail: `killed by ${run.signalCode}` };
   return { status: "ok" };
 }
 
@@ -81,31 +62,15 @@ export async function readExecutableVersion(
 ): Promise<string | null> {
   if (!existsSync(binPath)) return null;
 
-  let proc: ReturnType<typeof Bun.spawn>;
-  try {
-    proc = spawnEngineProcess(binPath, ["--version"], ["ignore", "pipe", "ignore"]);
-  } catch {
-    return null;
-  }
-  const tree = registerProcessTree(proc);
-
-  let timedOut = false;
-  let forceKillTimer: Timer | undefined;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    tree.terminate();
-    forceKillTimer = tree.forceKillAfterGrace();
-  }, timeoutMs);
   let stdout: string;
   try {
-    [stdout] = await Promise.all([
-      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
-      proc.exited,
-    ]);
-  } finally {
-    clearTimeout(timer);
-    tree.dispose();
-    if (!timedOut && forceKillTimer) clearTimeout(forceKillTimer);
+    ({ stdout } = await runEngineProcess(binPath, ["--version"], {
+      stdio: ["ignore", "pipe", "ignore"],
+      readStdout: (stream) => new Response(stream).text(),
+      signal: AbortSignal.timeout(timeoutMs),
+    }));
+  } catch {
+    return null;
   }
   return /(\d+\.\d+\.\d+[0-9A-Za-z.+-]*)/.exec(stdout)?.[1] ?? null;
 }

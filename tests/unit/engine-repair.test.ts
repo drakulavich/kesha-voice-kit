@@ -4,7 +4,7 @@ import { dirname, join } from "path";
 import { tmpdir } from "os";
 import { getEngineBinaryName, installEngine, SIDECARS } from "../../src/engine-install";
 import { installableTtsLangs, probeCapabilitiesForInstall, resolveTtsLangs } from "../../src/cli/install";
-import { engineFunctionalHealth, probeExecutable } from "../../src/engine-health";
+import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "../../src/engine-health";
 import { getEngineCapabilities } from "../../src/engine";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
@@ -145,6 +145,24 @@ describe("probeExecutable (#770)", () => {
       status: "missing",
     });
   });
+});
+
+describe("readExecutableVersion (#997)", () => {
+  posixTest("reads the version the binary claims for itself", async () => {
+    const binPath = stageEngine("kesha-version-ok-", "#!/bin/sh\necho 'kesha-engine 1.24.9'\n");
+    expect(await readExecutableVersion(binPath)).toBe("1.24.9");
+  });
+
+  posixTest("a binary that never exits is no version within the deadline, and is killed", async () => {
+    const binPath = stageEngine("kesha-version-hang-", hangingEngine("63.5"));
+
+    const startedAt = performance.now();
+    expect(await readExecutableVersion(binPath, 300)).toBeNull();
+    expect(performance.now() - startedAt).toBeLessThan(5_000);
+
+    for (let i = 0; i < 30 && (await sleepingEngineSurvives("63.5")); i++) await Bun.sleep(100);
+    expect(await sleepingEngineSurvives("63.5")).toBe(false);
+  }, 15_000);
 });
 
 // #801: the developer machine's engine was MUTE_ENGINE for weeks and every health surface

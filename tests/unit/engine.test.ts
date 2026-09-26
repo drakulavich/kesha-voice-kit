@@ -13,13 +13,13 @@ import {
   getEngineCapabilities,
   parseLangResult,
   recordEngine,
-  spawnEngineProcess,
   textLangFailureWarning,
   transcribeEngine,
   transcribeEngineWithSegments,
   validateRecordRequest,
 } from "../../src/engine";
 import { KeshaError } from "../../src/engine/events";
+import { runEngineProcess } from "../../src/engine/spawn";
 import { log } from "../../src/log";
 import { errorMessage } from "../../src/error-utils";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
@@ -1080,10 +1080,11 @@ describe("text language detection degrades loudly (#770)", () => {
 describe("engine subprocess env", () => {
   const readStdout = async (vars: string[]) => {
     const { binPath, args } = envEchoEngine(vars);
-    const proc = spawnEngineProcess(binPath, args, ["ignore", "pipe", "pipe"]);
-    const out = (await new Response(proc.stdout as ReadableStream).text()).trim();
-    await proc.exited;
-    return out;
+    const run = await runEngineProcess(binPath, args, {
+      stdio: ["ignore", "pipe", "pipe"],
+      readStdout: (stream) => new Response(stream).text(),
+    });
+    return run.stdout.trim();
   };
 
   test("forwards env resolved after startup, not the startup snapshot", async () => {

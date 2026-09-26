@@ -417,13 +417,14 @@ async function interruptInstallAndReadExit(
   args: readonly string[],
   env: Record<string, string>,
   enginePidPath: string,
-): Promise<{ exitCode: number | null; engineStopped: boolean }> {
+): Promise<{ exitCode: number | null; engineStopped: boolean; output: Promise<string> }> {
   const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", ...args], {
     cwd: DEFAULT_CWD,
-    stdout: "ignore",
-    stderr: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
     env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", ...env },
   });
+  const output = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]).then((parts) => parts.join(""));
   const enginePid = await waitForPidFile(enginePidPath, 800);
   proc.kill("SIGINT");
   const exitCode = await Promise.race([
@@ -440,7 +441,7 @@ async function interruptInstallAndReadExit(
   }
   if (exitCode === null) proc.kill("SIGKILL");
   if (!engineStopped) process.kill(enginePid, "SIGKILL");
-  return { exitCode, engineStopped };
+  return { exitCode, engineStopped, output };
 }
 
 function createListVoicesHangEngine(dir: string, enginePidPath: string): string {
@@ -2075,6 +2076,10 @@ process.exit(99);
 
     expect(result.exitCode).toBe(130);
     expect(result.engineStopped).toBe(true);
+    // The interrupted warmup is the user's Ctrl+C, not a failure to report, and the install must not carry on past it.
+    const output = await result.output;
+    expect(output).not.toContain("warmup failed");
+    expect(output).not.toContain("Backend installed successfully");
   });
 
   test("an engine whose describe rejects the Kokoro warmup argv is not spawned for it, and install still succeeds", async () => {
