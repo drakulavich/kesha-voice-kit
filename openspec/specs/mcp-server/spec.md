@@ -94,9 +94,9 @@ When an MCP client cancels an in-flight `transcribe_audio` or `synthesize_speech
 > *Technical Note — `src/mcp/tools.ts::registerTools` forwards the request's
 > `extra.signal` into `transcribe`/`transcribeWithTimestamps` (`src/lib.ts`)
 > and into `say` (`src/synth.ts::say`, which accepts `SayOptions.signal`) and
-> `resolveSayVoice` (`src/voice-routing.ts`). Every spawn wires the signal
-> through `src/process-tree.ts::abortOnSignal`, the same helper
-> `src/engine.ts::runEngine` uses, and the cancelled call rejects with
+> `resolveSayVoice` (`src/voice-routing.ts`). Every spawn goes through
+> `src/engine/spawn.ts::runEngineProcess`, which wires the signal to
+> `src/process-tree.ts::abortOnSignal`, and the cancelled call rejects with
 > `E_INTERRUPTED`. `list_voices` and `list_languages` do not take the signal:
 > their spawn is sub-second and is reaped on server exit.*
 

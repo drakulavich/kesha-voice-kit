@@ -309,7 +309,7 @@ Both the CLI and the Engine SHALL honour the `KESHA_*` environment variables lis
 > | Variable | Read by | Effect |
 > |---|---|---|
 > | `KESHA_ENGINE_BIN` | CLI | Override Engine binary path (`src/engine.ts::getEngineBinPath`). |
-> | `KESHA_HOME` | CLI | Root every state location under one directory (`cache/`, `logs/`, `stats.sqlite`, `mcp-audio/`); outranked by the specific variables below, outranks the platform defaults. CLI: `src/state-paths.ts::resolveStatePaths`; forwarded to the Engine as `KESHA_CACHE_DIR` by `src/engine.ts::spawnEngineProcess`. |
+> | `KESHA_HOME` | CLI | Root every state location under one directory (`cache/`, `logs/`, `stats.sqlite`, `mcp-audio/`); outranked by the specific variables below, outranks the platform defaults. CLI: `src/state-paths.ts::resolveStatePaths`; forwarded to the Engine as `KESHA_CACHE_DIR` by `src/engine/spawn.ts::spawnEngineProcess`. |
 > | `KESHA_CACHE_DIR` | CLI + Engine | Override Model cache root (default `~/.cache/kesha/`, or `<KESHA_HOME>/cache` when `KESHA_HOME` is set). CLI: `src/paths.ts::keshaCacheDir`. Engine: `rust/src/models/paths.rs::cache_dir`. |
 > | `KESHA_MODEL_MIRROR` | Engine | Rewrite HuggingFace download base URLs; GitHub release URLs are never rewritten. Safe because of Pinned hashes (`rust/src/models/download.rs::model_mirror`). |
 > | `KESHA_DEBUG` | CLI + Engine | Enable debug trace output. Falsey values: `""`, `"0"`, `"false"`, `"no"`, `"off"` (case-insensitive). Truthy: any other non-empty value. CLI: `src/log.ts::envDebug`. Engine: `rust/src/debug.rs::enabled`; events emitted through `rust/src/protocol/events.rs`. |

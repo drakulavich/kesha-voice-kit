@@ -88,8 +88,8 @@ A run the signal cut short SHALL be reported as the CLI-origin Error code `E_INT
 > processes the delay is `SIGNAL_EXIT_BUFFER_MS` (50 ms) instead of the full
 > grace window. `src/process-tree.ts::interruptedRun` turns a non-zero exit under
 > that recorded signal into the `E_INTERRUPTED` KeshaError; `src/engine.ts::runEngine`,
-> `src/synth.ts::say` and `src/synth.ts::listVoiceIds` consult it before reading the
-> exit as a failure. These codes extend the Exit code taxonomy in the Glossary, and
+> `src/synth.ts::say`, `src/synth.ts::listVoiceIds` and `src/engine-install.ts::warmDarwinKokoro`
+> consult it before reading the exit as a failure. These codes extend the Exit code taxonomy in the Glossary, and
 > `docs/errors.md` lists them for callers scripting the CLI. All three signals are
 > asserted end to end in `tests/integration/cli-contracts.test.ts` (#940).*
 
@@ -117,8 +117,8 @@ The CLI SHALL terminate the Engine's whole process tree, so that helpers the Eng
 > <pid> /T` (adding `/F` for a force kill) on Windows; both fall back to
 > `src/process-tree.ts::safeKillDirect`, which swallows the error from a process
 > that exited between the decision and the signal. Registration happens in
-> `src/engine.ts::runEngine`, `src/engine.ts::recordEngine`,
-> `src/synth.ts::say` and `src/synth.ts::listVoiceIds` — the last reached by
+> `src/engine/spawn.ts::runEngineProcess`, which every Engine and Sidecar spawn goes
+> through; `src/synth.ts::listVoiceIds` among them is reached by
 > `src/cli/say.ts::sayCommand` (the `--list-voices` relay) and by
 > `src/mcp/voices.ts::listVoices` (the MCP tool).*
 
@@ -195,7 +195,7 @@ Once a signal has been received, the CLI SHALL start no further queued file and 
 - WHEN the batch finishes
 - THEN the CLI exits 1 as [transcription](../transcription/spec.md) specifies
 
-> *Technical Note — `src/engine.ts::spawnEngineProcess` throws
+> *Technical Note — `src/engine/spawn.ts::spawnEngineProcess` throws
 > `src/process-tree.ts::pendingInterruption` once a signal is recorded, and the
 > batch loop in `src/cli/main.ts::createMainCommand` records the same error for
 > every file it skips. The cleanup promise `src/cli/main.ts` awaits through
@@ -225,10 +225,10 @@ When a caller of the Core API cancels an in-flight call, the call SHALL fail wit
 
 > *Technical Note — `src/process-tree.ts::engineAbortError` returns a
 > `KeshaError("E_INTERRUPTED")` with `exitCode: 130`, a hint naming the
-> `AbortSignal`, and `name = "AbortError"`. `src/engine.ts::runEngine` rejects
+> `AbortSignal`, and `name = "AbortError"`. `src/engine/spawn.ts::runEngineProcess` rejects
 > on an already-aborted signal before spawning; its abort listener terminates
-> the tree and arms the force kill, and the same function converts the completed
-> run into the abort error. `src/engine/events.ts::CLI_EXIT_CODES` maps the code
+> the tree and arms the force kill, and the run it returns says it was aborted,
+> which `src/engine.ts::runEngine` converts into the abort error. `src/engine/events.ts::CLI_EXIT_CODES` maps the code
 > to 130 for a CLI that raises it without an explicit `exitCode`.*
 
 ## Open Issues
