@@ -54,10 +54,14 @@ jobs:
           ref: ${{ inputs.ref }}
           fetch-depth: 0
 
+      # Inline, not a script: this job runs from `inputs.ref`, which may predate any new script. `-cli` marker tags are the CLI's (#685).
       - name: Validate tag shape and uniqueness
         env:
           INPUT_TAG: ${{ inputs.tag }}
-        run: bash .github/scripts/validate-engine-tag.sh
+        run: |
+          [[ "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(beta|alpha)\.[0-9]+)?$ ]] || { echo "::error::Tag '$INPUT_TAG' must match vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-alpha.N (CLI marker tags ending in -cli are not supported by this workflow)"; exit 1; }
+          if git rev-parse "refs/tags/$INPUT_TAG" >/dev/null 2>&1; then echo "::error::Tag $INPUT_TAG already exists. Tag names are one-use (CLAUDE.md → TAG NAMES ARE ONE-USE) — bump patch and retry."; exit 1; fi
+          echo "Tag $INPUT_TAG passes shape + uniqueness checks."
 
       # `inputs.tag` and `inputs.notes` flow through `env:` rather than direct
       # `${{ … }}` interpolation in the run: script. The workflow holds

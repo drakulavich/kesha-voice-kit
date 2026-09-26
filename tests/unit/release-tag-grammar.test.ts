@@ -45,9 +45,8 @@ describe("engine tag grammar", () => {
     }
   });
 
-  test("the tag job's validator ships the grammar verbatim", () => {
-    expect(WORKFLOW_YAML).toContain(".github/scripts/validate-engine-tag.sh");
-    expect(readRepoFile(".github/scripts/validate-engine-tag.sh")).toContain(ENGINE_TAG_ERE);
+  test("the workflow ships the grammar verbatim", () => {
+    expect(WORKFLOW_YAML).toContain(ENGINE_TAG_ERE);
   });
 });
 
