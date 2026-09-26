@@ -305,7 +305,8 @@ async function downloadSidecar(
   try {
     expected = await checksums(spec.assetName);
   } catch (e) {
-    log.warn(`Could not verify ${spec.displayName} (${errorMessage(e)}); ${spec.unavailableHint}.`);
+    rmSync(sidecarPath, { force: true });
+    log.warn(`Could not verify ${spec.displayName} for v${version} (${errorMessage(e)}); ${spec.unavailableHint}.`);
     return;
   }
 
