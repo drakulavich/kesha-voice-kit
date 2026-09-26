@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "crypto";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import {
   getEngineBinaryName,
@@ -9,9 +9,10 @@ import {
   readInstalledEngineVersion,
   SIDECARS,
 } from "../../src/engine-install";
+import { getEngineBinPath } from "../../src/engine";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
-import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 
 const OVERRIDE = "9.9.9-alpha.1";
@@ -174,5 +175,67 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     );
     expect(stderr).toContain("Fix: re-run `kesha install`");
     expect(existsSync(binPath)).toBe(false);
+  }, 30_000);
+});
+
+/** An engine that runs and describes itself like the real one, but is not the bytes any release published. */
+const ALTERED = `${ENGINE}# altered after install\n`;
+
+/** Stages a cache-valid install of the pinned version whose engine and sidecars are ALTERED. */
+function stageAlteredInstall(binPath: string): void {
+  mkdirSync(dirname(binPath), { recursive: true });
+  for (const path of [binPath, ...SIDECARS.map((s) => join(dirname(binPath), s.fileBasename))]) {
+    writeFileSync(path, ALTERED);
+    chmodSync(path, 0o755);
+  }
+  writeFileSync(getVersionMarkerPath(binPath), `${engineVersion}\n`);
+}
+
+describe("a cached install of the pinned engine is held to the pin", () => {
+  posixTest("an altered engine behind a matching marker is not trusted as a cache hit", async () => {
+    const binPath = getEngineBinPath();
+    stageAlteredInstall(binPath);
+    stubRelease(null);
+
+    await expect(installEngine()).rejects.toThrow("does not match its pinned SHA-256");
+
+    expect(existsSync(binPath)).toBe(false);
+    expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
+  }, 30_000);
+
+  posixTest("an altered engine is replaced by a verified download", async () => {
+    const binPath = getEngineBinPath();
+    stageAlteredInstall(binPath);
+    stubRelease(null);
+    expectServedBody(() => ENGINE);
+
+    await installEngine();
+
+    expect(readFileSync(binPath, "utf8")).toBe(ENGINE);
+    expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
+  }, 30_000);
+
+  sidecarTest("an altered sidecar next to a verified engine is replaced by a verified download", async () => {
+    const binPath = getEngineBinPath();
+    stageAlteredInstall(binPath);
+    writeFileSync(binPath, ENGINE);
+    stubRelease(null);
+    expectServedBody(() => ENGINE);
+
+    await installEngine();
+
+    for (const spec of SIDECARS) {
+      expect(readFileSync(join(dirname(binPath), spec.fileBasename), "utf8")).toBe(ENGINE);
+    }
+  }, 30_000);
+
+  posixTest("an engine the user supplied through KESHA_ENGINE_BIN is their own build and is not held to the pin", async () => {
+    const binPath = stageEngineDir();
+    stageAlteredInstall(binPath);
+    stubRelease(null);
+
+    await installEngine();
+
+    expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
   }, 30_000);
 });
