@@ -27,7 +27,7 @@ Past incidents: #287 → #288 → #289 cascade for F9 (`compose_rate` rate-clamp
 
 ## `ort 2.0.0-rc.12` `Value::from_array` WANTS OWNED NDARRAYS
 
-`Value::from_array(arr)` consumes its input; views (`ArrayView2`, `.view()`) don't implement `OwnedTensorArrayData`. `Array2::ones((1, n))` inline at the call site is the cleanest fresh owned construction. `Array2::from_shape_vec((...), buf.clone())` also works at the cost of a clone. `Session::builder()` returns `ort::Result` that converts through `anyhow::Context::context("...")?` cleanly — **no `map_err(anyhow::Error::msg)` dance needed**, despite what the #123 spike doc originally claimed. Peer modules (`lang_id.rs`, `vad.rs`, `backend/onnx.rs`, `kokoro.rs`, `piper.rs`) all use `.context()?`; match that style.
+`Value::from_array(arr)` consumes its input; views (`ArrayView2`, `.view()`) don't implement `OwnedTensorArrayData`. `Array2::ones((1, n))` inline at the call site is the cleanest fresh owned construction. `Array2::from_shape_vec((...), buf.clone())` also works at the cost of a clone. `Session::builder()` returns `ort::Result` that converts through `anyhow::Context::context("...")?` cleanly — **no `map_err(anyhow::Error::msg)` dance needed**, despite what the #123 spike doc originally claimed. Peer modules (`lang_id.rs`, `vad.rs`, `backend/onnx.rs`, `tts/kokoro.rs`) all use `.context()?`; match that style.
 
 ## CLIPPY `needless_update` BLOCKS `..Default::default()` IF ALL FIELDS ARE SPELLED
 
@@ -40,32 +40,19 @@ The forward-compat is already there for free: Rust requires exhaustive struct in
 - If callers across crate boundaries need forward-compat (e.g. a published lib), mark the struct `#[non_exhaustive]` instead.
 - Past incident: #290 P2 (F5 follow-up) suggested adding `..Default::default()`, clippy blocked it, the comment explaining the trade-off landed instead.
 
-## BINDGEN ON LINUX NEEDS LIBCLANG_PATH
+## BINDGEN ON MACOS NEEDS LIBCLANG_PATH
 
-Any Rust crate using `bindgen` (directly or transitively — e.g. `espeakng-sys` with `clang-runtime` feature) needs `LIBCLANG_PATH` on Linux build runners even with `apt install libclang-dev`. The `clang-runtime` feature makes bindgen `dlopen` libclang at build-script runtime; the apt package installs into a versioned subdir that isn't on the default dlopen path.
-
-Portable recipe for the Linux job:
-```yaml
-- run: |
-    sudo apt-get install -y libclang-dev llvm-dev
-    echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
-```
-
-macOS equivalent is `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib`. Windows uses `C:\Program Files\LLVM\bin` with LLVM installed via `choco install llvm` and MSVC tooling activated via `ilammy/msvc-dev-cmd@v1` in CI. espeak-ng on Windows needs an import lib synthesized from the choco-shipped DLL via `dumpbin /exports` + `lib /def:… /machine:x64 /out:espeak-ng.lib` — see the Windows block in `rust-test.yml`.
+The only `bindgen` user in the tree is `coreaudio-sys`, a build dependency of `cpal` on macOS (`cargo tree -i bindgen --target all`); Linux and Windows builds never run it. Its build script `dlopen`s libclang, so a macOS build outside Xcode's default search path needs `LIBCLANG_PATH=/Library/Developer/CommandLineTools/usr/lib` — the value `ci.yml` sets on its source-build step.
 
 ## SILERO VAD V5 NEEDS A 64-SAMPLE ROLLING CONTEXT
 
 Silero VAD v5 at 16 kHz wants ONNX `input` of length **576**, not 512: 64 samples of tail from the previous frame + 512 new samples. Missing this produces per-frame probabilities of ~0.0005 regardless of content — the model "runs" without detecting speech. Not in the ONNX metadata; only in upstream's Python `OnnxWrapper`. See `rust/src/vad.rs::frame_probs` for the rolling-context mechanics.
 
-## `fluidaudio-rs 0.1.0` LACKS `transcribe_samples`
+## TESTS THAT STAGE A TEMPDIR CACHE FOR ES/FR/IT/PT MUST STAGE G2P TOO
 
-The method exists on upstream `main` but isn't in the published 0.1.0 crate. The CoreML `TranscribeBackend::transcribe_samples` impl writes a temp IEEE_FLOAT WAV at 16 kHz mono f32 and calls `transcribe_file` — see `rust/src/backend/fluidaudio.rs`. Drop the shim when upstream cuts a new release that exposes `transcribe_samples` directly.
+On ONNX builds, Spanish, French, Italian and Portuguese Kokoro phonemize through CharsiuG2P at `$KESHA_CACHE_DIR/models/g2p/byt5-tiny/`. A test that creates a fresh `KESHA_CACHE_DIR` tempdir for one of those languages and stages only Kokoro fails with `G2P model not installed` (`tts::g2p::check_charsiu_files`). English (embedded misaki-rs, #211) and Russian (Vosk) need no G2P artifact — see `rust/tests/tts_smoke.rs::resolves_from_cache_when_installed`.
 
-## TESTS THAT STAGE A TEMPDIR CACHE MUST STAGE G2P TOO
-
-Post-#123 (v1.4.0), Kokoro + Piper synthesis flows through the ONNX G2P at `$KESHA_CACHE_DIR/models/g2p/byt5-tiny/`. Any test that creates a fresh `KESHA_CACHE_DIR` tempdir and copies in only Kokoro / Piper will fail with `SynthesisFailed("g2p: G2P model not installed")`. Use `models::is_g2p_cached(dir)` + `models::g2p_model_dir()` to gate + copy the ONNX files. Examples: `rust/tests/tts_smoke.rs::resolves_from_cache_when_installed`, `tests/integration/say-e2e.test.ts::beforeAll`.
-
-## VERIFICATION TOOLING — `cargo nextest`, CLIPPY, RUSTFMT, `protoc`
+## VERIFICATION TOOLING — `cargo nextest`, CLIPPY, RUSTFMT
 
 Moved out of CLAUDE.md (2026-07-26) with the rest of the Rust detail.
 
@@ -73,4 +60,3 @@ Moved out of CLAUDE.md (2026-07-26) with the rest of the Rust detail.
 - Keep `--all-targets` on clippy. Without it, local clippy misses `#[cfg(test)]` dead code that ubuntu CI catches (#125 M1).
 - The root `rust-toolchain.toml` pins CI and local Rust. Confirm the active compiler with `rustup show`; if CI-only clippy fails, read `gh run view <id> --log-failed` before changing code.
 - CI `rustfmt --check` wins over local formatting. If it rejects line wrapping, re-run `cargo fmt` and push the whitespace-only diff (#309).
-- Fresh cargo builds need `protoc` for `vosk-tts-rs`/`prost-build`; macOS: `brew install protobuf`, then expose the protobuf bin dir or set `PROTOC`.

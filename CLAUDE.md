@@ -54,7 +54,7 @@ just worktree-rm <slug>
 - Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
 - `preflight` does **not** build the darwin feature set, so it goes green on code that never compiled: touching `rust/src/tts/**` or anything fluidaudio-rs-adjacent (`system_kokoro` / `system_diarize` / `system_text_lang`) also needs `just verify-darwin-full`, the recipe `rust-test.yml` runs.
 
-Rust toolchain quirks (CI rustc drift, rustfmt, `protoc`) and language gotchas: `docs/runbooks/rust-gotchas.md`.
+Rust toolchain quirks (CI rustc drift, rustfmt, libclang) and language gotchas: `docs/runbooks/rust-gotchas.md`.
 
 ### TESTS COME FIRST, AND ARE JUDGED BY WHAT THEY CATCH
 
