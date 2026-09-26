@@ -6,13 +6,13 @@ use rubato::{
     calculate_cutoff, Async, FixedAsync, Resampler, SincInterpolationParameters,
     SincInterpolationType, WindowFunction,
 };
-use symphonia::core::audio::SampleBuffer;
-use symphonia::core::codecs::{CodecParameters, CodecRegistry, DecoderOptions, CODEC_TYPE_NULL};
+use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoderOptions};
+use symphonia::core::codecs::registry::CodecRegistry;
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::{FormatOptions, FormatReader};
+use symphonia::core::formats::probe::{Hint, Probe};
+use symphonia::core::formats::{FormatOptions, FormatReader, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
-use symphonia::core::probe::{Hint, Probe};
 
 use crate::coded_bail;
 use crate::errors::{CodedContext, ErrorCode};
@@ -22,7 +22,7 @@ pub(crate) const TARGET_SAMPLE_RATE: u32 = 16000;
 fn get_codec_registry() -> CodecRegistry {
     let mut registry = CodecRegistry::new();
     symphonia::default::register_enabled_codecs(&mut registry);
-    registry.register_all::<symphonia_adapter_libopus::OpusDecoder>();
+    registry.register_audio_decoder::<symphonia_adapter_libopus::OpusDecoder>();
     registry
 }
 
@@ -44,10 +44,17 @@ fn build_hint(path: &Path) -> Hint {
     hint
 }
 
+struct OpenedTrack {
+    format: Box<dyn FormatReader>,
+    track_id: u32,
+    codec_params: AudioCodecParameters,
+    num_frames: Option<u64>,
+}
+
 /// Open `path`, probe format + select the first supported audio track.
 /// Shared by the decode loop and the duration probes so container
 /// detection + error messages live in one place.
-fn open_format(path: &Path) -> Result<(Box<dyn FormatReader>, u32, CodecParameters)> {
+fn open_format(path: &Path) -> Result<OpenedTrack> {
     let src = std::fs::File::open(path).map_err(|e| {
         let code = if e.kind() == std::io::ErrorKind::NotFound {
             ErrorCode::InputNotFound
@@ -68,13 +75,13 @@ fn open_format(path: &Path) -> Result<(Box<dyn FormatReader>, u32, CodecParamete
     let mut probe = Probe::default();
     symphonia::default::register_enabled_formats(&mut probe);
 
-    // A header symphonia cannot represent (a WAV declaring sample rate 0) panics inside the probe.
+    // symphonia 0.5 panicked inside the probe on a WAV declaring sample rate 0; keep the guard for other headers.
     let probed = match crate::errors::catch_panic(|| {
-        probe.format(
+        probe.probe(
             &hint,
             mss,
-            &FormatOptions::default(),
-            &MetadataOptions::default(),
+            FormatOptions::default(),
+            MetadataOptions::default(),
         )
     }) {
         Ok(probed) => probed
@@ -88,16 +95,32 @@ fn open_format(path: &Path) -> Result<(Box<dyn FormatReader>, u32, CodecParamete
     };
 
     let track = probed
-        .format
-        .tracks()
-        .iter()
-        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .first_track_known_codec(TrackType::Audio)
         .with_context(|| format!("no supported audio tracks in: {}", path.display()))
         .coded(ErrorCode::BadAudio)?;
 
     let track_id = track.id;
-    let codec_params = track.codec_params.clone();
-    Ok((probed.format, track_id, codec_params))
+    let num_frames = track.num_frames;
+    let codec_params = track
+        .codec_params
+        .as_ref()
+        .and_then(|p| p.audio())
+        .cloned()
+        .with_context(|| format!("no supported audio tracks in: {}", path.display()))
+        .coded(ErrorCode::BadAudio)?;
+    if codec_params.sample_rate == Some(0) {
+        coded_bail!(
+            ErrorCode::BadAudio,
+            "malformed audio header in: {}: sample rate 0; re-export the file",
+            path.display()
+        );
+    }
+    Ok(OpenedTrack {
+        format: probed,
+        track_id,
+        codec_params,
+        num_frames,
+    })
 }
 
 /// Stream `path` through the decoder, handing every decoded buffer's
@@ -105,27 +128,34 @@ fn open_format(path: &Path) -> Result<(Box<dyn FormatReader>, u32, CodecParamete
 /// channel count. Consumers that don't need the audio itself must not retain
 /// the slice, so they stay O(1) in memory.
 fn decode_packets<F: FnMut(&[f32])>(path: &Path, mut on_samples: F) -> Result<(u32, usize)> {
-    let (mut format, track_id, codec_params) = open_format(path)?;
+    let OpenedTrack {
+        mut format,
+        track_id,
+        codec_params,
+        ..
+    } = open_format(path)?;
 
     let sample_rate = codec_params
         .sample_rate
         .with_context(|| format!("unknown sample rate in: {}", path.display()))
         .coded(ErrorCode::BadAudio)?;
-    let channels = codec_params.channels.map(|c| c.count()).unwrap_or(1);
+    let channels = codec_params.channels.as_ref().map_or(1, |c| c.count());
 
-    let dec_opts = DecoderOptions::default();
+    let dec_opts = AudioDecoderOptions::default();
     let codec_registry = get_codec_registry();
     let mut decoder = codec_registry
-        .make(&codec_params, &dec_opts)
+        .make_audio_decoder(&codec_params, &dec_opts)
         .with_context(|| format!("unsupported codec in: {}", path.display()))
         .coded(ErrorCode::BadAudio)?;
 
-    let mut sample_buf: Option<SampleBuffer<f32>> = None;
+    let mut samples: Vec<f32> = Vec::new();
 
     loop {
         let packet = match format.next_packet() {
-            Ok(p) => p,
-            Err(SymphoniaError::IoError(_)) | Err(SymphoniaError::ResetRequired) => break,
+            Ok(Some(p)) => p,
+            Ok(None) | Err(SymphoniaError::IoError(_)) | Err(SymphoniaError::ResetRequired) => {
+                break
+            }
             Err(e) => {
                 return Err(e)
                     .with_context(|| format!("decode error in: {}", path.display()))
@@ -137,7 +167,7 @@ fn decode_packets<F: FnMut(&[f32])>(path: &Path, mut on_samples: F) -> Result<(u
             format.metadata().pop();
         }
 
-        if packet.track_id() != track_id {
+        if packet.track_id != track_id {
             continue;
         }
 
@@ -151,12 +181,8 @@ fn decode_packets<F: FnMut(&[f32])>(path: &Path, mut on_samples: F) -> Result<(u
             }
         };
 
-        let buf = sample_buf.get_or_insert_with(|| {
-            SampleBuffer::<f32>::new(decoded.capacity() as u64, *decoded.spec())
-        });
-
-        buf.copy_interleaved_ref(decoded);
-        on_samples(buf.samples());
+        decoded.copy_to_vec_interleaved(&mut samples);
+        on_samples(&samples);
     }
 
     Ok((sample_rate, channels))
@@ -293,8 +319,8 @@ pub fn load_audio_truncated(path: &str, max_seconds: f32) -> Result<Vec<f32>> {
 /// falling back to a decode-and-measure, which would defeat the purpose of a
 /// cheap probe.
 pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
-    let (_format, _track_id, codec_params) = open_format(Path::new(path))?;
-    match (codec_params.n_frames, codec_params.sample_rate) {
+    let track = open_format(Path::new(path))?;
+    match (track.num_frames, track.codec_params.sample_rate) {
         (Some(n), Some(sr)) if sr > 0 => Ok(Some(n as f32 / sr as f32)),
         _ => Ok(None),
     }
