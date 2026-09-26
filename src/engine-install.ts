@@ -510,9 +510,14 @@ async function refreshCachedEngine(
         const path = join(engineDir, spec.fileBasename);
         // Re-trust before probing, for the Sequoia upgrade scenario: a provenance-blocked
         // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
-        if (existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version))) {
-          darwinTrustBinary(path, spec.displayName);
+        let pinned = false;
+        try {
+          pinned = existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version));
+        } catch (e) {
+          log.warn(`Could not read ${spec.displayName} at ${path} (${errorMessage(e)}); removing it and downloading it again.`);
+          rmSync(path, { force: true });
         }
+        if (pinned) darwinTrustBinary(path, spec.displayName);
         if (await sidecarNeedsDownload(spec, engineDir)) {
           await downloadSidecar(spec, binPath, version, checksums);
         }

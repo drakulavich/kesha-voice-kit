@@ -251,6 +251,30 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     }
   }, 30_000);
 
+  // Greptile P1 on #1263: sidecars are best-effort everywhere else, so one unreadable copy must not abort the install.
+  (isDarwinArm64() && process.getuid?.() !== 0 ? test : test.skip)(
+    "an unreadable cached sidecar is warned about and replaced while the install completes",
+    async () => {
+      const binPath = getEngineBinPath();
+      stageAlteredInstall(binPath);
+      writeFileSync(binPath, ENGINE);
+      const [unreadable, ...rest] = SIDECARS;
+      const unreadablePath = join(dirname(binPath), unreadable!.fileBasename);
+      for (const spec of rest) writeFileSync(join(dirname(binPath), spec.fileBasename), ENGINE);
+      chmodSync(unreadablePath, 0o000);
+      const warnings: string[] = [];
+      log.warn = (msg: string) => void warnings.push(msg);
+      stubRelease(null);
+      expectServedBody(() => ENGINE);
+
+      await installEngine();
+
+      expect(readFileSync(unreadablePath, "utf8")).toBe(ENGINE);
+      expect(warnings.some((w) => w.includes(unreadablePath) && w.includes("EACCES"))).toBe(true);
+    },
+    30_000,
+  );
+
   posixTest("an engine the user supplied through KESHA_ENGINE_BIN is their own build and is not held to the pin", async () => {
     const binPath = stageEngineDir();
     stageAlteredInstall(binPath);
