@@ -1218,6 +1218,13 @@ describe("Rust toolchain pin", () => {
     }
   });
 
+  test("the setup-rust composite installs the root compiler and components", () => {
+    const path = ".github/actions/setup-rust/action.yml";
+    const document = parseRepoYaml(path) as { runs: { steps: { uses?: string }[] } };
+    expect(document.runs.steps.some((step) => step.uses?.startsWith("dtolnay/rust-toolchain@"))).toBe(true);
+    expect(requirePinnedRustToolchain(path, document, PIN)).toEqual([]);
+  });
+
   test("fails when a composite action installs a different compiler", () => {
     const path = ".github/actions/setup-rust/action.yml";
     const document = {

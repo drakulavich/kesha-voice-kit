@@ -126,17 +126,11 @@ jobs:
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "16.2"
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      # No rust-cache: this job builds only on a miss, and its 716 MB would evict the bundle it seeds.
+      - uses: ./.github/actions/setup-rust
         if: steps.probe.outputs.cache-hit != 'true'
         with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy
-
-      # Deliberately no rust-cache: this job builds only on a miss, and its artifacts
-      # cost 716 MB of a budget whose pressure already evicts the bundle it seeds.
-      - name: Install system audio deps (Opus)
-        if: steps.probe.outputs.cache-hit != 'true'
-        run: brew install opus pkg-config
+          cache: "false"
 
       # FluidAudio owns the bundle: install's warm-up builds the backend, which fetches on a miss.
       - name: Populate the FluidAudio ASR bundle

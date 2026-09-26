@@ -13,6 +13,7 @@ on:
       - "rust/**"
       - "rust-toolchain.toml"
       - ".github/workflows/rust-test.yml"
+      - ".github/actions/setup-rust/**"
 
 permissions:
   contents: read
@@ -47,6 +48,7 @@ jobs:
               - 'rust/**'
               - 'rust-toolchain.toml'
               - '.github/workflows/rust-test.yml'
+              - '.github/actions/setup-rust/**'
               - '.github/scripts/check-coverage.ts'
               - 'package.json'
               - 'bun.lock'
@@ -66,6 +68,7 @@ jobs:
               - 'rust/Cargo.lock'
               - 'tests/fixtures/benchmark-en/03-review-pull-request.ogg'
               - '.github/workflows/rust-test.yml'
+              - '.github/actions/setup-rust/**'
 
   # GitHub scopes a cache written during a pull_request run to that PR's merge
   # ref, so it can only ever serve re-runs of the same PR — measured on #838: the
@@ -87,20 +90,9 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
           shared-key: linux
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-
-      - name: Install system audio deps (Opus)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
 
       - name: Check formatting
         run: cd rust && cargo fmt -- --check
@@ -144,14 +136,7 @@ jobs:
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "16.2"
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
-        with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/setup-rust
 
       # `cargo nextest` replaces `cargo test` for the actual run — it
       # parallelizes per-binary, surfaces flakiness explicitly, and emits
@@ -161,46 +146,6 @@ jobs:
       - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: nextest
-
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        if: runner.os == 'Windows'
-
-      - name: Pin MSVC linker (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        # Git for Windows ships a GNU `link.exe` under /c/Program Files/Git/usr/bin
-        # that shadows MSVC's link.exe under `shell: bash`. Pin via cargo's env
-        # knob so PATH ordering doesn't matter.
-        run: |
-          $linkPath = (Get-Command link.exe |
-            Where-Object { $_.Source -notlike "*Git*usr*" } |
-            Select-Object -First 1).Source
-          if (-not $linkPath) { Write-Error "MSVC link.exe not found"; exit 1 }
-          Write-Host "MSVC linker: $linkPath"
-          Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linkPath"
-
-      - name: Install system audio deps (Opus)
-        # audiopus_sys 0.2.2 / opusic-sys 0.6.0 (added in #224 for OGG/Opus
-        # output) try pkg-config first; on miss they fall back to a vendored
-        # libopus build via cmake whose CMakeLists.txt declares
-        # `cmake_minimum_required(VERSION <3.5)`. Linux/macOS: install the
-        # system lib so pkg-config succeeds and cmake never runs. Windows:
-        # set `CMAKE_POLICY_VERSION_MINIMUM=3.5` so the cmake fallback build
-        # is forgiven (cheaper than vcpkg-installing opus).
-        if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          if [[ "$RUNNER_OS" == "Linux" ]]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
-          elif [[ "$RUNNER_OS" == "macOS" ]]; then
-            brew install opus pkg-config
-          fi
-
-      - name: Allow legacy cmake_minimum_required (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
 
       # Guard against coreml-backend rot: v1.0.0 shipped with broken
       # coreml code because no PR CI job ever tried to build it.
@@ -299,18 +244,10 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      # No main-side writer for the llvm-cov flavour: its RUSTFLAGS never match push-gate's fingerprints (#741).
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy,llvm-tools-preview
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
-          # No main-side writer exists for the llvm-cov flavour: instrumented
-          # builds carry different RUSTFLAGS, so push-gate's plain artifacts
-          # would not match this job's fingerprints anyway (#741).
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+          extra-components: llvm-tools-preview
 
       - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
@@ -323,11 +260,6 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-
-      - name: Install system audio deps (Opus)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
 
       # The only weights left on the PR path that nothing can stand in for:
       # CharsiuG2P, whose phonemiser the Kokoro mini does not replace (#741).
@@ -403,19 +335,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      # Sole rust job on main, so this is the entry `lint-ubuntu` restores.
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
-          # Sole rust job on main, so this is the entry `lint-ubuntu` restores.
           shared-key: linux
-      - name: Install system audio deps (Opus)
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
       - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: nextest
@@ -480,20 +403,10 @@ jobs:
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "16.2"
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
-        with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - uses: ./.github/actions/setup-rust
       - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: nextest
-
-      - name: Install system audio deps (Opus)
-        run: brew install opus pkg-config
 
       # Restore-only: this job runs on pull_request, and GitHub scopes a cache to
       # the ref that wrote it, so anything saved here is readable by re-runs of

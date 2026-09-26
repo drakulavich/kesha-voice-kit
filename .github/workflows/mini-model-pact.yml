@@ -56,25 +56,12 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
-        with:
-          toolchain: "1.94.1"
-          components: rustfmt,clippy
-
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: 🦀 Setup Rust
+        uses: ./.github/actions/setup-rust
 
       - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: nextest
-
-      - name: 🎧 Install system audio deps
-        shell: bash
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
 
       # The URL and the pinned digest both come from the recording, so a mirror or a
       # re-upload cannot quietly substitute different weights for this check.

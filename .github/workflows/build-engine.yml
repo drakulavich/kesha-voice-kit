@@ -133,57 +133,10 @@ jobs:
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "16.2"
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
+      # Every matrix target is its runner's host triple, which rustup installs with the toolchain.
+      - uses: ./.github/actions/setup-rust
         with:
-          toolchain: "1.94.1"
-          targets: ${{ matrix.target }}
-          components: rustfmt,clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          workspaces: rust
-
-      - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
-        if: matrix.os == 'windows-latest'
-
-      - name: Pin MSVC linker (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        # Git for Windows ships a GNU `link.exe` under /c/Program Files/Git/usr/bin
-        # that shadows MSVC's link.exe under `shell: bash`. Pin via cargo's env
-        # knob so PATH ordering doesn't matter.
-        run: |
-          $linkPath = (Get-Command link.exe |
-            Where-Object { $_.Source -notlike "*Git*usr*" } |
-            Select-Object -First 1).Source
-          if (-not $linkPath) { Write-Error "MSVC link.exe not found"; exit 1 }
-          Write-Host "MSVC linker: $linkPath"
-          Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=$linkPath"
-
-      - name: Install system Opus
-        # audiopus_sys / opusic-sys (added in #224 for OGG/Opus output) try
-        # pkg-config first; on miss they fall back to a vendored libopus
-        # cmake build that's incompatible with runner cmake ≥4 (the
-        # vendored CMakeLists.txt declares `cmake_minimum_required(<3.5)`).
-        # Linux/macOS: install the system lib so pkg-config succeeds and
-        # cmake never runs. Windows: pkg-config isn't really there; let
-        # the cmake fallback through with a policy override.
-        shell: bash
-        run: |
-          if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-            sudo apt-get update -qq
-            sudo apt-get install -y --no-install-recommends libopus-dev pkg-config
-          elif [[ "${{ matrix.os }}" == "macos-14" ]]; then
-            brew install opus pkg-config
-          fi
-
-      - name: Allow legacy cmake_minimum_required (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        # The vendored libopus CMakeLists.txt declares `cmake_minimum_required(<3.5)`,
-        # which the runner's cmake ≥4 refuses. The escape hatch is documented
-        # by CMake itself: `CMAKE_POLICY_VERSION_MINIMUM=3.5` forgives it for
-        # configure-time. Cheaper than installing libopus via vcpkg.
-        run: Add-Content -Path $env:GITHUB_ENV -Value "CMAKE_POLICY_VERSION_MINIMUM=3.5"
+          save-if: "true"
 
       # Without this the binary reports the pinned release it is meant to be tested against (#685).
       - name: Apply the alpha engine version
