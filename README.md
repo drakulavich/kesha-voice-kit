@@ -8,7 +8,7 @@ Marketing/landing site for [`kesha-voice-kit`](https://github.com/drakulavich/ke
 .
 ├── index.html        # Single-page site
 ├── styles.css        # Design system + components (light + dark mode)
-├── script.js         # Theme toggle, copy-to-clipboard, tabs, scroll reveal, GitHub stars
+├── script.js         # Theme toggle, copy-to-clipboard, tabs, scroll reveal, GitHub stars, release versions
 ├── assets/
 │   ├── logo.png      # Project logo (used as favicon + OG image)
 │   └── benchmark.svg # Performance chart from BENCHMARK.md
