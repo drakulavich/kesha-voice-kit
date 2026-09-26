@@ -137,7 +137,7 @@ gh run watch <run-id> --exit-status
 gh run download <run-id> -D "$SCRATCH/pacts"   # three capability-pact-<target> artifacts, two files each
 ```
 
-In a worktree, copy all six files over `tests/fixtures/capabilities/` unchanged — never hand-edit a recording. If `tests/unit/capabilities-pact.test.ts` goes red, the release changed a published contract (a new error code, a moved `origin`): update the test's expected lists and any `docs/errors.md` sentence describing them in the same PR. If `just preflight` is red only on `check:engine-targets`, put the three `sizeBytes` from `gh release view vX.Y.Z --json assets` in the same PR.
+In a worktree, copy all six files over `tests/fixtures/capabilities/` unchanged — never hand-edit a recording. If `tests/unit/capabilities-pact.test.ts` goes red, read the diff against the recording first; only when the released binary really changed a published contract (a new error code, a moved `origin`) update the test's expected lists and any `docs/errors.md` sentence describing them in the same PR. If `just preflight` is red only on `check:engine-targets`, put the three `sizeBytes` from `gh release view vX.Y.Z --json assets` in the same PR.
 
 Then hand off to **`/release-cli`** so the pin reaches users.
 
