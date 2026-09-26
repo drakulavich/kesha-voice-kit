@@ -593,6 +593,12 @@ fn build_input_stream_for_format(
         SampleFormat::F32 => build_input_stream::<f32>(&input.device, &input.config, sink, err_fn),
         SampleFormat::I16 => build_input_stream::<i16>(&input.device, &input.config, sink, err_fn),
         SampleFormat::U16 => build_input_stream::<u16>(&input.device, &input.config, sink, err_fn),
+        // cpal 0.18 ranks these above integer formats, so a default config may now pick them.
+        SampleFormat::F64 => build_input_stream::<f64>(&input.device, &input.config, sink, err_fn),
+        SampleFormat::I32 => build_input_stream::<i32>(&input.device, &input.config, sink, err_fn),
+        SampleFormat::I24 => {
+            build_input_stream::<cpal::I24>(&input.device, &input.config, sink, err_fn)
+        }
         other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
     }
 }
@@ -650,6 +656,27 @@ impl FromInputSample<i16> for f32 {
 impl FromInputSample<u16> for f32 {
     fn from_input_sample(sample: u16) -> f32 {
         (sample as f32 - 32768.0) / 32768.0
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl FromInputSample<f64> for f32 {
+    fn from_input_sample(sample: f64) -> f32 {
+        sample as f32
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl FromInputSample<i32> for f32 {
+    fn from_input_sample(sample: i32) -> f32 {
+        (sample as f64 / 2_147_483_648.0) as f32
+    }
+}
+
+#[cfg(target_os = "macos")]
+impl FromInputSample<cpal::I24> for f32 {
+    fn from_input_sample(sample: cpal::I24) -> f32 {
+        sample.inner() as f32 / 8_388_608.0
     }
 }
 
@@ -1396,6 +1423,22 @@ mod tests {
     fn mix_frame_to_mono_averages_input_channels() {
         assert_eq!(mix_frame_to_mono(&[1.0, -1.0]), 0.0);
         assert_eq!(mix_frame_to_mono(&[0.25, 0.5, 1.0]), 0.5833333);
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn high_precision_default_formats_scale_to_unit_range() {
+        assert_eq!(f32::from_input_sample(0.5f64), 0.5);
+        assert_eq!(f32::from_input_sample(i32::MAX), 1.0);
+        assert_eq!(f32::from_input_sample(i32::MIN), -1.0);
+        assert_eq!(
+            f32::from_input_sample(cpal::I24::new(1 << 22).unwrap()),
+            0.5
+        );
+        assert_eq!(
+            f32::from_input_sample(cpal::I24::new(-(1 << 23)).unwrap()),
+            -1.0
+        );
     }
 
     #[test]
