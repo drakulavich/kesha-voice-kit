@@ -126,12 +126,12 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 
 ### Step 7 — Refresh the site
 
-The landing page lives on the `gh-pages` branch (Pages deploys from it; a `main` PR cannot touch it). Every user-visible feature this release adds gets a line on it: a card in the feature grid or a sentence on the card that already covers the area, worded from the release notes, never invented. Retire a `badge-new` that no longer is. Branch off `origin/gh-pages`, open the PR with `--base gh-pages`.
+The landing page lives on the `gh-pages` branch (Pages deploys from it; a `main` PR cannot touch it). Every user-visible feature this release adds gets a line on it: a card in the feature grid or a sentence on the card that already covers the area, worded from the release notes, never invented. Retire a `badge-new` that no longer is. Branch off `origin/gh-pages`, open the PR with `--base gh-pages`. A release with no user-visible feature changes nothing on the site; say so in the Output line.
 
-**Version numbers are fetched by `script.js`, never typed.** The hero eyebrow reads the newest stable `-cli` marker and the newest bare engine tag from the GitHub releases API at page load (#1040). The page must carry no version literal; the check that must print nothing:
+**Version numbers are fetched by `script.js`, never typed.** The hero eyebrow reads the newest stable `-cli` marker and the newest bare engine tag from the GitHub releases API at page load (#1040). The page must carry no version literal; run the check on the branch you are proposing, in its worktree, before pushing — it must print nothing:
 
 ```bash
-git fetch origin gh-pages && git show origin/gh-pages:index.html | sed -e ':a' -e '$!N' -e '$!ba' -e 's/<[^>]*>//g' | grep -nE '\bv?[0-9]+\.[0-9]+\.[0-9]+\b|\bv[0-9]+\.[0-9]+\b'
+sed -e ':a' -e '$!N' -e '$!ba' -e 's/<[^>]*>//g' index.html | grep -nE '\bv?[0-9]+\.[0-9]+\.[0-9]+\b|\bv[0-9]+\.[0-9]+\b'
 ```
 
 The `sed` strips every tag (the multi-line ones too) so the check reads visible text only: the GitHub-mark SVG path (`...2.13v3.16c0...`) cannot false-positive, and an unprefixed `1.26.0` in prose is caught as well as a `v1.28`. Line numbers are those of the stripped text. A hit is reworded, not exempted.
@@ -157,7 +157,7 @@ The `sed` strips every tag (the multi-line ones too) so the check reads visible 
 - dist-tag: latest        Provenance: yes
 - Linux packages: .deb + .rpm on the marker release
 - Engine pin: A.B.C (verified published)
-- Site: gh-pages PR <url> (features added; version grep prints nothing)
+- Site: gh-pages PR <url> (features added; version grep prints nothing) | unchanged (no user-visible feature)
 
 Verified from the registry: version ✓ pin ✓ install ✓ transcribe ✓
 ```
