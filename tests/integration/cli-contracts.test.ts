@@ -86,6 +86,10 @@ if (args[0] === "describe") {
 }
 
 if (args[0] === "detect-lang") {
+  if (process.env.KESHA_FAKE_DETECT_LANG_ERROR) {
+    console.error(JSON.stringify({ kind: "error", code: "E_MODEL_MISSING", message: process.env.KESHA_FAKE_DETECT_LANG_ERROR }));
+    process.exit(1);
+  }
   if (process.env.KESHA_FAKE_DETECT_LANG_MARKER) {
     await Bun.write(process.env.KESHA_FAKE_DETECT_LANG_MARKER, "called");
   }
@@ -1743,6 +1747,27 @@ process.exit(99);
     expect(parsed[0].textLanguage).toEqual({ code: "ru", confidence: 0.98, source: "engine" });
     expect(parsed[0].segments[0].end).toBe(900);
     expect(existsSync(detectLangMarker)).toBe(false);
+  });
+
+  test("a reported audio language-ID failure warns once with an install hint and the transcript still lands", async () => {
+    const dir = makeTempDir("kesha-cli-contract-lang-id-failure-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const env = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_DETECT_LANG_ERROR: "lang-id model not installed",
+    };
+
+    const run = await runCli(["--json", mediaPath], { env });
+
+    const warning =
+      "Audio language detection failed: error [E_MODEL_MISSING]: lang-id model not installed\n" +
+      "  Fix: run `kesha install` to reinstall the engine and its language-ID model.";
+    expectContract(run, { exitCode: 0, stderrContains: [warning] });
+    expect(run.stderr.split("Audio language detection failed").length - 1).toBe(1);
+    expect(JSON.parse(run.stdout)[0].audioLanguage).toBeUndefined();
   });
 
   test("textLanguage names the detector that produced it (#941)", async () => {
