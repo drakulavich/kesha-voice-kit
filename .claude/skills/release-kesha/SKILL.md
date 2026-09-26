@@ -132,9 +132,8 @@ This re-downloads from the published release rather than re-using the draft bina
 `tests/fixtures/capabilities/*.json` gate flag routing on every PR, and they describe the previous engine until re-recorded. Skipping this leaves the weekly `📜 Capability Pact` run to fail on all three targets and open three `pact-drift` issues (#1246–#1248, after v1.26.0).
 
 ```bash
-gh workflow run capability-pact.yml --ref main -f record=true
-sleep 5   # the dispatched run takes a moment to be listed
-RUN=$(gh run list --workflow capability-pact.yml --event workflow_dispatch --limit 1 --json databaseId --jq ".[0].databaseId")
+RUN=$(gh workflow run capability-pact.yml --ref main -f record=true | grep -oE "[0-9]+$")   # gh prints the new run URL
+test -n "$RUN" || echo "no run URL printed: take the id from Actions by dispatch time"
 gh run watch "$RUN" --exit-status
 PACTS=$(mktemp -d) && gh run download "$RUN" -D "$PACTS"   # three capability-pact-<target> artifacts, two files each
 ```
