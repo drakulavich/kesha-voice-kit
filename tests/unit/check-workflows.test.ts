@@ -7,6 +7,7 @@ import {
   checkFile,
   namedFilterOf,
   checkFlakeNix,
+  checkShellScripts,
   collectCacheWriters,
   collectManifestSources,
   collectRustReferenceTargets,
@@ -1854,5 +1855,59 @@ describe("forbidExpressionsInRun", () => {
     const path = join(tempDir("kesha-wf-"), "expr.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("interpolates"))).toHaveLength(1);
+  });
+});
+
+// Extracted run: bodies leave the YAML the step-level pipefail and find|head rules read (#1083, #1088).
+describe("checkShellScripts", () => {
+  const scriptsIn = (files: Record<string, string>) => {
+    const dir = tempDir("kesha-sh-");
+    for (const [name, body] of Object.entries(files)) writeFileSync(join(dir, name), body);
+    return checkShellScripts(dir);
+  };
+
+  test("passes on every script in the repo", () => {
+    expect(checkShellScripts(repoPath(".github/scripts"))).toEqual([]);
+  });
+
+  test("fails on a script that never turns pipefail on", () => {
+    const errors = scriptsIn({ "a.sh": "#!/usr/bin/env bash\nset -eu\nls | tee out\n" });
+    expect(errors).toEqual([expect.stringContaining("a.sh: never sets `-o pipefail`")]);
+  });
+
+  test("accepts pipefail however set spells it", () => {
+    expect(scriptsIn({ "a.sh": "set -euo pipefail\n", "b.sh": "set -e\nset -o pipefail\n" })).toEqual([]);
+  });
+
+  test("fails on find piped into head", () => {
+    const errors = scriptsIn({ "a.sh": "set -euo pipefail\nfind . -name x | head -1\n" });
+    expect(errors).toEqual([expect.stringContaining("pipes `find` into `head`")]);
+  });
+
+  test("ignores files that are not shell scripts", () => {
+    expect(scriptsIn({ "a.ts": "console.log(1)\n" })).toEqual([]);
+  });
+
+  test("check:workflows runs it over .github/scripts end-to-end", async () => {
+    const dir = tempDir("kesha-main-");
+    mkdirSync(join(dir, ".github/workflows"), { recursive: true });
+    mkdirSync(join(dir, ".github/scripts"), { recursive: true });
+    mkdirSync(join(dir, ".github/actions"), { recursive: true });
+    mkdirSync(join(dir, "tests/unit"), { recursive: true });
+    writeFileSync(
+      join(dir, ".github/workflows/probe.yml"),
+      "on: push\njobs:\n  probe:\n    runs-on: ubuntu-latest\n    timeout-minutes: 5\n    steps: []\n",
+    );
+    writeFileSync(join(dir, ".github/scripts/probe.sh"), "set -eu\n");
+
+    const proc = Bun.spawn(["bun", join(REPO_ROOT, ".github/scripts/check-workflows.ts")], {
+      cwd: dir,
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+    const stderr = await new Response(proc.stderr).text();
+
+    expect(await proc.exited).toBe(1);
+    expect(stderr).toContain("probe.sh: never sets");
   });
 });

@@ -20,6 +20,7 @@ const dirs = [".github/workflows", ".github/actions"];
 const RUST_TOOLCHAIN_FILE = "rust-toolchain.toml";
 const FLAKE_NIX = "flake.nix";
 const RUST_BUILD_SCRIPT = "rust/build.rs";
+const SCRIPTS_DIR = ".github/scripts";
 
 export type RustToolchainPin = {
   channel: string;
@@ -1256,6 +1257,23 @@ export function checkFlakeNix(path: string): string[] {
   return forbidFindPipedToHead(path, readFileSync(path, "utf8"));
 }
 
+/** Extracted `run:` bodies leave the YAML the step-level pipefail and find|head rules read, so each script answers for both itself (#1083, #1088). */
+export function checkShellScripts(dir: string): string[] {
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => name.endsWith(".sh"))
+    .sort()
+    .flatMap((name) => {
+      const path = join(dir, name);
+      const contents = readFileSync(path, "utf8");
+      const pipefail = /^\s*set\s+(?:-\w*\s+)*-\w*o\s+pipefail\b/m.test(contents);
+      return [
+        ...(pipefail ? [] : [`${path}: never sets \`-o pipefail\`, so a failed stage inside a pipeline passes silently (#1083)`]),
+        ...forbidFindPipedToHead(path, contents),
+      ];
+    });
+}
+
 function main(): void {
   const files = dirs.flatMap((dir) => collectYamlFiles(dir)).sort();
   if (files.length === 0) {
@@ -1274,6 +1292,7 @@ function main(): void {
     ...rustToolchainErrors,
     ...files.flatMap((path) => checkFile(path, testedScripts, cacheWriters, rustToolchain, sources)),
     ...checkFlakeNix(FLAKE_NIX),
+    ...checkShellScripts(SCRIPTS_DIR),
   ];
   for (const error of errors) console.error(error);
 
