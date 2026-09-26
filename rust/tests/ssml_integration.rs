@@ -584,3 +584,29 @@ fn cdata_keeps_the_characters_it_exists_to_carry() {
         .collect();
     assert!(spoken.contains("Kesha & co <b>"), "got {spoken:?}");
 }
+
+#[test]
+fn entities_decode_and_leave_the_following_tags_on_their_own_text() {
+    let segs = parse(
+        r#"<speak>A &amp; B &#1042;&#x41; <say-as interpret-as="characters">ВОЗ</say-as> x &lt; <break time="200ms"/> y</speak>"#,
+    )
+    .unwrap();
+    assert_eq!(segs.len(), 5, "{segs:?}");
+    assert!(
+        matches!(&segs[0], Segment::Text(t) if t == "A & B ВA "),
+        "{segs:?}"
+    );
+    assert!(
+        matches!(&segs[1], Segment::Spell(t) if t == "ВОЗ"),
+        "{segs:?}"
+    );
+    assert!(
+        matches!(&segs[2], Segment::Text(t) if t == " x < "),
+        "{segs:?}"
+    );
+    assert!(
+        matches!(&segs[3], Segment::Break(d) if (d.as_millis() as i64 - 200).abs() <= 1),
+        "{segs:?}"
+    );
+    assert!(matches!(&segs[4], Segment::Text(t) if t == "y"), "{segs:?}");
+}
