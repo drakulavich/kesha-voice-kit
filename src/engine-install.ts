@@ -108,6 +108,24 @@ async function rejectMismatchedDownload(
   );
 }
 
+/**
+ * Whether a cached asset of the pinned release still hashes to its pin; one that does not is
+ * deleted so the verified download replaces it. `--engine-version` caches are not re-hashed.
+ */
+async function cachedAssetMatchesPin(path: string, assetName: string, what: string, version: string): Promise<boolean> {
+  // KESHA_ENGINE_BIN names the user's own build, which no release pin describes.
+  if (version !== engineVersion || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
+  const expected = await engineChecksums.forRelease(version)(assetName);
+  const actual = await sha256OfFile(path);
+  if (actual === expected.sha256) return true;
+  log.warn(
+    `Installed ${what} ${assetName} does not match ${expected.source} (expected sha256 ${expected.sha256}, ` +
+      `got ${actual}); deleting it and downloading a verified copy.`,
+  );
+  rmSync(path, { force: true });
+  return false;
+}
+
 export function getEngineBinaryName(
   platform: string = process.platform,
   arch: string = process.arch,
@@ -466,7 +484,9 @@ async function refreshCachedEngine(
         const path = join(engineDir, spec.fileBasename);
         // Re-trust before probing, for the Sequoia upgrade scenario: a provenance-blocked
         // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
-        if (existsSync(path)) darwinTrustBinary(path, spec.displayName);
+        if (existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version))) {
+          darwinTrustBinary(path, spec.displayName);
+        }
         if (await sidecarNeedsDownload(spec, engineDir)) {
           await downloadSidecar(spec, binPath, version, checksums);
         }
@@ -913,8 +933,12 @@ async function installLockedEngine(
   // The marker vouches for a file, not for a working binary. Skipped on a read-only engine
   // dir: nothing there can be repaired, so a failed probe would only turn a usable Nix
   // install into a hard error.
+  // Hashed before the health probe, so an altered binary is never run.
   const versionMatches =
-    markerMatches && (!canWriteEngineDir || (await engineWorks(binPath)));
+    markerMatches &&
+    (!canWriteEngineDir ||
+      ((await cachedAssetMatchesPin(binPath, getEngineBinaryName(), "kesha-engine binary", version)) &&
+        (await engineWorks(binPath))));
   // On read-only fs, --no-cache can't re-download; treat as cache-valid and forward flag to model install.
   const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 
