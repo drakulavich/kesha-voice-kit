@@ -55,9 +55,7 @@ impl Charsiu {
     pub fn load(dir: &Path) -> Result<Self> {
         let open = |name: &str| -> Result<Session> {
             let path = dir.join(name);
-            Session::builder()
-                .and_then(|mut b| b.commit_from_file(&path))
-                .map_err(|e| crate::tts::model_load_failed("CharsiuG2P", &path, e))
+            crate::tts::open_session("CharsiuG2P", &path, Session::builder())
         };
         Ok(Self {
             encoder: open("encoder_model.onnx")?,
