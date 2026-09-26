@@ -58,12 +58,12 @@ Languages marked **darwin-arm64** below require a darwin-arm64 engine build (Flu
 | 4 | French | `fr` | 🇫🇷 | Kokoro (`fr-*`) | all | female voice only (`fr-ff_siwis`) |
 | 5 | Italian | `it` | 🇮🇹 | Kokoro (`it-*`) | all | FluidAudio CoreML on darwin-arm64, CharsiuG2P ONNX elsewhere |
 | 6 | Portuguese | `pt` | 🇧🇷 | Kokoro (`pt-*`) | all | Brazilian (`pt-pm_alex`) |
-| 7 | Hindi | `hi` | 🇮🇳 | Kokoro (`hi-*`) | darwin-arm64 | **romanized (Latin) input only** — native Devanagari is rejected with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
-| 8 | Japanese | `ja` | 🇯🇵 | Kokoro (`ja-*`) | darwin-arm64 | **romaji (Latin) input only** — native kana/kanji is rejected ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
+| 7 | Hindi | `hi` | 🇮🇳 | Kokoro (`hi-*`) | darwin-arm64 | Kokoro reads romanized (Latin) input only; on macOS, native Devanagari with no `--voice` routes to the AVSpeech `hi-IN` voice (Lekha), while an explicit `--voice hi-*` refuses it with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
+| 8 | Japanese | `ja` | 🇯🇵 | Kokoro (`ja-*`) | darwin-arm64 | Kokoro reads romaji (Latin) input only; on macOS, native kana/kanji with no `--voice` routes to the AVSpeech `ja-JP` voice (Otoya preferred), while an explicit `--voice ja-*` refuses it with `E_SCRIPT_UNSUPPORTED` ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492)) |
 | 9 | Chinese | `zh` | 🇨🇳 | Kokoro (`zh-*`) | darwin-arm64 | native Han supported through FluidAudio's Mandarin KokoroAne variant |
 | — | *(system voices)* | — | 🍎 | AVSpeech (`macos-*`) | macOS | any of the 180+ voices already installed on your Mac; zero model download |
 
-On Linux/Windows, text-to-speech covers English (Kokoro ONNX), Russian (Vosk-TTS), and the Romance languages es/fr/it/pt (CharsiuG2P ONNX). The FluidAudio Kokoro voices for hi/ja/zh are darwin-arm64 only. `macos-*` AVSpeech voices need no install.
+On Linux/Windows, text-to-speech covers English (Kokoro ONNX), Russian (Vosk-TTS), and the Romance languages es/fr/it/pt (CharsiuG2P ONNX). The FluidAudio Kokoro voices for hi/ja/zh are darwin-arm64 only, so native Devanagari or kana/kanji there falls to the default English voice and is refused with `E_SCRIPT_UNSUPPORTED`. `macos-*` AVSpeech voices need no install.
 
 ## Audio language detection (107)
 

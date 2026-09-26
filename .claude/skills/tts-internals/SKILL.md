@@ -92,8 +92,10 @@ else → `.english` (en plus Latin-script es/fr/it/pt, which the English G2P han
 acceptably). The `.mandarin` variant fetches its own `ANE-zh/` bundle (nested
 `voices/<id>.bin`) on first synth — zh voices are therefore **not** staged in
 `models/manifest.rs::ANE_KOKORO_VOICES` and are exempt from the staging-coverage test (like
-`af_heart`). Default zh voice: `zh-zm_050` (male). Native-script `hi`/`ja` still fail fast
-(`E_SCRIPT_UNSUPPORTED`) — no FluidAudio KokoroAne variant for them yet. The
+`af_heart`). Default zh voice: `zh-zm_050` (male). Native-script `hi`/`ja` on the Kokoro
+voices still fail fast (`E_SCRIPT_UNSUPPORTED`) — no FluidAudio KokoroAne variant for them
+yet; with no `--voice`, `src/voice-routing.ts::resolveSayVoice` routes that text on darwin to
+an installed AVSpeech voice (Lekha `hi-IN`, Otoya `ja-JP`) instead. The
 `-Wl,-rpath,/usr/lib/swift` link arg in `build.rs` is emitted under
 `coreml`/`system_kokoro`/`system_diarize` so the Swift runtime loads without
 `MACOSX_DEPLOYMENT_TARGET=14.0` locally.
