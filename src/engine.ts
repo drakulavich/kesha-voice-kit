@@ -233,13 +233,33 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
   return doc;
 }
 
-/** Capabilities view for the screens that predate `describe`; null when the engine cannot be read. */
-export async function getEngineCapabilities(opts: RunEngineOptions = {}): Promise<EngineCapabilities | null> {
+/** Generous because macOS Gatekeeper can take several seconds to scan a freshly written binary on its first run. */
+export const ENGINE_PROBE_TIMEOUT_MS = 15_000;
+
+let unansweredDescribe: { binPath: string; mtime: number | undefined } | null = null;
+
+/** Capabilities view for the screens that predate `describe`; null when the engine cannot be read within the deadline. */
+export async function getEngineCapabilities(timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<EngineCapabilities | null> {
+  const binPath = getEngineBinPath();
+  const mtime = statSync(binPath, { throwIfNoEntry: false })?.mtimeMs;
+  // `install --plan` probes twice; a binary that already let one deadline pass is not waited on again.
+  if (unansweredDescribe?.binPath === binPath && unansweredDescribe.mtime === mtime) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    return describeToCapabilities(await getDescribe(opts));
+    return describeToCapabilities(await getDescribe({ signal: controller.signal }));
   } catch (err) {
-    if (err instanceof KeshaError) return null;
-    throw err;
+    if (!(err instanceof KeshaError)) throw err;
+    if (controller.signal.aborted) {
+      unansweredDescribe = { binPath, mtime };
+      log.warn(
+        `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s; ` +
+          "continuing without its capabilities — re-run `kesha install` to replace it",
+      );
+    }
+    return null;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
