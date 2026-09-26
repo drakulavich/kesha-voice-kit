@@ -227,8 +227,9 @@ Exit codes: 0 PINNED, 1 NOT PINNED, 2 usage or refusal (needle absent, or
 occurring more or fewer times than `--occurrences N` says — it is an exact
 count, not a ceiling — or a sidecar left behind), 3 NOT A VALID RUN (baseline
 red, timeout — `--timeout S`, default 600 s, or `MUTATE_TIMEOUT_SECONDS` —
-interrupted, or a command that could not start). A run cut short leaves
-`<file>.mutate-orig` beside the mutated file as evidence; the next run refuses
+interrupted, or a command that could not start). A timeout, `SIGINT` or
+`SIGTERM` restores the file itself; only a run killed outright leaves
+`<file>.mutate-orig` beside the mutated file, and the next run refuses
 until you restore it yourself with `mv <file>.mutate-orig <file>`. Record the
 rows in the PR the way `docs/mutation-evidence/` does when a review asks for
 proof.
