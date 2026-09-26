@@ -92,7 +92,8 @@ describe("parseManifestUrls", () => {
   });
 
   test("resolves a url for every model-plan.json entry against the real manifest", () => {
-    const unresolved = flattenPlan(modelPlan).filter((entry) => !realManifestUrls().has(entry.relPath));
+    const urls = realManifestUrls();
+    const unresolved = flattenPlan(modelPlan).filter((entry) => !urls.has(entry.relPath));
     expect(unresolved.map((entry) => entry.relPath)).toEqual([]);
   });
 
@@ -311,10 +312,9 @@ describe("group-scoped manifest lookup", () => {
 
   test("every recorded plan entry resolves to exactly one URL", () => {
     const source = realManifestSource();
+    const wholeSource = realManifestUrls();
     const unresolved = flattenPlan(modelPlan).filter(
-      (entry) =>
-        (manifestUrlsForGroup(source, entry.group) ?? realManifestUrls()).get(entry.relPath) ===
-        undefined,
+      (entry) => (manifestUrlsForGroup(source, entry.group) ?? wholeSource).get(entry.relPath) === undefined,
     );
     expect(unresolved).toEqual([]);
   });
