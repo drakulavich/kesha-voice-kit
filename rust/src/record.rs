@@ -111,7 +111,7 @@ pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Resul
 fn capture_default_input_mono(max_duration: Duration) -> Result<(u32, Vec<f32>)> {
     let input = open_default_input()?;
     let input_channels = input.config.channels;
-    let sample_rate = input.config.sample_rate.0;
+    let sample_rate = input.config.sample_rate;
 
     let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(RECORD_QUEUE_BUFFERS);
     let dropped = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -204,7 +204,7 @@ pub fn record_default_input_live(
     interrupt::install();
 
     let input = open_default_input()?;
-    let sample_rate = input.config.sample_rate.0;
+    let sample_rate = input.config.sample_rate;
 
     events::progress(
         None,
@@ -602,7 +602,7 @@ fn build_input_stream<T>(
     device: &cpal::Device,
     config: &StreamConfig,
     mut sink: impl FnMut(Vec<f32>) + Send + 'static,
-    err_fn: impl FnMut(cpal::StreamError) + Send + 'static,
+    err_fn: impl FnMut(cpal::Error) + Send + 'static,
 ) -> Result<cpal::Stream>
 where
     T: cpal::Sample + cpal::SizedSample + Copy + Send + 'static,
@@ -611,7 +611,7 @@ where
     let channels = usize::from(config.channels);
     device
         .build_input_stream(
-            config,
+            *config,
             move |data: &[T], _| {
                 let mut samples = Vec::with_capacity(data.len());
                 for frame in data.chunks(channels) {

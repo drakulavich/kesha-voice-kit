@@ -108,7 +108,7 @@ vosk_tts = { path = "vendor/vosk-tts" }
 flacenc = { version = "0.5.1", default-features = false, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cpal = "0.15"
+cpal = "0.18"
 
 [dev-dependencies]
 tempfile = "3"
