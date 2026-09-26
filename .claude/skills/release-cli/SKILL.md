@@ -126,7 +126,7 @@ export KESHA_ENGINE_BIN="$V/eng/kesha-engine"
 
 ### Step 7 — Refresh the site
 
-The landing page lives on the `gh-pages` branch (Pages deploys from it; a `main` PR cannot touch it). Every user-visible feature this release adds gets a line on it: a card in the feature grid or a sentence on the card that already covers the area, worded from the release notes, never invented. Retire a `badge-new` that no longer is. Branch off `origin/gh-pages`, open the PR with `--base gh-pages`. A release with no user-visible feature changes nothing on the site; say so in the Output line.
+The landing page lives on the `gh-pages` branch (Pages deploys from it; a `main` PR cannot touch it). Every user-visible feature this release adds gets a line on it: a card in the feature grid or a sentence on the card that already covers the area, worded from the release notes, never invented. Retire a `badge-new` that no longer is. Branch off `origin/gh-pages`, open the PR with `--base gh-pages`. A release with no user-visible feature and no badge to retire changes nothing on the site; say so in the Output line.
 
 **Version numbers are fetched by `script.js`, never typed.** The hero eyebrow reads the newest stable `-cli` marker and the newest bare engine tag from the GitHub releases API at page load (#1040). The page must carry no version literal; run the check on the branch you are proposing, in its worktree, before pushing — it must print nothing:
 
