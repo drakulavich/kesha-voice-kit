@@ -20,10 +20,17 @@ export async function waitForPidFile(
 export function pidIsAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
-    return true;
   } catch {
     return false;
   }
+  return !isZombie(pid);
+}
+
+/** `kill(pid, 0)` succeeds on an exited child its parent has not reaped yet (#1160). */
+function isZombie(pid: number): boolean {
+  if (process.platform === "win32") return false;
+  const res = Bun.spawnSync(["ps", "-o", "stat=", "-p", String(pid)], { stdout: "pipe", stderr: "ignore" });
+  return res.stdout.toString().trim().startsWith("Z");
 }
 
 export async function waitForPidExit(pid: number): Promise<boolean> {
