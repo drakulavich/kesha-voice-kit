@@ -7,7 +7,7 @@ import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { abortOnSignal, engineAbortError, interruptedRun, pendingInterruption, registerProcessTree } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
-import { engineFailure, KeshaError, readEvents, type ErrorEvent } from "./engine/events";
+import { engineFailure, KeshaError, readEvents, renderError, type ErrorEvent } from "./engine/events";
 import {
   describeToCapabilities,
   parseDescribe,
@@ -570,7 +570,14 @@ export async function detectAudioLanguageEngine(
   if (!isEngineInstalled()) return null;
   const run = await runEngine(["detect-lang", audioPath], opts);
   // The tolerant form: a noisy onnxruntime warning must not blind a best-effort guess.
-  if (reportedFailure(run)) return null;
+  if (reportedFailure(run)) {
+    const cause = run.error ? renderError(run.error) : `kesha-engine detect-lang exited with code ${run.exitCode}`;
+    log.warn(
+      `Audio language detection failed: ${cause}\n` +
+        "  Fix: run `kesha install` to reinstall the engine and its language-ID model.",
+    );
+    return null;
+  }
   return parseLangResult(run.stdout);
 }
 
