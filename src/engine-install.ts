@@ -398,12 +398,13 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
       signal: AbortSignal.timeout(timeoutMs),
     });
 
+    // A Ctrl+C that lands while the deadline is stopping the engine is still the user's interrupt.
+    const interrupted = interruptedRun(exitCode);
+    if (interrupted) throw interrupted;
     if (aborted) {
       log.warn("FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow.");
       return;
     }
-    const interrupted = interruptedRun(exitCode);
-    if (interrupted) throw interrupted;
     if (exitCode !== 0 || events.invalid.length > 0 || events.error) {
       const err = engineFailure("say", events, exitCode);
       log.warn(
