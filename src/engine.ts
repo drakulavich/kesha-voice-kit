@@ -7,7 +7,6 @@ import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, interruptedRun } from "./process-tree";
 import { runEngineProcess, spawnHint } from "./engine/spawn";
-export { protocolEnv, spawnEngineProcess } from "./engine/spawn";
 import { engineFailure, KeshaError, renderError, type ErrorEvent } from "./engine/events";
 import {
   describeToCapabilities,

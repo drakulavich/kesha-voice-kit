@@ -6,11 +6,11 @@ import { PROTOCOL_VERSION } from "./describe";
 import { KeshaError, readEvents, type EventSinks, type StderrOutcome } from "./events";
 
 type SpawnStdioEntry = "inherit" | "pipe" | "ignore";
-export type SpawnStdio = [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry];
+type SpawnStdio = [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry];
 type EngineProcess = ReturnType<typeof Bun.spawn>;
 
 /** The env for a spawn whose stderr is parsed as protocol 4 events. */
-export function protocolEnv(): Record<string, string | undefined> {
+function protocolEnv(): Record<string, string | undefined> {
   return { ...process.env, KESHA_PROTOCOL: String(PROTOCOL_VERSION) };
 }
 
@@ -33,7 +33,7 @@ function withResolvedCacheDir(env: Record<string, string | undefined>): Record<s
 }
 
 /** `Bun.spawn` throws synchronously on ENOENT/EACCES; every launch failure becomes `E_ENGINE_SPAWN`. */
-export function spawnEngineProcess(
+function spawnEngineProcess(
   binPath: string,
   args: string[],
   stdio: SpawnStdio,
