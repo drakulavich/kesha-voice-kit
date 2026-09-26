@@ -1217,6 +1217,19 @@ describe("Rust toolchain pin", () => {
       expect([path, requirePinnedRustToolchain(path, parseRepoYaml(path), PIN)]).toEqual([path, []]);
     }
   });
+
+  test("fails when a composite action installs a different compiler", () => {
+    const path = ".github/actions/setup-rust/action.yml";
+    const document = {
+      runs: {
+        using: "composite",
+        steps: [{ uses: "dtolnay/rust-toolchain@02cb101", with: { toolchain: "1.90.0", components: "rustfmt,clippy" } }],
+      },
+    };
+    expect(requirePinnedRustToolchain(path, document, PIN)).toEqual([
+      `${path}: \`runs\` must install Rust 1.94.1, not \`1.90.0\``,
+    ]);
+  });
 });
 
 describe("requireJobTimeouts", () => {
