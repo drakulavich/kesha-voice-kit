@@ -1,5 +1,0 @@
-# Mutation testing for the engine. Run it through `just mutants-rust src/errors.rs`, which
-# supplies the flags this repo needs — see the justfile recipe for why they are not optional.
-# The feature set lives there too: a cfg'd-out fn compiles away, so its mutants all read as
-# missed even when a good test exists (#793), and no single feature set covers the whole file.
-test_tool = "nextest"
