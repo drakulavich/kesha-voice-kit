@@ -27,13 +27,6 @@ skills-lock.json
 .repowise/*
 !.repowise/bot.yaml
 
-# Mutation testing scratch (stryker sandbox, cargo-mutants output)
-.stryker-tmp/
-stryker.generated.*.json
-reports/
-mutants.out/
-mutants.out.old/
-
 # CI-only model cache: workspace-relative so one cross-OS entry serves Linux and Windows (#860).
 .kesha-ci-cache/
 .kesha-ci-cache-probe/

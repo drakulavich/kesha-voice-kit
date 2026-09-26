@@ -91,7 +91,7 @@ jobs:
               - '.github/workflows/build-engine.yml'
               # Most of these scripts have unit tests; without this a script-only edit skips the tests that cover it (check-workflows.ts enforces it). Deliberately no count — the one that lived here read 16 against an actual 25.
               - '.github/scripts/**'
-              # Same reason for the repo's own scripts: mutants-ts.ts, mutate.ts and release-tag.ts all have unit suites, and a scripts-only edit skipped every one of them (#1091 review).
+              # Same reason for the repo's own scripts: mutate.ts and release-tag.ts both have unit suites, and a scripts-only edit skipped every one of them (#1091 review).
               - 'scripts/**'
               # The two halves of the install-plan join (#920): the size canary's unit test
               # asserts every plan entry still resolves to a URL in the manifest, and a change
@@ -212,7 +212,7 @@ jobs:
 
       # check:recipes parses `just --dump`; without a `just` here it fails loudly rather than
       # skipping, which is the point — a silently-skipped gate is the drift it exists to catch.
-      - uses: taiki-e/install-action@26e9283f268b880168bdbd2c545dfcd60ec2c6ab # v2.87.13
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: just@1.58.0
 
@@ -691,7 +691,7 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: "1.94.1"
           components: rustfmt,clippy
@@ -803,7 +803,7 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: "1.94.1"
           components: rustfmt,clippy

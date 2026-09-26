@@ -75,7 +75,7 @@ describe("referencedRecipes", () => {
   });
 
   test("reads several assignments before the recipe name", () => {
-    expect(names(MD, "`just FILE=src/errors.rs FEATURES=tts mutants-rust`")).toEqual(["mutants-rust"]);
+    expect(names(MD, "`just FILE=src/errors.rs ALL=1 preflight`")).toEqual(["preflight"]);
   });
 
   test("reads a fenced code block", () => {
