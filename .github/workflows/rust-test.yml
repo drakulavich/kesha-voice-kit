@@ -49,6 +49,7 @@ jobs:
               - 'rust-toolchain.toml'
               - '.github/workflows/rust-test.yml'
               - '.github/actions/setup-rust/**'
+              - '.github/scripts/pin-msvc-linker.ps1'
               - '.github/scripts/check-coverage.ts'
               - 'package.json'
               - 'bun.lock'
