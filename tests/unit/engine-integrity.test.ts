@@ -151,6 +151,22 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     expect(existsSync(join(dirname(binPath), matching!.fileBasename))).toBe(true);
   }, 30_000);
 
+  // Greptile P2 on #1263: the previous release's helper would otherwise run beside the new engine unverified.
+  sidecarTest("a sidecar the new release's SHA256SUMS does not list is removed rather than kept from the old install", async () => {
+    const binPath = stageEngineDir();
+    for (const spec of SIDECARS) {
+      const path = join(dirname(binPath), spec.fileBasename);
+      writeFileSync(path, "#!/bin/sh\nexit 0\n");
+      chmodSync(path, 0o755);
+    }
+    stubRelease(sumsLine(sha256(ENGINE)));
+
+    await installEngine({ version: OVERRIDE });
+
+    expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
+    for (const spec of SIDECARS) expect(existsSync(join(dirname(binPath), spec.fileBasename))).toBe(false);
+  }, 30_000);
+
   posixTest("kesha install renders the refusal and exits 1", async () => {
     const binPath = stageEngineDir();
     const dir = tempDir("kesha-integrity-cli-");
