@@ -152,7 +152,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   if (!isEngineInstalled()) {
     throw new SayError(`kesha-engine not installed. run: ${installHint("--tts")}`, 1, "", "E_ENGINE_SPAWN");
   }
-  const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe());
+  const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe({ signal: opts.signal }));
   for (const warning of warnings) log.warn(warning);
   if (opts.signal?.aborted) throw engineAbortError();
   const startedAt = performance.now();
