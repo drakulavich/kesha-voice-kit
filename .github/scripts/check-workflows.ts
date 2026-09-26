@@ -1113,7 +1113,7 @@ export function requireReleaseVerifiesTagIsCurrent(path: string, document: unkno
  * A job in the required `ci` aggregator that cannot run on a pull request reds `main` — on
  * `cancelled` as well as `failure` (the `ci` aggregator's fail step) — with nothing a PR could have prevented.
  * Asserted as this one instance because a general matcher's own failure mode is an over-fire
- * and `check:workflows` is in `preflight`, so over-firing blocks every push; it therefore
+ * and `check:workflows` gates every PR that touches workflows or recipes, so over-firing blocks those pushes; it therefore
  * misses the same job under another name. Widen on the second instance (#1105).
  */
 export function forbidNixBuildInCiAggregator(path: string, document: unknown): string[] {

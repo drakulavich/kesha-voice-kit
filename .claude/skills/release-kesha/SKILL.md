@@ -39,9 +39,8 @@ grep '^default =' rust/Cargo.toml
 gh run list --workflow ci.yml --branch main --limit 1
 gh run list --workflow rust-test.yml --branch main --limit 1
 
-# 4. Local sanity — fmt is checked here because preflight formats in place and cannot fail on it
+# 4. Local sanity
 cargo fmt --check --manifest-path rust/Cargo.toml
-just ALL=1 preflight
 ```
 
 If anything fails, STOP. Do not bump versions. A failure that does not reproduce on a second run is still a failure — confirm against CI on the same SHA rather than chasing it.
@@ -140,7 +139,7 @@ gh run watch "$RUN" --exit-status
 PACTS=$(mktemp -d) && gh run download "$RUN" -D "$PACTS"   # three capability-pact-<target> artifacts, two files each
 ```
 
-In a worktree, copy all six files over `tests/fixtures/capabilities/` unchanged — never hand-edit a recording. If `tests/unit/capabilities-pact.test.ts` goes red, read the diff against the recording first; only when the released binary really changed a published contract (a new error code, a moved `origin`) update the test's expected lists and any `docs/errors.md` sentence describing them in the same PR. If `just preflight` is red only on `check:engine-targets`, put the three `sizeBytes` from `gh release view vX.Y.Z --json assets`, `PINNED_ASSET_SHA256_VERSION = "X.Y.Z"` and the five `PINNED_ASSET_SHA256` values from the release's `SHA256SUMS` (`gh release download vX.Y.Z -p SHA256SUMS -O -`) in the same PR; verify each hash against the downloaded asset rather than copying it blind. The post-engine follow-up writes both itself once it runs.
+In a worktree, copy all six files over `tests/fixtures/capabilities/` unchanged — never hand-edit a recording. If `tests/unit/capabilities-pact.test.ts` goes red, read the diff against the recording first; only when the released binary really changed a published contract (a new error code, a moved `origin`) update the test's expected lists and any `docs/errors.md` sentence describing them in the same PR. If CI is red only on `check:engine-targets`, put the three `sizeBytes` from `gh release view vX.Y.Z --json assets`, `PINNED_ASSET_SHA256_VERSION = "X.Y.Z"` and the five `PINNED_ASSET_SHA256` values from the release's `SHA256SUMS` (`gh release download vX.Y.Z -p SHA256SUMS -O -`) in the same PR; verify each hash against the downloaded asset rather than copying it blind. The post-engine follow-up writes both itself once it runs.
 
 Merge the pact PR before the hand-off, so the scheduled pact run never meets a stale recording.
 
