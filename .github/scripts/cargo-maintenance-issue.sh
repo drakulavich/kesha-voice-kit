@@ -30,14 +30,23 @@ fi
 
 outdated="$RUNNER_TEMP/cargo-outdated.txt"
 outdated_err="$RUNNER_TEMP/cargo-outdated.err"
-if (cd rust && cargo outdated --root-deps-only) >"$outdated" 2>"$outdated_err"; then
+limit="${OUTDATED_TIMEOUT_SECONDS:-480}"
+# perl's alarm is the portable timeout; macOS ships no `timeout`, and cargo execs its subcommand so SIGALRM reaches it.
+rc=0
+(cd rust && perl -e 'alarm shift; exec @ARGV or die "exec: $!\n"' "$limit" cargo outdated --root-deps-only) \
+  >"$outdated" 2>"$outdated_err" || rc=$?
+if [[ $rc -eq 0 ]]; then
   cat "$outdated_err" >&2
   outdated_status="\`cargo outdated --root-deps-only\` on \`main\`:"
 else
   # A failed report must not cost the month its checklist; the issue says it failed instead.
-  echo "::warning::cargo outdated failed; the issue carries its output"
+  echo "::warning::cargo outdated failed (exit $rc); the issue carries its output"
   cat "$outdated_err" >>"$outdated"
-  outdated_status="\`cargo outdated --root-deps-only\` **failed** on \`main\`; its output:"
+  if [[ $rc -eq 142 ]]; then
+    outdated_status="\`cargo outdated --root-deps-only\` **failed**: timed out after ${limit}s; output so far:"
+  else
+    outdated_status="\`cargo outdated --root-deps-only\` **failed** on \`main\`; its output:"
+  fi
 fi
 
 body="$RUNNER_TEMP/cargo-maintenance.md"
