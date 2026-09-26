@@ -1,17 +1,10 @@
-import { getDescribe, getEngineBinPath, isEngineInstalled, protocolEnv, spawnEngineProcess } from "./engine";
+import { getDescribe, getEngineBinPath, isEngineInstalled } from "./engine";
+import { runEngineProcess } from "./engine/spawn";
 import { validateArgv } from "./engine/describe";
-import {
-  engineFailure,
-  exitCodeFor,
-  KeshaError,
-  readEvents,
-  type ErrorOrigin,
-  type EventSinks,
-  type StderrOutcome,
-} from "./engine/events";
+import { engineFailure, exitCodeFor, KeshaError, type ErrorOrigin, type EventSinks } from "./engine/events";
 import { installHint } from "./install-hint";
 import { log } from "./log";
-import { abortOnSignal, engineAbortError, interruptedRun, registerProcessTree } from "./process-tree";
+import { engineAbortError, interruptedRun } from "./process-tree";
 
 /**
  * Wire format for the synthesized audio. Matches the engine's `--format` flag.
@@ -154,43 +147,23 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   }
   const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe({ signal: opts.signal }));
   for (const warning of warnings) log.warn(warning);
-  if (opts.signal?.aborted) throw engineAbortError();
-  const startedAt = performance.now();
-  log.debug(`spawn ${getEngineBinPath()} ${args.join(" ")} (text: ${opts.text?.length ?? 0} chars)`);
-  const proc = spawnEngineProcess(getEngineBinPath(), args, ["pipe", "pipe", "pipe"], protocolEnv());
-  const tree = registerProcessTree(proc);
-  const cancel = abortOnSignal(tree, opts.signal);
-  const stdin = proc.stdin as Bun.FileSink;
-
-  if (opts.text !== undefined && opts.text.length > 0) stdin.write(opts.text);
-  await stdin.end();
-
-  let stdoutBuf: ArrayBuffer;
-  let events: Awaited<ReturnType<typeof readEvents>>;
-  let exitCode: number;
-  try {
-    [stdoutBuf, events, exitCode] = await Promise.all([
-      new Response(proc.stdout as ReadableStream<Uint8Array>).arrayBuffer(),
-      readEvents(proc.stderr as ReadableStream<Uint8Array>),
-      proc.exited,
-    ]);
-  } finally {
-    cancel.dispose();
-    tree.dispose();
-  }
-
-  log.debug(`exit=${exitCode} dt=${Math.round(performance.now() - startedAt)}ms bytes=${stdoutBuf.byteLength}`);
-  if (cancel.aborted) throw engineAbortError();
+  const { exitCode, signalCode, aborted, stdout, events } = await runEngineProcess(getEngineBinPath(), args, {
+    stdio: ["pipe", "pipe", "pipe"],
+    stdin: text,
+    readStdout: (stream) => new Response(stream).arrayBuffer(),
+    signal: opts.signal,
+  });
+  if (aborted) throw engineAbortError();
 
   const stderrText = events.stderr;
   if (exitCode === 0 && events.invalid.length === 0 && !events.error) {
     if (stderrText.length > 0) process.stderr.write(stderrText);
-    return new Uint8Array(stdoutBuf);
+    return new Uint8Array(stdout);
   }
   const interrupted = interruptedRun(exitCode);
   if (interrupted) throw new SayError(interrupted.message, exitCodeFor(interrupted), "", interrupted.code);
   // The crash explanation rides in `stderr`, rendered after the coded line.
-  const detail = [stderrText.trim(), engineCrashMessage(exitCode, proc.signalCode)]
+  const detail = [stderrText.trim(), engineCrashMessage(exitCode, signalCode)]
     .filter((part): part is string => Boolean(part))
     .join("\n");
   const failure = engineFailure("say", events, exitCode, detail);
@@ -205,25 +178,13 @@ export async function listVoiceIds(sinks: EventSinks = {}, signal?: AbortSignal)
   if (signal?.aborted) throw engineAbortError();
   const { argv, warnings } = validateArgv(["say", "--list-voices"], await getDescribe({ signal }));
   for (const warning of warnings) log.warn(warning);
-  if (signal?.aborted) throw engineAbortError();
-  const proc = spawnEngineProcess(getEngineBinPath(), argv, ["ignore", "pipe", "pipe"], protocolEnv());
-  // Registered so Ctrl-C during a cold Engine load terminates it (#939); disposed here so a long-lived MCP server never leaks one per call.
-  const tree = registerProcessTree(proc);
-  const cancel = abortOnSignal(tree, signal);
-  let out: string;
-  let events: StderrOutcome;
-  let exitCode: number;
-  try {
-    [out, events, exitCode] = await Promise.all([
-      new Response(proc.stdout as ReadableStream<Uint8Array>).text(),
-      readEvents(proc.stderr as ReadableStream<Uint8Array>, sinks),
-      proc.exited,
-    ]);
-  } finally {
-    cancel.dispose();
-    tree.dispose();
-  }
-  if (cancel.aborted) throw engineAbortError();
+  const { exitCode, aborted, stdout: out, events } = await runEngineProcess(getEngineBinPath(), argv, {
+    stdio: ["ignore", "pipe", "pipe"],
+    readStdout: (stream) => new Response(stream).text(),
+    sinks,
+    signal,
+  });
+  if (aborted) throw engineAbortError();
   const interrupted = interruptedRun(exitCode);
   if (interrupted) throw interrupted;
   if (exitCode !== 0 || events.invalid.length > 0 || events.error) throw engineFailure("say --list-voices", events, exitCode);
