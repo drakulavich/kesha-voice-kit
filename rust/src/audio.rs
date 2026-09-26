@@ -3,8 +3,8 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use audioadapter_buffers::direct::SequentialSliceOfVecs;
 use rubato::{
-    calculate_cutoff, Async, FixedAsync, Resampler, SincInterpolationParameters,
-    SincInterpolationType, WindowFunction,
+    Async, FixedAsync, Resampler, SincInterpolationParameters, SincInterpolationType,
+    WindowFunction,
 };
 use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoderOptions};
 use symphonia::core::codecs::registry::CodecRegistry;
@@ -214,7 +214,7 @@ pub(crate) fn sinc_resampler(ratio: f64, chunk_size: usize) -> Result<Async<f32>
     let window = WindowFunction::BlackmanHarris2;
     let params = SincInterpolationParameters {
         sinc_len,
-        f_cutoff: calculate_cutoff(sinc_len, window),
+        f_cutoff: None,
         interpolation: SincInterpolationType::Cubic,
         oversampling_factor: 256,
         window,
