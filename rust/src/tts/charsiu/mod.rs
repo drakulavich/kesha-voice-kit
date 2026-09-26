@@ -42,19 +42,6 @@ pub(crate) fn base_lang(lang: &str) -> &str {
     }
 }
 
-/// Spike-derived (#511 Phase 0): how to realize Castilian θ. Both variants are
-/// part of the documented decision surface; only one is selected per build.
-#[allow(dead_code)] // the non-selected variant is the documented alternative outcome
-enum Castilian {
-    /// Native CharsiuG2P tag that emits θ (Outcome A). Holds the tag string.
-    Tag(&'static str),
-    /// No upstream Castilian tag (Outcome B, what shipped): degrade to LatAm <spa>.
-    Degrade,
-}
-
-/// #511 Phase-0 spike found no Castilian tag (every candidate gave seseo /s/ or garbage).
-const CASTILIAN: Castilian = Castilian::Degrade;
-
 /// CharsiuG2P phonemizer holding the three decode sessions.
 pub struct Charsiu {
     encoder: Session,
@@ -89,11 +76,10 @@ impl Charsiu {
     // `&mut self`: ort `Session::run` mutates; `to_` name is correct semantics.
     #[allow(clippy::wrong_self_convention)]
     pub fn to_ipa(&mut self, text: &str, lang: &str) -> Result<String> {
-        let castilian = is_castilian_region(lang);
         let tag = match base_lang(lang) {
-            "es" => match (&CASTILIAN, castilian) {
-                (Castilian::Tag(t), true) => t,
-                (Castilian::Degrade, true) => {
+            "es" => {
+                // #511 Phase-0 spike found no Castilian tag (every candidate gave seseo /s/ or garbage).
+                if is_castilian_region(lang) {
                     // User-facing, one-time per process (survives --stdin-loop).
                     use std::sync::Once;
                     static NOTE: Once = Once::new();
@@ -104,10 +90,9 @@ impl Charsiu {
                              using Latin-American Spanish.",
                         );
                     });
-                    "<spa>"
                 }
-                _ => "<spa>",
-            },
+                "<spa>"
+            }
             "fr" => "<fra>",
             "it" => "<ita>",
             "pt" => "<por-bz>",

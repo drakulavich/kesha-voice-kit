@@ -207,8 +207,7 @@ The published container image SHALL run the CLI as a non-root user, resolve the 
   first run's download died with its container
 
 > *Technical Note — `Dockerfile`: `KESHA_CACHE_DIR=/cache/kesha`,
-> `USER bun`, `WORKDIR /work`, `ENTRYPOINT ["kesha"]`, `CMD ["--help"]`, plus a
-> legacy `/usr/local/bin/parakeet` symlink beside `kesha`. Published to GHCR by
+> `USER bun`, `WORKDIR /work`, `ENTRYPOINT ["kesha"]`, `CMD ["--help"]`. Published to GHCR by
 > `.github/workflows/docker.yml` for `linux/amd64` only, on pushes to `main`
 > and on `v*` tags excluding `v*-alpha*`. `compose.yml` mirrors the same mount
 > layout; usage is documented in `docs/docker.md`.*
@@ -349,9 +348,6 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
 - The container image publishes on every push to `main`, so the `main`-tagged
   image can be ahead of any released CLI version. Only tag-triggered images
   correspond to a release.
-- `Dockerfile` still installs a `/usr/local/bin/parakeet` symlink. No spec, doc,
-  or test references that name; it appears to be a legacy alias with no stated
-  deprecation.
 - No test asserts that the Homebrew, Linux-package, container, and Nix paths
   produce the same CLI version — the "same contents everywhere" requirement is
   held by construction, not by a gate.

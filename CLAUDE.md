@@ -54,7 +54,7 @@ just worktree-rm <slug>
 - Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
 - `preflight` does **not** build the darwin feature set, so it goes green on code that never compiled: touching `rust/src/tts/**` or anything fluidaudio-rs-adjacent (`system_kokoro` / `system_diarize` / `system_text_lang`) also needs `just verify-darwin-full`, the recipe `rust-test.yml` runs.
 
-Rust toolchain quirks (CI rustc drift, rustfmt, `protoc`) and language gotchas: `docs/runbooks/rust-gotchas.md`.
+Rust toolchain quirks (CI rustc drift, rustfmt, libclang) and language gotchas: `docs/runbooks/rust-gotchas.md`.
 
 ### TESTS COME FIRST, AND ARE JUDGED BY WHAT THEY CATCH
 
@@ -139,7 +139,7 @@ A Nix flake is an alternate reproducible build path (`nix run .#kesha`, `nix bui
 
 ## Non-obvious wiring
 
-- Cargo features: `default = ["onnx", "tts"]`; `ort`/`ndarray` are unconditional (lang_id always needs them), so the `onnx` feature only gates `backend/onnx.rs`. `coreml = ["dep:fluidaudio-rs", "dep:libc"]` is mutually exclusive with it at module level.
+- Cargo features: `default = ["onnx", "tts"]`; `ort`/`ndarray` are unconditional (lang_id always needs them), so the `onnx` feature only gates `backend/onnx.rs`. `coreml = ["dep:fluidaudio-rs"]` is mutually exclusive with it at module level.
 - Prefer `--toon` over `--json` when piping multi-file results into an LLM (30-60% fewer tokens, round-trips to the same `TranscribeResult[]`). The two are mutually exclusive (exit 2).
 - The public API is whatever `src/lib.ts` exports (`downloadModel` and `downloadEngine` are both exported and are the same function; `downloadModel` is the preferred name); `getEngineCapabilities` is **not** exported from `./core`, and `installEngine` is not either.
 

@@ -55,8 +55,6 @@ pub(crate) fn was_warned(key: &str) -> bool {
         .contains(key)
 }
 
-/// `dead_code`: `say_loop` links only into the bin target, not `lib.rs`; exercised by tests.
-#[allow(dead_code)]
 pub(crate) fn reset() {
     warned().lock().expect("reset: mutex poisoned").clear();
 }

@@ -50,6 +50,13 @@ mod fluid_stderr;
 mod fluid_stdout;
 pub mod lang_id;
 pub mod models;
+#[cfg(any(
+    test,
+    all(
+        target_os = "macos",
+        any(feature = "system_tts", feature = "system_text_lang")
+    )
+))]
 mod process_tree;
 pub mod protocol;
 pub mod record;

@@ -103,14 +103,14 @@ darwin-arm64 CI job.
 
 ```
 kesha-voice-kit/
-├── bin/kesha.js                # shebang entry (aliased as `parakeet` for legacy)
+├── bin/kesha.js                # shebang entry
 ├── src/                        # Bun/TypeScript CLI + library
 │   ├── cli.ts                  # citty argument parsing, --format, install/transcribe/status
 │   ├── lib.ts                  # public API at @drakulavich/kesha-voice-kit/core
 │   ├── engine.ts               # subprocess wrapper, capability cache, IPC types
 │   ├── engine-install.ts       # engine binary download (uses keshaEngine.version)
 │   ├── transcribe.ts           # thin forwarder to the engine; segments shape
-│   ├── say.ts                  # TTS forwarder
+│   ├── synth.ts                # TTS forwarder
 │   ├── status.ts               # `kesha status` (cache disk usage)
 │   └── log.ts                  # KESHA_DEBUG-aware logger
 ├── rust/                       # kesha-engine Rust binary
@@ -118,7 +118,8 @@ kesha-voice-kit/
 │   ├── build.rs                # Swift rpath under `coreml`; AVSpeech sidecar bake-in
 │   ├── src/
 │   │   ├── main.rs             # clap: transcribe / detect-lang / say / install / ...
-│   │   ├── transcribe.rs       # ASR pipeline + VAD routing + timestamped segments
+│   │   ├── cli/transcribe.rs   # `transcribe` subcommand entry
+│   │   ├── transcribe/         # ASR pipeline + VAD routing + timestamped segments
 │   │   ├── audio.rs            # symphonia decode + rubato resample
 │   │   ├── lang_id.rs          # ONNX speechbrain audio language detection
 │   │   ├── text_lang.rs        # macOS NLLanguageRecognizer (macOS only)
@@ -128,10 +129,10 @@ kesha-voice-kit/
 │   │   │   ├── kokoro.rs       # ONNX Kokoro-82M
 │   │   │   ├── vosk.rs         # vosk-tts-rs wrapper
 │   │   │   ├── avspeech.rs     # macOS AVSpeechSynthesizer Swift sidecar
-│   │   │   ├── ssml.rs         # ssml-parser → Segment { Text, Spell, Emphasis, Break, Ipa }
+│   │   │   ├── ssml/           # ssml-parser → Segment { Text, Spell, Emphasis, Break, Ipa }
 │   │   │   ├── en/             # English acronym auto-expansion (#244)
 │   │   │   ├── ru/             # Russian acronym auto-expansion (#232)
-│   │   │   └── encode.rs       # WAV / OGG-Opus / MP3 encoder
+│   │   │   └── encode.rs       # WAV / OGG-Opus / FLAC encoder
 │   │   ├── say_loop.rs         # `--stdin-loop` warm session for batch TTS
 │   │   └── backend/            # transcribe backend trait + onnx + fluidaudio
 │   └── tests/                  # cargo integration tests (warm --stdin-loop harness)
@@ -154,8 +155,8 @@ kesha-voice-kit/
   rust-test` and `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings`.
   Do not use plain `cargo test` for the suite.
 - CI must pass before merging. `main` is protected.
-- Squash-merge preferred. Greptile reviews are advisory but their P1/P2
-  findings should be addressed before merge.
+- Squash-merge preferred. Greptile P1/P2 findings are merge blockers; gate on
+  the findings, not on its confidence score.
 - Active work is visible as a branch, a worktree, and an open PR — there is
   no label to apply.
 

@@ -1,7 +1,3 @@
-// Used by macOS sidecar feature modules; default `--features tts` builds do
-// not compile those call sites, but the helper still needs to stay shared.
-#![allow(dead_code)]
-
 use std::io;
 use std::process::{Child, ChildStdin, Output};
 
@@ -29,13 +25,6 @@ impl ChildGuard {
             Some(child) => child.wait_with_output(),
             None => Err(io::Error::other("ChildGuard: child already reaped")),
         }
-    }
-
-    pub(crate) fn kill_and_wait_with_output(mut self) -> io::Result<Output> {
-        if let Some(child) = self.child.as_mut() {
-            let _ = child.kill();
-        }
-        self.wait_with_output()
     }
 }
 
@@ -131,5 +120,30 @@ mod tests {
         let output = ChildGuard::new(child).wait_with_output().expect("wait");
         assert!(output.status.success());
         assert_eq!(output.stdout, b"ok");
+    }
+
+    #[test]
+    fn close_stdin_lets_a_stdin_reader_finish_with_what_was_written() {
+        use std::io::Write;
+
+        let child = Command::new("sh")
+            .arg("-c")
+            .arg("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .expect("spawn helper");
+
+        let mut guard = ChildGuard::new(child);
+        guard
+            .stdin_mut()
+            .expect("piped stdin")
+            .write_all(b"piped")
+            .expect("write stdin");
+        guard.close_stdin();
+        let output = guard.wait_with_output().expect("wait");
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"piped");
     }
 }
