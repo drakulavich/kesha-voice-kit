@@ -127,6 +127,18 @@ bun run bin/kesha.js tests/fixtures/benchmark/09-ustanovi-poka-klod-kod.ogg
 
 This re-downloads from the published release rather than re-using the draft binary from step 4 — which is the point: it exercises what a user gets.
 
+### Step 7 — Re-record the capability pacts
+
+`tests/fixtures/capabilities/*.json` gate flag routing on every PR, and they describe the previous engine until re-recorded. Skipping this leaves the weekly `📜 Capability Pact` run to fail on all three targets and open three `pact-drift` issues (#1246–#1248, after v1.26.0).
+
+```bash
+gh workflow run capability-pact.yml --ref main -f record=true
+gh run watch <run-id> --exit-status
+gh run download <run-id> -D "$SCRATCH/pacts"   # three capability-pact-<target> artifacts, two files each
+```
+
+In a worktree, copy all six files over `tests/fixtures/capabilities/` unchanged — never hand-edit a recording. If `tests/unit/capabilities-pact.test.ts` goes red, the release changed a published contract (a new error code, a moved `origin`): update the test's expected lists and any `docs/errors.md` sentence describing them in the same PR. If `just preflight` is red only on `check:engine-targets`, put the three `sizeBytes` from `gh release view vX.Y.Z --json assets` in the same PR.
+
 Then hand off to **`/release-cli`** so the pin reaches users.
 
 ## Hard rules
@@ -144,6 +156,7 @@ Then hand off to **`/release-cli`** so the pin reaches users.
 - GitHub: https://github.com/drakulavich/kesha-voice-kit/releases/tag/vX.Y.Z
 - Assets: <n> (engine ×3, sidecars ×2, SBOM, manifest, SHA256SUMS, Sigstore bundles)
 - Engine reports: X.Y.Z   Checksums: OK   Features: <n> (unchanged vs previous)
+- Pacts: re-recorded from vX.Y.Z in #<pr>
 
 Next: /release-cli vA.B.C-cli to ship the pin to npm.
 ```
