@@ -27,7 +27,7 @@ curated lens over them. Suggestions welcome via an issue.
   ([#460](https://github.com/drakulavich/kesha-voice-kit/issues/460))
 - **Native-script multilingual TTS (hi/ja)** — es/fr/it/pt landed
   ([#212](https://github.com/drakulavich/kesha-voice-kit/issues/212)) and Chinese is
-  supported natively. Native-script Hindi and Japanese auto-route to AVSpeech on macOS, but
+  supported natively. Native-script Hindi and Japanese auto-route to an installed AVSpeech voice on macOS, but
   the Kokoro `hi-*`/`ja-*` voices and every non-macOS build still fail fast on it;
   they need a transliteration (Devanagari→IAST, kana→romaji) G2P path.
   ([#492](https://github.com/drakulavich/kesha-voice-kit/issues/492))
