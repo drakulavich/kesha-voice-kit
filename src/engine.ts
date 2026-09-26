@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "fs";
+import { existsSync, statSync, type Stats } from "fs";
 import { errorMessage } from "./error-utils";
 import { join } from "path";
 import { installHint } from "./install-hint";
@@ -196,20 +196,25 @@ function failed(run: EngineRun): boolean {
   return reportedFailure(run) || run.invalid.length > 0;
 }
 
-let cachedDescribe: { binPath: string; mtime: number; doc: DescribeDocument } | null = null;
+let cachedDescribe: { identity: string; doc: DescribeDocument } | null = null;
+
+/** ctime is part of it because utimes cannot set it back after a replacement that restores mtime (#1256, #1258). */
+function fileIdentity(binPath: string, st: Stats): string {
+  return `${binPath}:${st.ino}:${st.size}:${st.ctimeMs}`;
+}
 
 /** The describe document of the installed engine, cached until the binary changes (#248). */
 export async function getDescribe(opts: RunEngineOptions = {}): Promise<DescribeDocument> {
   const binPath = getEngineBinPath();
-  let mtime: number;
+  let identity: string;
   try {
-    mtime = statSync(binPath).mtimeMs;
+    identity = fileIdentity(binPath, statSync(binPath));
   } catch (err) {
     throw new KeshaError("E_ENGINE_SPAWN", `kesha-engine not found at ${binPath}: ${errorMessage(err)}`, {
       hint: spawnHint(),
     });
   }
-  if (cachedDescribe?.binPath === binPath && cachedDescribe.mtime === mtime) return cachedDescribe.doc;
+  if (cachedDescribe?.identity === identity) return cachedDescribe.doc;
   const run = await runEngine(["describe"], opts);
   let doc: DescribeDocument | null = null;
   if (run.exitCode === 0) {
@@ -229,7 +234,7 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
   const mismatch = protocolMismatch(doc, binPath);
   if (mismatch) throw mismatch;
   if (run.invalid.length > 0) throw engineFailure("describe", run, undefined);
-  cachedDescribe = { binPath, mtime, doc };
+  cachedDescribe = { identity, doc };
   return doc;
 }
 
@@ -238,10 +243,9 @@ export const ENGINE_PROBE_TIMEOUT_MS = 15_000;
 
 let unansweredDescribe: string | null = null;
 
-/** ctime is part of it because utimes cannot set it back after a replacement that restores mtime. */
 function binaryIdentity(binPath: string): string {
   const st = statSync(binPath, { throwIfNoEntry: false });
-  return st ? `${binPath}:${st.ino}:${st.size}:${st.ctimeMs}` : `${binPath}:missing`;
+  return st ? fileIdentity(binPath, st) : `${binPath}:missing`;
 }
 
 /** Capabilities view for the screens that predate `describe`; null when the engine cannot be read within the deadline. */

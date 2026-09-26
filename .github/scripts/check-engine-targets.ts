@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Verifies every `ENGINE_TARGETS` row against the published release.
+ * Verifies every `ENGINE_TARGETS` row and every `PINNED_ASSET_SHA256` entry against the published release.
  *
  * Centralising the table removed the duplication but not the drift: the sizes are
  * hand-written and only feed `kesha install --plan`, so a wrong one misleads a user
@@ -12,7 +12,12 @@
  * A 404 anywhere else means the pinned version was never published, which is a real problem —
  * skipping it would make this check vacuous exactly when it matters.
  */
-import { engineTargetEntries } from "../../src/engine-targets";
+import {
+  engineTargetEntries,
+  parseSha256Sums,
+  PINNED_ASSET_SHA256,
+  PINNED_ASSET_SHA256_VERSION,
+} from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
 
 const REPO = "drakulavich/kesha-voice-kit";
@@ -81,9 +86,38 @@ for (const { platform, arch, target } of engineTargetEntries()) {
   console.log(`ok: ${key} → ${target.assetName} (${published} bytes)`);
 }
 
+// The installer survives stale pins by reading the pinned release's own SHA256SUMS; this is what ends that window.
+if (PINNED_ASSET_SHA256_VERSION !== engineVersion) {
+  problems.push(
+    `PINNED_ASSET_SHA256 describes engine v${PINNED_ASSET_SHA256_VERSION}, but package.json pins v${engineVersion}`,
+  );
+}
+const pinsVersion = PINNED_ASSET_SHA256_VERSION;
+let sums: Map<string, string> | null = null;
+try {
+  const res = await fetch(`https://github.com/${REPO}/releases/download/v${pinsVersion}/SHA256SUMS`, { redirect: "follow" });
+  if (res.status === 404) problems.push(`release v${pinsVersion} publishes no SHA256SUMS, so its pins cannot be checked`);
+  else if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  else sums = parseSha256Sums(await res.text());
+} catch (e) {
+  const why = e instanceof Error ? e.message : String(e);
+  if (process.env.GITHUB_TOKEN) problems.push(`could not download SHA256SUMS of v${pinsVersion} (${why})`);
+  else console.log(`skip: could not download SHA256SUMS (${why})`);
+}
+for (const [assetName, pinned] of Object.entries(sums ? PINNED_ASSET_SHA256 : {})) {
+  const published = sums!.get(assetName);
+  if (published === undefined) {
+    problems.push(`SHA256SUMS of v${pinsVersion} does not list ${assetName}`);
+  } else if (published !== pinned) {
+    problems.push(`${assetName} is sha256 ${published} in v${pinsVersion}, but PINNED_ASSET_SHA256 says ${pinned}`);
+  } else {
+    console.log(`ok: ${assetName} sha256 ${published}`);
+  }
+}
+
 if (problems.length > 0) {
   console.error(`\nENGINE_TARGETS is out of date with release v${engineVersion}:`);
   for (const p of problems) console.error(`  - ${p}`);
-  console.error(`\n  Fix: update src/engine-targets.ts to match the published assets.`);
+  console.error(`\n  Fix: update src/engine-targets.ts to match the published assets (sizes from the release API; PINNED_ASSET_SHA256_VERSION and the SHA-256 from its SHA256SUMS).`);
   process.exit(1);
 }

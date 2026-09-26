@@ -11,7 +11,7 @@ import {
 } from "../../src/engine-install";
 import { resolveEngineVersionFlag } from "../../src/cli/install";
 import { engineVersion } from "../../src/package-info";
-import { describeJson, isolateEngineCache } from "../helpers/fake-engine";
+import { describeJson, expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 
 const OVERRIDE = "9.9.9-alpha.1";
 // It has to answer `describe`: an engine that describes nothing is re-downloaded
@@ -60,6 +60,7 @@ function stageEngineDir(prefix: string): string {
 function stubReleases(available: string[]): string[] {
   const urls: string[] = [];
   const binaryName = getEngineBinaryName();
+  expectServedBody(() => FAKE_ENGINE);
   globalThis.fetch = (async (input: Request | URL | string) => {
     const url = String(input instanceof Request ? input.url : input);
     urls.push(url);
