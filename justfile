@@ -1,4 +1,3 @@
-ALL := ""
 TTS := ""
 TTS_FLAG := if TTS == "" { "" } else { "--tts" }
 
@@ -90,52 +89,6 @@ ane-tests:
 # #990's VAD session-threading measurement, printed: needs VAD_MODEL staged (kesha install --vad)
 vad-bench:
     cd rust && VAD_MODEL="${VAD_MODEL:-$HOME/.cache/kesha/models/silero-vad/silero_vad.onnx}" cargo nextest run --release --features tts --run-ignored ignored-only --no-capture -E 'test(vad_990_measurement)'
-
-# Gates are selected from what changed against origin/main...HEAD plus the working tree:
-# the Rust gate on rust/, the CoreML check on rust/src/backend/. just ALL=1 preflight forces both.
-# The pre-push gate — CLAUDE.md "VERIFY BEFORE PUSHING"
-preflight:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    git rev-parse --verify --quiet origin/main >/dev/null || { echo "preflight: no local origin/main to diff against — run: git fetch origin main" >&2; exit 2; }
-    # --no-renames: with detection on, a file moved out of rust/ reports only its destination.
-    changed="$( { git diff --no-renames --name-only origin/main...HEAD; git diff --no-renames --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u )"
-    rust=""; backend=""
-    if [ -n "{{ ALL }}" ] || grep -q '^rust/' <<<"$changed"; then rust=1; fi
-    if [ -n "{{ ALL }}" ] || grep -q '^rust/src/backend/' <<<"$changed"; then backend=1; fi
-
-    behind="$(git rev-list --count HEAD..origin/main)"
-    # A checkout that quietly fell 14 commits behind had an agent reading a stale CLAUDE.md for nine hours (#1070).
-    [ "$behind" = "0" ] || echo "==> NOTE: this checkout is $behind commit(s) behind origin/main — read instructions with: git show origin/main:<path>"
-
-    echo "==> TS gate (always)"
-    bun run test
-    bun run lint
-    # tests/unit/preflight-parity.test.ts holds this list equal to what CI runs (#1070).
-    bun run check:recipes
-    bun run check:workflows
-    bun run check:versions
-    bun run check:specs
-    bun run check:engine-targets
-    bun run check:release-manifest
-    bun run check:file-sizes
-
-    if [ -n "$rust" ]; then
-      echo "==> Rust gate"
-      # `cargo fmt` formats in place rather than checking, so this can leave a whitespace diff to commit.
-      (cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings)
-      {{ just_executable() }} rust-test
-    else
-      echo "==> Rust gate skipped: no rust/ changes (force with just ALL=1 preflight)"
-    fi
-
-    if [ -n "$backend" ]; then
-      echo "==> CoreML build check"
-      # --all-targets matches rust-test.yml's check so the #[cfg(feature = "coreml")] tests compile too (#708).
-      (cd rust && cargo check --features coreml --no-default-features --all-targets)
-    else
-      echo "==> CoreML check skipped: no rust/src/backend/ changes"
-    fi
 
 # Create and verify a human-authorized stable engine tag. The `api` mode is an explicit fallback
 # for an SSH push that cannot be used; it never follows an uncertain push failure automatically.

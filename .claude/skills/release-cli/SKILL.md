@@ -48,8 +48,6 @@ gh release view "v$(node -p "require('./package.json').keshaEngine.version")" --
 # 3. CI green on main
 gh run list --workflow ci.yml --branch main --limit 1
 
-# 4. Local sanity — the gate CI runs, every lane forced
-just ALL=1 preflight
 ```
 
 Two things sink a run if they are wrong:

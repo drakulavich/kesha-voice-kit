@@ -42,7 +42,7 @@ else
   missing_system=1
 fi
 
-# just: the task runner (#797 retired the Makefile). Recipes like `just preflight`,
+# just: the task runner (#797 retired the Makefile). Recipes like `just test`,
 # `just rust-test` and `just smoke-test` are the canonical entry points, so it is a
 # hard requirement — same as bun and cargo above.
 if have just; then
