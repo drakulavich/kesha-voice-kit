@@ -128,7 +128,7 @@ function runsMatching(steps: Step[], pattern: RegExp): number[] {
 const ENGINE_RELEASE_JOB: Record<string, string> = { "build-engine.yml": "release", "release.yml": "github-release" };
 
 const engineReleaseWorkflow = (path: string): string | undefined =>
-  Object.keys(ENGINE_RELEASE_JOB).find((name) => path === name || path.endsWith(`/${name}`));
+  Object.keys(ENGINE_RELEASE_JOB).find((name) => path.split(/[\\/]/).pop() === name);
 
 /**
  * Fails when build-engine.yml's build job would upload an artifact it never synthesised with.

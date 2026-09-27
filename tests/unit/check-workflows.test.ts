@@ -1997,6 +1997,10 @@ describe("release.yml carries the Engine release guards", () => {
     expect(requireReleaseVerifiesTagIsCurrent(RELEASE, job("github-release", [GUARD, PUBLISH]))).toEqual([]);
   });
 
+  test("a Windows path to release.yml is still checked", () => {
+    expect(requireReleaseQueue("C:\\repo\\.github\\workflows\\release.yml", {})).toHaveLength(2);
+  });
+
   test("a workflow whose name merely ends in release.yml is not an Engine release workflow", () => {
     expect(requireReleaseVerifiesTagIsCurrent(".github/workflows/post-engine-release.yml", job("x", []))).toEqual([]);
     expect(requireReleaseQueue(".github/workflows/post-engine-release.yml", {})).toEqual([]);
