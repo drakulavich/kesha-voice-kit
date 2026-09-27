@@ -9,43 +9,65 @@ export interface EngineTarget {
   /** GitHub release asset name — suffixed for uniqueness across platforms. */
   assetName: string;
   backend: "coreml" | "onnx";
-  /** Published asset size, for `kesha install --plan`. Verified by `check:engine-targets`. */
-  sizeBytes: number;
 }
 
 const ENGINE_TARGETS: Record<string, EngineTarget> = {
   "darwin-arm64": {
     assetName: "kesha-engine-darwin-arm64",
     backend: "coreml",
-    sizeBytes: 64_713_088,
   },
   "linux-x64": {
     assetName: "kesha-engine-linux-x64",
     backend: "onnx",
-    sizeBytes: 66_588_184,
   },
   "win32-x64": {
     assetName: "kesha-engine-windows-x64.exe",
     backend: "onnx",
-    sizeBytes: 65_587_712,
   },
 };
 
-/**
- * SHA-256 of every asset `kesha install` downloads from engine release `PINNED_ASSET_SHA256_VERSION`:
- * the three engines and the darwin-arm64 sidecars. The installer refuses a download that hashes to
- * anything else, as the model manifest does (#174). `check:engine-targets` verifies them against
- * that release's SHA256SUMS, and the post-release follow-up rewrites them with their version.
- */
-export const PINNED_ASSET_SHA256_VERSION = "1.26.0";
+/** Sidecar spec — centralises AVSpeech (#141) and future sidecars so each is one entry. */
+export interface SidecarSpec {
+  /** Written next to the engine binary; Rust probes this exact name. */
+  fileBasename: string;
+  /** Release asset name — may differ from fileBasename (e.g. `say-avspeech-darwin-arm64` vs `say-avspeech`). */
+  assetName: string;
+  displayName: string;
+  availableHint: string;
+  unavailableHint: string;
+}
 
-export const PINNED_ASSET_SHA256: Readonly<Record<string, string>> = {
-  "kesha-engine-darwin-arm64": "8244953e1bd37941c0ea18b2e2432cfe1cae71160bb79fd88b605f27707140b9",
-  "kesha-engine-linux-x64": "1bb1ec4eafb99680374402206307ecf7cbc1b6ebc2f06dc0af74f7c5e848a553",
-  "kesha-engine-windows-x64.exe": "1b0c9b8d3d2d284115ad9f1ba0571a1e52495413445b140ac5cc539db6a8c998",
-  "say-avspeech-darwin-arm64": "a3aa5b75ddff68a48f1158e838310b37cac72ef86841d9cfcdf1ee233cb7451a",
-  "kesha-textlang-darwin-arm64": "e45e2822248b14dd72aa79e2def8fa6b9c07c97423f11c841508769225d72da4",
-};
+export const SIDECARS: SidecarSpec[] = [
+  {
+    fileBasename: "say-avspeech",
+    assetName: "say-avspeech-darwin-arm64",
+    displayName: "AVSpeech sidecar",
+    availableHint: "macOS voices available",
+    unavailableHint: "macos-* voices unavailable",
+  },
+  // Kokoro TTS (#207) and speaker diarization (#199) no longer ship as Swift
+  // sidecars — both run in-engine via the native `fluidaudio-rs` binding. Only
+  // the AVSpeech and text-lang sidecars remain.
+  {
+    // Runtime resolver looks for plain `kesha-textlang` next to the engine
+    // (see `rust/src/text_lang.rs::helper_path`), not the platform-suffixed
+    // release-asset name. Mismatch is intentional: the asset name needs the
+    // suffix for GitHub-release uniqueness; the sidecar lookup wants the
+    // unsuffixed binary so the same Rust code path works on the build-time
+    // OUT_DIR baked fallback.
+    fileBasename: "kesha-textlang",
+    assetName: "kesha-textlang-darwin-arm64",
+    displayName: "Text-lang sidecar",
+    availableHint: "detect-text-lang fast path",
+    unavailableHint:
+      "detect-text-lang will fail until next `kesha install` (no swift -e fallback)",
+  },
+];
+
+/** Every asset `kesha install` downloads, and so every asset a published CLI's Engine pin covers. */
+export function downloadedAssetNames(): string[] {
+  return [...Object.values(ENGINE_TARGETS).map((t) => t.assetName), ...SIDECARS.map((s) => s.assetName)];
+}
 
 /** Asset name to SHA-256 from a release's `sha256sum`-format SHA256SUMS, whose names carry a `./` prefix. */
 export function parseSha256Sums(text: string): Map<string, string> {

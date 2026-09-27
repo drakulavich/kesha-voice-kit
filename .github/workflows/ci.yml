@@ -131,6 +131,7 @@ jobs:
               - 'tests/integration/e2e-engine.test.ts'
               - 'tests/integration/mcp-e2e.test.ts'
               - 'src/engine-install.ts'
+              - 'src/engine-targets.ts'
               - 'src/engine.ts'
               - 'src/lib.ts'
               - 'src/paths.ts'
@@ -182,7 +183,7 @@ jobs:
               - '.github/scripts/**'
               - 'package.json'
               - 'bun.lock'
-              # The file check:engine-targets guards; without it a size edit never runs the check.
+              # The file check:engine-targets guards; without it an asset-name edit never runs the check.
               - 'src/engine-targets.ts'
               # checkFlakeNix (#1088) scans this file; without it here workflow-lint never runs on a flake.nix-only change.
               - 'flake.nix'

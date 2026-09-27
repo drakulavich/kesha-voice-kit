@@ -6,7 +6,7 @@
 
 - [x] 1.1 Remove `package.json#keshaEngine.version`; set `rust/Cargo.toml` to `package.json#version`; `check:versions` asserts they are equal and that neither `keshaEngine` nor `kesha.engine` exists on `main` (cutover PR)
 - [x] 1.2 `src/package-info.ts` resolves the Engine from `package.json#kesha.engine` injected at publish, falling back to the committed pin and then `version`; the installer verifies against the injected SHA-256s
-- [ ] 1.4 `PINNED_ASSET_SHA256*` leave `src/engine-targets.ts`, and `sizeBytes` is injected or dropped from `--plan` (after the cutover: the pinned table still serves `check:engine-targets` and the size plan)
+- [x] 1.4 `PINNED_ASSET_SHA256*` leave `src/engine-targets.ts`, and `sizeBytes` is injected or dropped from `--plan`: `engine-pin.ts` injects `sha256` and `size` per asset from the release's `SHA256SUMS` and asset list; a source checkout verifies against `SHA256SUMS` and `--plan` shows the size as unknown; `check:engine-targets` checks asset names against the newest stable release
 - [x] 1.3 CI lanes that download a published Engine resolve the newest stable Engine; `flake.nix` reads `cliPkg.version`
 
 ## 2. `release.yml`
@@ -19,7 +19,7 @@
 ## 3. Cutover and deletions
 
 - [x] 3.1 Cutover, one PR: `release.yml` triggers on (tags except alphas, `main` pushes, dispatch with `channel`/`version`/`engine-prerelease`). The permissions a rehearsal must not hold live in jobs that run only when `plan.publish` is true: `assemble` (no permission, so it runs in a rehearsal too) collects, checksums and checks the assets; `github-release` (`contents: write`, `id-token: write`) signs and publishes; `npm` packs and verifies (no permission); `npm-publish` (`id-token: write`) publishes; `npm-smoke` installs the published version; shared npm steps are the `prepare-npm-package` composite. Tasks 1.1 and 1.3; delete `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml`, `release-alpha.yml`, and `release-install-smoke.yml` (task 3.3), whose draft mode had no draft left to smoke. `requireNpmPublishAfterPackaging`, `forbidLinuxPackaging`, `requireBuildEngineSerialisesRunsPerRef` and `requireReusableCallPermissions` leave with the workflows they targeted; `requireReleaseJobOrder` covers the order, `forbidReusableWorkflows` the absence of `workflow_call`, and a write or OIDC grant requires `plan.publish`
-- [x] 3.2 `post-engine-release.yml` becomes `release.yml`'s `post-release` job (a release created with `GITHUB_TOKEN` fires no `release: published`); it leads `package.json`, `server.json` and `rust/Cargo.toml`/`Cargo.lock` to the next minor, still refreshing the pinned SHA table until 1.4
+- [x] 3.2 `post-engine-release.yml` becomes `release.yml`'s `post-release` job (a release created with `GITHUB_TOKEN` fires no `release: published`); it leads `package.json`, `server.json` and `rust/Cargo.toml`/`Cargo.lock` to the next minor
 - [ ] 3.4 `prune-alpha-releases.yml` (into nightly) 3.5 `cache-seed.yml`/`cache-cleanup.yml`/`cross-os-cache-probe.yml` (into `ci.yml`) 3.6 `linux-packages.yml` (into `ci.yml`) 3.7 `rust-test.yml` (into `ci.yml`, job name `🧪 Rust Tests`) 3.8 `nix-build.yml` (into `ci.yml`) 3.9 `plugin-security-scan.yml` (into `security.yml`) — each with its orphaned scripts and tests
 
 ## 4. `nightly.yml`, lint, docs
