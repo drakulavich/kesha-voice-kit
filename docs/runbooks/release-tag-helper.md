@@ -18,7 +18,9 @@ just release-tag vX.Y.Z notes.md api
 
 The fallback uses the authenticated maintainer's `gh` session. It creates the annotated tag object
 and only then `refs/tags/vX.Y.Z`, as required by GitHub's Git database API, and then waits for the
-same push-triggered `release.yml` run. `release.yml` refuses a stable dispatch, so there is no
+same push-triggered `release.yml` run. A ref created with the maintainer's own token fires `push`
+like a `git push`; only one created with `GITHUB_TOKEN` starts no run. This repository has not yet
+exercised the API mode against `release.yml`, so prefer the default `push` mode. `release.yml` refuses a stable dispatch, so there is no
 dispatch fallback: if no run appears, check the Actions tab before doing anything else.
 
 Never retry through `api` after a failed `push` without first proving the remote tag is absent. A
