@@ -15,7 +15,7 @@ kesha audio.ogg
 | [Bun](#bun) | macOS, Linux, Windows | npm, every channel |
 | [Homebrew](#homebrew) | macOS, Linux | `drakulavich/tap`, stable releases |
 | [Linux packages](#linux-packages) | Linux x64 (glibc) | `.deb` / `.rpm` on stable GitHub releases |
-| [Docker](docker.md) | any Docker host | GHCR, stable releases |
+| [Docker](docker.md) | Linux x64 (`amd64`) | GHCR, stable releases and relevant `main` pushes |
 | [Nix](#nix) | `aarch64-darwin`, `x86_64-linux` | builds the engine from source; not a release artifact |
 
 ## Releases and channels
@@ -27,15 +27,16 @@ The CLI and the engine share one version: `package.json#version`, mirrored in
   platform, then publishes the GitHub release (engines, Sidecars, Linux packages,
   one `SHA256SUMS`, the [release manifest](#release-manifest) and Sigstore
   bundles), npm under `latest`, the Homebrew tap and the Docker image.
-- **Beta** — a dispatched `X.Y.Z-beta.N` that extends `package.json#version`.
+- **Beta** — a dispatched `X.Y.Z-beta.N` that extends `package.json#version`, or a
+  pushed `vX.Y.Z-beta.N` tag on a commit whose `package.json#version` is that beta.
   It publishes the engine prerelease and npm under `beta`.
 - **Alpha** — a merge to `main` that changes what the package ships publishes a CLI
   `-alpha.N` to npm under `alpha`, against the newest stable engine. A dispatched
   alpha can pin an engine prerelease instead. Alpha tags record what was
   published; pushing one by hand starts nothing.
 
-A published CLI carries the engine it installs, and every asset's SHA-256 and
-size, in `package.json#kesha.engine`. `release.yml` injects it at publish, and it
+A published CLI carries the engine it installs, and each Engine or Sidecar
+asset's SHA-256 and size, in `package.json#kesha.engine`. `release.yml` injects it at publish, and it
 is never committed. `kesha install` refuses any download that does not match it.
 
 ## Bun

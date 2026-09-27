@@ -28,8 +28,8 @@ kesha install --vad      # opt-in: Silero VAD model
 
 The CLI is a Bun/TypeScript wrapper around `kesha-engine`, a Rust binary
 downloaded from GitHub Releases. One version, `package.json#version`, names
-both; a published CLI carries the engine it installs, with every asset's
-SHA-256, as `package.json#kesha.engine`, injected at publish.
+both; a published CLI carries the engine it installs, with each Engine or
+Sidecar asset's SHA-256 and size, as `package.json#kesha.engine`, injected at publish.
 
 ### Trying another engine release
 
