@@ -1,7 +1,7 @@
 import { getDescribe } from "./engine";
 import type { DescribeDocument } from "./engine/describe";
 import { KeshaError } from "./engine/events";
-import { assertPlatformCanInstall, installEngine } from "./engine-install";
+import { installEngine } from "./engine-install";
 import { errorMessage } from "./error-utils";
 import {
   installableTtsLangs,
@@ -96,7 +96,6 @@ export function install(options: InstallOptions = {}): Promise<void> {
         throw new KeshaError("E_INVALID_ARG", errorMessage(err));
       }
     }
-    assertPlatformCanInstall({ diarize: options.diarize });
     const refusal = unavailableBackendRefusal(options.backend);
     if (refusal) throw refusal;
     await installEngine({

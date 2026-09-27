@@ -250,6 +250,20 @@ describe("transcribe() resolves to a TranscribeResult", () => {
     });
   });
 
+  fakeEngineIt("carries the segments when speakers are requested", async () => {
+    const audio = join(tempDir("kesha-lib-result-audio-"), "note.wav");
+    writeFileSync(audio, "");
+    const engine = writeTranscribingEngine(
+      "kesha-lib-speakers-",
+      ["transcribe.segments", "transcribe.diarize"],
+      `  printf '%s\n' '{"text":"${ENGLISH}","segments":[{"start":0,"end":2.5,"text":"${ENGLISH}","speaker":1}]}'`,
+    );
+    await withEngine(engine, async () => {
+      const result = await transcribe(audio, { speakers: true });
+      expect(result.segments).toEqual([{ start: 0, end: 2.5, text: ENGLISH, speaker: 1 }]);
+    });
+  });
+
   it("rejects a missing file with E_INPUT_NOT_FOUND naming the path", async () => {
     const err = await rejectionOf(transcribe("/nonexistent/ghost.ogg"));
     expect(err.code).toBe("E_INPUT_NOT_FOUND");
@@ -314,11 +328,23 @@ describe("say() rejects with a coded KeshaError", () => {
 describe("install() mirrors kesha install", () => {
   const posixIt = process.platform === "win32" ? it.skip : it;
   let restore: () => void = () => {};
+  const realFetch = globalThis.fetch;
+  let requested: string[] = [];
 
   afterEach(() => {
     restore();
     restore = () => {};
+    globalThis.fetch = realFetch;
   });
+
+  /** Records every URL the installer asks for and serves none, so "nothing was downloaded" is an empty list. */
+  function recordDownloads(): void {
+    requested = [];
+    globalThis.fetch = (async (input: Request | URL | string) => {
+      requested.push(String(input instanceof Request ? input.url : input));
+      return new Response("Not Found", { status: 404 });
+    }) as typeof fetch;
+  }
 
   /** A cache-valid engine whose model-install spawn records its argv and runs `installBody`. */
   function stageInstalledEngine(installBody = ""): { binPath: string; argvFile: string } {
@@ -352,12 +378,10 @@ exit 0
     return { binPath, argvFile };
   }
 
-  /** An engine path under an isolated cache, with nothing there: whatever lands at it was downloaded. */
-  function stageAbsentEngine(): string {
+  /** An isolated cache with no engine in it, and no network. */
+  function stageAbsentEngine(): void {
     restore = isolateEngineCache();
-    const binPath = join(tempDir("kesha-lib-install-absent-"), "bin", "kesha-engine");
-    process.env.KESHA_ENGINE_BIN = binPath;
-    return binPath;
+    recordDownloads();
   }
 
   posixIt("installs the TTS languages and VAD it is asked for", async () => {
@@ -383,34 +407,34 @@ exit 0
   });
 
   it("refuses a malformed engine version with E_INVALID_ARG before downloading", async () => {
-    const binPath = stageAbsentEngine();
+    stageAbsentEngine();
     const err = await rejectionOf(install({ engineVersion: "latest" }));
     expect(err.code).toBe("E_INVALID_ARG");
-    expect(existsSync(binPath)).toBe(false);
+    expect(requested).toEqual([]);
   });
 
   it("refuses a TTS language this platform cannot serve with E_INVALID_ARG before downloading", async () => {
-    const binPath = stageAbsentEngine();
+    stageAbsentEngine();
     const err = await rejectionOf(install({ tts: ["xx"] }));
     expect(err.code).toBe("E_INVALID_ARG");
     expect(err.message).toContain("xx");
-    expect(existsSync(binPath)).toBe(false);
+    expect(requested).toEqual([]);
   });
 
   const platformBackend = defaultBackendForPlatform();
   (platformBackend ? it : it.skip)("refuses the backend this platform does not ship with E_INVALID_ARG", async () => {
-    // KESHA_ENGINE_BIN names the user's own build, which any backend may be, so the refusal needs it unset.
-    restore = isolateEngineCache();
+    stageAbsentEngine();
     const other: InstallOptions["backend"] = platformBackend === "coreml" ? "onnx" : "coreml";
     const err = await rejectionOf(install({ backend: other }));
     expect(err.code).toBe("E_INVALID_ARG");
     expect(err.message).toContain(other);
+    expect(requested).toEqual([]);
   });
 
   (isDarwinArm64() ? it.skip : it)("refuses diarize off darwin-arm64 with E_UNSUPPORTED_PLATFORM", async () => {
-    const binPath = stageAbsentEngine();
+    stageAbsentEngine();
     const err = await rejectionOf(install({ diarize: true }));
     expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
-    expect(existsSync(binPath)).toBe(false);
+    expect(requested).toEqual([]);
   });
 });
