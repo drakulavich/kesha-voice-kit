@@ -2,7 +2,7 @@
 # Point the model-gated Rust tests at a staged Kokoro + CharsiuG2P cache.
 # Source it — it only exports. usage: source rust/ci/kokoro-env.sh <cache_dir>
 #
-# Both nextest lanes (rust-test.yml `test` via run-cargo-test.sh, and `coverage`)
+# Both nextest lanes (ci.yml `test` via run-cargo-test.sh, and `coverage`)
 # read this one copy: they used to carry the same conditions inline, so a fix to
 # one silently left the other gating on something else (#741).
 

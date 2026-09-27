@@ -23,7 +23,7 @@
 - [x] 3.4 `prune-alpha-releases.yml` → `nightly.yml` (task 4.1)
 - [x] 3.5 `cross-os-cache-probe.yml` → `ci.yml` (`cache-probe-save`/`-restore`/`-cleanup`, on a matching PR); `cache-seed.yml` and `cache-cleanup.yml` stay standalone (design D4: cancel-in-progress, and the `pull_request_target` write token)
 - [x] 3.6 `linux-packages.yml` → `ci.yml`'s `linux-packages` job, with its PR and main-push path sets
-- [ ] 3.7 `rust-test.yml` (into `ci.yml`, job name `🧪 Rust Tests`)
+- [x] 3.7 `rust-test.yml` → `ci.yml` (`lint-ubuntu`, `test`, `coverage`, `coreml-regression`, `rust-push-gate`), aggregated by `rust-tests`, still named `🧪 Rust Tests`; `requireEveryJobInCiAggregator` accepts either aggregator, and `rust-push-gate` now reds `🧪 Rust Tests` on `main` when it fails
 - [x] 3.8 `nix-build.yml` stays standalone (design D4: #1105, it cannot gate the `🧪 CI` aggregator)
 - [x] 3.9 `plugin-security-scan.yml` → `security.yml`'s `plugin-scan` job, same check name, still outside the `🛡️ Security Audit` aggregator; a push to `main` runs only the scan
 

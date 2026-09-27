@@ -77,7 +77,7 @@ coverage-rust:
 
 # "$@" rather than {{ ARGS }}: interpolation is textual, so a filterset's parens would reach sh
 # unquoted and be a syntax error — the one nextest argument worth forwarding.
-# Run Rust tests via nextest (matches CI — rust-test.yml); args are nextest filters: just rust-test ssml
+# Run Rust tests via nextest (matches CI — ci.yml's Rust lanes); args are nextest filters: just rust-test ssml
 [positional-arguments]
 rust-test *ARGS:
     cd rust && cargo nextest run --features tts "$@"
@@ -98,7 +98,7 @@ release-tag tag notes mode="push": root-checkout-only
     bun scripts/release-tag.ts --tag "$1" --notes "$2" --mode "$3"
 
 # The default nextest run builds the portable profile, so system_kokoro / system_diarize /
-# system_text_lang never compile locally; rust-test.yml calls this recipe rather than repeat the set.
+# system_text_lang never compile locally; ci.yml's macOS Rust lane calls this recipe rather than repeat the set.
 # Lint the darwin release profile (macOS 14+ arm64)
 verify-darwin-full:
     cd rust && cargo clippy --all-targets --no-default-features --features darwin -- -D warnings

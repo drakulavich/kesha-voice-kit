@@ -98,7 +98,7 @@ cargo fmt --check
 These build the default `portable` profile (`onnx,tts`), which is what the
 Linux and Windows releases ship. The darwin-arm64 release ships the `darwin`
 profile; lint it on Apple Silicon with Xcode Command Line Tools installed via
-`just verify-darwin-full`, which the macOS lane of `rust-test.yml` also runs.
+`just verify-darwin-full`, which the macOS Rust lane of `ci.yml` also runs.
 
 ## Project structure
 
@@ -140,8 +140,7 @@ kesha-voice-kit/
 ├── tests/{unit,integration}/   # bun:test
 ├── scripts/                    # benchmark.ts, smoke-test.ts
 ├── .github/workflows/
-│   ├── ci.yml                  # PR: unit + integration + tts-e2e + type check
-│   ├── rust-test.yml           # PR touching rust/: nextest/fmt/clippy across 3 OSes
+│   ├── ci.yml                  # PR: unit + integration + tts-e2e + type check, and the Rust lanes (🧪 Rust Tests)
 │   └── build-engine.yml        # tag push (v*, excluding -cli): build 3 binaries + draft release
 ├── raycast/                    # Raycast extension (separate npm tree, vendored)
 ├── openclaw.plugin.json        # OpenClaw manifest
@@ -203,7 +202,7 @@ kesha-voice-kit/
 | **Fast (sacred)** | `bun run check` / `bun run test:cli-fast` | Design feedback while coding. No engine download, no models, no network. Keep it that way; do not confuse it with `just check`, which runs all integration tests. |
 | **Full local** | `just test` | Unit + `tests/integration/`. Fake-engine suites always run; real-engine e2e runs only where its own gate is satisfied — `kesha install` covers `e2e-engine`/`mcp-e2e`, not the synthesis suites. This recipe never downloads the 2.4 GB bundle. |
 | **Smoke / release** | `just smoke-test`, `just release` | Real install + fixtures. Explicit and slower. |
-| **CI** | `ci.yml`, `rust-test.yml` | Authoritative gates; model-heavy jobs are path-filtered or self-skipping. |
+| **CI** | `ci.yml` | Authoritative gates; model-heavy jobs are path-filtered or self-skipping. |
 
 Do not add engine installs, large fixtures, or network calls to the fast path.
 If a change needs those, put the test on the slower path and keep the fast
@@ -261,7 +260,7 @@ Handy loops:
   `integration-tests` (macos-latest, no engine install) + path-filtered
   `integration-tests-full`, `tts-e2e`, and `raycast-lint`. The full
   integration and TTS jobs skip `release/*`; `integration-tests` does not.
-- `rust-test.yml` — runs on PRs touching `rust/**`: nextest plus fmt/clippy,
+- `ci.yml`'s Rust lanes (`🧪 Rust Tests`) — run on PRs touching `rust/**`: nextest plus fmt/clippy,
   and macos-14 also runs the CoreML `cargo check --all-targets` and
   `just verify-darwin-full` feature set.
 - `build-engine.yml` — runs on `v*` tag pushes (excluding `v*-cli`):
