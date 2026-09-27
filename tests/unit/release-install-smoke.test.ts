@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { parseRepoYaml, readRepoFile } from "../helpers/repo";
+import { tempDir } from "../helpers/temp-dir";
 
 const WORKFLOW = ".github/workflows/release-install-smoke.yml";
 const SCRIPT = ".github/scripts/release-install-smoke.sh";
@@ -50,5 +51,15 @@ describe("release install smoke", () => {
       tag: "${{ needs.plan.outputs.tag }}",
       version: "${{ needs.plan.outputs.version }}",
     });
+  });
+
+  test("artifact mode refuses an empty artifact directory by path, before touching any model", () => {
+    const dir = tempDir("artifact-smoke-");
+    const { TAG: _unset, ...env } = process.env;
+    const run = Bun.spawnSync(["bash", SCRIPT, "artifact"], {
+      env: { ...env, ASSET_DIR: dir, ENGINE_VERSION: "2.0.0" },
+    });
+    expect(run.exitCode).toBe(1);
+    expect(run.stderr.toString()).toContain(`${dir}/kesha-engine-linux-x64 is missing or empty`);
   });
 });
