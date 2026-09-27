@@ -415,7 +415,7 @@ For more advanced workflows, see:
 
 - [TTS reference](tts.md) — all TTS engines, voices, SSML support, abbreviations
 - [OpenClaw integration](openclaw.md) — full agent configuration
-- [Nix install](nix-install.md) — reproducible, declarative setup
-- [Homebrew tap](homebrew.md) — macOS-native package management
+- [Nix](distribution.md#nix) — reproducible engine build from source
+- [Homebrew tap](distribution.md#homebrew) — macOS-native package management
 - [Hermes Agent](hermes.md) — command-provider mode for voice assistants
 - [VAD guide](vad.md) — voice activity detection for long audio

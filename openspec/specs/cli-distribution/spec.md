@@ -326,8 +326,8 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
   wrong, and Codex review caught it.
 - The Homebrew formula in `packaging/homebrew/Formula/kesha-voice-kit.rb` is a
   template kept in this repository; the tap that users install from is
-  `drakulavich/homebrew-tap`, updated by `.github/workflows/homebrew-tap.yml`
-  on `release: published`. The in-repo copy pins an older version than the
+  `drakulavich/homebrew-tap`, updated by the `homebrew` job of
+  `.github/workflows/release.yml` on a stable release. The in-repo copy pins an older version than the
   current CLI, and nothing fails when it goes stale — there is no check that the
   in-repo template and the published tap agree. #915 surfaced this: an install
   block staging `completions` and `man` against a pin (`v1.18.0`) predating both
@@ -342,26 +342,16 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
   `url`/`sha256`; only the CI copy is rewritten, its `version` pinned from
   `package.json#version` because a `file://` url gives Homebrew nothing to parse
   and the formula's own `--version` assertion requires it.
-- `homebrew-tap.yml` fires on every published release, including Engine
-  releases that publish no CLI version (see CLAUDE.md, "un-drafting an engine
-  tag still fires 🍺 Homebrew Tap"). The lane's own skip logic is the only thing
-  keeping an Engine tag out of the tap; that skip is not specified here.
 - The container image publishes on every push to `main`, so the `main`-tagged
   image can be ahead of any released CLI version. Only tag-triggered images
   correspond to a release.
 - No test asserts that the Homebrew, Linux-package, container, and Nix paths
   produce the same CLI version — the "same contents everywhere" requirement is
   held by construction, not by a gate.
-- The independent CLI/Engine versioning scheme — why `package.json#version` may
-  lead `keshaEngine.version`, and the `check:versions` rules that hold them
-  together — has no baseline home. [release-channels](../release-channels/spec.md)
-  covers tag grammar and channels; [installation](../installation/spec.md)
-  covers what an install resolves; neither states the versioning contract
-  itself, which is only in CLAUDE.md and the gate script.
 - `nix build .#kesha` still cannot succeed as committed (`lib.fakeHash`), so the
   CLI half of the flake remains unbuildable until a maintainer with Nix populates
   the hash. The user-facing discrepancy is resolved (#946): neither the README
-  nor `docs/nix-install.md` presents `nix run` / `nix profile install .#kesha` as
+  nor `docs/distribution.md` presents `nix run` / `nix profile install .#kesha` as
   a working install path anymore — both document only `nix build .#kesha-engine`
   and mark the CLI path as not yet available. Populating the hash (or adopting
   `bun2nix`) and re-documenting the CLI path is the remaining follow-up.

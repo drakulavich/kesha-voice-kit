@@ -18,18 +18,17 @@ Kesha is two programs, not one:
 
 The CLI **spawns the engine as a subprocess** — it is never linked in-process.
 TypeScript runs directly under Bun (no build step); the engine is a precompiled
-binary downloaded from GitHub Releases during `kesha install`. The two are
-[versioned independently](../CLAUDE.md) (`package.json#version` vs
-`package.json#keshaEngine.version`). The engine pin is what every unattended
+binary downloaded from GitHub Releases during `kesha install`. One version,
+`package.json#version`, names both; a published CLI carries the engine it installs
+as `package.json#kesha.engine`, injected at publish. That pin is what every unattended
 path resolves; `kesha install --engine-version <version>` installs one named
 release instead, for that invocation only ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 Every downloaded engine and sidecar is checked against a SHA-256 before it is made
-executable, and deleted on a mismatch: the release the pins in `src/engine-targets.ts`
-were recorded from against those pins, never the network; any other release, including
-the pinned engine between its release and its pins update, against its own `SHA256SUMS`,
-which a release without one fails outright rather than installing unverified. A cached
-engine and its sidecars are re-hashed against the pins on every `kesha install`, unless
-`KESHA_ENGINE_BIN` names the user's own build.
+executable, and deleted on a mismatch: the pinned release against the injected pin,
+never the network; any other release, and every release in a source checkout, against
+its own `SHA256SUMS`, which a release without one fails outright rather than installing
+unverified. A cached engine and its sidecars are re-hashed against the pin on every
+`kesha install`, unless `KESHA_ENGINE_BIN` names the user's own build.
 
 ## Runtime data flow
 
@@ -128,7 +127,7 @@ src/                  Bun/TS CLI + library
   engine.ts           engine subprocess wrapper + getDescribe/getEngineCapabilities
   engine/describe.ts  describe-document schema, argv validation (validateArgv)
   engine/events.ts    protocol-4 stderr event parsing (readEvents), KeshaError
-  engine-install.ts   engine binary download (uses keshaEngine.version)
+  engine-install.ts   engine binary download (verified against the injected pin)
   transcribe.ts      thin forwarder to `kesha-engine transcribe`
   synth.ts           thin forwarder to `kesha-engine say`
   voice-routing.ts   omitted-`--voice` language→voice picker
@@ -151,7 +150,7 @@ rust/src/             kesha-engine (Rust)
 
 tests/                bun tests — unit/, integration/, fixtures/, helpers/
 rust/tests/           nextest integration binaries (tts_e2e, diarize_e2e, ssml_integration, ...)
-.github/workflows/    ci, rust-test, build-engine, security, npm-publish, homebrew-tap, linux-packages, docker
+.github/workflows/    release, ci, security, nightly, nix-build, cache-seed, cache-cleanup
 raycast/              Raycast extension (its own package.json)
 packaging/            deb/rpm nfpm config
 flake.nix             Nix build path (aarch64-darwin, x86_64-linux)
@@ -191,8 +190,8 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
 ## ASR & TTS backends
 
 **Compile-time feature gating** (`rust/Cargo.toml`): the engine ships in
-per-platform variants selected by cargo features, mirrored in every
-`build-engine.yml` matrix row.
+per-platform variants selected by cargo features: every `build` row of
+`release.yml` names one Cargo profile.
 
 - ASR: exactly **one** backend per binary, no runtime fallback —
   `coreml` (FluidAudio / Apple Neural Engine, darwin-arm64) or `onnx`
@@ -266,14 +265,12 @@ pre-#688 install also `~/Library/Application Support/FluidAudio`,
 - **Rust tests:** `cargo nextest run --features tts` / `just rust-test`; nextest
   integration binaries live in `rust/tests/`. Never plain `cargo test` (CI uses
   nextest) except `cargo test --doc`.
-- **CI:** `ci.yml` (TS units + integration + type check), `rust-test.yml`
-  (fmt/clippy/nextest + coreml feature check; PR + lean push-to-main gate),
-  `security.yml` (cargo-deny + bun audit), `build-engine.yml` (tag → 3 platform
-  binaries + draft release), `npm-publish.yml`, `homebrew-tap.yml`,
-  `linux-packages.yml`, `docker.yml`.
-- **Releases:** CLI and engine version independently; the full procedure
-  (lockstep bump → tag → draft validation → un-draft → npm publish) is in
-  [CLAUDE.md](../CLAUDE.md) and the `release-kesha` skill.
+- **CI:** `ci.yml` (TS and Rust gates, type check, integration, packaging),
+  `security.yml` (cargo-deny + bun audit + plugin scan), `nightly.yml` (canaries
+  and maintenance), `nix-build.yml`, `cache-seed.yml`, `cache-cleanup.yml`.
+- **Releases:** one version names the CLI and the Engine; `release.yml` builds,
+  smokes and publishes every channel. The procedure is the `release` skill;
+  where each install path comes from is [distribution](distribution.md).
 - **Nix:** `flake.nix` builds the engine + CLI on `aarch64-darwin` /
   `x86_64-linux`; not a CI gate.
 

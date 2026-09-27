@@ -154,7 +154,7 @@ describe("isSwept", () => {
     "CONTRIBUTING.md",
     "docs/architecture.md",
     ".claude/commands/worktree.md",
-    ".claude/skills/release-mechanics/SKILL.md",
+    ".claude/skills/release/SKILL.md",
     ".github/workflows/rust-test.yml",
   ])("sweeps %s", (path) => {
     expect(isSwept(path)).toBe(true);

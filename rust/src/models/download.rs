@@ -128,7 +128,7 @@ pub(super) fn parallel_download(
 }
 
 /// Download the Sortformer `.mlpackage`. Opt-in via `kesha install --diarize`
-/// (#199) — feature-gated to `system_diarize`, which build-engine.yml only
+/// (#199) — feature-gated to `system_diarize`, which release.yml's build only
 /// turns on for darwin-arm64. Non-darwin builds neither expose the flag nor
 /// reach this function. 4-file manifest, ~245 MB total; goes through the
 /// same hash-verify + retry path as the rest.

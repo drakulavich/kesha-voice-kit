@@ -11,10 +11,9 @@ on the supported line for fixes to apply.
 | `1.11.x`      | :white_check_mark: |
 | `< 1.11`      | :x:                |
 
-Tags ending in `-cli` (e.g. `v1.10.1-cli`) are CLI-only patch markers; they
-reuse the previous engine binary at `package.json#keshaEngine.version`. A
-security fix that touches the engine ships as a normal `vX.Y.Z` engine
-release.
+Since v2.0.0 one `vX.Y.Z` release publishes the CLI and the engine together,
+so a security fix in either ships as the next patch. Earlier releases tagged
+`vX.Y.Z-cli` were CLI-only markers that reused a previously released engine.
 
 ## Reporting a vulnerability
 

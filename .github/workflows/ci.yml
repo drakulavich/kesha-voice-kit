@@ -204,7 +204,7 @@ jobs:
               - 'package.json'
             homebrew:
               - 'packaging/homebrew/Formula/**'
-              - 'docs/homebrew.md'
+              - 'docs/distribution.md'
               - '.github/workflows/ci.yml'
               - '.github/scripts/stage-homebrew-worktree-formula.mjs'
             # What the image packs: a main push that touches it publishes `main`, `sha-*` and `latest`.

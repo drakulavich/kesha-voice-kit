@@ -693,7 +693,7 @@ function checkEngineWritable(engineDir: string): boolean {
 /**
  * The install path's pre-spawn gate: checks the requested backend against the describe
  * document, then validates the built engine argv through it. `--diarize` on a build that
- * lacks `system_diarize` (the Nix build, which omits it on purpose — docs/nix-install.md)
+ * lacks `system_diarize` (the Nix build, which omits it on purpose — docs/distribution.md#nix)
  * gets the npm-release remedy instead of `validateArgv`'s generic "needs" message.
  *
  * A bare `install` (no backend, no flags) skips `getDescribe()` entirely: a read-only
@@ -731,7 +731,7 @@ async function validateInstallRequest(
       throw new KeshaError(
         "E_INVALID_ARG",
         "The installed engine was built without the system_diarize feature, so --diarize is unavailable " +
-          "(the Nix build in docs/nix-install.md is one such case).",
+          "(the Nix build in docs/distribution.md is one such case).",
         {
           hint: "install via the npm release with `bun add -g @drakulavich/kesha-voice-kit`, which ships the diarize-enabled engine on darwin-arm64",
         },

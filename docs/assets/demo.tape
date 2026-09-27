@@ -15,7 +15,7 @@
 #
 #    Use vhs 0.11.0. Version 0.12.0 exits 0 and writes no file
 #    (https://github.com/charmbracelet/vhs/issues/787). The engine on PATH must be the one
-#    package.json#keshaEngine.version pins: an older one prints a text-language warning
+#    package.json#version names: an older one prints a text-language warning
 #    from its protocol above every transcript. Warm the engine once before recording
 #    (one transcribe, one `kesha say`): the first CoreML transcribe and the first Kokoro
 #    synthesis each take 15-20 s of model load, and the video should show steady-state
