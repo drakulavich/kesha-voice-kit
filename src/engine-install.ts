@@ -18,7 +18,7 @@ import { engineFailure, KeshaError } from "./engine/events";
 import { runEngineProcess } from "./engine/spawn";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
-import { engineVersion } from "./package-info";
+import { engineVersion, injectedEnginePins } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { createLiveStatus, streamResponseToFile } from "./progress";
 import { interruptedRun } from "./process-tree";
@@ -78,9 +78,14 @@ async function fetchSha256Sums(version: string): Promise<Map<string, string>> {
  * The pins for the release they were recorded from, never the network; any other release, including
  * the pinned engine while its pins still describe the previous one, against its own SHA256SUMS.
  */
+const COMMITTED_PINS: AssetPins = { version: PINNED_ASSET_SHA256_VERSION, sha256: PINNED_ASSET_SHA256 };
+
+/** A published CLI carries the pins of the Engine it resolves; a source checkout falls back to the committed table. */
+export const defaultAssetPins: AssetPins = injectedEnginePins ?? COMMITTED_PINS;
+
 export function releaseChecksums(
   version: string,
-  pins: AssetPins = { version: PINNED_ASSET_SHA256_VERSION, sha256: PINNED_ASSET_SHA256 },
+  pins: AssetPins = defaultAssetPins,
 ): (assetName: string) => Promise<ExpectedSha256> {
   let sums: Promise<Map<string, string>> | undefined;
   return async (assetName) => {
@@ -140,7 +145,7 @@ async function rejectMismatchedDownload(
  */
 async function cachedAssetMatchesPin(path: string, assetName: string, what: string, version: string): Promise<boolean> {
   // KESHA_ENGINE_BIN names the user's own build, which no release pin describes.
-  if (version !== PINNED_ASSET_SHA256_VERSION || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
+  if (version !== defaultAssetPins.version || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
   const expected = await engineChecksums.forRelease(version)(assetName);
   const actual = await sha256OfFile(path);
   if (actual === expected.sha256) return true;

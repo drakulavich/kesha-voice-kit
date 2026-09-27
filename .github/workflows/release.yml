@@ -19,6 +19,14 @@ on:
       - .github/scripts/release-checksums.sh
       - .github/scripts/sign-release-assets.sh
       - .github/scripts/engine-release-notes.mjs
+      - .github/scripts/publish-release.sh
+      - .github/scripts/engine-pin.ts
+      - .github/scripts/npm-pack-verify.ts
+      - .github/scripts/set-package-version.mjs
+      - .github/actions/linux-packages/**
+      - src/package-info.ts
+      - src/engine-install.ts
+      - src/engine-targets.ts
 
 permissions:
   contents: read
@@ -256,10 +264,41 @@ jobs:
           ENGINE_VERSION: ${{ needs.classify.outputs.version }}
         run: .github/scripts/release-install-smoke.sh artifact
 
-  # Needs every smoke: `success()` is the gate, so nothing is published past a red platform.
+  # Before the release, not after it: an immutable release refuses any asset once published.
+  packages:
+    name: Linux packages
+    needs: classify
+    if: needs.classify.outputs.channel == 'stable' && needs.classify.outputs.build_engine == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Apply the release version
+        env:
+          VERSION: ${{ needs.classify.outputs.version }}
+        run: node .github/scripts/set-package-version.mjs "$VERSION"
+      - name: Build and verify packages
+        uses: ./.github/actions/linux-packages
+      - name: Upload the packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: linux-packages
+          path: |
+            dist/linux-packages/*.deb
+            dist/linux-packages/*.rpm
+          if-no-files-found: error
+
+  # `!cancelled()` lets a beta through its skipped `packages`, so every smoke's success is spelled out.
   github-release:
     name: GitHub release
-    needs: [classify, build, darwin-synthesis-smoke, roundtrip-smoke]
+    needs: [classify, build, darwin-synthesis-smoke, roundtrip-smoke, packages]
+    if: >-
+      !cancelled()
+      && needs.classify.outputs.build_engine == 'true'
+      && needs.build.result == 'success'
+      && needs.darwin-synthesis-smoke.result == 'success'
+      && needs.roundtrip-smoke.result == 'success'
+      && (needs.packages.result == 'success' || (needs.packages.result == 'skipped' && needs.classify.outputs.channel != 'stable'))
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -295,11 +334,20 @@ jobs:
       - name: Generate release manifest
         env:
           TAG_NAME: ${{ needs.classify.outputs.tag }}
-        run: node .github/scripts/release-manifest.mjs --tag "$TAG_NAME" --out release-assets/kesha-release-manifest.json
+          WITH_PACKAGES: ${{ needs.packages.result == 'success' }}
+        run: |
+          packages=(); if [ "$WITH_PACKAGES" = true ]; then packages=(--linux-packages); fi
+          node .github/scripts/release-manifest.mjs --tag "$TAG_NAME" "${packages[@]}" --out release-assets/kesha-release-manifest.json
       - name: Generate release checksums
         run: bash .github/scripts/release-checksums.sh release-assets
       - name: Check the assembled assets against the manifest
         run: bun .github/scripts/check-release-assets.ts release-assets
+      - name: Hand the checksums to the npm job
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-checksums
+          path: release-assets/SHA256SUMS
+          if-no-files-found: error
 
       # A rehearsal stops here: signing writes to the public transparency log.
       - name: Install Cosign
@@ -326,3 +374,54 @@ jobs:
           TAG_NAME: ${{ needs.classify.outputs.tag }}
           PRERELEASE: ${{ needs.classify.outputs.prerelease }}
         run: bash .github/scripts/publish-release.sh release-assets release-notes.md
+
+  # Publishes only once npm's single Trusted Publisher names release.yml, switched at the cutover (#732).
+  npm:
+    name: npm
+    needs: [classify, github-release]
+    if: ${{ !cancelled() && needs.github-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # Trusted Publishing needs Node >= 22.14 and npm >= 11.5.1; no NODE_AUTH_TOKEN is set.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "lts/*"
+          registry-url: "https://registry.npmjs.org"
+          package-manager-cache: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-checksums
+          path: engine-checksums
+      - name: Apply the release version
+        env:
+          VERSION: ${{ needs.classify.outputs.version }}
+        run: node .github/scripts/set-package-version.mjs "$VERSION"
+      - name: Inject the Engine pin
+        env:
+          ENGINE_VERSION: ${{ needs.classify.outputs.version }}
+        run: bun .github/scripts/engine-pin.ts inject engine-checksums/SHA256SUMS "$ENGINE_VERSION"
+      - name: Pack and verify the tarball
+        env:
+          VERSION: ${{ needs.classify.outputs.version }}
+          ENGINE_VERSION: ${{ needs.classify.outputs.version }}
+        run: bun .github/scripts/npm-pack-verify.ts
+      - name: Ensure npm supports Trusted Publishing
+        if: needs.classify.outputs.publish == 'true'
+        run: npm install -g npm@latest && npm --version
+      # A re-run after a successful publish no-ops instead of failing.
+      - name: Check npm registry for prior publish
+        id: registry
+        if: needs.classify.outputs.publish == 'true'
+        run: |
+          spec="$(jq -r '.name + "@" + .version' package.json)"
+          if npm view "$spec" version >/dev/null 2>&1; then echo "already_published=true" >> "$GITHUB_OUTPUT"; echo "$spec is already on npm."; else echo "already_published=false" >> "$GITHUB_OUTPUT"; fi
+      - name: Publish to npm with provenance
+        if: needs.classify.outputs.publish == 'true' && steps.registry.outputs.already_published == 'false'
+        env:
+          NPM_DIST_TAG: ${{ needs.classify.outputs.dist_tag }}
+        run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"

@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { ENGINE_TAG_ERE, ENGINE_TAG_RE, isEngineAlphaTag } from "./release-tags.mjs";
 import { cmp, parseSemver } from "../../src/semver.mjs";
+import { linuxPackageNames } from "./linux-package-names.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const MANIFEST_NAME = "kesha-release-manifest.json";
@@ -51,7 +52,7 @@ const DARWIN_SIDECARS = [
 
 function usage() {
   console.error(
-    "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N|-alpha.N]] [--out path] [--check]",
+    "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N|-alpha.N]] [--linux-packages] [--out path] [--check]",
   );
   process.exit(2);
 }
@@ -106,7 +107,7 @@ function assertTagNamesThisRelease(tag, pinnedVersion) {
   );
 }
 
-function buildManifest(tag) {
+function buildManifest(tag, withLinuxPackages) {
   const pkg = readPackage();
   const pinnedVersion = pkg.keshaEngine?.version ?? pkg.version;
   if (typeof pkg.version !== "string" || typeof pinnedVersion !== "string") {
@@ -122,6 +123,9 @@ function buildManifest(tag) {
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),
     ...DARWIN_SIDECARS.map((s) => asset(s.name, "sidecar", ["darwin-arm64"], s.install)),
+    ...(withLinuxPackages
+      ? Object.values(linuxPackageNames(engineVersion)).map((name) => asset(name, "linux-package", ["linux-x64"]))
+      : []),
     asset(sbomName, "sbom", []),
     asset(MANIFEST_NAME, "manifest", []),
     asset("SHA256SUMS", "checksum", [], undefined, false),
@@ -223,7 +227,7 @@ if (!ENGINE_TAG_RE.test(tag)) {
   );
 }
 
-const manifest = buildManifest(tag);
+const manifest = buildManifest(tag, hasArg("--linux-packages"));
 validateSourceConsistency(manifest);
 
 const out = getArg("--out");
