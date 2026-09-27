@@ -894,15 +894,17 @@ jobs:
           OPENSPEC_TELEMETRY: '0'
         run: bun run check:specs
 
-  # Aggregator gate = the single required status check for branch protection.
-  # Always runs so 🧪 CI reports on every PR; the path-gated jobs above skip on
-  # unrelated PRs (→ success). The step fails the gate only if a real job failed.
-  # Moved from docker.yml (openspec unified-release D4); release.yml publishes the tag images.
+  # Moved from docker.yml (openspec unified-release D4); a main push publishes only after the CLI it packs passed its tests; `always()` so a skipped suite does not skip it.
   docker-image:
-    needs: changes
+    needs: [changes, unit-tests, integration-tests]
     if: |
-      (github.event_name == 'push' && needs.changes.outputs.docker == 'true') ||
-      (github.event_name == 'pull_request' && needs.changes.outputs.dockerfile == 'true')
+      always() &&
+      needs.changes.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&
+      (
+        (github.event_name == 'push' && needs.changes.outputs.docker == 'true') ||
+        (github.event_name == 'pull_request' && needs.changes.outputs.dockerfile == 'true')
+      )
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -941,6 +943,9 @@ jobs:
           cache-from: type=gha
           cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}
 
+  # Aggregator gate = the single required status check for branch protection.
+  # Always runs so 🧪 CI reports on every PR; the path-gated jobs above skip on
+  # unrelated PRs (→ success). The step fails the gate only if a real job failed.
   ci:
     name: 🧪 CI
     if: always()
