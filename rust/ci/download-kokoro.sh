@@ -2,7 +2,7 @@
 # Download the TTS models the caller asks for. CharsiuG2P always; Vosk-RU and the
 # real Kokoro weights only behind their flags, which only the weekly canary sets.
 # The PR lanes run on the committed Kokoro stand-in instead (#741).
-# Called by rust-test.yml; cache warms on subsequent runs.
+# Called by ci.yml's Rust lanes; cache warms on subsequent runs.
 set -euo pipefail
 
 DEST="${1:?usage: download-kokoro.sh <dest_dir>}"
@@ -27,7 +27,7 @@ fetch() {
 # stand-in in tests/fixtures/mini-models/kokoro carries the same I/O signature for
 # ~1 KB, and rust/ci/stage-mini-models.sh lays it out (#741).
 #
-# WITH_REAL_KOKORO is the canary's opt-in. Weekly, real-model-canary.yml runs the
+# WITH_REAL_KOKORO is the canary's opt-in. Weekly, nightly.yml's `real-model-canary` job runs the
 # same suites against these weights, which is the only place real Kokoro audio is
 # asserted at all now — so this arm is the counterweight to the stand-ins, not a
 # leftover.

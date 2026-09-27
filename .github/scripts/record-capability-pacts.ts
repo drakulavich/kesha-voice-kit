@@ -11,7 +11,7 @@
  *   bun .github/scripts/record-capability-pacts.ts --from-release --check
  *
  * `--from-release` fetches the highest published stable Engine, the one a source checkout's lanes install. `--check` re-derives the
- * pact and exits 1 on drift. Re-record per `.github/workflows/capability-pact.yml`, which
+ * pact and exits 1 on drift. Re-record per `.github/workflows/nightly.yml` (`capability-pact` job), which
  * owns the procedure; a target can only be recorded on its own OS.
  */
 import { createHash } from "node:crypto";
@@ -144,7 +144,7 @@ async function readDescribe(binary: string): Promise<unknown> {
 const readNormalised = (path: string): string => readFileSync(path, "utf8").replace(/\r\n/g, "\n");
 
 const RE_RECORD =
-  "Re-record per .github/workflows/capability-pact.yml: dispatch it with `record: true` and " +
+  "Re-record per .github/workflows/nightly.yml (capability-pact job): dispatch it with `job: capability-pact` and `record: true`, and " +
   "commit the artifacts it uploads.";
 
 function verify(target: string, binary: string, recorded: string, engineVersion: string): void {
