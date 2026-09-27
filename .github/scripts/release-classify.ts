@@ -15,7 +15,7 @@ export type ClassifyInput = {
   eventName: string;
   refType: string;
   refName: string;
-  pkg: { version: string; keshaEngine?: { version?: string } };
+  pkg: { version: string };
   dispatch?: { channel?: string; version?: string; enginePrerelease?: string };
 };
 
@@ -91,7 +91,7 @@ export function classifyRelease(input: ClassifyInput): Classification {
   const { eventName, refType, refName, pkg } = input;
   if (eventName === "pull_request") {
     // Until the versions are unified the CLI still pins an older Engine, and the smoke must stage that one.
-    return release("rehearsal", "stable", pkg.keshaEngine?.version ?? pkg.version, true);
+    return release("rehearsal", "stable", pkg.version, true);
   }
   if (eventName === "workflow_dispatch") return fromDispatch(input.dispatch, pkg.version);
   if (eventName !== "push") throw new Error(`release.yml does not handle the ${eventName} event`);
