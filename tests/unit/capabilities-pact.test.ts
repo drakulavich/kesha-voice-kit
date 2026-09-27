@@ -13,7 +13,7 @@
  * engine, no models, no network. `.github/workflows/capability-pact.yml` re-records
  * from the real artifacts and fails on drift, which is what stops a pact from rotting into a
  * false green; it also owns the pinned-version check, which cannot live here because a release
- * PR bumps `keshaEngine.version` before the tag it names exists.
+ * PR bumps the version before the tag it names exists.
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";

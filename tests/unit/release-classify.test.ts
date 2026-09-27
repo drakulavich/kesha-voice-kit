@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { classifyRelease, formatOutputs, type ClassifyInput } from "../../.github/scripts/release-classify";
 
-const pkg = (version: string, engine?: string) => ({ version, ...(engine ? { keshaEngine: { version: engine } } : {}) });
+const pkg = (version: string) => ({ version });
 
 function input(over: Partial<ClassifyInput>): ClassifyInput {
   return { eventName: "push", refType: "tag", refName: "v2.0.0", pkg: pkg("2.0.0"), ...over };
@@ -108,9 +108,9 @@ describe("classifyRelease — rehearsal", () => {
     expect(out).toMatchObject({ path: "rehearsal", channel: "stable", publish: false, buildEngine: true, version: "2.0.0" });
   });
 
-  test("before the versions are unified, a rehearsal builds the Engine version the CLI pins", () => {
-    const out = classifyRelease(input({ eventName: "pull_request", refType: "branch", pkg: pkg("1.32.0", "1.26.0") }));
-    expect(out.version).toBe("1.26.0");
+  test("a rehearsal builds the one committed version, whatever else package.json carries", () => {
+    const out = classifyRelease(input({ eventName: "pull_request", refType: "branch", pkg: { version: "1.32.0", keshaEngine: { version: "1.26.0" } } as { version: string } }));
+    expect(out.version).toBe("1.32.0");
   });
 
   test("an unknown event is refused", () => {

@@ -1,7 +1,7 @@
 import pkg from "../package.json" with { type: "json" };
 import type { AssetPins } from "./engine-install";
 
-type PackageFields = { version?: unknown; keshaEngine?: { version?: unknown }; kesha?: { engine?: unknown } };
+type PackageFields = { version?: unknown; kesha?: { engine?: unknown } };
 
 function isAssetPins(value: unknown): value is AssetPins {
   const pins = value as { version?: unknown; sha256?: unknown } | null;
@@ -13,12 +13,10 @@ function isAssetPins(value: unknown): value is AssetPins {
   );
 }
 
-/** The Engine this CLI installs: the pin `release.yml` injects at publish, else the committed pin, else the CLI's own version. */
+/** The Engine this CLI installs: the pin `release.yml` injects at publish, else the CLI's own version. */
 export function resolveEngine(fields: PackageFields): { version: string; pins?: AssetPins } {
   const injected = fields.kesha?.engine;
   if (isAssetPins(injected)) return { version: injected.version, pins: injected };
-  const committed = fields.keshaEngine?.version;
-  if (typeof committed === "string") return { version: committed };
   return { version: typeof fields.version === "string" ? fields.version : "unknown" };
 }
 

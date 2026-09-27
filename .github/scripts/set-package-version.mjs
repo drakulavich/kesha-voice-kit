@@ -2,12 +2,8 @@
 /**
  * Write a version into package.json without committing it.
  *
- * Alpha versions are derived at publish time from existing tags, so they never live in a
- * commit — the reusable publish workflow applies one after its own checkout, because a
- * `workflow_call` job runs on its own runner and cannot see the caller's filesystem (#685).
- *
- * Rewrites only the top-level `version` field; `keshaEngine.version` already carries the
- * right value in the commit being published.
+ * Prerelease versions are derived at publish time, so they never live in a commit;
+ * release.yml applies one after checkout (#685). Rewrites only the top-level `version`.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { entryArg } from "./script-entry.mjs";
