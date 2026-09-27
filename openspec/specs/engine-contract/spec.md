@@ -447,7 +447,7 @@ Every Engine binary published on a release SHALL have been built from exactly on
 - WHEN the workflow lint runs in CI
 - THEN it fails naming the row and the two allowed profiles
 
-> *Technical Note — the bundles are `[features] portable` and `darwin` in `rust/Cargo.toml`; `PROFILE` in `rust/src/platform.rs` feeds `describe.rs::document`. The row assertion is `requireReleaseRowsNameOneProfile` in `.github/scripts/check-workflows.ts`, reading the `build` job's matrix in `.github/workflows/build-engine.yml:99-111` (`release.yml` once `unified-release` lands).*
+> *Technical Note — the bundles are `[features] portable` and `darwin` in `rust/Cargo.toml`; `rust/src/platform.rs::PROFILE` feeds `rust/src/protocol/describe.rs::document`. The row assertion is `.github/scripts/check-workflows.ts::requireReleaseRowsNameOneProfile`, reading the `build` job's matrix in `.github/workflows/build-engine.yml` (`release.yml` once `unified-release` lands).*
 
 ## Open Issues
 
