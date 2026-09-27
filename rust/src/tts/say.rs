@@ -16,7 +16,7 @@ use super::{
     MAX_TEXT_CHARS,
 };
 
-#[cfg(all(feature = "system_tts", target_os = "macos"))]
+#[cfg(system_tts)]
 use super::avspeech;
 
 /// Per-`<break>` ceiling so a hostile SSML input can't allocate gigabytes of
@@ -120,18 +120,14 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
     );
 
     match opts.engine {
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(system_kokoro, target_arch = "aarch64"))]
         EngineChoice::FluidKokoro { voice_id, speed } => {
             if !opts.expand_abbrev {
                 warn_expand_abbrev_ignored("FluidAudio Kokoro voices");
             }
             say_fluid_kokoro(opts.text, voice_id, speed, opts.format, opts.ssml)
         }
-        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        #[cfg(system_tts)]
         EngineChoice::AVSpeech { voice_id, speed } => {
             if !opts.expand_abbrev {
                 warn_expand_abbrev_ignored("macos-* AVSpeech voices");
@@ -177,24 +173,16 @@ pub fn say(opts: SayOptions) -> Result<Vec<u8>, TtsError> {
 fn engine_label(engine: &EngineChoice) -> &'static str {
     match engine {
         EngineChoice::Kokoro { .. } => "kokoro",
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(system_kokoro, target_arch = "aarch64"))]
         EngineChoice::FluidKokoro { .. } => "fluid-kokoro",
         EngineChoice::Vosk { .. } => "vosk",
-        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        #[cfg(system_tts)]
         EngineChoice::AVSpeech { .. } => "avspeech",
     }
 }
 
 /// FluidAudio Kokoro arm: SSML → segment walker; plain text → synthesize directly.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 fn say_fluid_kokoro(
     text: &str,
     voice_id: &str,
@@ -230,11 +218,7 @@ fn say_fluid_kokoro(
     encode_or_fail(&samples, sample_rate, format)
 }
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 fn fluid_script_gate(voice_id: &str, text: &str) -> Result<(), TtsError> {
     super::fluid_kokoro::ensure_script_supported(voice_id, text).map_err(|e| TtsError::Coded {
         code: crate::errors::code_of(&e),
@@ -243,11 +227,7 @@ fn fluid_script_gate(voice_id: &str, text: &str) -> Result<(), TtsError> {
 }
 
 /// Gate the whole utterance once, then chunk the text FluidAudio will receive: a minority script must not be refused for dominating one chunk, and verbalized amounts must count against the frame budget.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 fn fluid_plain_chunks(voice_id: &str, text: &str, speed: f32) -> Result<Vec<String>, TtsError> {
     fluid_script_gate(voice_id, text)?;
     let prepared = super::fluid_kokoro::prepare_text(voice_id, text);
@@ -255,7 +235,7 @@ fn fluid_plain_chunks(voice_id: &str, text: &str, speed: f32) -> Result<Vec<Stri
 }
 
 /// AVSpeech arm: does its own G2P + synthesis inside Swift; rejects SSML (#141).
-#[cfg(all(feature = "system_tts", target_os = "macos"))]
+#[cfg(system_tts)]
 fn say_avspeech(
     text: &str,
     voice_id: &str,
@@ -588,11 +568,7 @@ impl SegmentSink for KokoroSink<'_> {
 /// into the model-native `speed` and interleaving `<break>` silence. This
 /// restores the prosody/break parity the pre-#479 ONNX path had on
 /// darwin-arm64 (closes #481).
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 fn synth_segments_fluid_kokoro(
     text: &str,
     voice_id: &str,
@@ -622,21 +598,13 @@ fn synth_segments_fluid_kokoro(
 /// calls `fluid_kokoro::synthesize_pcm`; tests inject a deterministic fake).
 /// FluidAudio does its own internal G2P, so `Spell` degrades to plain text and
 /// `Ipa` to the text the tag wrapped (both warn-once) — it can't accept IPA.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 struct FluidKokoroSink<'a> {
     synth: &'a dyn Fn(&str, f32) -> anyhow::Result<Vec<f32>>,
     voice_id: &'a str,
 }
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 impl FluidKokoroSink<'_> {
     /// A run past the frame cap is chunked like plain text and rejoined, so a
     /// slow `<prosody rate>` cannot fail the utterance (T4-1).
@@ -664,11 +632,7 @@ impl FluidKokoroSink<'_> {
     }
 }
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 impl SegmentSink for FluidKokoroSink<'_> {
     fn sample_rate(&mut self) -> Result<u32, TtsError> {
         Ok(super::fluid_kokoro::SAMPLE_RATE)
@@ -883,7 +847,7 @@ fn encode_or_fail(
 /// the #245 plain-IEEE-float guarantee that `tts::wav` exists to hold.
 // `test` joins the gate so the #826 regression test runs in the default
 // `--features tts` lane, not only under the darwin sidecar features.
-#[cfg(any(test, all(feature = "system_tts", target_os = "macos")))]
+#[cfg(any(test, system_tts))]
 fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsError> {
     let reader = hound::WavReader::new(std::io::Cursor::new(wav_bytes))
         .map_err(|e| TtsError::SynthesisFailed(format!("sidecar wav decode: {e}")))?;
@@ -896,7 +860,7 @@ fn transcode_to(wav_bytes: &[u8], format: OutputFormat) -> Result<Vec<u8>, TtsEr
 /// Mix WAV samples to mono f32. Generic because AVSpeech renders float32 at
 /// whatever rate the chosen system voice runs at, and the tests feed it 16-bit
 /// PCM.
-#[cfg(any(test, all(feature = "system_tts", target_os = "macos")))]
+#[cfg(any(test, system_tts))]
 fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow::Result<Vec<f32>> {
     let spec = reader.spec();
     let channels = spec.channels as usize;
@@ -921,11 +885,7 @@ fn wav_to_mono_f32<R: std::io::Read>(mut reader: hound::WavReader<R>) -> anyhow:
 
 #[cfg(test)]
 mod tests {
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     mod fluid_chunk_gate {
         use crate::tts::say::fluid_plain_chunks;
 
@@ -1675,12 +1635,7 @@ mod tests {
 /// character, so the whole table runs without the FluidAudio model. Gated on
 /// the same triple as the walker; runs locally on darwin-arm64 and is
 /// compile-checked by CI's macos `system_kokoro` clippy step.
-#[cfg(all(
-    test,
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(test, system_kokoro, target_arch = "aarch64"))]
 mod fluid_kokoro_ssml_tests {
     use super::*;
     use crate::tts::ssml::Segment;

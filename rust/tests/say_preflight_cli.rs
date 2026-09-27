@@ -268,7 +268,7 @@ fn a_refused_run_neither_truncates_nor_creates_the_out_file() {
     );
 }
 
-#[cfg(all(feature = "system_tts", target_os = "macos"))]
+#[cfg(system_tts)]
 #[test]
 fn a_macos_voice_this_mac_has_not_downloaded_exits_1_as_voice_unknown() {
     let tmp = tempfile::tempdir().unwrap();

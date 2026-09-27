@@ -110,11 +110,7 @@ pub(crate) fn resolve_output_format(
 }
 
 fn list_kokoro_voices(_cache: &std::path::Path) -> Vec<String> {
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     {
         return tts::fluid_kokoro::available_voice_ids();
     }
@@ -276,11 +272,7 @@ fn engine_choice<'a>(
             voice_path,
             speed: rate,
         },
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(system_kokoro, target_arch = "aarch64"))]
         tts::voices::ResolvedVoice::FluidKokoro { voice_id, .. } => {
             tts::EngineChoice::FluidKokoro {
                 voice_id,
@@ -296,7 +288,7 @@ fn engine_choice<'a>(
             speaker_id: *speaker_id,
             speed: rate,
         },
-        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        #[cfg(system_tts)]
         tts::voices::ResolvedVoice::AVSpeech { voice_id } => tts::EngineChoice::AVSpeech {
             voice_id,
             speed: rate,
@@ -408,7 +400,7 @@ pub fn run(a: SayArgs) -> i32 {
         // macos-* voices live in the OS, not the cache — enumerate them via
         // the AVSpeech helper (#141). Best-effort: if the helper is absent or
         // errors out, we still show Kokoro/Vosk voices.
-        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        #[cfg(system_tts)]
         voice_ids.extend(tts::avspeech::list_voices(None));
         voice_ids.sort();
         // Stdout is the list: a sentence there is a voice id to the MCP list_voices tool (#1168).

@@ -1,4 +1,6 @@
 fn main() {
+    emit_cfg_aliases();
+
     // The `coreml`, `system_kokoro`, and `system_diarize` features all pull in
     // fluidaudio-rs, which links against the macOS Swift runtime
     // (libswift_Concurrency.dylib and friends). Without an explicit rpath the
@@ -107,4 +109,26 @@ fn build_text_lang_helper() {
         "cargo:rustc-env=KESHA_TEXTLANG_HELPER={}",
         out_bin.display()
     );
+}
+
+/// Source gates on these instead of spelling `all(feature = "...", target_os = "macos")`; read from
+/// `CARGO_CFG_TARGET_OS`, because `#[cfg(target_os)]` in a build script describes the host.
+fn emit_cfg_aliases() {
+    let feature =
+        |name: &str| std::env::var_os(format!("CARGO_FEATURE_{}", name.to_uppercase())).is_some();
+    let macos = std::env::var("CARGO_CFG_TARGET_OS").is_ok_and(|os| os == "macos");
+    let aliases = [
+        ("portable", feature("onnx") && !feature("coreml")),
+        ("darwin_native", macos && feature("coreml")),
+        ("system_tts", macos && feature("system_tts")),
+        ("system_kokoro", macos && feature("system_kokoro")),
+        ("system_diarize", macos && feature("system_diarize")),
+        ("system_text_lang", macos && feature("system_text_lang")),
+    ];
+    for (name, on) in aliases {
+        println!("cargo:rustc-check-cfg=cfg({name})");
+        if on {
+            println!("cargo:rustc-cfg={name}");
+        }
+    }
 }

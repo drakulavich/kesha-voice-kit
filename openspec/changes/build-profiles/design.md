@@ -1,6 +1,6 @@
 ## Context
 
-`rust/Cargo.toml` `[features]`: `default = ["onnx", "tts"]`, `coreml = ["dep:fluidaudio-rs"]`, `tts = [...]`, `system_tts = ["tts"]`, `system_kokoro = ["tts", "dep:fluidaudio-rs"]`, `system_diarize = ["dep:fluidaudio-rs"]`, `system_text_lang = []`. `build-engine.yml:99-111` ships three rows over two feature sets. `rust/src` carries 454 `cfg` attributes over 33 distinct predicates (`grep -rhoE '#\[cfg\([^]]+\)\]' rust/src | sort -u`); 58 `cfg` sites under `rust/src` and `rust/tests` spell a feature together with `target_os = "macos"`.
+`rust/Cargo.toml` `[features]`: `default = ["onnx", "tts"]`, `coreml = ["dep:fluidaudio-rs"]`, `tts = [...]`, `system_tts = ["tts"]`, `system_kokoro = ["tts", "dep:fluidaudio-rs"]`, `system_diarize = ["dep:fluidaudio-rs"]`, `system_text_lang = []`. `build-engine.yml:99-111` ships three rows over two feature sets. `rust/src` carries 454 `cfg` attributes over 33 distinct predicates (`grep -rhoE '#\[cfg\([^]]+\)\]' rust/src | sort -u`); 187 `cfg`/`cfg!`/`cfg_attr` sites under `rust/src` and `rust/tests` spell a feature together with `target_os = "macos"`, most of them the multi-line `all(feature = "system_kokoro", target_os = "macos", target_arch = "aarch64")`.
 
 `describe` already carries `profile` since protocol v4 (#1156), derived inline in `rust/src/protocol/describe.rs::profile` from `feature = "coreml"`.
 
@@ -32,10 +32,11 @@ The granular features are not removed because four non-release combinations need
 | `portable` | feature `onnx` and not `coreml` |
 | `darwin_native` | feature `coreml`, target macOS |
 | `system_tts` | feature `system_tts`, target macOS |
+| `system_kokoro` | feature `system_kokoro`, target macOS |
 | `system_diarize` | feature `system_diarize`, target macOS |
 | `system_text_lang` | feature `system_text_lang`, target macOS |
 
-`system_diarize` and `system_text_lang` join the three aliases first proposed because leaving them would keep the `all(feature, target_os)` spelling at 14 sites. Source uses the alias; a bare `#[cfg(feature = "system_diarize")]` that means "the feature, on any target" stays as it is. `build.rs` itself cannot see its own aliases, so it keeps the raw spelling.
+`system_kokoro`, `system_diarize` and `system_text_lang` join the three aliases first proposed because leaving them would keep the `all(feature, target_os)` spelling at most of the sites. Every feature alias means "the feature, on a macOS target" and nothing more, so `target_arch = "aarch64"` stays explicit where the source had it: `all(system_kokoro, target_arch = "aarch64")`. Source uses the alias; a bare `#[cfg(feature = "system_diarize")]` that means "the feature, on any target" stays as it is. `build.rs` itself cannot see its own aliases, so it keeps the raw spelling.
 
 Measured result: no `#[cfg]` or `cfg!` under `rust/src` or `rust/tests` names a feature together with `target_os = "macos"`, and the distinct-predicate count drops. The first draft's "20 predicates collapse to at most six" counted `test`, `unix`, `feature = "tts"` and the other non-platform predicates too, which no alias touches; it is replaced by the zero-spelling assertion.
 
