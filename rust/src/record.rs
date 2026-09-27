@@ -172,7 +172,7 @@ fn capture_default_input_mono(max_duration: Duration) -> Result<(u32, Vec<f32>)>
 }
 
 /// What a live session produced, and whether a signal ended it.
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(darwin_native)]
 pub struct LiveOutcome {
     pub transcript: String,
     /// The signal that stopped the session, when one did. The transcript is
@@ -187,7 +187,7 @@ pub struct LiveOutcome {
 ///
 /// Feeding happens here, on the thread draining the sample channel — never in
 /// the CPAL callback, which stays a convert-and-send as in the WAV path.
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(darwin_native)]
 pub fn record_default_input_live(
     max_duration: Duration,
     endpoint: Option<crate::vad::EndpointConfig>,
@@ -262,7 +262,7 @@ pub fn record_default_input_live(
     })
 }
 
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(darwin_native)]
 fn load_live_endpoint(cfg: crate::vad::EndpointConfig) -> Result<crate::vad::StreamingVad> {
     let vad_dir = crate::models::model_dir(crate::models::ModelKind::Vad)?;
     if !crate::models::is_cached_in(crate::models::ModelKind::Vad, &vad_dir) {
@@ -285,7 +285,7 @@ fn load_live_endpoint(cfg: crate::vad::EndpointConfig) -> Result<crate::vad::Str
 /// the write to the closed terminal fail with EIO. A pipe consumer that exits
 /// early fails the same way with EPIPE. Settling on `finish` alone deleted the
 /// audio in exactly those cases (#962).
-#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+#[cfg(any(darwin_native, test))]
 fn deliver_and_settle(
     finished: Result<String>,
     interrupted_by: Option<i32>,
@@ -302,7 +302,7 @@ fn deliver_and_settle(
 
 /// A missing spill must never cost the session it exists to protect, so a
 /// failure here is loud but not fatal.
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(darwin_native)]
 fn open_recovery_spill(sample_rate: u32) -> Option<spill::SpillWav> {
     let dir = match spill::recovery_dir() {
         Ok(dir) => dir,
@@ -336,7 +336,7 @@ fn open_recovery_spill(sample_rate: u32) -> Option<spill::SpillWav> {
     }
 }
 
-#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+#[cfg(any(darwin_native, test))]
 fn settle_recovery_spill(spill: Option<spill::SpillWav>, ended_normally: bool) {
     let Some(mut spill) = spill else { return };
     if ended_normally {
@@ -359,12 +359,12 @@ fn settle_recovery_spill(spill: Option<spill::SpillWav>, ended_normally: bool) {
 }
 
 /// Each elapsed second reaches the consumer as one event, whatever stderr is (#1164).
-#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+#[cfg(any(darwin_native, test))]
 struct ListenTicker {
     announced: u64,
 }
 
-#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+#[cfg(any(darwin_native, test))]
 impl ListenTicker {
     fn new() -> Self {
         Self { announced: 0 }
@@ -380,7 +380,7 @@ impl ListenTicker {
 }
 
 /// `mono` is per-call scratch, not accumulated audio as in the WAV path.
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(darwin_native)]
 struct LiveFeed {
     session: crate::streaming_asr::StreamingAsrSession,
     mono: Vec<f32>,
@@ -389,7 +389,7 @@ struct LiveFeed {
     endpoint: Option<crate::vad::StreamingVad>,
 }
 
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(darwin_native)]
 impl LiveFeed {
     fn feed(&mut self, interleaved: &[f32]) -> Result<bool> {
         let Self {
@@ -863,7 +863,7 @@ fn write_plain_mono_float_wav(
 /// It protects against process death, where the page cache outlives the writer.
 /// Nothing here `fsync`s, so a machine that loses power can persist the rewritten
 /// sizes ahead of the data they describe.
-#[cfg(any(all(feature = "coreml", target_os = "macos"), test))]
+#[cfg(any(darwin_native, test))]
 mod spill {
     use std::io::{Seek, SeekFrom, Write};
     use std::path::{Path, PathBuf};
@@ -991,7 +991,7 @@ mod spill {
 /// Catches SIGINT/SIGTERM so `--live` can finish the session it is holding
 /// rather than die with the transcript still in memory (#962). Raycast (#947)
 /// cancels with exactly this ladder.
-#[cfg(any(all(feature = "coreml", target_os = "macos"), all(unix, test)))]
+#[cfg(any(darwin_native, all(unix, test)))]
 mod interrupt {
     use std::sync::atomic::{AtomicI32, Ordering};
 
@@ -1463,7 +1463,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(feature = "coreml", target_os = "macos"))]
+    #[cfg(darwin_native)]
     fn live_endpointing_requires_an_explicitly_installed_vad_model() {
         let _lock = crate::util::test_env::lock();
         let cache = tempfile::tempdir().unwrap();

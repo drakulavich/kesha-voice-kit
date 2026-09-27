@@ -54,7 +54,7 @@ impl Script {
     }
 }
 
-#[cfg(all(feature = "system_tts", target_os = "macos"))]
+#[cfg(system_tts)]
 impl Script {
     /// BCP-47 language subtags whose AVSpeech voices write in this script.
     fn locales(self) -> &'static [&'static str] {
@@ -239,7 +239,7 @@ fn alternatives(script: Script) -> Vec<String> {
     out
 }
 
-#[cfg(all(feature = "system_tts", target_os = "macos"))]
+#[cfg(system_tts)]
 fn system_voices(script: Script) -> Vec<String> {
     let installed = crate::tts::avspeech::list_voices(None);
     script
@@ -256,7 +256,7 @@ fn system_voices(script: Script) -> Vec<String> {
         .collect()
 }
 
-#[cfg(not(all(feature = "system_tts", target_os = "macos")))]
+#[cfg(not(system_tts))]
 fn system_voices(_script: Script) -> Vec<String> {
     Vec::new()
 }

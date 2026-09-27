@@ -52,7 +52,7 @@ just worktree-rm <slug>
 
 - There is no local pre-push gate: push, then gate on CI for the full head SHA. Run locally only what your change needs (`bun run lint`, the tests you touched, `just rust-test`).
 - Always nextest for the suite — the only sanctioned plain `cargo test` calls are `--doc` and the pin-bump's `models::manifest`; always `--all-targets`, or CI catches `#[cfg(test)]` dead code you didn't.
-- `just rust-test` builds the default features only: the darwin-gated paths (`system_kokoro` / `system_diarize` / `system_text_lang`, anything fluidaudio-rs-adjacent) compile only under `just verify-darwin-full`, which `rust-test.yml` runs.
+- `just rust-test` builds the default `portable` profile only: the darwin-gated paths (`system_kokoro` / `system_diarize` / `system_text_lang`, anything fluidaudio-rs-adjacent) compile only under `just verify-darwin-full`, which lints the `darwin` profile and which `rust-test.yml` runs.
 
 Rust toolchain quirks (the pinned `rust-toolchain.toml`, rustfmt, libclang) and language gotchas: `docs/runbooks/rust-gotchas.md`.
 
@@ -141,7 +141,7 @@ A Nix flake is an alternate reproducible build path (`nix run .#kesha`, `nix bui
 
 ## Non-obvious wiring
 
-- Cargo features: `default = ["onnx", "tts"]`; `ort`/`ndarray` are unconditional (lang_id always needs them), so the `onnx` feature only gates `backend/onnx.rs`. `coreml = ["dep:fluidaudio-rs"]` is mutually exclusive with it at module level.
+- Cargo features: releases build one of two profiles, `portable = ["onnx", "tts"]` (the default) or `darwin` (`coreml` plus every `system_*` feature). `ort`/`ndarray` are unconditional (lang_id always needs them), so the `onnx` feature only gates `backend/onnx.rs`. `coreml = ["dep:fluidaudio-rs"]` is mutually exclusive with it at module level. Source gates on the cfg aliases `rust/build.rs` emits (`darwin_native`, `system_tts`, `system_kokoro`, …: the feature on a macOS target), never on `all(feature = "…", target_os = "macos")`.
 - Prefer `--toon` over `--json` when piping multi-file results into an LLM (30-60% fewer tokens, round-trips to the same `TranscribeResult[]`). The two are mutually exclusive (exit 2).
 - The public API is whatever `src/lib.ts` exports: `transcribe`, `say`, `install`, `capabilities`, `toToon`, `hasErrorRecords`, `KeshaError` and their types. `install()` is the only export that downloads; every rejection is a `KeshaError`. Neither the CLI nor the MCP server imports `src/lib.ts`, so a change there cannot alter their output.
 

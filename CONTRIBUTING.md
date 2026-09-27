@@ -90,14 +90,15 @@ Rust engine work happens in `rust/`:
 
 ```bash
 cd rust
-cargo nextest run --no-default-features --features onnx,tts --lib
-cargo clippy --all-targets --no-default-features --features onnx,tts -- -D warnings
+cargo nextest run --lib
+cargo clippy --all-targets -- -D warnings
 cargo fmt --check
 ```
 
-`coreml` and `system_tts` are macOS-only features — `cargo check
---no-default-features --features coreml,tts,system_tts` runs on the
-darwin-arm64 CI job.
+These build the default `portable` profile (`onnx,tts`), which is what the
+Linux and Windows releases ship. The darwin-arm64 release ships the `darwin`
+profile; lint it on Apple Silicon with Xcode Command Line Tools installed via
+`just verify-darwin-full`, which the macOS lane of `rust-test.yml` also runs.
 
 ## Project structure
 

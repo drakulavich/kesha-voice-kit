@@ -33,36 +33,20 @@ pub mod capabilities;
 pub mod cli;
 pub mod debug;
 pub mod errors;
-#[cfg(all(
-    target_os = "macos",
-    target_arch = "aarch64",
-    feature = "system_kokoro"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 mod fluid_stderr;
-#[cfg(all(
-    target_os = "macos",
-    any(
-        feature = "coreml",
-        feature = "system_diarize",
-        feature = "system_kokoro"
-    )
-))]
+#[cfg(any(darwin_native, system_diarize, system_kokoro))]
 mod fluid_stdout;
 pub mod lang_id;
 pub mod models;
-#[cfg(any(
-    test,
-    all(
-        target_os = "macos",
-        any(feature = "system_tts", feature = "system_text_lang")
-    )
-))]
+pub mod platform;
+#[cfg(any(test, system_tts, system_text_lang))]
 mod process_tree;
 pub mod protocol;
 pub mod record;
 #[cfg(feature = "tts")]
 pub mod say_loop;
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(darwin_native)]
 pub mod streaming_asr;
 pub mod text_lang;
 pub mod transcribe;

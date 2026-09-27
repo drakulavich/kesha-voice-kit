@@ -76,7 +76,7 @@ pub fn run(
     Ok(())
 }
 
-#[cfg(all(feature = "coreml", target_os = "macos"))]
+#[cfg(darwin_native)]
 fn run_live(max_duration: Duration, endpoint: Option<crate::vad::EndpointConfig>) -> Result<()> {
     // CoreML prints on a background queue — between streaming feeds, and again at
     // model teardown after the session drops — which a scoped guard cannot cover.
@@ -100,7 +100,7 @@ fn run_live(max_duration: Duration, endpoint: Option<crate::vad::EndpointConfig>
     Ok(())
 }
 
-#[cfg(not(all(feature = "coreml", target_os = "macos")))]
+#[cfg(not(darwin_native))]
 fn run_live(_max_duration: Duration, _endpoint: Option<crate::vad::EndpointConfig>) -> Result<()> {
     use crate::coded_bail;
     use crate::errors::ErrorCode;

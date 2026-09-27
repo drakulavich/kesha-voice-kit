@@ -8,11 +8,7 @@ use std::time::Duration;
 use super::manifest::*;
 use super::paths::*;
 use super::progress::{reader_wanted, whole_file_total, InFlight, ProgressReader};
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 use super::staging::{stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets};
 use crate::coded_bail;
 use crate::errors::{code_of, CodedContext, CodedError, ErrorCode};
@@ -217,11 +213,7 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
         return Ok(());
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     {
         let cache = cache_dir()?;
         let mut manifest = kokoro_manifest_for(langs);
@@ -238,11 +230,7 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
     // male `am_michael` default — so those resolve local-first instead of
     // 404ing against the ANE bundle (#475). Vosk-RU still lands under
     // KESHA_CACHE_DIR.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     {
         if langs.contains(&"ru") {
             download_manifest(VOSK_RU_FILES, no_cache)?;
@@ -1287,14 +1275,7 @@ mod characterization_tests {
         }
     }
 
-    #[cfg(all(
-        feature = "tts",
-        not(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))
-    ))]
+    #[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
     #[test]
     fn multilang_voice_returns_expected_packs() {
         // es → em_alex.bin (male ✓)
@@ -1314,11 +1295,7 @@ mod characterization_tests {
         assert!(multilang_voice("de").is_none());
     }
 
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn ane_voice_lang_maps_prefixes_correctly() {
         assert_eq!(ane_voice_lang("am_michael.bin"), Some("en"));

@@ -1,74 +1,20 @@
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 use super::download::parallel_download;
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 use super::manifest::*;
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 use super::paths::*;
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 use crate::protocol::events;
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 use anyhow::Context;
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 use anyhow::Result;
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 use std::fs;
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 use std::io;
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 use std::path::{Path, PathBuf};
 
 /// Download + SHA-verify every advertised Kokoro voice pack directly into
@@ -77,11 +23,7 @@ use std::path::{Path, PathBuf};
 /// pinned hash short-circuits the network round-trip, identical to
 /// [`download_verified`]. Runs only on the `system_kokoro` darwin path; the
 /// ONNX Kokoro path keeps using `kokoro_manifest_for()` under `KESHA_CACHE_DIR`.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn stage_ane_kokoro_voices(langs: &[&str], no_cache: bool) -> Result<()> {
     let manifest = ane_voices_for(langs);
     if manifest.is_empty() {
@@ -95,11 +37,7 @@ pub fn stage_ane_kokoro_voices(langs: &[&str], no_cache: bool) -> Result<()> {
 
 /// Languages served by the English KokoroAne variant. `zh` has its own bundle
 /// and `ru` never reaches Kokoro on this build (Vosk / AVSpeech).
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 const ANE_ENGLISH_VARIANT_LANGS: &[&str] = &["en", "es", "fr", "hi", "it", "ja", "pt"];
 
 /// Stage the assets FluidAudio would otherwise fetch at first synthesis (#823).
@@ -112,11 +50,7 @@ const ANE_ENGLISH_VARIANT_LANGS: &[&str] = &["en", "es", "fr", "hi", "it", "ja",
 /// no root can move (see [`fluidaudio_kokoro_g2p_dir`]).
 ///
 /// Idempotent and hash-verified on every run, like [`stage_ane_kokoro_voices`].
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<()> {
     if langs.iter().any(|l| ANE_ENGLISH_VARIANT_LANGS.contains(l)) {
         stage_into(&fluidaudio_ane_kokoro_dir()?, ANE_EN_FILES, no_cache)?;
@@ -142,11 +76,7 @@ pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<
 ///
 /// The required set is derived from the staging manifests themselves, so a
 /// manifest change cannot leave the check behind.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn missing_kokoro_assets(lang: &str, voice: &str) -> Vec<PathBuf> {
     // The empty returns below ("nothing missing") are safe ONLY because the same
     // null-home that unresolves these dirs also unresolves fluidaudio_kokoro_location,
@@ -170,11 +100,7 @@ pub fn missing_kokoro_assets(lang: &str, voice: &str) -> Vec<PathBuf> {
 /// [`missing_kokoro_assets`] against explicit directories. `bundle_dir` is the
 /// variant's own bundle (`ANE` or `ANE-zh`); `g2p_dir` is where that variant's
 /// text frontend reads from, which for English is a path no models-root can move.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 fn missing_kokoro_assets_in(
     bundle_dir: &Path,
     g2p_dir: &Path,
@@ -202,11 +128,7 @@ fn missing_kokoro_assets_in(
         .collect()
 }
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 fn stage_into(dir: &Path, manifest: &'static [ModelFile], no_cache: bool) -> Result<()> {
     fs::create_dir_all(dir)
         .with_context(|| format!("create FluidAudio cache dir {}", dir.display()))?;
@@ -229,14 +151,7 @@ fn stage_into(dir: &Path, manifest: &'static [ModelFile], no_cache: bool) -> Res
 /// same required bundle set, and one extension-less level below each so the
 /// Mandarin variant's nested `g2pw/g2pw.mlmodelc` is covered. `.mlpackage`
 /// sources, `.bin` voice packs and `vocab.json` are never candidates.
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 fn incomplete_ane_bundles_in(kokoro_dir: &Path) -> Result<Vec<PathBuf>> {
     let mut found = Vec::new();
     for variant in read_dir_paths(kokoro_dir)? {
@@ -251,14 +166,7 @@ fn incomplete_ane_bundles_in(kokoro_dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(found)
 }
 
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 fn collect_incomplete_bundles(dir: &Path, depth: u32, found: &mut Vec<PathBuf>) -> Result<()> {
     for path in read_dir_paths(dir)? {
         if !path.is_dir() {
@@ -275,14 +183,7 @@ fn collect_incomplete_bundles(dir: &Path, depth: u32, found: &mut Vec<PathBuf>) 
     Ok(())
 }
 
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 fn read_dir_paths(dir: &Path) -> Result<Vec<PathBuf>> {
     let entries = match fs::read_dir(dir) {
         Ok(e) => e,
@@ -302,14 +203,7 @@ fn read_dir_paths(dir: &Path) -> Result<Vec<PathBuf>> {
 /// Delete the bundles [`incomplete_ane_bundles_in`] finds so FluidAudio
 /// refetches them instead of failing to load. Filesystem-only: it never
 /// downloads, so every `kesha install` can run it (#709).
-#[cfg(any(
-    all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ),
-    test
-))]
+#[cfg(any(all(system_kokoro, target_arch = "aarch64"), test))]
 fn purge_incomplete_ane_bundles_in(kokoro_dir: &Path) -> Result<()> {
     for path in incomplete_ane_bundles_in(kokoro_dir)? {
         let name = path.file_name().unwrap_or_default().to_string_lossy();
@@ -323,11 +217,7 @@ fn purge_incomplete_ane_bundles_in(kokoro_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn purge_incomplete_ane_bundles() -> Result<()> {
     purge_incomplete_ane_bundles_in(&fluidaudio_kokoro_cache_dir()?)
 }
@@ -335,11 +225,7 @@ pub fn purge_incomplete_ane_bundles() -> Result<()> {
 /// Names of the incomplete bundles currently in the cache, for the hint
 /// `tts::fluid_kokoro` attaches to a Kokoro init failure. Best-effort: it runs
 /// while another error is being reported, so a scan failure must not mask it.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn incomplete_ane_bundle_names() -> Vec<String> {
     let Ok(dir) = fluidaudio_kokoro_cache_dir() else {
         return Vec::new();
@@ -440,20 +326,12 @@ mod ane_bundle_repair_tests {
 
 #[cfg(all(test, feature = "tts"))]
 mod tts_tests {
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     use super::*;
 
     /// Lay down every file `lang`/`voice` needs under `bundle`/`g2p`, so a test
     /// can then take exactly one away.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     fn stage_fixture(bundle: &Path, g2p: &Path, lang: &str, voice: &str) {
         let (files, g2p_files, voice_rel) = if lang == "zh" {
             (
@@ -479,11 +357,7 @@ mod tts_tests {
 
     /// A complete install reports nothing missing — otherwise the preflight
     /// would refuse to synthesize on a healthy machine.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn a_complete_install_is_missing_nothing() {
         for (lang, voice) in [("en-us", "am_michael"), ("zh", "zm_050")] {
@@ -502,11 +376,7 @@ mod tts_tests {
     /// `em_alex.bin` unstaged, `--list-voices` still advertises it, and upstream's
     /// `ensureVoicePack` is on the un-flagged `AssetDownloader` path — so without
     /// a local check `kesha say --voice es-em_alex` downloads mid-synthesis.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn an_unstaged_voice_pack_is_reported_before_anything_can_fetch_it() {
         let tmp = tempfile::tempdir().unwrap();
@@ -525,11 +395,7 @@ mod tts_tests {
     /// Mandarin packs live under `voices/`, not at the bundle root, so checking
     /// the flat English path would report a present pack as missing and a
     /// missing one as present.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn mandarin_voice_packs_are_checked_under_their_voices_subdir() {
         let tmp = tempfile::tempdir().unwrap();
@@ -543,11 +409,7 @@ mod tts_tests {
 
     /// A half-finished install is caught the same way, whichever half is short —
     /// including the G2P assets, which sit in a different directory entirely.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn a_partial_install_names_every_gap_wherever_it_lives() {
         let tmp = tempfile::tempdir().unwrap();
@@ -569,11 +431,7 @@ mod tts_tests {
     /// Staging follows the language the user asked for: an English-only install
     /// never pays for the 250 MB Mandarin bundle, and a Russian-only install
     /// touches neither (Vosk / AVSpeech serve `ru` on this build).
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn staging_is_scoped_to_the_requested_languages() {
         let english = |langs: &[&str]| langs.iter().any(|l| ANE_ENGLISH_VARIANT_LANGS.contains(l));

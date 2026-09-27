@@ -97,13 +97,11 @@ vad-bench:
 release-tag tag notes mode="push": root-checkout-only
     bun scripts/release-tag.ts --tag "$1" --notes "$2" --mode "$3"
 
-# The default nextest run builds only onnx,tts, so system_kokoro / system_diarize /
+# The default nextest run builds the portable profile, so system_kokoro / system_diarize /
 # system_text_lang never compile locally; rust-test.yml calls this recipe rather than repeat the set.
-# Lint the full darwin release feature set (macOS 14+ arm64)
+# Lint the darwin release profile (macOS 14+ arm64)
 verify-darwin-full:
-    cd rust && cargo clippy --all-targets \
-        --features coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang \
-        --no-default-features -- -D warnings
+    cd rust && cargo clippy --all-targets --no-default-features --features darwin -- -D warnings
 
 # Run smoke tests against fixtures; just TTS=1 smoke-test covers the TTS fixtures too
 smoke-test:

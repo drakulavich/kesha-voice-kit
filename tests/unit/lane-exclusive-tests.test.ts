@@ -36,7 +36,8 @@ describe("a lane-exclusive test cannot run nowhere", () => {
     const lib = read("rust/src/lib.rs");
     // If the gating ever widens, this file's premise is gone and its list must be revisited.
     expect(lib).toContain("mod fluid_stdout;");
-    expect(/#\[cfg\(all\(\s*target_os = "macos",[\s\S]{0,200}?mod fluid_stdout;/.test(lib)).toBe(true);
+    // The aliases are macOS-only features (rust/build.rs::emit_cfg_aliases); none is in the default `portable` profile.
+    expect(/#\[cfg\(any\(darwin_native, system_diarize, system_kokoro\)\)\]\s*mod fluid_stdout;/.test(lib)).toBe(true);
   });
 
   test("every test in a lane-exclusive module is selected by the lane", () => {

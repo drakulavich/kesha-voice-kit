@@ -130,19 +130,11 @@ pub(super) const LANG_ID_FILES: &[ModelFile] = &[
 /// `macos-*` AVSpeech is NOT listed — it needs no install.
 #[cfg(feature = "tts")]
 pub fn tts_languages() -> Vec<&'static str> {
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     {
         vec!["en", "es", "fr", "hi", "it", "ja", "pt", "zh", "ru"]
     }
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     {
         vec!["en", "es", "fr", "it", "pt", "ru"]
     }
@@ -186,14 +178,7 @@ pub fn validate_tts_langs(langs: &[&str]) -> Result<()> {
 ///
 /// A GitHub release asset has no immutable URL form to pin, so the sha256 pinned below is
 /// the only guard against a re-upload under the same tag (#1099).
-#[cfg(all(
-    feature = "tts",
-    not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))
-))]
+#[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
 const KOKORO_GRAPH: ModelFile = ModelFile {
     rel_path: "models/kokoro-82m/model.onnx",
     url: "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
@@ -204,14 +189,7 @@ const KOKORO_GRAPH: ModelFile = ModelFile {
 /// Switched from `af_heart` (female) in #210.
 /// One pinned ONNX-path Kokoro voice under `models/kokoro-82m/voices/`;
 /// same drift-proofing as `ane_kokoro_voice!`.
-#[cfg(all(
-    feature = "tts",
-    not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))
-))]
+#[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
 macro_rules! kokoro_voice {
     ($name:literal, $sha:literal) => {
         ModelFile {
@@ -226,14 +204,7 @@ macro_rules! kokoro_voice {
     };
 }
 
-#[cfg(all(
-    feature = "tts",
-    not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))
-))]
+#[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
 const KOKORO_EN_VOICE: ModelFile = kokoro_voice!(
     "am_michael",
     "1d1f21dd8da39c30705cd4c75d039d265e9bc4a2a93ed09bc9e1b1225eb95ba1"
@@ -242,14 +213,7 @@ const KOKORO_EN_VOICE: ModelFile = kokoro_voice!(
 /// klebster CharsiuG2P byt5-tiny ONNX export (CC-BY 4.0).
 /// Pinned hashes from #185 (see NOTICES.md for attribution).
 /// These 3 files enable multilingual G2P for es/fr/it/pt voices.
-#[cfg(all(
-    feature = "tts",
-    not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))
-))]
+#[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
 const G2P_CHARSIU_FILES: &[ModelFile] = &[
     ModelFile {
         rel_path: "models/g2p/byt5-tiny/encoder_model.onnx",
@@ -273,14 +237,7 @@ const G2P_CHARSIU_FILES: &[ModelFile] = &[
 /// em_alex (es, male), im_nicola (it, male), pm_alex (pt, male)
 /// satisfy the brand male-default rule. ff_siwis (fr, female) is
 /// the sole French voice Kokoro v1.0 ships — see voices.rs comment.
-#[cfg(all(
-    feature = "tts",
-    not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))
-))]
+#[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
 pub(super) fn multilang_voice(lang: &str) -> Option<ModelFile> {
     Some(match lang {
         "es" => kokoro_voice!(
@@ -309,14 +266,7 @@ pub(super) fn multilang_voice(lang: &str) -> Option<ModelFile> {
 ///
 /// An English-only install skips the ~100 MB CharsiuG2P pack and a Russian-only
 /// install skips Kokoro entirely. Consumed by [`super::download::download_tts`].
-#[cfg(all(
-    feature = "tts",
-    not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))
-))]
+#[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
 pub(super) fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
     const KOKORO_LANGS: [&str; 5] = ["en", "es", "fr", "it", "pt"];
     const MULTILANG: [&str; 4] = ["es", "fr", "it", "pt"];
@@ -355,11 +305,7 @@ pub(super) fn kokoro_manifest_for(langs: &[&str]) -> Vec<ModelFile> {
 /// upstream rehost becomes a deliberate PR to bump (CLAUDE.md MODEL HASHES).
 /// One pinned ANE Kokoro voice: rel_path and URL derive from the basename,
 /// so name/path/URL cannot drift — the SHA-256 stays the only per-entry fact.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 macro_rules! ane_kokoro_voice {
     ($name:literal, $sha:literal) => {
         ModelFile {
@@ -374,11 +320,7 @@ macro_rules! ane_kokoro_voice {
     };
 }
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub(super) const ANE_KOKORO_VOICES: &[ModelFile] = &[
     ane_kokoro_voice!(
         "af_alloy",
@@ -509,11 +451,7 @@ pub(super) const ANE_KOKORO_VOICES: &[ModelFile] = &[
 /// upstream becomes a deliberate bump (CLAUDE.md MODEL HASHES ARE PINNED).
 /// `rel_path` doubles as the remote path under each repo prefix, so a name,
 /// path or URL cannot drift independently of the hash.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 macro_rules! ane_en_file {
     ($rel:literal, $sha:literal) => {
         ModelFile {
@@ -535,11 +473,7 @@ macro_rules! ane_en_file {
 /// whole repo. Taking it from FluidInference rather than onnx-community also
 /// settles the conflict the old exclusion note guessed at — the two are
 /// byte-identical (sha256 d583ccff…), and this is the authoritative copy.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub(super) const ANE_EN_FILES: &[ModelFile] = &[
     ane_en_file!(
         "KokoroAlbert.mlmodelc/analytics/coremldata.bin",
@@ -691,11 +625,7 @@ pub(super) const ANE_EN_FILES: &[ModelFile] = &[
     ),
 ];
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 macro_rules! kokoro_g2p_file {
     ($rel:literal, $sha:literal) => {
         ModelFile {
@@ -718,11 +648,7 @@ macro_rules! kokoro_g2p_file {
 /// The lexicon is 10 MB of Misaki weak forms — best-effort upstream, a
 /// pronunciation-quality booster rather than a hard dependency, but staging it
 /// is what stops it downloading behind the user's back.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub(super) const KOKORO_G2P_FILES: &[ModelFile] = &[
     kokoro_g2p_file!(
         "G2PEncoder.mlmodelc/analytics/coremldata.bin",
@@ -774,11 +700,7 @@ pub(super) const KOKORO_G2P_FILES: &[ModelFile] = &[
     ),
 ];
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 macro_rules! ane_zh_file {
     ($rel:literal, $sha:literal) => {
         ModelFile {
@@ -804,11 +726,7 @@ macro_rules! ane_zh_file {
 /// entirely under offline mode. Staging an empty directory would satisfy that
 /// check and then be purged by the next `kesha install`, which repairs
 /// `.mlmodelc` bundles missing `model.mil` (#709).
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub(super) const ANE_ZH_FILES: &[ModelFile] = &[
     ane_zh_file!(
         "KokoroAlbert.mlmodelc/analytics/coremldata.bin",
@@ -987,11 +905,7 @@ pub(super) const ANE_ZH_FILES: &[ModelFile] = &[
     ),
 ];
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 macro_rules! ane_zh_asset {
     ($rel:literal, $remote:literal, $sha:literal) => {
         ModelFile {
@@ -1012,11 +926,7 @@ macro_rules! ane_zh_asset {
 /// The jieba HMM tables `ensureMandarinJiebaHmm` also wants are not staged —
 /// upstream first published them at this pin (FluidAudio#919) and kesha does
 /// not stage them yet, so that fetch fails and segmentation falls back to FMM.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub(super) const ANE_ZH_G2P_ASSETS: &[ModelFile] = &[
     ane_zh_asset!(
         "g2p/pinyin_phrases.bin",
@@ -1033,11 +943,7 @@ pub(super) const ANE_ZH_G2P_ASSETS: &[ModelFile] = &[
 /// Map a flat ANE voice-pack basename (`<x><gender>_name.bin`) to its Kokoro
 /// language code. The first character of a Kokoro voice id selects language
 /// (`a`/`b` = English, `e` = Spanish, etc.); the second is the gender prefix.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub(super) fn ane_voice_lang(rel_path: &str) -> Option<&'static str> {
     // Kokoro voice files are `<x><gender>_name.bin`; first char picks language.
     match rel_path.chars().next() {
@@ -1056,11 +962,7 @@ pub(super) fn ane_voice_lang(rel_path: &str) -> Option<&'static str> {
 /// Subset of [`ANE_KOKORO_VOICES`] whose language is in `langs`. Drives the
 /// language-aware ANE staging so an English-only install skips the es/it/pt/…
 /// packs (and a Russian-only install stages nothing here).
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub(super) fn ane_voices_for(langs: &[&str]) -> Vec<&'static ModelFile> {
     ANE_KOKORO_VOICES
         .iter()
@@ -1134,14 +1036,7 @@ mod manifest_tests {
         );
     }
 
-    #[cfg(all(
-        feature = "tts",
-        not(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))
-    ))]
+    #[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
     fn assert_plan_path(plan: &serde_json::Value, key: &str, file: &ModelFile) {
         let plan_path = plan[key]["relPath"]
             .as_str()
@@ -1168,11 +1063,7 @@ mod manifest_tests {
         #[cfg(feature = "tts")]
         assert_plan_paths(&plan, "voskRu", VOSK_RU_FILES);
 
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(system_kokoro, target_arch = "aarch64"))]
         {
             assert_plan_paths(&plan, "aneEn", ANE_EN_FILES);
             assert_plan_paths(&plan, "kokoroG2p", KOKORO_G2P_FILES);
@@ -1181,14 +1072,7 @@ mod manifest_tests {
             assert_plan_paths(&plan, "aneZhG2p", ANE_ZH_G2P_ASSETS);
         }
 
-        #[cfg(all(
-            feature = "tts",
-            not(all(
-                feature = "system_kokoro",
-                target_os = "macos",
-                target_arch = "aarch64"
-            ))
-        ))]
+        #[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
         {
             assert_plan_paths(&plan, "g2pCharsiu", G2P_CHARSIU_FILES);
             assert_plan_path(&plan, "kokoroGraph", &KOKORO_GRAPH);
@@ -1433,14 +1317,7 @@ mod manifest_tests {
         for f in VOSK_RU_FILES {
             assert_pins_immutable_revision(f);
         }
-        #[cfg(all(
-            feature = "tts",
-            not(all(
-                feature = "system_kokoro",
-                target_os = "macos",
-                target_arch = "aarch64"
-            ))
-        ))]
+        #[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
         {
             for f in G2P_CHARSIU_FILES {
                 assert_pins_immutable_revision(f);
@@ -1452,11 +1329,7 @@ mod manifest_tests {
                 );
             }
         }
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(system_kokoro, target_arch = "aarch64"))]
         {
             for f in ANE_KOKORO_VOICES {
                 assert_pins_immutable_revision(f);
@@ -1478,11 +1351,7 @@ mod manifest_tests {
 #[cfg(all(test, feature = "tts"))]
 mod tts_tests {
     use super::*;
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     use std::path::Path;
 
     #[test]
@@ -1507,11 +1376,7 @@ mod tts_tests {
         }
     }
 
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn ane_kokoro_voices_shape_and_male_default() {
         // Pins must stay 64 hex chars on huggingface.co so the mirror rewrite
@@ -1563,11 +1428,7 @@ mod tts_tests {
     /// staging manifests, or offline mode turns a working install into an error
     /// (#823). Names come from upstream's `ModelNames.KokoroAne` /
     /// `ModelNames.G2P`; a pin bump that renames a stage fails here.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn staged_manifests_cover_what_fluidaudio_requires() {
         const CHAIN: [&str; 7] = [
@@ -1637,11 +1498,7 @@ mod tts_tests {
     /// Same pin discipline the rest of the manifest gets: 64 hex chars, on
     /// huggingface.co so `KESHA_MODEL_MIRROR` can rewrite it, and a relative
     /// path that stays inside the directory it is staged into.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn staged_manifests_are_pinned_and_contained() {
         for manifest in [
@@ -1689,22 +1546,14 @@ mod tts_tests {
     fn tts_languages_gates_ane_only_langs() {
         let langs = tts_languages();
         let ane_only = ["hi", "ja", "zh"];
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(system_kokoro, target_arch = "aarch64"))]
         for l in ane_only {
             assert!(
                 langs.contains(&l),
                 "{l} should be present on system_kokoro build"
             );
         }
-        #[cfg(not(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        )))]
+        #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
         for l in ane_only {
             assert!(
                 !langs.contains(&l),
@@ -1713,11 +1562,7 @@ mod tts_tests {
         }
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     #[test]
     fn kokoro_manifest_for_selects_per_language() {
         let ends = |m: &[ModelFile], suffix: &str| m.iter().any(|f| f.rel_path.ends_with(suffix));
@@ -1752,11 +1597,7 @@ mod tts_tests {
         assert!(kokoro_manifest_for(&["ru"]).is_empty());
     }
 
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn ane_voices_for_filters_by_language_prefix() {
         let names = |langs: &[&str]| {
@@ -1783,11 +1624,7 @@ mod tts_tests {
             .unwrap_err()
             .to_string();
         assert!(err.contains("klingon"), "err names the bad code: {err}");
-        #[cfg(not(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        )))]
+        #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
         {
             let err = validate_tts_langs(&["ja"]).unwrap_err().to_string();
             assert!(err.contains("ja"), "ja unavailable on ONNX build: {err}");

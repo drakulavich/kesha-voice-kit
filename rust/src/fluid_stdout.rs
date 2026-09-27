@@ -211,18 +211,12 @@ pub(crate) fn with_silenced_stdout_oneshot<R>(f: impl FnOnce() -> R) -> R {
 /// [`write_stdout`](Self::write_stdout) falls back to the process stdout —
 /// best-effort, never worse than no shield (the teardown noise may leak, but we
 /// never silently swallow the payload).
-#[cfg(all(
-    any(feature = "system_diarize", feature = "coreml"),
-    target_os = "macos"
-))]
+#[cfg(any(system_diarize, darwin_native))]
 pub(crate) struct StdoutShield {
     real_stdout: Option<std::fs::File>,
 }
 
-#[cfg(all(
-    any(feature = "system_diarize", feature = "coreml"),
-    target_os = "macos"
-))]
+#[cfg(any(system_diarize, darwin_native))]
 impl StdoutShield {
     pub(crate) fn new() -> Self {
         use std::os::fd::AsRawFd;
@@ -449,10 +443,7 @@ mod tests {
     /// prints that fire *between* FluidAudio calls and *after* the shield itself
     /// is dropped (CoreML teardown runs on a background queue), while the
     /// payload still reaches the real stdout.
-    #[cfg(all(
-        any(feature = "system_diarize", feature = "coreml"),
-        target_os = "macos"
-    ))]
+    #[cfg(any(system_diarize, darwin_native))]
     #[test]
     fn shield_holds_fd1_through_drop() {
         let mut capture = tempfile::tempfile().expect("capture tempfile");
@@ -484,10 +475,7 @@ mod tests {
     /// test is the entry: `new()` must not swap fd 1 out from under a live scoped
     /// guard. `RestoreFd` puts the real stdout back afterwards — the shield never
     /// does, by design.
-    #[cfg(all(
-        any(feature = "system_diarize", feature = "coreml"),
-        target_os = "macos"
-    ))]
+    #[cfg(any(system_diarize, darwin_native))]
     #[test]
     fn permanent_shield_waits_for_a_live_scoped_guard() {
         use std::sync::atomic::{AtomicBool, Ordering};

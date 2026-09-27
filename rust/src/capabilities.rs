@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 // Mirror runtime gate: system_diarize on Linux has no code path; advertising without it would lie.
-#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+#[cfg(system_diarize)]
 use crate::transcribe::TRANSCRIBE_DIARIZE_FEATURE;
 #[cfg(any(feature = "coreml", feature = "onnx"))]
 use crate::transcribe::TRANSCRIBE_WORDS_FEATURE;
@@ -43,7 +43,7 @@ pub fn get_capabilities() -> Capabilities {
 
     // Mirrors the runtime gate in cli::record::run_live exactly — advertising
     // this where the streaming session does not compile would lie.
-    #[cfg(all(feature = "coreml", target_os = "macos"))]
+    #[cfg(darwin_native)]
     features.extend([
         crate::record::RECORD_LIVE_FEATURE,
         crate::record::RECORD_LIVE_AUTO_STOP_FEATURE,
@@ -61,7 +61,7 @@ pub fn get_capabilities() -> Capabilities {
     #[cfg(feature = "tts")]
     features.push("tts.prosody_rate");
 
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    #[cfg(system_diarize)]
     features.push(TRANSCRIBE_DIARIZE_FEATURE);
 
     // Mirrors `create_backend`: both decoders keep the emission frame of every
@@ -158,7 +158,7 @@ mod caps_tests {
         let advertised = get_capabilities()
             .features
             .contains(&crate::record::RECORD_LIVE_FEATURE);
-        let servable = cfg!(all(feature = "coreml", target_os = "macos"));
+        let servable = cfg!(darwin_native);
         assert_eq!(
             advertised, servable,
             "record.live advertisement diverged from the compiled streaming path"
@@ -170,7 +170,7 @@ mod caps_tests {
         let advertised = get_capabilities()
             .features
             .contains(&crate::record::RECORD_LIVE_AUTO_STOP_FEATURE);
-        let servable = cfg!(all(feature = "coreml", target_os = "macos"));
+        let servable = cfg!(darwin_native);
         assert_eq!(
             advertised, servable,
             "record.live.auto-stop advertisement diverged from the compiled streaming path"

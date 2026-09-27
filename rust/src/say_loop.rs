@@ -201,11 +201,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
             voice_path,
             ..
         } => handle_kokoro(req, state, &model_path, &voice_path, espeak_lang, format),
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(system_kokoro, target_arch = "aarch64"))]
         tts::voices::ResolvedVoice::FluidKokoro { voice_id, .. } => {
             // SSML is handled inside `tts::say` for FluidAudio Kokoro post-#481
             // (prosody rate → model-native speed, break silence stitching). No
@@ -227,7 +223,7 @@ fn handle(req: &LoopRequest, state: &mut LoopState) -> Result<Vec<u8>, String> {
             model_dir,
             speaker_id,
         } => handle_vosk(req, state, &model_dir, speaker_id, format),
-        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        #[cfg(system_tts)]
         tts::voices::ResolvedVoice::AVSpeech { voice_id } => {
             // AVSpeech is a Swift sidecar — no in-process state to cache.
             if req.ssml {

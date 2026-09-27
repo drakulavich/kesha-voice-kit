@@ -25,9 +25,7 @@ job, and no distribution path changes that.
   [programmatic-api](../programmatic-api/spec.md).
 - Publishing the OpenClaw plugin to ClawHub — see
   [openclaw-plugin](../openclaw-plugin/spec.md).
-
 ## Requirements
-
 ### Requirement: Every distribution path delivers the same CLI, built from the CLI package
 
 Each supported distribution path SHALL deliver the CLI package's `bin/kesha.js` entry point and its sources, and SHALL report the same version the CLI package carries. A path MAY compile that entry point into a standalone binary instead of shipping the sources, but no path may deliver a CLI built from anything else.
@@ -214,14 +212,15 @@ The published container image SHALL run the CLI as a non-root user, resolve the 
 
 ### Requirement: The Nix flake is an alternate build path, and never a release gate
 
-The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `x86_64-linux`, and MAY define the CLI pointed at the Engine the same flake built. Only the Engine derivation (`.#kesha-engine`) SHALL be presented as a usable Nix path; the CLI derivation (`.#kesha`) SHALL NOT be documented as a working install method while its dependency derivation's output hash is an unpopulated placeholder. No published artifact SHALL depend on the flake, so a flake that does not build blocks nothing.
+The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `x86_64-linux` from the `portable` profile, adding `system_tts` on darwin so the AVSpeech Sidecar is exercised, and MAY define the CLI pointed at the Engine the same flake built. Only the Engine derivation (`.#kesha-engine`) SHALL be presented as a usable Nix path; the CLI derivation (`.#kesha`) SHALL NOT be documented as a working install method while its dependency derivation's output hash is an unpopulated placeholder. No published artifact SHALL depend on the flake, so a flake that does not build blocks nothing.
 
 #### Scenario: Maks builds the Engine through Nix
 
 - GIVEN Maks has Nix with flakes enabled on Apple Silicon
 - WHEN Maks runs `nix build .#kesha-engine`
-- THEN the Engine is built from source, carrying the Pinned Engine version in
-  a file beside the binary
+- THEN the Engine is built from source from the `portable` profile, carrying the
+  Pinned Engine version in a file beside the binary
+- AND the `say-avspeech` Sidecar is present beside it
 
 #### Scenario: The CLI Nix path is not presented as an install method
 
@@ -239,7 +238,9 @@ The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `
 > `packages.kesha-engine`; `kesha-engine` is built with naersk and records
 > `package.json#keshaEngine.version` into `bin/kesha-engine.version`
 > (`flake.nix::kesha-engine`), and the `kesha` wrapper sets `KESHA_ENGINE_BIN`
-> to it (`flake.nix::kesha`). `flake.nix::keshaNodeModules` has
+> to it (`flake.nix::kesha`). `rustFeatures` in `flake.nix` is `portable,system_tts` on
+> darwin-arm64 and `portable` elsewhere; the comment above it records why the
+> flake cannot build the `darwin` profile (SwiftPM clones offline). `flake.nix::keshaNodeModules` has
 > `outputHash = lib.fakeHash`, and the comment above it states
 > plainly that `packages.default`, `apps.default`, and any `nix run` /
 > `nix profile install .#kesha` invocation fail until it is populated — so the

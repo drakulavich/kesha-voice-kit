@@ -27,22 +27,14 @@ pub use paths::{
     model_dir_at, stale_legacy_notice, FluidAudioLocation, ModelKind, FLUIDAUDIO_ROOT_DIR,
     FLUID_ASR_REPO_DIR,
 };
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub use paths::{
     fluidaudio_ane_kokoro_dir, fluidaudio_ane_zh_kokoro_dir, fluidaudio_kokoro_cache_dir,
     fluidaudio_kokoro_g2p_dir, fluidaudio_kokoro_location,
 };
 #[cfg(feature = "coreml")]
 pub use paths::{fluidaudio_asr_dir, fluidaudio_asr_location, fluidaudio_asr_ready};
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub use staging::{
     incomplete_ane_bundle_names, missing_kokoro_assets, purge_incomplete_ane_bundles,
     stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets,
@@ -58,11 +50,7 @@ pub fn install(no_cache: bool) -> Result<()> {
 
     // Every install repairs the ANE cache, not just `--tts`: a user who already had
     // TTS and only upgrades the engine still carries the incomplete bundle (#709).
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     purge_incomplete_ane_bundles()?;
 
     // Always hash-verify even on cache hits — catches silent corruption (#174).

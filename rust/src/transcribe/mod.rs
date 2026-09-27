@@ -1,4 +1,4 @@
-#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+#[cfg(system_diarize)]
 pub(crate) mod diarize;
 mod itn;
 mod options;
@@ -297,14 +297,14 @@ pub fn transcribe_with_options(
     // container-header read only, no frame scan.
     audio::ensure_audio_track(audio_path)?;
 
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    #[cfg(system_diarize)]
     let diarize_model_path = if speakers_required {
         Some(resolve_diarize_model_path().context("speaker diarization requires a model path")?)
     } else {
         None
     };
 
-    #[cfg(not(all(feature = "system_diarize", target_os = "macos")))]
+    #[cfg(not(system_diarize))]
     if speakers_required {
         anyhow::bail!(
             "speaker diarization is currently darwin-arm64 only.\n\
@@ -338,10 +338,7 @@ pub fn transcribe_with_options(
         duration
     );
 
-    #[cfg_attr(
-        not(all(feature = "system_diarize", target_os = "macos")),
-        allow(unused_mut)
-    )]
+    #[cfg_attr(not(system_diarize), allow(unused_mut))]
     let mut output = match decision {
         VadDecision::Vad => {
             transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
@@ -375,7 +372,7 @@ pub fn transcribe_with_options(
         }
     }?;
 
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    #[cfg(system_diarize)]
     {
         if let Some(model_path) = diarize_model_path {
             let spans = diarize::run(
@@ -1011,7 +1008,7 @@ fn validate_plain_transcribe_safety(
 /// 1. `KESHA_DIARIZE_MODEL_PATH` env var (must point to an existing path).
 /// 2. Default cache location populated by `kesha install --diarize`
 ///    (`~/.cache/kesha/models/diarize/SortformerNvidiaLow_v2.mlpackage`).
-#[cfg(all(feature = "system_diarize", target_os = "macos"))]
+#[cfg(system_diarize)]
 fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
     if let Ok(env_path) = std::env::var("KESHA_DIARIZE_MODEL_PATH") {
         let p = std::path::PathBuf::from(env_path);
@@ -1797,7 +1794,7 @@ mod tests {
         );
     }
 
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    #[cfg(system_diarize)]
     #[test]
     fn transcribe_with_speakers_checks_diarize_model_before_asr_install() {
         let _env_lock = crate::util::test_env::lock();

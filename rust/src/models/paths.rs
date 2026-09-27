@@ -115,11 +115,7 @@ pub fn stale_legacy_notice(
 /// FluidAudio's Kokoro CoreML cache root. Each KokoroAne variant gets its own
 /// subdirectory of bundles here (`ANE` for English/Latin, `ANE-zh` for the
 /// Mandarin variant, and so on per `ModelNames.Repo.subPath`).
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn fluidaudio_kokoro_cache_dir() -> Result<PathBuf> {
     Ok(fluidaudio_kokoro_location()?.dir)
 }
@@ -129,22 +125,14 @@ pub fn fluidaudio_kokoro_cache_dir() -> Result<PathBuf> {
 /// advertised Kokoro catalog (and the male `am_michael` default) resolve without a 404
 /// against the ANE bundle. Follows [`fluidaudio_kokoro_location`], so staging always lands
 /// wherever the bridge is actually pointed.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn fluidaudio_ane_kokoro_dir() -> Result<PathBuf> {
     Ok(fluidaudio_kokoro_cache_dir()?.join("ANE"))
 }
 
 /// FluidAudio's Mandarin (`ANE-zh/`) bundle directory, the Kokoro sibling of
 /// [`fluidaudio_ane_kokoro_dir`].
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn fluidaudio_ane_zh_kokoro_dir() -> Result<PathBuf> {
     Ok(fluidaudio_kokoro_cache_dir()?.join("ANE-zh"))
 }
@@ -156,11 +144,7 @@ pub fn fluidaudio_ane_zh_kokoro_dir() -> Result<PathBuf> {
 /// itself, so a copy anywhere else is invisible to it (fluidaudio-rs 4e488d7,
 /// still true at upstream 0.15.7). Staging elsewhere would leave English
 /// synthesis failing with `G2PModelError.vocabLoadFailed`.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn fluidaudio_kokoro_g2p_dir() -> Result<PathBuf> {
     Ok(require_home_dir()?
         .join(".cache")
@@ -170,11 +154,7 @@ pub fn fluidaudio_kokoro_g2p_dir() -> Result<PathBuf> {
 }
 
 /// Where FluidAudio's Kokoro CoreML bundles live, and the root that puts them there.
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn fluidaudio_kokoro_location() -> Result<FluidAudioLocation> {
     let legacy = legacy_fluidaudio_kokoro_cache_dir()?;
     let staged = dir_has_entries(&legacy);
@@ -183,11 +163,7 @@ pub fn fluidaudio_kokoro_location() -> Result<FluidAudioLocation> {
 
 /// The `.cache/fluidaudio` tree FluidAudio picks on its own. Kept as the read-fallback so an
 /// upgrade never re-fetches the ~800 MB of ANE bundles already sitting here (#688).
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 fn legacy_fluidaudio_kokoro_cache_dir() -> Result<PathBuf> {
     Ok(require_home_dir()?
         .join(".cache")

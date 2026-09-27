@@ -324,7 +324,7 @@ pub fn document() -> Describe {
     Describe {
         protocol_version: 4,
         backend: caps.backend,
-        profile: profile(),
+        profile: crate::platform::PROFILE,
         commands,
         features: caps.features,
         errors,
@@ -333,14 +333,6 @@ pub fn document() -> Describe {
             .map(|&(code, title)| WarnEntry { code, title })
             .collect(),
         tts: caps.tts,
-    }
-}
-
-fn profile() -> &'static str {
-    if cfg!(feature = "coreml") {
-        "darwin"
-    } else {
-        "portable"
     }
 }
 
