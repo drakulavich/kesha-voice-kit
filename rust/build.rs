@@ -111,8 +111,7 @@ fn build_text_lang_helper() {
     );
 }
 
-/// Source gates on these instead of spelling `all(feature = "...", target_os = "macos")`; read from
-/// `CARGO_CFG_TARGET_OS`, because `#[cfg(target_os)]` in a build script describes the host.
+// CARGO_CFG_TARGET_OS, not #[cfg(target_os)]: in a build script the latter describes the host.
 fn emit_cfg_aliases() {
     let feature =
         |name: &str| std::env::var_os(format!("CARGO_FEATURE_{}", name.to_uppercase())).is_some();

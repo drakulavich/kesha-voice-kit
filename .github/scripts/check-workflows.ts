@@ -269,11 +269,7 @@ export function requireNpmPublishAfterPackaging(path: string, document: unknown)
 
 const RELEASE_PROFILES = ["portable", "darwin"];
 
-/**
- * Fails when a build-engine.yml release row names anything but exactly one Cargo profile.
- * Spelling granular features per row is how v1.1.0 shipped without `tts`: a feature added to
- * a bundle reaches every row that names it, a feature added to a hand-written list does not.
- */
+/** Fails a build-engine.yml release row that is not exactly one Cargo profile: hand-listed features are how v1.1.0 shipped without `tts`. */
 export function requireReleaseRowsNameOneProfile(path: string, document: unknown): string[] {
   if (!path.endsWith("build-engine.yml")) return [];
 
