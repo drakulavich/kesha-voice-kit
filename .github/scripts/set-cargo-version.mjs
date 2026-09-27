@@ -34,10 +34,10 @@ export function withCargoVersion(manifest, version) {
   const offset = manifest.slice(start).search(/^\[/m);
   const end = offset === -1 ? manifest.length : start + offset;
   const table = manifest.slice(start, end);
-  const rewritten = table.replace(VERSION_LINE, `$1"${version}"`);
-  if (rewritten === table) {
+  if (!VERSION_LINE.test(table)) {
     throw new Error("[package] has no version line to replace");
   }
+  const rewritten = table.replace(VERSION_LINE, `$1"${version}"`);
 
   return manifest.slice(0, start) + rewritten + manifest.slice(end);
 }

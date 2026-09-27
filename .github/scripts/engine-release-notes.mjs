@@ -11,37 +11,44 @@ import { readTagNotes } from "./tag-notes.mjs";
 
 const REPO = "drakulavich/kesha-voice-kit";
 
-function verifySection(tag) {
+const DRAFT_SMOKE = `
+
+# Before gh release edit --draft=false, require the authenticated install smoke to pass:
+gh workflow run release-install-smoke.yml -R ${REPO} -f tag=TAG -f mode=draft-engine`;
+
+const DRAFT_SMOKE_NOTE = `
+The smoke downloads this draft with GitHub authentication into an isolated cache, checks the
+Linux artifact's version and capabilities, warms ASR, then transcribes and synthesises. If it
+fails, do not un-draft; inspect its log and rebuild or replace the draft with a new patch tag.
+`;
+
+/** release.yml smokes the artifacts before publishing and leaves no draft, so its notes carry no draft step. */
+function verifySection(tag, workflow, ref) {
+  const drafted = workflow === "build-engine.yml";
   return `### Verify release assets
 
 Download the published binaries and checksums, then verify them:
 
 \`\`\`bash
 gh release download ${tag} -p SHA256SUMS -p kesha-release-manifest.json -p '*.sigstore.json' -p 'kesha-*' -p 'say-*'
-sha256sum -c SHA256SUMS
+sha256sum -c ${drafted ? "" : "--ignore-missing "}SHA256SUMS
 
 cosign verify-blob \\
   --bundle kesha-engine-darwin-arm64.sigstore.json \\
-  --certificate-identity "https://github.com/${REPO}/.github/workflows/build-engine.yml@refs/tags/${tag}" \\
+  --certificate-identity "https://github.com/${REPO}/.github/workflows/${workflow}@${ref}" \\
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
-  kesha-engine-darwin-arm64
-
-# Before gh release edit --draft=false, require the authenticated install smoke to pass:
-gh workflow run release-install-smoke.yml -R ${REPO} -f tag=${tag} -f mode=draft-engine
+  kesha-engine-darwin-arm64${drafted ? DRAFT_SMOKE.replace("TAG", tag) : ""}
 \`\`\`
 
 The release also includes packaging metadata in \`kesha-release-manifest.json\`
 and a source SBOM in \`kesha-voice-kit-${tag}.spdx.json\`.
-
-The smoke downloads this draft with GitHub authentication into an isolated cache, checks the
-Linux artifact's version and capabilities, warms ASR, then transcribes and synthesises. If it
-fails, do not un-draft; inspect its log and rebuild or replace the draft with a new patch tag.
-`;
+${drafted ? DRAFT_SMOKE_NOTE : ""}`;
 }
 
-export function composeEngineReleaseNotes(tag, notes) {
+/** `ref` is what the run was signed under: the tag for a tag push, the branch for a dispatch that creates its tag at publish. */
+export function composeEngineReleaseNotes(tag, notes, workflow = "build-engine.yml", ref = `refs/tags/${tag}`) {
   const authored = notes?.trim();
-  return authored ? `${authored}\n\n${verifySection(tag)}` : verifySection(tag);
+  return authored ? `${authored}\n\n${verifySection(tag, workflow, ref)}` : verifySection(tag, workflow, ref);
 }
 
 function main() {
@@ -50,7 +57,7 @@ function main() {
     console.error("usage: TAG_NAME=… node .github/scripts/engine-release-notes.mjs > release-notes.md");
     process.exit(2);
   }
-  process.stdout.write(composeEngineReleaseNotes(tag, readTagNotes(tag)));
+  process.stdout.write(composeEngineReleaseNotes(tag, readTagNotes(tag), process.env.RELEASE_WORKFLOW, process.env.SIGNING_REF || undefined));
 }
 
 if (isEntry(import.meta.url)) main();

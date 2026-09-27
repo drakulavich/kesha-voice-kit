@@ -124,12 +124,18 @@ function runsMatching(steps: Step[], pattern: RegExp): number[] {
   );
 }
 
+/** The job that publishes each Engine release workflow's release; both exist until the cutover retires build-engine.yml. */
+const ENGINE_RELEASE_JOB: Record<string, string> = { "build-engine.yml": "release", "release.yml": "github-release" };
+
+const engineReleaseWorkflow = (path: string): string | undefined =>
+  Object.keys(ENGINE_RELEASE_JOB).find((name) => path.split(/[\\/]/).pop() === name);
+
 /**
  * Fails when build-engine.yml's build job would upload an artifact it never synthesised with.
  * That workflow runs on releases only, so this is the one lane a PR can hold it to (#671).
  */
 export function requirePreUploadSynthesisSmoke(path: string, document: unknown): string[] {
-  if (!path.endsWith("build-engine.yml")) return [];
+  if (!engineReleaseWorkflow(path)) return [];
 
   const steps = jobSteps(document, "build");
   if (!steps) return [`${path}: expected a \`build\` job with steps`];
@@ -158,7 +164,7 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
  * which needs no accelerator, carries the full one.
  */
 export function requireDarwinSmokeCoversBothEngines(path: string, document: unknown): string[] {
-  if (!path.endsWith("build-engine.yml")) return [];
+  if (!engineReleaseWorkflow(path)) return [];
 
   const job = "darwin-synthesis-smoke";
   const steps = jobSteps(document, job);
@@ -271,7 +277,7 @@ const RELEASE_PROFILES = ["portable", "darwin"];
 
 /** Fails a build-engine.yml release row that is not exactly one Cargo profile: hand-listed features are how v1.1.0 shipped without `tts`. */
 export function requireReleaseRowsNameOneProfile(path: string, document: unknown): string[] {
-  if (!path.endsWith("build-engine.yml")) return [];
+  if (!engineReleaseWorkflow(path)) return [];
 
   const include = (document as { jobs?: { build?: { strategy?: { matrix?: { include?: unknown } } } } })
     ?.jobs?.build?.strategy?.matrix?.include;
@@ -1121,6 +1127,32 @@ export function requireBuildEngineSerialisesRunsPerRef(path: string, document: u
   return errors;
 }
 
+const RELEASE_GROUP = "release-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}";
+
+/**
+ * Fails when release.yml stops queueing its publishing runs. A cancelled run can leave an immutable
+ * release short an asset, and a group without `queue: max` evicts the middle of three quick alpha
+ * merges (openspec unified-release D2, the queue npm-publish.yml provides today).
+ */
+export function requireReleaseQueue(path: string, document: unknown): string[] {
+  if (engineReleaseWorkflow(path) !== "release.yml") return [];
+
+  const concurrency = (document as { concurrency?: unknown } | undefined)?.concurrency as
+    | { group?: unknown; queue?: unknown; "cancel-in-progress"?: unknown }
+    | undefined;
+  const errors: string[] = [];
+  if (concurrency?.group !== RELEASE_GROUP) {
+    errors.push(`${path}: \`concurrency.group\` must be exactly \`${RELEASE_GROUP}\`, one publish lane and one lane per rehearsing PR`);
+  }
+  if (concurrency?.queue !== "max") {
+    errors.push(`${path}: \`concurrency.queue\` must be \`max\`; without it a pending publish is evicted when another joins`);
+  }
+  if (concurrency?.["cancel-in-progress"] !== undefined) {
+    errors.push(`${path}: \`concurrency.cancel-in-progress\` must be absent; a cancelled publish leaves an immutable release short an asset`);
+  }
+  return errors;
+}
+
 /**
  * Fails when the `release` job could publish a draft without first checking that the tag it is
  * building still points at the commit this run was triggered for.
@@ -1140,11 +1172,17 @@ function isDisabled(step: Step): boolean {
   return inner === "false";
 }
 
-export function requireReleaseVerifiesTagIsCurrent(path: string, document: unknown): string[] {
-  if (!path.endsWith("build-engine.yml")) return [];
+const createsRelease = (step: Step) =>
+  (typeof step?.uses === "string" && step.uses.startsWith("softprops/action-gh-release")) ||
+  (typeof step?.run === "string" && /publish-release\.sh\b/.test(step.run));
 
-  const steps = jobSteps(document, "release");
-  if (!steps) return [`${path}: expected a \`release\` job with steps`];
+export function requireReleaseVerifiesTagIsCurrent(path: string, document: unknown): string[] {
+  const workflow = engineReleaseWorkflow(path);
+  if (!workflow) return [];
+
+  const releaseJob = ENGINE_RELEASE_JOB[workflow]!;
+  const steps = jobSteps(document, releaseJob);
+  if (!steps) return [`${path}: expected a \`${releaseJob}\` job with steps`];
 
   // Checks the contract (tag ref resolved, compared to GITHUB_SHA), not the resolving command — pinning `git rev-parse` rejected the `git ls-remote ...^{}` fix for its own tag-object-vs-commit bug (#1115 review).
   const isGuard = (step: Step) =>
@@ -1153,11 +1191,9 @@ export function requireReleaseVerifiesTagIsCurrent(path: string, document: unkno
     /GITHUB_SHA/.test(step.run) &&
     !isDisabled(step);
 
-  const publish = steps.findIndex(
-    (step) => typeof step?.uses === "string" && step.uses.startsWith("softprops/action-gh-release"),
-  );
+  const publish = steps.findIndex(createsRelease);
   if (publish === -1) {
-    return [`${path}: expected the release job to create the draft release via softprops/action-gh-release`];
+    return [`${path}: expected the \`${releaseJob}\` job to create the release via softprops/action-gh-release or publish-release.sh`];
   }
 
   const guard = steps.findIndex(isGuard);
@@ -1244,6 +1280,7 @@ export function checkFile(
       ...requireConcurrencyOnPullRequestWorkflows(path, document),
       ...requireRustTestCancelsSupersededRuns(path, document),
       ...requireBuildEngineSerialisesRunsPerRef(path, document),
+      ...requireReleaseQueue(path, document),
       ...requireReleaseVerifiesTagIsCurrent(path, document),
       ...forbidNixBuildInCiAggregator(path, document),
       ...requireEveryJobInCiAggregator(path, document),

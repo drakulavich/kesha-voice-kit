@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { ENGINE_TAG_ERE, ENGINE_TAG_RE, isEngineAlphaTag } from "./release-tags.mjs";
 import { cmp, parseSemver } from "../../src/semver.mjs";
@@ -161,32 +161,46 @@ function assertIncludes(source, needle, file) {
   }
 }
 
+// Both publish an Engine release until the cutover retires build-engine.yml; each must stay complete.
+const ENGINE_WORKFLOWS = [".github/workflows/build-engine.yml", ".github/workflows/release.yml"].filter((path) =>
+  existsSync(path),
+);
+
+function validateWorkflow(path) {
+  const workflow = readFileSync(path, "utf8");
+  for (const p of ENGINE_ASSETS) assertIncludes(workflow, p.engineAsset, path);
+  for (const s of DARWIN_SIDECARS) assertIncludes(workflow, s.name, path);
+  for (const script of [".github/scripts/release-checksums.sh", ".github/scripts/sign-release-assets.sh"]) {
+    assertIncludes(workflow, script, path);
+  }
+}
+
 function validateSourceConsistency(manifest) {
   const installer = readFileSync("src/engine-install.ts", "utf8");
   // Asset names moved out of engine-install.ts into the one platform table (#216).
   const targets = readFileSync("src/engine-targets.ts", "utf8");
-  const workflow = readFileSync(".github/workflows/build-engine.yml", "utf8");
 
   for (const p of ENGINE_ASSETS) {
     if (p.status === "supported") {
       assertIncludes(targets, p.engineAsset, "src/engine-targets.ts");
     }
-    assertIncludes(workflow, p.engineAsset, ".github/workflows/build-engine.yml");
   }
-
   for (const s of DARWIN_SIDECARS) {
     assertIncludes(installer, `assetName: "${s.name}"`, "src/engine-install.ts");
     assertIncludes(installer, `fileBasename: "${s.install.filename}"`, "src/engine-install.ts");
-    assertIncludes(workflow, s.name, ".github/workflows/build-engine.yml");
   }
+  if (ENGINE_WORKFLOWS.length === 0) throw new Error("no workflow publishes the Engine release");
+  ENGINE_WORKFLOWS.forEach(validateWorkflow);
 
   // The bash validator must ship the exact grammar string, so the two languages cannot drift (#685).
-  assertIncludes(workflow, ENGINE_TAG_ERE, ".github/workflows/build-engine.yml");
+  const buildEngine = ".github/workflows/build-engine.yml";
+  if (ENGINE_WORKFLOWS.includes(buildEngine)) {
+    assertIncludes(readFileSync(buildEngine, "utf8"), ENGINE_TAG_ERE, buildEngine);
+  }
   for (const [script, token] of [
     [".github/scripts/release-checksums.sh", "SHA256SUMS"],
     [".github/scripts/sign-release-assets.sh", ".sigstore.json"],
   ]) {
-    assertIncludes(workflow, script, ".github/workflows/build-engine.yml");
     assertIncludes(readFileSync(script, "utf8"), token, script);
   }
 

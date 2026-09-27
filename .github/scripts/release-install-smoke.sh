@@ -4,7 +4,7 @@
 # download`; the npm mode deliberately uses the registry package, never this checkout's binary.
 set -euo pipefail
 
-mode=${1:?usage: release-install-smoke.sh <draft-engine|npm>}
+mode=${1:?usage: release-install-smoke.sh <artifact|draft-engine|npm>}
 repo_root=${GITHUB_WORKSPACE:-$PWD}
 scratch_base=${RUNNER_TEMP:-/tmp}
 scratch=$(mktemp -d "$scratch_base/kesha-release-install-smoke.XXXXXX")
@@ -24,6 +24,36 @@ require() {
   [ -n "${!name:-}" ] || fail "$name must be set"
 }
 
+verify_engine_asset() {
+  local assets=$1 asset=$2
+  [ -s "$assets/$asset" ] || fail "$assets/$asset is missing or empty"
+  chmod 755 "$assets/$asset"
+
+  local actual_version
+  actual_version=$("$assets/$asset" --version)
+  [ "$actual_version" = "kesha-engine $ENGINE_VERSION" ] ||
+    fail "engine binary version was '$actual_version', expected 'kesha-engine $ENGINE_VERSION'"
+
+  "$assets/$asset" describe > "$scratch/describe.json"
+  jq -e '.protocolVersion == 4 and .backend == "onnx" and (.features | index("tts"))' "$scratch/describe.json" >/dev/null ||
+    fail "Linux engine does not describe protocol 4 with onnx + tts"
+
+  # This is the marker `kesha install` writes after its normal download.  We stage the authenticated
+  # draft asset at that final location so the CLI can perform the user-facing model install without
+  # attempting an anonymous (and necessarily 404) re-download of the same draft.
+  printf '%s\n' "$ENGINE_VERSION" > "$assets/$asset.version"
+  export KESHA_ENGINE_BIN="$assets/$asset"
+  export KESHA_CACHE_DIR="$scratch/cache"
+  export KESHA_COMMAND="$repo_root/bin/kesha.js"
+
+  "$KESHA_COMMAND" --version
+  "$KESHA_COMMAND" install --onnx --tts en 2>&1 | tee "$scratch/install.log"
+  bun "$repo_root/.github/scripts/assert-install-warmup.ts" "$scratch/install.log"
+  "$KESHA_COMMAND" --json "$repo_root/tests/fixtures/benchmark-en/01-check-email.ogg" > "$scratch/transcript.json"
+  bun "$repo_root/.github/scripts/assert-transcript.ts" "$scratch/transcript.json"
+  bun "$repo_root/.github/scripts/smoke-synthesis.ts" "$scratch/synthesis"
+}
+
 run_draft_engine() {
   require TAG
   require ENGINE_VERSION
@@ -41,34 +71,16 @@ run_draft_engine() {
     cd "$assets"
     sha256sum --ignore-missing --check SHA256SUMS
   )
-  [ -s "$assets/$asset" ] || fail "draft $TAG did not provide a non-empty $asset"
-  chmod 755 "$assets/$asset"
-
-  local actual_version
-  actual_version=$("$assets/$asset" --version)
-  [ "$actual_version" = "kesha-engine $ENGINE_VERSION" ] ||
-    fail "draft binary version was '$actual_version', expected 'kesha-engine $ENGINE_VERSION'"
-
-  "$assets/$asset" describe > "$scratch/describe.json"
-  jq -e '.protocolVersion == 4 and .backend == "onnx" and (.features | index("tts"))' "$scratch/describe.json" >/dev/null ||
-    fail "draft Linux engine does not describe protocol 4 with onnx + tts"
-
-  # This is the marker `kesha install` writes after its normal download.  We stage the authenticated
-  # draft asset at that final location so the CLI can perform the user-facing model install without
-  # attempting an anonymous (and necessarily 404) re-download of the same draft.
-  printf '%s\n' "$ENGINE_VERSION" > "$assets/$asset.version"
-  export KESHA_ENGINE_BIN="$assets/$asset"
-  export KESHA_CACHE_DIR="$scratch/cache"
-  export KESHA_COMMAND="$repo_root/bin/kesha.js"
-
-  "$KESHA_COMMAND" --version
-  "$KESHA_COMMAND" install --onnx --tts en 2>&1 | tee "$scratch/install.log"
-  bun "$repo_root/.github/scripts/assert-install-warmup.ts" "$scratch/install.log"
-  "$KESHA_COMMAND" --json "$repo_root/tests/fixtures/benchmark-en/01-check-email.ogg" > "$scratch/transcript.json"
-  bun "$repo_root/.github/scripts/assert-transcript.ts" "$scratch/transcript.json"
-  bun "$repo_root/.github/scripts/smoke-synthesis.ts" "$scratch/synthesis"
-
+  verify_engine_asset "$assets" "$asset"
   echo "draft-engine smoke passed: tag=$TAG engine=$ENGINE_VERSION artifact=$asset"
+}
+
+# The just-built workflow artifact, before any release exists: nothing is downloaded but models.
+run_artifact() {
+  require ASSET_DIR
+  require ENGINE_VERSION
+  verify_engine_asset "$ASSET_DIR" kesha-engine-linux-x64
+  echo "artifact smoke passed: engine=$ENGINE_VERSION"
 }
 
 run_npm() {
@@ -102,6 +114,7 @@ run_npm() {
 }
 
 case "$mode" in
+  artifact) run_artifact ;;
   draft-engine) run_draft_engine ;;
   npm) run_npm ;;
   *) fail "unsupported smoke mode: $mode" ;;

@@ -12,6 +12,12 @@ describe("withCargoVersion", () => {
   });
 
   // The rewrite is a regex over a TOML file; a dependency pin is one `version = "…"` away.
+  // release.yml applies the release version on every run, including one the manifest already carries.
+  test("writing the version the manifest already carries is a no-op, not a refusal", () => {
+    const manifest = '[package]\nname = "kesha-engine"\nversion = "2.0.0"\n';
+    expect(withCargoVersion(manifest, "2.0.0")).toBe(manifest);
+  });
+
   test("leaves dependency versions alone", () => {
     const before = MANIFEST.slice(MANIFEST.indexOf("\n[dependencies]"));
     const after = withCargoVersion(MANIFEST, "1.24.8-alpha.1");

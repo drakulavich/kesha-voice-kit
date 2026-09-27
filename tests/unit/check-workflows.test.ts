@@ -24,6 +24,7 @@ import {
   requireConcurrencyOnPullRequestWorkflows,
   requireBuildEngineSerialisesRunsPerRef,
   requireBuildScriptInCoremlFilter,
+  requireReleaseQueue,
   requireReleaseVerifiesTagIsCurrent,
   requireRustTestCancelsSupersededRuns,
   requirePipefailShell,
@@ -1953,5 +1954,62 @@ describe("checkShellScripts", () => {
 
     expect(await proc.exited).toBe(1);
     expect(stderr).toContain("probe.sh: never sets");
+  });
+});
+
+describe("release.yml carries the Engine release guards", () => {
+  const RELEASE = ".github/workflows/release.yml";
+  const real = () => parseRepoYaml(RELEASE);
+  const GUARD = {
+    name: "Verify tag has not been superseded",
+    run: 'current="$(git ls-remote origin "refs/tags/$TAG_NAME" | cut -f1)"\n[ "$current" = "$GITHUB_SHA" ] || exit 1\n',
+  };
+  const PUBLISH = { name: "Publish the release", run: "bash .github/scripts/publish-release.sh release-assets notes.md" };
+
+  test("the real release.yml passes every Engine release rule", () => {
+    const doc = real();
+    expect([
+      ...requirePreUploadSynthesisSmoke(RELEASE, doc),
+      ...requireDarwinSmokeCoversBothEngines(RELEASE, doc),
+      ...requireReleaseRowsNameOneProfile(RELEASE, doc),
+      ...requireReleaseVerifiesTagIsCurrent(RELEASE, doc),
+      ...requireReleaseQueue(RELEASE, doc),
+    ]).toEqual([]);
+  });
+
+  test("the rehearsal does not grant release-write or signing permissions", () => {
+    const doc = real();
+    expect(doc.permissions).toEqual({ contents: "read" });
+    expect(doc.jobs["github-release"].permissions).toBeUndefined();
+  });
+
+  test("a release.yml build that uploads before synthesising fails", () => {
+    expect(requirePreUploadSynthesisSmoke(RELEASE, job("build", [UPLOAD, SMOKE]))[0]).toContain("#671");
+  });
+
+  test("a release.yml row naming granular features fails", () => {
+    const doc = { jobs: { build: { strategy: { matrix: { include: [{ binary: "kesha-engine-linux-x64", features: "onnx,tts" }] } } } } };
+    expect(requireReleaseRowsNameOneProfile(RELEASE, doc)[0]).toContain("kesha-engine-linux-x64");
+  });
+
+  test("a publish-release.sh step without the tag-currency guard right before it fails", () => {
+    expect(requireReleaseVerifiesTagIsCurrent(RELEASE, job("github-release", [PUBLISH]))[0]).toContain("#1115");
+    expect(requireReleaseVerifiesTagIsCurrent(RELEASE, job("github-release", [GUARD, PUBLISH]))).toEqual([]);
+  });
+
+  test("a Windows path to release.yml is still checked", () => {
+    expect(requireReleaseQueue("C:\\repo\\.github\\workflows\\release.yml", {})).toHaveLength(2);
+  });
+
+  test("a workflow whose name merely ends in release.yml is not an Engine release workflow", () => {
+    expect(requireReleaseVerifiesTagIsCurrent(".github/workflows/post-engine-release.yml", job("x", []))).toEqual([]);
+    expect(requireReleaseQueue(".github/workflows/post-engine-release.yml", {})).toEqual([]);
+  });
+
+  test("a publish queue that can cancel, evict or collapse the rehearsal lanes fails", () => {
+    const concurrency = real().concurrency;
+    expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, queue: undefined } })[0]).toContain("queue");
+    expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, "cancel-in-progress": false } })[0]).toContain("absent");
+    expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, group: "release-publish" } })[0]).toContain("group");
   });
 });
