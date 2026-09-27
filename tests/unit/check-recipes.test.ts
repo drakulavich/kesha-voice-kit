@@ -14,7 +14,7 @@ import {
 import { readRepoFile, REPO_ROOT } from "../helpers/repo";
 
 const MD = "CLAUDE.md";
-const YML = ".github/workflows/rust-test.yml";
+const YML = ".github/workflows/ci.yml";
 
 const recipe = (doc: string | null, isPrivate = false) => ({ doc, private: isPrivate });
 const dump = (
@@ -155,7 +155,7 @@ describe("isSwept", () => {
     "docs/architecture.md",
     ".claude/commands/worktree.md",
     ".claude/skills/release/SKILL.md",
-    ".github/workflows/rust-test.yml",
+    ".github/workflows/ci.yml",
   ])("sweeps %s", (path) => {
     expect(isSwept(path)).toBe(true);
   });
@@ -452,7 +452,7 @@ describe("the repository's own references", () => {
     expect([...found].sort()).toEqual(["mutate", "worktree", "worktree-rm"]);
   });
 
-  test("rust-test.yml calls verify-darwin-full rather than repeating its flags", () => {
+  test("ci.yml calls verify-darwin-full rather than repeating its flags", () => {
     expect(names(YML, readRepoFile(YML))).toContain("verify-darwin-full");
   });
 });

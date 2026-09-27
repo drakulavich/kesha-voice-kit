@@ -23,13 +23,13 @@
 - [x] 3.4 `prune-alpha-releases.yml` → `nightly.yml` (task 4.1)
 - [x] 3.5 `cross-os-cache-probe.yml` → `ci.yml` (`cache-probe-save`/`-restore`/`-cleanup`, on a matching PR); `cache-seed.yml` and `cache-cleanup.yml` stay standalone (design D4: cancel-in-progress, and the `pull_request_target` write token)
 - [x] 3.6 `linux-packages.yml` → `ci.yml`'s `linux-packages` job, with its PR and main-push path sets
-- [ ] 3.7 `rust-test.yml` (into `ci.yml`, job name `🧪 Rust Tests`)
+- [x] 3.7 `rust-test.yml` → `ci.yml` (`lint-ubuntu`, `test`, `coverage`, `coreml-regression`, `rust-push-gate`), aggregated by `rust-tests`, still named `🧪 Rust Tests`; `requireEveryJobInCiAggregator` accepts either aggregator, and `rust-push-gate` now reds `🧪 Rust Tests` on `main` when it fails
 - [x] 3.8 `nix-build.yml` stays standalone (design D4: #1105, it cannot gate the `🧪 CI` aggregator)
 - [x] 3.9 `plugin-security-scan.yml` → `security.yml`'s `plugin-scan` job, same check name, still outside the `🛡️ Security Audit` aggregator; a push to `main` runs only the scan
 
 ## 4. `nightly.yml`, lint, docs
 
 - [x] 4.1 `nightly.yml` with the six scheduled jobs (`capability-pact`, `cargo-dependency-maintenance`, `mini-model-pact`, `model-plan-size-canary`, `prune-alpha-releases`, `real-model-canary`), each on its own cron and concurrency group and dispatchable alone through `job`; `requirePactVerificationCoversEveryTarget` reads its `capability-pact` matrix
-- [ ] 4.2 Pinned `actionlint` in `ci.yml`; cut `check-workflows.ts` to the rules D5 keeps
-- [ ] 4.3 `docs/distribution.md` from the four distribution docs; one `release` skill; `.claude/rules/ci-and-build.md` names `release.yml`
+- [x] 4.2 Pinned `actionlint` 1.7.12 (SHA-256-verified, `install-actionlint.sh`) and shellcheck 0.11.0 in `ci.yml`'s `workflow-lint`; `.github/actionlint.yaml` ignores only `release.yml`'s `concurrency.queue`; the four SC2086 findings it raised are fixed. `check-workflows.ts` needs no further cut: the cutover removed the rules whose only target was a retired workflow, and none of the remaining rules overlaps what actionlint checks
+- [x] 4.3 `docs/distribution.md` from the four distribution docs; one `release` skill; `.claude/rules/ci-and-build.md` names `release.yml`; the `cli-distribution` notes, GLOSSARY, SECURITY, CONTRIBUTING, architecture and the tag-helper runbook follow the one version and the one workflow
 - [ ] 4.4 Tag `v2.0.0` (maintainer), after switching the npm Trusted Publisher to `release.yml`

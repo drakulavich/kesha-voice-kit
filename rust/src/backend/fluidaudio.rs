@@ -512,7 +512,7 @@ mod tests {
     /// through rather than silently dropping every one of them (#720).
     ///
     /// Deliberately outside `coreml-regression`'s filter in
-    /// `rust-test.yml`: that job runs on a virtualized runner with no Neural
+    /// `ci.yml`'s Rust lanes: that job runs on a virtualized runner with no Neural
     /// Engine, and this needs a real one.
     #[test]
     #[ignore = "needs cached CoreML Parakeet models + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]

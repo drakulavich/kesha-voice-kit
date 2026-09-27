@@ -2,7 +2,7 @@
 # Download the TTS models the caller asks for. CharsiuG2P always; Vosk-RU and the
 # real Kokoro weights only behind their flags, which only the weekly canary sets.
 # The PR lanes run on the committed Kokoro stand-in instead (#741).
-# Called by rust-test.yml; cache warms on subsequent runs.
+# Called by ci.yml's Rust lanes; cache warms on subsequent runs.
 set -euo pipefail
 
 DEST="${1:?usage: download-kokoro.sh <dest_dir>}"
