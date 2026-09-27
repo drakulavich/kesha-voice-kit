@@ -51,7 +51,7 @@ jobs:
   # a capability fails this job on purpose, and the fix is to re-record, never to relax the check:
   #
   #   1. publish the new stable release
-  #   2. run this workflow with `record: true` (Actions → 📜 Capability Pact → Run workflow)
+  #   2. run Nightly with `job: capability-pact` and `record: true` (Actions → 🌙 Nightly → Run workflow)
   #   3. commit the contents of all three `capability-pact-<target>` artifacts
   #
   # Each target is recorded on its own OS — a binary only answers for the platform it was built
@@ -64,8 +64,9 @@ jobs:
   capability-pact:
     name: "📜 Capability Pact"
     if: github.event.schedule == '0 5 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.job == 'capability-pact')
+    # One group per target: three matrix jobs in one group would leave room for one pending job only.
     concurrency:
-      group: nightly-capability-pact
+      group: nightly-capability-pact-${{ matrix.target }}
       cancel-in-progress: false
     strategy:
       fail-fast: false
