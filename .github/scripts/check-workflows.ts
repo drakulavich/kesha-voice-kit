@@ -267,6 +267,28 @@ export function requireNpmPublishAfterPackaging(path: string, document: unknown)
   return [...requirePackagingJob(path, document), ...requireNpmDispatchJob(path, document)];
 }
 
+const RELEASE_PROFILES = ["portable", "darwin"];
+
+/**
+ * Fails when a build-engine.yml release row names anything but exactly one Cargo profile.
+ * Spelling granular features per row is how v1.1.0 shipped without `tts`: a feature added to
+ * a bundle reaches every row that names it, a feature added to a hand-written list does not.
+ */
+export function requireReleaseRowsNameOneProfile(path: string, document: unknown): string[] {
+  if (!path.endsWith("build-engine.yml")) return [];
+
+  const include = (document as { jobs?: { build?: { strategy?: { matrix?: { include?: unknown } } } } })
+    ?.jobs?.build?.strategy?.matrix?.include;
+  if (!Array.isArray(include)) return [`${path}: expected a \`build\` job with a \`strategy.matrix.include\` list`];
+
+  return include.flatMap((row, at) => {
+    const { binary, features } = (row ?? {}) as { binary?: unknown; features?: unknown };
+    if (typeof features === "string" && RELEASE_PROFILES.includes(features)) return [];
+    const name = typeof binary === "string" ? binary : `row ${at}`;
+    return [`${path}: release row ${name} builds \`${String(features)}\`; it must name exactly one profile, \`portable\` or \`darwin\``];
+  });
+}
+
 /**
  * Fails when a published engine target has no runner verifying its capability pact.
  *
@@ -1219,6 +1241,7 @@ export function checkFile(
       ...forbidExpressionsInRun(path, document),
       ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
+      ...requireReleaseRowsNameOneProfile(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
       ...requirePipefailShell(path, document),
       ...requireReusableCallPermissions(path, document),

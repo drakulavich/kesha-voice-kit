@@ -18,7 +18,11 @@ path = "src/main.rs"
 test = false
 
 [features]
-default = ["onnx", "tts"]
+default = ["portable"]
+# Every build-engine.yml release row names exactly one profile (check-workflows.ts requireReleaseRowsNameOneProfile).
+portable = ["onnx", "tts"]
+# Needs a macos-14 runner with Xcode 16.2 and MACOSX_DEPLOYMENT_TARGET=14.0, or the binary depends on @rpath/libswift_Concurrency.dylib.
+darwin = ["coreml", "tts", "system_tts", "system_kokoro", "system_diarize", "system_text_lang"]
 # ASR backend selection. Language detection always uses ONNX regardless.
 coreml = ["dep:fluidaudio-rs"]
 onnx = []

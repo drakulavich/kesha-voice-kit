@@ -99,15 +99,15 @@ jobs:
           # binding — no separate Swift sidecars (unlike AVSpeech / text-lang).
           - os: macos-14
             target: aarch64-apple-darwin
-            features: coreml,tts,system_tts,system_kokoro,system_diarize,system_text_lang
+            features: darwin
             binary: kesha-engine-darwin-arm64
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            features: onnx,tts
+            features: portable
             binary: kesha-engine-linux-x64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            features: onnx,tts
+            features: portable
             binary: kesha-engine-windows-x64.exe
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
