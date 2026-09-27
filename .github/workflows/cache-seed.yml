@@ -169,7 +169,7 @@ jobs:
     # `path:` is workspace-relative and must stay that way. A cross-OS archive stores members
     # relative to GITHUB_WORKSPACE and extracts them the same way, with no remap to the
     # consumer's home: `~/.cache/kesha` saved here would land beside the Windows workspace
-    # root instead of in %USERPROFILE%, and still report a cache hit. `cross-os-cache-probe.yml`
+    # root instead of in %USERPROFILE%, and still report a cache hit. ci.yml's `cache-probe-*` jobs
     # is the executable proof, and actions/cache's own tips-and-workarounds says the same.
     runs-on: ubuntu-latest
     timeout-minutes: 40
