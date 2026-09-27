@@ -59,7 +59,11 @@ Beta is dispatched with a version extending `package.json#version`, or pushed as
 
 ### D4. `nightly.yml` and the folds
 
-`nightly.yml` jobs: `capability-pact`, `cargo-dependency-maintenance`, `mini-model-pact`, `model-plan-size-canary`, `prune-alpha-releases`, `real-model-canary`, each with the schedule and permissions it has today, each independently dispatchable through a `job` input. `ci.yml` absorbs `rust-test.yml` (its aggregate job keeps the exact name `🧪 Rust Tests`), `nix-build.yml`, `linux-packages.yml` (the PR lane), `cache-seed.yml`, `cache-cleanup.yml`, `cross-os-cache-probe.yml` and Docker's main-push image; `security.yml` absorbs `plugin-security-scan.yml`. Required checks match on name only (`🧪 CI`, `🧪 Rust Tests`; `🛡️ Security Audit` on the GitHub Actions app), so no branch-protection setting changes.
+`nightly.yml` jobs: `capability-pact`, `cargo-dependency-maintenance`, `mini-model-pact`, `model-plan-size-canary`, `prune-alpha-releases`, `real-model-canary`, each with the schedule and permissions it has today, each independently dispatchable through a `job` input. `ci.yml` absorbs `rust-test.yml` (its aggregate job keeps the exact name `🧪 Rust Tests`), `linux-packages.yml`, `cross-os-cache-probe.yml` and Docker's main-push image; `security.yml` absorbs `plugin-security-scan.yml`. Three stay standalone, so the repository ends with seven workflows, not four (maintainer decision after the cutover):
+
+- `nix-build.yml` moved *out* of `ci.yml` in #1105: a job that cannot report on a pull request redded the required `🧪 CI` on `main`, and `forbidNixBuildInCiAggregator` holds that. Folding it back needs an aggregator exemption, and its weekly cron would re-trigger every schedule-gated job in `ci.yml`.
+- `cache-seed.yml` seeds on pushes to `main`; inside `ci.yml` the next push would cancel it (`cancel-in-progress: true`, which a job-level group cannot escape) and leave caches half-seeded.
+- `cache-cleanup.yml` runs on `pull_request_target` with `actions: write`; inside `ci.yml` every job would start on a closed PR with a write token and would need an event guard. Required checks match on name only (`🧪 CI`, `🧪 Rust Tests`; `🛡️ Security Audit` on the GitHub Actions app), so no branch-protection setting changes.
 
 ### D5. Lint
 
@@ -82,7 +86,7 @@ Stage 4, after `core-api-v2` and `build-profiles` (both archived). Every PR leav
 3. `homebrew` and `docker` jobs; Docker's main-push lane moves into `ci.yml`.
 4. Alpha derivation and dispatch inputs, inert until the cutover.
 5. Cutover, atomic: tag, main-push and dispatch triggers on; version unification; `flake.nix`; CI lanes resolve the newest stable Engine; `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml`, `release-alpha.yml`, `release-install-smoke.yml` and `post-engine-release.yml` (now the `post-release` job) deleted in the same PR, because any one left behind would build or publish the same tag twice (the last had no draft left to smoke).
-6. Deletions of the now-idle workflows, one per PR, with their scripts and tests: `prune-alpha-releases.yml` (into nightly), the cache workflows, `linux-packages.yml`, `rust-test.yml`, `nix-build.yml`, `plugin-security-scan.yml`.
+6. Deletions of the now-idle workflows, one per PR, with their scripts and tests: `prune-alpha-releases.yml` (into nightly), `cross-os-cache-probe.yml`, `linux-packages.yml`, `rust-test.yml`, `plugin-security-scan.yml`; `nix-build.yml`, `cache-seed.yml` and `cache-cleanup.yml` stay (D4).
 7. `nightly.yml`.
 8. `actionlint` and the `check-workflows.ts` cut.
 9. Docs, one `release` skill, archive this change.
