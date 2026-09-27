@@ -90,7 +90,6 @@ function fromDispatch(dispatch: ClassifyInput["dispatch"], pkgVersion: string): 
 export function classifyRelease(input: ClassifyInput): Classification {
   const { eventName, refType, refName, pkg } = input;
   if (eventName === "pull_request") {
-    // Until the versions are unified the CLI still pins an older Engine, and the smoke must stage that one.
     return release("rehearsal", "stable", pkg.version, true);
   }
   if (eventName === "workflow_dispatch") return fromDispatch(input.dispatch, pkg.version);
