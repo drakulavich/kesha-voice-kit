@@ -65,4 +65,13 @@ describe("the engine release lane", () => {
 
     expect(code).not.toContain("%(contents)");
   });
+
+  test("a release published by release.yml names release.yml as the signer and asks for no draft smoke", () => {
+    const body = composeEngineReleaseNotes("v2.0.0", undefined, "release.yml");
+    expect(body).toContain(".github/workflows/release.yml@refs/tags/v2.0.0");
+    expect(body).not.toContain("build-engine.yml");
+    expect(body).not.toContain("draft");
+    // One SHA256SUMS also lists the .deb/.rpm, which the download pattern leaves out.
+    expect(body).toContain("sha256sum -c --ignore-missing SHA256SUMS");
+  });
 });

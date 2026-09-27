@@ -271,6 +271,7 @@ jobs:
       - name: Prepare release notes from the tag annotation
         env:
           TAG_NAME: ${{ needs.classify.outputs.tag }}
+          RELEASE_WORKFLOW: release.yml
         run: node .github/scripts/engine-release-notes.mjs > release-notes.md
       # anchore/sbom-action writes into this directory but does not create it.
       - name: Prepare release asset directory
