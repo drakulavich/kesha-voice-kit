@@ -1185,9 +1185,10 @@ export function requireReleaseJobOrder(path: string, document: unknown): string[
     if (
       !dependsOn(document, downstream, "github-release") ||
       !cond.includes("needs.github-release.result == 'success'") ||
-      !cond.includes("needs.classify.outputs.channel == 'stable'")
+      !cond.includes("needs.classify.outputs.channel == 'stable'") ||
+      !cond.includes("outputs.publish == 'true'")
     ) {
-      errors.push(`${path}: \`${downstream}\` must \`needs: github-release\`, require its success and run on the stable channel only`);
+      errors.push(`${path}: \`${downstream}\` must \`needs: github-release\`, require its success and run on the stable channel only, and never in a rehearsal`);
     }
   }
   const packaging = jobSteps(document, "packages");

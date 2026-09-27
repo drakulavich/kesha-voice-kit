@@ -2058,6 +2058,11 @@ describe("requireReleaseJobOrder", () => {
           e.includes(downstream),
         ),
       ).toBe(true);
+      expect(
+        requireReleaseJobOrder(RELEASE, withJob(downstream, { if: cond.replace(/needs\.\w+\.outputs\.publish == 'true'/, "true") })).some((e) =>
+          e.includes(downstream),
+        ),
+      ).toBe(true);
     });
   }
 

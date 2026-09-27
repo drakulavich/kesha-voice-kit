@@ -74,6 +74,8 @@ jobs:
             code:
               - 'rust-toolchain.toml'
               - 'src/**'
+              # The CLI entry point; docker-image publishes it only after these suites ran on it.
+              - 'bin/**'
               - 'tests/**'
               - 'tests/fixtures/**'
               - 'package.json'
@@ -214,6 +216,8 @@ jobs:
               - src/**
               - tests/fixtures/benchmark/**
               - tests/fixtures/benchmark-en/**
+              # The image's tags and build settings live here, as they did in docker.yml's own filter.
+              - '.github/workflows/ci.yml'
             # A pull request builds the image only when its recipe changes; src/** alone would build on nearly every PR.
             dockerfile:
               - Dockerfile
