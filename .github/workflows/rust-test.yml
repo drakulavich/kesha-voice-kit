@@ -236,7 +236,7 @@ jobs:
       NEXTEST_PROFILE: ci
       KESHA_REQUIRE_MODEL_TESTS: mini
       # CharsiuG2P has no stand-in and its IPA goldens own phoneme fidelity, so this
-      # lane still promises it. Vosk-RU moved to real-model-canary.yml: one synth test
+      # lane still promises it. Vosk-RU moved to nightly.yml's `real-model-canary` job: one synth test
       # was not worth ~935 MB of per-PR cache, and it needs real weights either way
       # (#741).
       KESHA_REQUIRE_G2P_TESTS: "1"

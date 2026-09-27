@@ -1,0 +1,432 @@
+name: "🌙 Nightly"
+
+# Every scheduled job in one workflow (openspec unified-release D4). Each job keeps the cron,
+# permissions and steps its own workflow had, runs only on its own cron, and is dispatchable
+# alone through the `job` input. Each has its own concurrency group, so a slow one queues
+# only behind itself.
+
+on:
+  schedule:
+    - cron: "0 5 * * 1" # capability-pact
+    - cron: "17 4 * * 1" # prune-alpha-releases
+    - cron: "0 8 * * 1" # mini-model-pact
+    - cron: "0 11 * * 1" # real-model-canary
+    - cron: "0 14 * * 1" # model-plan-size-canary
+    - cron: "17 7 1 * *" # cargo-dependency-maintenance
+  workflow_dispatch:
+    inputs:
+      job:
+        description: "The one job to run."
+        required: true
+        type: choice
+        options:
+          - capability-pact
+          - prune-alpha-releases
+          - mini-model-pact
+          - real-model-canary
+          - model-plan-size-canary
+          - cargo-dependency-maintenance
+      record:
+        description: "capability-pact only: re-record the pacts and upload them as artifacts instead of verifying."
+        type: boolean
+        default: false
+      month:
+        description: "cargo-dependency-maintenance only: UTC month to open, formatted YYYY-MM. Defaults to the current month."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+
+  # Provider verification for the recorded capability pacts (#798).
+  #
+  # `tests/unit/capabilities-pact.test.ts` gates flag routing per target on every PR without
+  # downloading anything, which is only sound while the recordings still match the binaries.
+  # This job re-derives each pact from the artifact `kesha install` hands users and fails on
+  # drift. It downloads the engine executable (~65 MB) and no models.
+  #
+  # RE-RECORDING — the canonical procedure. A new engine release that adds, removes or renames
+  # a capability fails this job on purpose, and the fix is to re-record, never to relax the check:
+  #
+  #   1. publish the new stable release
+  #   2. run this workflow with `record: true` (Actions → 📜 Capability Pact → Run workflow)
+  #   3. commit the contents of all three `capability-pact-<target>` artifacts
+  #
+  # Each target is recorded on its own OS — a binary only answers for the platform it was built
+  # for — and each artifact carries only its own two files, so committing all three cannot
+  # clobber. `matrix.target` is passed to the recorder, which refuses a row whose runner and
+  # target disagree.
+  #
+  # Never runs on a pull request. It checks the highest published stable Engine, the one every lane that
+  # downloads an Engine installs.
+  capability-pact:
+    name: "📜 Capability Pact"
+    if: github.event.schedule == '0 5 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.job == 'capability-pact')
+    concurrency:
+      group: nightly-capability-pact
+      cancel-in-progress: false
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: darwin-arm64
+          - os: ubuntu-latest
+            target: linux-x64
+          - os: windows-latest
+            target: win32-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Only the scheduled run files an issue; one per target, so three runners failing
+      # together cannot race each other into duplicates.
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      # Explicitly not `!inputs.record`: were `inputs` ever to resolve unexpectedly, both
+      # steps would skip and the job would go green having verified nothing.
+      - name: 🔍 Verify ${{ matrix.target }} against the published binary
+        id: verify
+        if: github.event_name != 'workflow_dispatch' || !inputs.record
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.target }}
+        # Every run: here is bash. windows-latest defaults to pwsh, where `$TARGET` is not an
+        # env var (`$env:TARGET` is) and would expand to empty, silently un-pinning --target.
+        shell: bash
+        run: bun .github/scripts/record-capability-pacts.ts --from-release --target "$TARGET" --check
+
+      - name: 📣 Report an unverified pact (scheduled only)
+        if: github.event_name == 'schedule' && steps.verify.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: bash .github/scripts/report-capability-pact.sh
+
+      - name: ❌ Fail an unverified pact
+        if: steps.verify.outcome == 'failure'
+        shell: bash
+        run: exit 1
+
+      - name: 📝 Re-record ${{ matrix.target }}
+        if: github.event_name == 'workflow_dispatch' && inputs.record
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: bun .github/scripts/record-capability-pacts.ts --from-release --target "$TARGET"
+
+      - name: 📤 Upload the re-recorded pact
+        if: github.event_name == 'workflow_dispatch' && inputs.record
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: capability-pact-${{ matrix.target }}
+          path: tests/fixtures/capabilities/${{ matrix.target }}.*
+          if-no-files-found: error
+
+  # Alpha Releases age out so the release list stays usable for finding stable ones (#685).
+  # Tags are never touched: they are what makes a published version permanently taken.
+  prune-alpha-releases:
+    name: "🧹 Prune alpha releases"
+    if: github.event.schedule == '17 4 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.job == 'prune-alpha-releases')
+    concurrency:
+      group: nightly-prune-alpha-releases
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The composite installs dependencies: the `bun test` gate below needs them (#993).
+      - uses: ./.github/actions/setup-bun
+
+      - name: Test the selection before trusting it
+        run: bun test tests/unit/prune-alpha-releases.test.ts
+
+      - name: Select and delete aged-out alpha releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/prune-alpha-releases.sh
+
+  # Provider verification for the committed mini stand-ins (#741), the same shape the
+  # capability pact uses for flags (#798).
+  #
+  # `rust/tests/mini_model_pact.rs` asserts the mini presents Kokoro's I/O signature on
+  # every PR without downloading anything. That is only sound while the recording still
+  # matches the real model, so this job re-derives the signature from the real weights
+  # and fails on drift. It downloads the Kokoro graph (~326 MB) and nothing else.
+  #
+  # Same test, same extractor, different subject: `KESHA_PACT_MODEL` points it at the
+  # downloaded model instead of the fixture, so a drift here means the *recording* is
+  # wrong, not the mini.
+  #
+  # What this compares is the structural signature — tensor names, dtypes, ranks — and
+  # deliberately not opset, initializer count or external-data layout: the real model is
+  # opset 20 with 554 initializers, the mini opset 17 with none. Those differ by design,
+  # and asserting on them would turn a contract check into a weights fingerprint that
+  # fails on every upstream rebuild.
+  #
+  # RE-RECORDING. A model bump that renames a tensor or changes a rank fails this job on
+  # purpose, and the fix is never to relax the check:
+  #
+  #   1. confirm the new weights are the intended ones (verify-pin-bump skill)
+  #   2. update `tests/fixtures/mini-models/kokoro/signature.json` from the run log's diff
+  #   3. regenerate the mini so it presents the new signature — see the header of
+  #      `.github/scripts/generate-mini-models.py` — and commit both
+  #
+  # Skipping step 3 is the failure mode this job exists to prevent: a signature.json that
+  # matches the real model but not the mini leaves every mini-backed lane green against a
+  # model nobody runs.
+  mini-model-pact:
+    name: "🧬 Mini-Model Pact"
+    if: github.event.schedule == '0 8 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.job == 'mini-model-pact')
+    concurrency:
+      group: nightly-mini-model-pact
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      - name: 🦀 Setup Rust
+        uses: ./.github/actions/setup-rust
+
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        with:
+          tool: nextest
+
+      # The URL and the pinned digest both come from the recording, so a mirror or a
+      # re-upload cannot quietly substitute different weights for this check.
+      - name: ⬇️ Fetch the real Kokoro graph
+        id: fetch
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/fetch-pact-model.sh tests/fixtures/mini-models/kokoro/signature.json /tmp/kokoro-real.onnx
+
+      # The committed artifacts are only trustworthy while the generator still
+      # produces them; a hand-edited fixture would otherwise pass every check.
+      # Off the PR path on purpose — this is the one lane allowed a Python
+      # toolchain (#741). onnx is pinned because the marker records its version,
+      # so an unpinned install would fail this on every upstream release.
+      - name: 🧬 Verify the mini is what the generator produces
+        id: regen
+        continue-on-error: true
+        shell: bash
+        run: bash .github/scripts/verify-mini-model-regen.sh
+
+      - name: 🔍 Verify the recorded signature against the real model
+        id: verify
+        if: steps.fetch.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        env:
+          KESHA_PACT_MODEL: /tmp/kokoro-real.onnx
+        run: cd rust && cargo nextest run --features tts -E 'binary(mini_model_pact)'
+
+      - name: 📣 Report an unverified mini-model pact (scheduled only)
+        if: github.event_name == 'schedule' && (steps.fetch.outcome == 'failure' || steps.verify.outcome == 'failure' || steps.regen.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: bash .github/scripts/report-mini-model-pact.sh
+
+      - name: ❌ Fail an unverified pact
+        if: steps.fetch.outcome == 'failure' || steps.verify.outcome == 'failure' || steps.regen.outcome == 'failure'
+        shell: bash
+        run: exit 1
+
+  # The counterweight to the stand-ins (#741).
+  #
+  # Every per-PR lane now runs Kokoro through a 1 KB stand-in, and the Vosk synth test
+  # is off the PR path entirely. That trade is only honest if something still exercises
+  # the real weights, and this is that something: the full nextest suite against real
+  # Kokoro, real Vosk-RU and real CharsiuG2P, weekly.
+  #
+  # `KESHA_REQUIRE_MODEL_TESTS: real` is the point. Every gate that a PR lane satisfies
+  # with a stand-in must here resolve to genuine weights or fail — this is the only lane
+  # where the `real` tier is exercised, and it is what stops the stand-ins from quietly
+  # becoming the only thing anyone runs.
+  #
+  # Distinct from `mini-model-pact.yml` on purpose: that job asks whether the stand-in
+  # still *matches* the real model's signature, this one asks whether the real model
+  # still *works*. Same weakness would fail them differently, and a shared job would
+  # blur which.
+  #
+  # Detection latency is up to a week, deliberately: real Kokoro audio through a
+  # from-source build was previously asserted on every PR that touched TTS, and this is
+  # the price of the ~2.6 GB the stand-ins took out of the cache budget.
+  real-model-canary:
+    name: "🐤 Real-Model Canary"
+    if: github.event.schedule == '0 11 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.job == 'real-model-canary')
+    concurrency:
+      group: nightly-real-model-canary
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      issues: write
+    env:
+      KOKORO_CACHE: ${{ github.workspace }}/.kokoro-real
+      NEXTEST_PROFILE: ci
+      # Real weights or fail: a stand-in satisfying a gate here would defeat the lane.
+      KESHA_REQUIRE_MODEL_TESTS: real
+      KESHA_REQUIRE_VOSK_TESTS: "1"
+      KESHA_REQUIRE_G2P_TESTS: "1"
+      # tts::vosk's synth test is CI-only, and this is now the lane that runs it.
+      CI: "true"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🦀 Setup Rust
+        uses: ./.github/actions/setup-rust
+
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        with:
+          tool: nextest
+
+      # Deliberately uncached: this runs weekly, and a ~1.4 GB entry to save one
+      # download a week is exactly the trade #741 exists to refuse.
+      - name: ⬇️ Download the real TTS weights
+        id: models
+        continue-on-error: true
+        shell: bash
+        env:
+          WITH_REAL_KOKORO: "1"
+          WITH_VOSK: "1"
+        run: bash rust/ci/download-kokoro.sh "$KOKORO_CACHE"
+
+      - name: 🧪 Run the suite against real weights
+        id: suite
+        if: steps.models.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" Linux
+
+      - name: 📣 Report a failed canary (scheduled only)
+        if: github.event_name == 'schedule' && (steps.models.outcome == 'failure' || steps.suite.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        shell: bash
+        run: bash .github/scripts/report-real-model-canary.sh
+
+      - name: ❌ Fail the canary
+        if: steps.models.outcome == 'failure' || steps.suite.outcome == 'failure'
+        shell: bash
+        run: exit 1
+
+  # Provider verification for the sizes `kesha install --plan` quotes (#920).
+  #
+  # The plan's `sizeBytes` are hand-written, and until now nothing could falsify one:
+  # `models::manifest::manifest_tests::install_plan_model_paths_match_runtime_manifests` compares
+  # `relPath` and stops there, because an offline test cannot know what a URL serves.
+  # That is how #509 shipped CharsiuG2P as "28.5 MB" against a 101 MB download and how
+  # it survived two months until a human noticed (#887, #896).
+  #
+  # So this job asks the only question that settles it: for every entry in
+  # model-plan.json, does the pinned URL serve exactly the recorded number of bytes?
+  # A HEAD, or a one-byte range request where HEAD carries no length (#1054) — no downloads
+  # either way, no cache writes, seconds of runtime.
+  #
+  # Exact match is the bar. Sizes are pinned like the SHA-256s beside them, and a
+  # "close enough" tolerance would have passed the 72.9 MB under-report that started
+  # this. `KESHA_MODEL_MIRROR` is not honoured: the subject is upstream truth.
+  #
+  # FIXING A FAILURE. Drift means the recorded number is wrong, not the file — the URLs
+  # carry pinned hashes, so weights that actually changed fail `download_verified` long
+  # before they reach a user. Correct `sizeBytes` in model-plan.json from the live figure
+  # the log prints. If the hash moved too, that is a model bump: use the verify-pin-bump
+  # skill instead, and update both.
+  model-plan-size-canary:
+    name: "📏 Model-Plan Size Canary"
+    if: github.event.schedule == '0 14 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.job == 'model-plan-size-canary')
+    concurrency:
+      group: nightly-model-plan-size-canary
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🍞 Setup Bun workspace
+        uses: ./.github/actions/setup-bun
+
+      # Tee'd because the issue body quotes the per-file figures; pipefail keeps the
+      # step's own outcome, which the report and fail steps below both read.
+      - name: 📏 Compare every recorded size against its pinned URL
+        id: check
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -o pipefail
+          bun .github/scripts/check-model-plan-sizes.ts 2>&1 | tee /tmp/model-plan-sizes.log
+
+      - name: 📣 Report a mis-sized plan (scheduled only)
+        if: github.event_name == 'schedule' && steps.check.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: bash .github/scripts/report-model-plan-sizes.sh
+
+      - name: ❌ Fail a mis-sized plan
+        if: steps.check.outcome == 'failure'
+        shell: bash
+        run: exit 1
+
+
+  cargo-dependency-maintenance:
+    name: "🦀 Cargo Dependency Maintenance"
+    if: github.event.schedule == '17 7 1 * *' || (github.event_name == 'workflow_dispatch' && inputs.job == 'cargo-dependency-maintenance')
+    concurrency:
+      group: nightly-cargo-dependency-maintenance
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # An install failure only degrades the report; the script records it and still opens the checklist.
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        continue-on-error: true
+        timeout-minutes: 5
+        with:
+          tool: cargo-outdated@0.19.0
+
+      - name: 🧾 Open monthly Cargo checklist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          REQUESTED_MONTH: ${{ inputs.month }}
+        shell: bash
+        run: .github/scripts/cargo-maintenance-issue.sh

@@ -7,7 +7,7 @@
 //! model nobody runs.
 //!
 //! One extractor, two verifiers: this test reads `KESHA_PACT_MODEL` and defaults
-//! to the mini, so the per-PR run checks the stand-in and `mini-model-pact.yml`
+//! to the mini, so the per-PR run checks the stand-in and `nightly.yml`'s `mini-model-pact` job
 //! points the same code at the downloaded real model. Both must match the one
 //! recorded `signature.json`.
 
