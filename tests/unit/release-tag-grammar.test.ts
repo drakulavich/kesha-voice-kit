@@ -152,13 +152,10 @@ describe("release manifest tag check", () => {
   const fixtures: string[] = [];
   const LINKED = ["src", ".github", "packaging"];
 
-  function fixtureRepo(version: string, engineVersion: string): string {
+  function fixtureRepo(version: string): string {
     const dir = tempDir("kesha-manifest-");
     for (const entry of LINKED) symlinkSync(`${REPO_ROOT}/${entry}`, join(dir, entry));
-    writeFileSync(
-      join(dir, "package.json"),
-      JSON.stringify({ version, keshaEngine: { version: engineVersion } }),
-    );
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ version }));
     fixtures.push(dir);
     return dir;
   }
@@ -175,71 +172,40 @@ describe("release manifest tag check", () => {
     expect((await manifestCheck(["--tag", `v${pkg.version}`])).accepted).toBe(true);
   });
 
-  test("a tag naming the CLI version is rejected — the engine never releases under it", async () => {
-    const cwd = fixtureRepo("9.9.9", "1.24.8");
-    const { accepted, stderr } = await manifestCheck(["--tag", "v9.9.9"], cwd);
+  test("a stable tag naming another version is rejected, naming the committed one", async () => {
+    const cwd = fixtureRepo("1.32.0");
+    const { accepted, stderr } = await manifestCheck(["--tag", "v1.33.0"], cwd);
 
     expect(accepted).toBe(false);
-    expect(stderr).toContain("must match package.json#keshaEngine.version (1.24.8)");
+    expect(stderr).toContain("must name package.json#version (1.32.0)");
   });
 
-  // Lockstep is legal (check-versions.ts rule 2 is `cli >= engine`), so divergence is not an invariant.
-  test("a release where both lines carry the same version still validates", async () => {
-    const cwd = fixtureRepo("1.24.8", "1.24.8");
-    expect((await manifestCheck(["--tag", "v1.24.8"], cwd)).accepted).toBe(true);
+  // release.yml derives alphas and accepts betas as prereleases of the committed version (D3).
+  test.each(["v1.32.0-alpha.1", "v1.32.0-beta.2"])("%s, a prerelease of the committed version, is accepted", async (tag) => {
+    expect((await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"))).accepted).toBe(true);
   });
 
-  test("an engine alpha is accepted when the version line carries the suffix too", async () => {
-    const cwd = fixtureRepo("1.27.0", "1.24.8-alpha.1");
-    expect((await manifestCheck(["--tag", "v1.24.8-alpha.1"], cwd)).accepted).toBe(true);
-  });
-
-  // The pin names the released engine and may never name an alpha (#738), so an alpha leads it.
-  test("an engine alpha above the pin is accepted", async () => {
-    const cwd = fixtureRepo("1.27.0", "1.24.7");
-    expect((await manifestCheck(["--tag", "v1.24.8-alpha.1"], cwd)).accepted).toBe(true);
-  });
-
-  test("an engine alpha below the pin is rejected", async () => {
-    const cwd = fixtureRepo("1.27.0", "1.24.9");
-    const { accepted, stderr } = await manifestCheck(["--tag", "v1.24.8-alpha.1"], cwd);
+  test.each(["v1.31.0-alpha.1", "v1.33.0-beta.1", "v1.32.1-alpha.1"])("%s, a prerelease of another version, is rejected", async (tag) => {
+    const { accepted, stderr } = await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"));
 
     expect(accepted).toBe(false);
-    expect(stderr).toContain("or name an alpha above it");
+    expect(stderr).toContain("or a prerelease of it");
   });
 
-  // Only alphas may lead the pin; a stable or beta tag ahead of it means the bump was forgotten.
-  test("a stable or beta tag above the pin is still rejected", async () => {
-    const cwd = fixtureRepo("1.27.0", "1.24.7");
-
-    expect((await manifestCheck(["--tag", "v1.24.8"], cwd)).accepted).toBe(false);
-    expect((await manifestCheck(["--tag", "v1.24.8-beta.1"], cwd)).accepted).toBe(false);
-  });
-
-  test("the manifest describes the alpha, not the pin it leads", async () => {
-    const cwd = fixtureRepo("1.27.0", "1.24.7");
-    const proc = Bun.spawn(["node", SCRIPT, "--tag", "v1.24.8-alpha.1"], {
-      cwd,
+  test("the manifest describes the prerelease it publishes", async () => {
+    const proc = Bun.spawn(["node", SCRIPT, "--tag", "v1.32.0-alpha.1"], {
+      cwd: fixtureRepo("1.32.0"),
       stdout: "pipe",
       stderr: "ignore",
     });
     const manifest = JSON.parse(await new Response(proc.stdout).text());
 
-    expect(manifest.tag).toBe("v1.24.8-alpha.1");
-    expect(manifest.engineVersion).toBe("1.24.8-alpha.1");
-  });
-
-  test("the base version of an alpha is not an alias for it, in either direction", async () => {
-    const alpha = fixtureRepo("1.27.0", "1.24.8-alpha.1");
-    expect((await manifestCheck(["--tag", "v1.24.8"], alpha)).accepted).toBe(false);
-
-    // Stripping -alpha.N before compare would publish an alpha tag as the stable release.
-    const stable = fixtureRepo("1.27.0", "1.24.8");
-    expect((await manifestCheck(["--tag", "v1.24.8-alpha.1"], stable)).accepted).toBe(false);
+    expect(manifest.tag).toBe("v1.32.0-alpha.1");
+    expect(manifest.engineVersion).toBe("1.32.0-alpha.1");
   });
 
   // Reverting the default *and* the assertion makes `v<cliVersion>` exit 0 again (grok).
-  test("with no tag it defaults to the engine version rather than the CLI's", async () => {
+  test("with no tag it defaults to the committed version", async () => {
     const proc = Bun.spawn(["node", SCRIPT], { cwd: REPO_ROOT, stdout: "pipe", stderr: "ignore" });
     const manifest = JSON.parse(await new Response(proc.stdout).text());
 
