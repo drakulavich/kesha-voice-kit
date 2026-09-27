@@ -20,7 +20,6 @@ available and well-behaved on his Apple Silicon Mac.
 - The Engine's audio decode pipeline (symphonia + rubato) is not specified here.
 - Model hash pinning and download mechanics are covered in the installation
   spec.
-
 ## Requirements
 ### Requirement: The Engine is always a subprocess, never linked in-process
 
@@ -116,7 +115,7 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 > | `E_INSTALL_RACE` | internal | **yes** | cli | Another install reached the same cache first |
 > | `E_INTERNAL` | internal | no | both | Unexpected internal error |
 >
-> *Feature strings and their gates (`get_capabilities` in `rust/src/capabilities.rs`; the gates become Profile names once `build-profiles` lands):*
+> *Feature strings and their gates (`get_capabilities` in `rust/src/capabilities.rs`; a bare name is a cfg alias from `rust/build.rs`, set only on a macOS target and enabled by the `darwin` Profile):*
 >
 > | Feature | Gate |
 > |---|---|
@@ -132,9 +131,9 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 > | `"tts.en_acronym_expansion"` | `feature = "tts"` |
 > | `"tts.ru_emphasis_marker"` | `feature = "tts"` |
 > | `"tts.prosody_rate"` | `feature = "tts"` |
-> | `"record.live"` | `darwin` Profile |
-> | `"record.live.auto-stop"` | `darwin` Profile |
-> | `"transcribe.diarize"` | `darwin` Profile |
+> | `"record.live"` | `darwin_native` |
+> | `"record.live.auto-stop"` | `darwin_native` |
+> | `"transcribe.diarize"` | `system_diarize` |
 
 ### Requirement: The protocol version is a gate, not a label
 
@@ -413,7 +412,7 @@ The Engine SHALL include `record.live` in the `features` array of its describe d
 - THEN `features` does not contain `"record.live"`
 - AND the rest of the document is unchanged in shape
 
-> *Technical Note — the push is gated on `#[cfg(all(feature = "coreml", target_os = "macos"))]` in `rust/src/capabilities.rs`, mirroring the runtime gate exactly so the advertisement cannot outlive the code path, and `record_live_is_advertised_only_where_it_compiles` pins it; the flag’s gate is the `live: record.live` row of `gate_rows()`. `protocolVersion` is 4: adding a feature string is additive and the generic flag-validation contract covers it.*
+> *Technical Note — the push is gated on `#[cfg(darwin_native)]` (the `coreml` feature on a macOS target, `rust/build.rs::emit_cfg_aliases`) in `rust/src/capabilities.rs`, mirroring the runtime gate exactly so the advertisement cannot outlive the code path, and `record_live_is_advertised_only_where_it_compiles` pins it; the flag’s gate is the `live: record.live` row of `gate_rows()`. `protocolVersion` is 4: adding a feature string is additive and the generic flag-validation contract covers it.*
 
 ### Requirement: Engine spawn failures surface as E_ENGINE_SPAWN
 
@@ -431,6 +430,24 @@ Any failure to launch the `kesha-engine` binary (missing file, permission denied
 - THEN the surfaced `KeshaError` carries `code` `E_ENGINE_SPAWN`, names the path, and carries an actionable `hint`
 
 > *Technical Note — `KeshaError` in `src/engine/events.ts` is the failure type on every path; `SayError` (`src/synth.ts`) extends it and stays `say()`'s failure type, carrying the same `code`, `exitCode`, `stderr`, `hint` and `origin`.*
+
+### Requirement: The Engine names its release profile
+
+Every Engine binary published on a release SHALL have been built from exactly one of the two profiles `portable` and `darwin`, and its `describe` document SHALL report that profile as `profile`; a release row that names any other feature set SHALL fail the workflow check before a build starts.
+
+#### Scenario: Maks reads which profile his Engine is
+
+- GIVEN the darwin-arm64 Engine from a release
+- WHEN the CLI runs `kesha-engine describe`
+- THEN `profile` is `"darwin"` and `backend` is `"coreml"`
+
+#### Scenario: A release row drifts from the profiles
+
+- GIVEN a release workflow build row whose `features` is `onnx` without `tts`
+- WHEN the workflow lint runs in CI
+- THEN it fails naming the row and the two allowed profiles
+
+> *Technical Note — the bundles are `[features] portable` and `darwin` in `rust/Cargo.toml`; `PROFILE` in `rust/src/platform.rs` feeds `describe.rs::document`. The row assertion is `requireReleaseRowsNameOneProfile` in `.github/scripts/check-workflows.ts`, reading the `build` job's matrix in `.github/workflows/build-engine.yml:99-111` (`release.yml` once `unified-release` lands).*
 
 ## Open Issues
 
