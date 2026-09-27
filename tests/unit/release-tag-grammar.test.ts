@@ -1,112 +1,30 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, readdirSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { classifyReleaseTag } from "../../.github/scripts/classify-release-tag.mjs";
-import {
-  CLI_TAG_RE,
-  cliPublishTarget,
-  ENGINE_TAG_ERE,
-  ENGINE_TAG_RE,
-  isEngineAlphaTag,
-  stableVersionRe,
-} from "../../.github/scripts/release-tags.mjs";
+import { ENGINE_TAG_RE, isEngineAlphaTag, isStableTag } from "../../.github/scripts/release-tags.mjs";
 import { parseRepoYaml, readRepoFile, REPO_ROOT } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
 
 const RELEASE = parseRepoYaml(".github/workflows/release.yml");
 
-const ENGINE_TAGS = ["v1.24.8", "v1.24.8-beta.1", "v1.24.8-alpha.1"];
+const TAGS = ["v1.24.8", "v1.24.8-beta.1", "v1.24.8-alpha.1"];
 const CLI_TAGS = ["v1.27.0-cli", "v1.27.0-alpha.1-cli"];
 const NOT_TAGS = ["1.24.8", "v1.24", "v1.24.8-alpha", "v1.24.8-alpha.x", "v1.24.8; id"];
 
-/** The grammar is one ERE string precisely so bash and JS cannot disagree about it (#685). */
-async function bashAccepts(tag: string): Promise<boolean> {
-  const proc = Bun.spawn(["bash", "-c", `[[ "$1" =~ ${ENGINE_TAG_ERE} ]]`, "bash", tag], {
-    stdout: "ignore",
-    stderr: "ignore",
+describe("release tag grammar", () => {
+  test("accepts stable, beta and alpha tags", () => {
+    for (const tag of TAGS) expect(ENGINE_TAG_RE.test(tag)).toBe(true);
   });
-  return (await proc.exited) === 0;
-}
 
-describe("engine tag grammar", () => {
-  test("accepts stable, beta and alpha engine tags", async () => {
-    for (const tag of ENGINE_TAGS) {
-      expect(ENGINE_TAG_RE.test(tag)).toBe(true);
-      expect(await bashAccepts(tag)).toBe(true);
+  test("rejects retired CLI marker tags and malformed shapes", () => {
+    for (const tag of [...CLI_TAGS, ...NOT_TAGS]) expect(ENGINE_TAG_RE.test(tag)).toBe(false);
+  });
+
+  test("only a bare version is stable", () => {
+    expect(isStableTag("v1.24.8")).toBe(true);
+    for (const tag of ["v1.24.8-beta.1", "v1.24.8-alpha.1", "v1.27.0-cli", "V1.24.8", "v1.24.8+build", ...NOT_TAGS]) {
+      expect(isStableTag(tag)).toBe(false);
     }
-  });
-
-  test("rejects CLI marker tags and malformed shapes", async () => {
-    for (const tag of [...CLI_TAGS, ...NOT_TAGS]) {
-      expect(ENGINE_TAG_RE.test(tag)).toBe(false);
-      expect(await bashAccepts(tag)).toBe(false);
-    }
-  });
-});
-
-// Built from the same version pattern as the engine grammar, so the two cannot drift apart.
-describe("CLI marker tag grammar", () => {
-  test("accepts every CLI shape", () => {
-    for (const tag of [...CLI_TAGS, "v1.27.0-beta.1-cli"]) {
-      expect(CLI_TAG_RE.test(tag)).toBe(true);
-    }
-  });
-
-  test("rejects engine tags and malformed shapes", () => {
-    for (const tag of [...ENGINE_TAGS, ...NOT_TAGS, "v1.27.0-cli-cli", "v1.27.0-rc.1-cli", "cli"]) {
-      expect(CLI_TAG_RE.test(tag)).toBe(false);
-    }
-  });
-});
-
-// The floor the alpha derivation refuses to mint below, so a prerelease slipping through here
-// would let an alpha of an already-released base pass the guard (#802).
-describe("published stable shape", () => {
-  const CLI_STABLE = stableVersionRe("-cli");
-  const ENGINE_STABLE = stableVersionRe("");
-  const PRERELEASES = ["v1.27.0-alpha.2-cli", "v1.27.0-beta.1-cli", "v1.27.0-alpha.2", "v1.24.8-beta.1"];
-  const LOOKALIKES = [
-    "V1.27.0-cli",
-    "1.27.0-cli",
-    "v1.27.0-cli-cli",
-    "v1.27.0cli",
-    "v1.27.0-CLI",
-    "v1.27.0.1-cli",
-    "v1.27.0+build-cli",
-    "V1.24.8",
-    "1.24.8",
-    "v1.24.8.1",
-    "v1.24.8+build",
-  ];
-
-  test("accepts exactly its own channel's stable tag", () => {
-    expect(CLI_STABLE.test("v1.27.0-cli")).toBe(true);
-    expect(ENGINE_STABLE.test("v1.24.8")).toBe(true);
-  });
-
-  // The guard compares the captured version, not the tag, so the marker must not leak into it.
-  test("captures the bare version", () => {
-    expect(CLI_STABLE.exec("v1.27.0-cli")?.[1]).toBe("1.27.0");
-    expect(ENGINE_STABLE.exec("v1.24.8")?.[1]).toBe("1.24.8");
-  });
-
-  test("rejects every prerelease", () => {
-    for (const tag of PRERELEASES) {
-      expect(CLI_STABLE.test(tag)).toBe(false);
-      expect(ENGINE_STABLE.test(tag)).toBe(false);
-    }
-  });
-
-  test("rejects malformed and marker-lookalike shapes", () => {
-    for (const tag of [...LOOKALIKES, ...NOT_TAGS, "cli", ""]) {
-      expect(CLI_STABLE.test(tag)).toBe(false);
-      expect(ENGINE_STABLE.test(tag)).toBe(false);
-    }
-  });
-
-  test("neither channel matches the other's stable tag", () => {
-    expect(CLI_STABLE.test("v1.24.8")).toBe(false);
-    expect(ENGINE_STABLE.test("v1.27.0-cli")).toBe(false);
   });
 });
 
@@ -117,18 +35,12 @@ describe("release trigger", () => {
   });
 });
 
-describe("engine alpha shape", () => {
-  test("only an engine alpha shape counts as one", () => {
+describe("alpha shape", () => {
+  test("only an alpha shape counts as one", () => {
     expect(isEngineAlphaTag("v1.24.8-alpha.1")).toBe(true);
     for (const tag of ["v1.24.8", "v1.24.8-beta.1", "v1.27.0-alpha.1-cli", "v1.24.8-alpha"]) {
       expect(isEngineAlphaTag(tag)).toBe(false);
     }
-  });
-
-  test("only an alpha publishes itself, and only stable is not a prerelease", () => {
-    expect(classifyReleaseTag("v1.24.8-alpha.1")).toEqual({ publish: true, prerelease: true });
-    expect(classifyReleaseTag("v1.24.8")).toEqual({ publish: false, prerelease: false });
-    expect(classifyReleaseTag("v1.24.8-beta.1")).toEqual({ publish: false, prerelease: true });
   });
 });
 
@@ -211,38 +123,6 @@ describe("release manifest tag check", () => {
 
     expect(await proc.exited).toBe(0);
     expect(manifest.tag).toBe(`v${pkg.version}`);
-  });
-});
-
-describe("cliPublishTarget", () => {
-  test("a CLI marker tag publishes the version the tag names", () => {
-    expect(cliPublishTarget("v1.26.0-cli")).toEqual({
-      version: "1.26.0",
-      engineOnly: false,
-      derived: false,
-    });
-  });
-
-  test("a CLI alpha keeps its prerelease identifier", () => {
-    expect(cliPublishTarget("v1.27.0-alpha.1-cli")).toEqual({
-      version: "1.27.0-alpha.1",
-      engineOnly: false,
-      derived: true,
-    });
-  });
-
-  // A bare tag names the engine version, so publishing it would put main's unreleased CLI
-  // on npm under the engine's number and move `latest` backwards (#729).
-  test("no engine tag publishes a CLI, stable included", () => {
-    for (const tag of ["v1.24.8", "v1.24.8-alpha.1", "v1.24.8-beta.1"]) {
-      expect(cliPublishTarget(tag).engineOnly).toBe(true);
-    }
-  });
-
-  test("the CLI ships only from its own marker tag", () => {
-    for (const tag of ["v1.26.0-cli", "v1.27.0-alpha.1-cli"]) {
-      expect(cliPublishTarget(tag).engineOnly).toBe(false);
-    }
   });
 });
 

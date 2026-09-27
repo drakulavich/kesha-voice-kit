@@ -69,11 +69,11 @@ than once per release.
 - WHEN that version is released on the stable channel
 - THEN the stable version SHALL be ordered above every alpha carrying the same base version
 
-> *Technical Note — sources: `.github/scripts/npm-dist-tag.mjs::npmDistTag`, called from
-> the `resolve` job of `.github/workflows/npm-publish.yml`, derives the dist-tag from the
-> SemVer prerelease identifier, so `-alpha.N` resolves to `alpha` rather than collapsing
-> onto `beta`. `.github/scripts/check-versions.ts` already implements SemVer precedence
-> including "a stable version outranks its prereleases".*
+> *Technical Note — sources: `.github/scripts/release-classify.ts::classifyRelease` maps the
+> Channel to the dist-tag (`DIST_TAG`), so an alpha resolves to `alpha` rather than
+> collapsing onto `beta`, and `release.yml`'s `npm-publish` job publishes under it.
+> `src/semver.mjs::cmp` implements SemVer precedence, including "a stable version outranks
+> its prereleases".*
 
 ### Requirement: CLI alphas publish on every merge that changes the CLI
 
