@@ -52,7 +52,7 @@
         # invokes `swift build` against a Package.swift that depends on
         # `github.com/FluidInference/FluidAudio.git`. Nix derivations run in
         # a sandboxed, offline environment, so the SwiftPM clone fails. The
-        # canonical darwin release (`build-engine.yml`, pinned Xcode 16.2)
+        # canonical darwin release (`release.yml`, pinned Xcode 16.2)
         # still ships the CoreML backend; this flake lane validates the
         # ONNX path + Swift toolchain + Apple SDK frameworks + the
         # `say-avspeech` sidecar postInstall on darwin.
@@ -102,7 +102,7 @@
         ]);
 
         # Environment variables for build - passed directly to mkDerivation.
-        # MACOSX_DEPLOYMENT_TARGET=14.0 mirrors build-engine.yml so the
+        # MACOSX_DEPLOYMENT_TARGET=14.0 mirrors release.yml so the
         # `-Wl,-rpath,/usr/lib/swift` rpath fix-up in rust/build.rs lines up
         # with the runner SDK; harmless on Linux (ignored by ld).
         buildEnv = {

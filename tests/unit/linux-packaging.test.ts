@@ -1,10 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { readRepoFile } from "../helpers/repo";
 
-// These lived in release-manifest.mjs while the manifest promised .deb/.rpm assets. Engine
-// releases no longer attach them; the CLI's own `-cli` tag does (#728). linux-packages.yml
-// still builds and smoke-installs the pair on main, and its path filter means an unrelated PR
-// never exercises it — so the invariants need a home that always runs.
+// release.yml's `packages` job attaches the pair to a stable release; linux-packages.yml builds and
+// smoke-installs it on main, and its path filter means an unrelated PR never exercises it — so the
+// invariants need a home that always runs.
 const PACKAGE_SCRIPT = ".github/scripts/build-linux-packages.mjs";
 const PACKAGE_NAMES = ".github/scripts/linux-package-names.mjs";
 const NFPM_CONFIG = "packaging/nfpm.yaml";
@@ -24,14 +23,10 @@ describe("linux packaging pipeline", () => {
   });
 
   // One composite so the CI lane and the release lane cannot build the pair differently.
-  test.each([".github/workflows/linux-packages.yml", ".github/workflows/release-cli.yml"])(
+  test.each([".github/workflows/linux-packages.yml", ".github/workflows/release.yml"])(
     "%s builds through the shared composite",
     (workflow) => {
       expect(readRepoFile(workflow)).toContain("./.github/actions/linux-packages");
     },
   );
-
-  test("no engine release builds them", () => {
-    expect(readRepoFile(".github/workflows/build-engine.yml")).not.toContain("build-linux-packages.mjs");
-  });
 });

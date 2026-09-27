@@ -10,7 +10,7 @@ on:
       - .github/scripts/install-nfpm.sh
       - .github/scripts/verify-linux-packages.sh
       - .github/workflows/linux-packages.yml
-      - .github/workflows/build-engine.yml
+      - .github/workflows/release.yml
       - .github/actions/setup-bun/action.yml
       - .github/actions/linux-packages/action.yml
       - package.json
@@ -22,7 +22,7 @@ on:
       - docs/linux-packages.md
       - LICENSE
       - NOTICES.md
-  # release-cli.yml shares this build and only ever runs on a tag, so a PR touching the shared
+  # release.yml shares this build and publishes it only from a tag, so a PR touching the shared
   # machinery is the last place a broken step can surface before a release depends on it (#728).
   pull_request:
     paths:
@@ -42,7 +42,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # CI only. The packages users install are cut from a `-cli` tag by release-cli.yml (#728).
+  # CI only. The packages users install are cut from a stable tag by release.yml (#728).
   linux-packages:
     runs-on: ubuntu-latest
     timeout-minutes: 15

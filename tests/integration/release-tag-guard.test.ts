@@ -9,22 +9,22 @@ type Step = { run?: unknown };
 // Executes the real step's shell, not a hand-copied stand-in — a copy can drift from what ships
 // and still read as coverage, which is what shipped the tag-object-vs-commit bug (#1115 review).
 function guardScript(): string {
-  const document = parseRepoYaml(".github/workflows/build-engine.yml") as {
-    jobs?: { release?: { steps?: Step[] } };
+  const document = parseRepoYaml(".github/workflows/release.yml") as {
+    jobs?: { "github-release"?: { steps?: Step[] } };
   };
-  const steps = document.jobs?.release?.steps ?? [];
+  const steps = document.jobs?.["github-release"]?.steps ?? [];
   const guard = steps.find(
     (step) => typeof step.run === "string" && step.run.includes("refs/tags") && step.run.includes("GITHUB_SHA"),
   );
-  if (!guard || typeof guard.run !== "string") throw new Error("release job has no tag-currency guard step");
+  if (!guard || typeof guard.run !== "string") throw new Error("github-release has no tag-currency guard step");
   return guard.run;
 }
 
 // Mirrors GHA's real `bash --noprofile --norc -eo pipefail {0}` — plain `bash -c` masks a failed `git ls-remote` as an empty `current` instead of aborting (#1115 review round 2).
-async function runGuard(work: string, tagName: string, sha: string): Promise<{ code: number; stdout: string }> {
+async function runGuard(work: string, tagName: string, sha: string, refType = "tag"): Promise<{ code: number; stdout: string }> {
   const proc = Bun.spawn(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", guardScript()], {
     cwd: work,
-    env: { ...process.env, TAG_NAME: tagName, GITHUB_SHA: sha },
+    env: { ...process.env, TAG_NAME: tagName, GITHUB_SHA: sha, REF_TYPE: refType },
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -33,7 +33,7 @@ async function runGuard(work: string, tagName: string, sha: string): Promise<{ c
   return { code, stdout };
 }
 
-describe("build-engine.yml release job: tag-currency guard", () => {
+describe("release.yml github-release: tag-currency guard", () => {
   test("passes an annotated tag that has not moved", async () => {
     const work = await gitRepoWithRemote();
     const sha = await git(work, "rev-parse", "HEAD");
@@ -56,7 +56,7 @@ describe("build-engine.yml release job: tag-currency guard", () => {
 
     const { code, stdout } = await runGuard(work, "v1.0.0", original);
     expect(code).toBe(1);
-    expect(stdout).toContain("re-pointed mid-build");
+    expect(stdout).toContain("Refusing to publish");
   });
 
   // `git rev-parse refs/tags/<annotated>` alone returns the tag object, never GITHUB_SHA — this
@@ -124,5 +124,31 @@ describe("build-engine.yml release job: tag-currency guard", () => {
     await git(work, "push", "-qf", "origin", "refs/tags/v2.0.0");
 
     expect((await runGuard(work, "v2.0.0", original)).code).toBe(1);
+  });
+
+  test("a tag push whose tag is gone refuses rather than letting the publish create it elsewhere", async () => {
+    const work = await gitRepoWithRemote();
+    const sha = await git(work, "rev-parse", "HEAD");
+    expect((await runGuard(work, "v3.0.0", sha)).code).toBe(1);
+  });
+
+  // A dispatched prerelease has no tag yet; `gh release create --target` makes it at this run's commit.
+  test("a dispatch whose tag does not exist yet passes", async () => {
+    const work = await gitRepoWithRemote();
+    const sha = await git(work, "rev-parse", "HEAD");
+    const { code, stdout } = await runGuard(work, "v3.0.0-beta.1", sha, "branch");
+    expect(code).toBe(0);
+    expect(stdout).toContain("does not exist yet");
+  });
+
+  test("a dispatch whose tag already names another commit fails, since tag names are one-use", async () => {
+    const work = await gitRepoWithRemote();
+    const original = await git(work, "rev-parse", "HEAD");
+    await git(work, "tag", "v3.0.0-beta.1");
+    await git(work, "push", "-q", "origin", "refs/tags/v3.0.0-beta.1");
+    await commit(work, "later work");
+    const later = await git(work, "rev-parse", "HEAD");
+    expect(later).not.toBe(original);
+    expect((await runGuard(work, "v3.0.0-beta.1", later, "branch")).code).toBe(1);
   });
 });

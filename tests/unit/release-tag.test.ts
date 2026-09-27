@@ -8,7 +8,7 @@ const notes = "## Release\n\n- safer tagging\n";
 
 const success = (stdout = ""): CommandResult => ({ code: 0, stdout, stderr: "" });
 
-function fakeRunner(mode: "push" | "api", failPush = false): { runner: CommandRunner; calls: string[][] } {
+function fakeRunner(failPush = false): { runner: CommandRunner; calls: string[][] } {
   const calls: string[][] = [];
   const runner: CommandRunner = async (argv) => {
     calls.push(argv);
@@ -32,9 +32,8 @@ function fakeRunner(mode: "push" | "api", failPush = false): { runner: CommandRu
     if (command === `gh api repos/drakulavich/kesha-voice-kit/git/tags/${tagObject}`) {
       return success(JSON.stringify({ tag, message: notes, object: { type: "commit", sha: target }, tagger: { name: "Release Maintainer", email: "release@example.com" } }));
     }
-    if (command === "gh workflow run build-engine.yml --repo drakulavich/kesha-voice-kit --ref v1.30.0") return success();
-    if (command.includes("gh run list") && command.includes("build-engine.yml")) {
-      return success(JSON.stringify([{ headSha: target, event: mode === "push" ? "push" : "workflow_dispatch" }]));
+    if (command.includes("gh run list") && command.includes("release.yml")) {
+      return success(JSON.stringify([{ headSha: target, event: "push" }]));
     }
     throw new Error(`unexpected command: ${command}`);
   };
@@ -49,7 +48,7 @@ describe("release tag helper", () => {
   });
 
   test("uses the ordinary annotated git push path and verifies the remote object and workflow", async () => {
-    const { runner, calls } = fakeRunner("push");
+    const { runner, calls } = fakeRunner();
 
     await createStableTag({ tag, notesPath: "notes.md", mode: "push" }, notes, runner);
 
@@ -58,18 +57,20 @@ describe("release tag helper", () => {
     expect(calls.some((call) => call.includes("repos/drakulavich/kesha-voice-kit/git/tags"))).toBe(false);
   });
 
-  test("uses the documented two-step GitHub API fallback and explicitly dispatches the build", async () => {
-    const { runner, calls } = fakeRunner("api");
+  // release.yml refuses a stable dispatch, so the API path relies on the tag ref's own push event.
+  test("uses the documented two-step GitHub API fallback and waits for the tag's push-triggered release run", async () => {
+    const { runner, calls } = fakeRunner();
 
     await createStableTag({ tag, notesPath: "notes.md", mode: "api" }, notes, runner);
 
     expect(calls.some((call) => call.join(" ") === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -")).toBe(true);
     expect(calls.some((call) => call.join(" ") === `gh api --method POST repos/drakulavich/kesha-voice-kit/git/refs -f ref=refs/tags/${tag} -f sha=${tagObject}`)).toBe(true);
-    expect(calls.some((call) => call.join(" ") === "gh workflow run build-engine.yml --repo drakulavich/kesha-voice-kit --ref v1.30.0")).toBe(true);
+    expect(calls.some((call) => call.join(" ").startsWith("gh workflow run"))).toBe(false);
+    expect(calls.some((call) => call.join(" ").includes("run list") && call.includes("release.yml"))).toBe(true);
   });
 
   test("does not switch to the API path after an uncertain push failure", async () => {
-    const { runner, calls } = fakeRunner("push", true);
+    const { runner, calls } = fakeRunner(true);
 
     await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, notes, runner)).rejects.toThrow("remote state is uncertain");
     expect(calls.some((call) => call.join(" ") === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -")).toBe(false);

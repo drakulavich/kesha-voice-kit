@@ -16,20 +16,18 @@ import {
   forbidExpressionsInRun,
   forbidFindPipedToHead,
   forbidLongInlineRun,
-  forbidLinuxPackaging,
   forbidNixBuildInCiAggregator,
   requireEveryJobInCiAggregator,
   requireJobTimeouts,
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
-  requireBuildEngineSerialisesRunsPerRef,
   requireBuildScriptInCoremlFilter,
   requireReleaseJobOrder,
   requireReleaseQueue,
   requireReleaseVerifiesTagIsCurrent,
   requireRustTestCancelsSupersededRuns,
   requirePipefailShell,
-  requireReusableCallPermissions,
+  forbidReusableWorkflows,
   requireRestoreOnlyCachesHaveAWriter,
   requireDarwinSmokeCoversBothEngines,
   requireDepsBeforeBunTest,
@@ -38,7 +36,6 @@ import {
   requireRustReferenceTargetsInCodeFilter,
   requireRustSourcesInCodeFilter,
   requireManifestSourcesInSeedFilter,
-  requireNpmPublishAfterPackaging,
   requirePactVerificationCoversEveryTarget,
   requirePinnedRustToolchain,
   requirePreUploadSynthesisSmoke,
@@ -49,10 +46,9 @@ import {
 import { parseRepoYaml, readRepoFile, repoPath, REPO_ROOT } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
 
-const PATH = ".github/workflows/build-engine.yml";
+const PATH = ".github/workflows/release.yml";
 const CI = ".github/workflows/ci.yml";
 const RUST_TEST = ".github/workflows/rust-test.yml";
-const RELEASE_CLI = ".github/workflows/release-cli.yml";
 const PACT = ".github/workflows/capability-pact.yml";
 
 function job(name: string, steps: unknown[]) {
@@ -63,7 +59,7 @@ const SMOKE = { name: "smoke", run: "bun .github/scripts/smoke-synthesis.ts --no
 const UPLOAD = { name: "upload", uses: "actions/upload-artifact@043fb46" };
 
 describe("requirePreUploadSynthesisSmoke", () => {
-  test("passes on the real build-engine.yml", () => {
+  test("passes on the real release.yml", () => {
     expect(requirePreUploadSynthesisSmoke(PATH, parseRepoYaml(PATH))).toEqual([]);
   });
 
@@ -124,7 +120,7 @@ describe("requireDarwinSmokeCoversBothEngines", () => {
     run: "bun .github/scripts/smoke-synthesis.ts --no-roundtrip --voice macos-en-US av",
   };
 
-  test("passes on the real build-engine.yml", () => {
+  test("passes on the real release.yml", () => {
     expect(requireDarwinSmokeCoversBothEngines(PATH, parseRepoYaml(PATH))).toEqual([]);
   });
 
@@ -172,31 +168,6 @@ describe("requireDarwinSmokeCoversBothEngines", () => {
   test("fails when the lane is gone", () => {
     const errors = requireDarwinSmokeCoversBothEngines(PATH, { jobs: { build: {} } });
     expect(errors[0]).toContain(`expected a \`${DARWIN}\` job`);
-  });
-});
-
-describe("forbidLinuxPackaging", () => {
-  test("passes on the real build-engine.yml", () => {
-    expect(forbidLinuxPackaging(PATH, readRepoFile(PATH))).toEqual([]);
-  });
-
-  test("ignores every other workflow", () => {
-    expect(forbidLinuxPackaging(CI, "run: node .github/scripts/build-linux-packages.mjs")).toEqual([]);
-  });
-
-  test.each([
-    "        run: node .github/scripts/build-linux-packages.mjs",
-    "        run: cp dist/linux-packages/*.{deb,rpm} release-assets/",
-    "        run: nfpm package -p deb -t release-assets/",
-    "        run: cp dist/*.deb release-assets/",
-    "        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.4",
-  ])("catches %s", (line) => {
-    expect(forbidLinuxPackaging(PATH, line).length).toBeGreaterThan(0);
-  });
-
-  test("prose about the policy is not packaging", () => {
-    const comment = "      # packages (.deb/.rpm) moved off engine tags; see nfpm notes in #728";
-    expect(forbidLinuxPackaging(PATH, comment)).toEqual([]);
   });
 });
 
@@ -320,51 +291,6 @@ describe("checkFlakeNix", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-  });
-});
-
-describe("requireNpmPublishAfterPackaging", () => {
-  const DISPATCH = { name: "dispatch", run: ".github/scripts/dispatch-npm-publish.sh" };
-  const PACKAGING = [
-    { name: "build", uses: "./.github/actions/linux-packages" },
-    { name: "publish", run: ".github/scripts/publish-cli-release.sh" },
-  ];
-  const lane = (publishNpm: unknown, packages: unknown[] = PACKAGING) => ({
-    on: { push: { tags: ["v*-cli"] } },
-    jobs: { packages: { steps: packages }, "publish-npm": publishNpm },
-  });
-  const withNpm = (packages: unknown[]) => lane({ needs: ["packages"], steps: [DISPATCH] }, packages);
-
-  test("passes on the real release-cli.yml", () => {
-    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, parseRepoYaml(RELEASE_CLI))).toEqual([]);
-  });
-
-  test("ignores every other workflow", () => {
-    expect(requireNpmPublishAfterPackaging(PATH, { jobs: {} })).toEqual([]);
-  });
-
-  const NPM = { needs: ["packages"], steps: [DISPATCH] };
-  const firstError = (document: unknown) =>
-    requireNpmPublishAfterPackaging(RELEASE_CLI, document)[0] ?? "";
-
-  const broken: [string, unknown, string][] = [
-    ["the tag filter would take in engine tags", { ...lane(NPM), on: { push: { tags: ["v*"] } } }, "must trigger on `v*-cli`"],
-    // `needs: packages` on a packages job that builds nothing satisfies the ordering and ships nothing (grok).
-    ["the packaging job builds nothing", withNpm([PACKAGING[1]]), "must build through ./.github/actions/linux-packages"],
-    ["the packaging job publishes nothing", withNpm([PACKAGING[0]]), "must run publish-cli-release.sh"],
-    ["the packaging job is gone", { on: { push: { tags: ["v*-cli"] } }, jobs: { "publish-npm": NPM } }, "expected a `packages` job"],
-    // Dropping the dependency lets a .deb reach users for a version npm never served (#728).
-    ["the npm publish no longer waits for the packaging job", lane({ ...NPM, needs: ["plan"] }), "must `needs: packages`"],
-    ["nothing dispatches npm-publish.yml", lane({ needs: ["plan", "packages"], steps: [] }), "must run dispatch-npm-publish.sh"],
-    ["the publish job is gone", { on: { push: { tags: ["v*-cli"] } }, jobs: { packages: { steps: PACKAGING } } }, "expected a `publish-npm` job"],
-  ];
-
-  test.each(broken)("fails when %s", (_name, document, expected) => {
-    expect(firstError(document)).toContain(expected);
-  });
-
-  test("accepts the single-job spelling of needs", () => {
-    expect(requireNpmPublishAfterPackaging(RELEASE_CLI, lane({ ...NPM, needs: "packages" }))).toEqual([]);
   });
 });
 
@@ -878,7 +804,7 @@ describe("requireReleaseRowsNameOneProfile", () => {
     jobs: { build: { strategy: { matrix: { include: features.map((f, i) => ({ binary: `bin-${i}`, features: f })) } } } },
   });
 
-  test("passes on the real build-engine.yml", () => {
+  test("passes on the real release.yml", () => {
     expect(requireReleaseRowsNameOneProfile(PATH, parseRepoYaml(PATH))).toEqual([]);
   });
 
@@ -1351,53 +1277,24 @@ describe("requireJobTimeouts", () => {
   });
 });
 
-describe("requireReusableCallPermissions", () => {
-  const SMOKE = "./.github/workflows/release-install-smoke.yml";
-
-  test("passes on the real release-cli.yml", () => {
-    expect(requireReusableCallPermissions(RELEASE_CLI, parseRepoYaml(RELEASE_CLI))).toEqual([]);
+describe("forbidReusableWorkflows", () => {
+  test("passes on every real workflow", () => {
+    for (const name of readdirSync(repoPath(".github/workflows"))) {
+      const path = `.github/workflows/${name}`;
+      expect(forbidReusableWorkflows(path, parseRepoYaml(path))).toEqual([]);
+    }
   });
 
-  test("ignores a job that runs steps rather than calling a workflow", () => {
-    expect(requireReusableCallPermissions(RELEASE_CLI, job("build", [UPLOAD]))).toEqual([]);
-  });
-
-  test("fails when the caller grants read and the callee asks for write", () => {
-    const errors = requireReusableCallPermissions(RELEASE_CLI, {
-      permissions: { contents: "read" },
-      jobs: { smoke: { uses: SMOKE } },
-    });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("draft-engine");
-    expect(errors[0]).toContain("fails to start");
-  });
-
-  test("passes once the calling job raises the scope itself", () => {
-    expect(
-      requireReusableCallPermissions(RELEASE_CLI, {
-        permissions: { contents: "read" },
-        jobs: { smoke: { uses: SMOKE, permissions: { contents: "write" } } },
-      }),
-    ).toEqual([]);
-  });
-
-  test("a job-level block replaces the workflow-level one rather than merging", () => {
-    // The job grants only `actions`, so `contents` drops to none for the call — both callee jobs go unmet.
-    const errors = requireReusableCallPermissions(RELEASE_CLI, {
-      permissions: { contents: "write" },
-      jobs: { smoke: { uses: SMOKE, permissions: { actions: "read" } } },
-    });
+  test("fails a workflow_call trigger and a job calling a workflow file", () => {
+    const errors = forbidReusableWorkflows(CI, { on: { workflow_call: {} }, jobs: { x: { uses: "./.github/workflows/y.yml" } } });
     expect(errors).toHaveLength(2);
-    expect(errors.join("\n")).toContain("requests \`contents: read\`");
-    expect(errors.join("\n")).toContain("only grants \`contents: none\`");
+    expect(errors.every((e) => e.includes("composite action"))).toBe(true);
   });
 
-  test("reports a called workflow that does not exist", () => {
-    const errors = requireReusableCallPermissions(RELEASE_CLI, {
-      jobs: { smoke: { uses: "./.github/workflows/does-not-exist.yml" } },
-    });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("does not exist");
+  test("the file gate actually runs it", () => {
+    const path = join(tempDir("kesha-wf-"), "probe.yml");
+    writeFileSync(path, "on:\n  workflow_call: {}\njobs: {}\n");
+    expect(checkFile(path, [], [], undefined, NO_SOURCES).some((e) => e.includes("composite action"))).toBe(true);
   });
 });
 
@@ -1571,68 +1468,6 @@ describe("requireConcurrencyOnPullRequestWorkflows", () => {
   });
 });
 
-describe("requireBuildEngineSerialisesRunsPerRef", () => {
-  const ref = { group: "${{ github.workflow }}-${{ github.ref }}", "cancel-in-progress": false };
-
-  test("passes on the real build-engine.yml", () => {
-    expect(requireBuildEngineSerialisesRunsPerRef(PATH, parseRepoYaml(PATH))).toEqual([]);
-  });
-
-  // rust-test.yml sets cancel-in-progress: true deliberately (#1105); this rule must not reach it.
-  test("ignores every other workflow", () => {
-    const RUST_TEST = ".github/workflows/rust-test.yml";
-    expect(requireBuildEngineSerialisesRunsPerRef(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
-  });
-
-  test("fails when the group is constant across refs", () => {
-    const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
-      concurrency: { group: "build-engine", "cancel-in-progress": false },
-    });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("#1108");
-  });
-
-  // Both of these mention github.ref, so groupVariesPerRef accepts them; only the exact pin rejects them.
-  test("fails when a boolean group collapses every ref but one into a single lane", () => {
-    const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
-      concurrency: { group: "${{ github.ref == 'refs/tags/v1.0.1' }}", "cancel-in-progress": false },
-    });
-    expect(errors).toHaveLength(1);
-  });
-
-  test("fails when a run-scoped group serialises nothing", () => {
-    const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
-      concurrency: { group: `${ref.group}-\${{ github.run_id }}`, "cancel-in-progress": false },
-    });
-    expect(errors).toHaveLength(1);
-  });
-
-  test("fails when cancel-in-progress is true", () => {
-    const errors = requireBuildEngineSerialisesRunsPerRef(PATH, {
-      concurrency: { ...ref, "cancel-in-progress": true },
-    });
-    expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain("mid-upload");
-  });
-
-  test("fails when cancel-in-progress is dropped entirely", () => {
-    expect(
-      requireBuildEngineSerialisesRunsPerRef(PATH, { concurrency: { group: ref.group } }),
-    ).toHaveLength(1);
-  });
-
-  test("fails when the whole concurrency block is gone", () => {
-    expect(requireBuildEngineSerialisesRunsPerRef(PATH, { on: { push: null }, jobs: {} })).toHaveLength(2);
-  });
-
-  test("the file gate actually runs it", () => {
-    const yaml = "on:\n  push:\njobs: {}\n";
-    const path = join(tempDir("kesha-wf-"), "build-engine.yml");
-    writeFileSync(path, yaml);
-    expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1108"))).toHaveLength(2);
-  });
-});
-
 describe("requireReleaseVerifiesTagIsCurrent", () => {
   const GUARD = {
     name: "Verify tag has not been superseded",
@@ -1641,71 +1476,71 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
       'current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"\n' +
       'if [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n',
   };
-  const PUBLISH = { name: "Create draft release with binaries", uses: "softprops/action-gh-release@3d0d9888c" };
+  const PUBLISH = { name: "Publish the release", run: "bash .github/scripts/publish-release.sh release-assets release-notes.md" };
 
-  test("passes on the real build-engine.yml", () => {
+  test("passes on the real release.yml", () => {
     expect(requireReleaseVerifiesTagIsCurrent(PATH, parseRepoYaml(PATH))).toEqual([]);
   });
 
   test("ignores every other workflow", () => {
-    expect(requireReleaseVerifiesTagIsCurrent(CI, job("release", [PUBLISH]))).toEqual([]);
+    expect(requireReleaseVerifiesTagIsCurrent(CI, job("github-release", [PUBLISH]))).toEqual([]);
   });
 
   test("fails when the guard step is missing", () => {
-    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [PUBLISH]));
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [PUBLISH]));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("#1115");
   });
 
   test("fails when the guard runs after the draft release is created", () => {
-    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [PUBLISH, GUARD]));
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [PUBLISH, GUARD]));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("immediately before");
   });
 
   test("passes when the guard immediately precedes the draft release", () => {
-    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [GUARD, PUBLISH]))).toEqual([]);
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [GUARD, PUBLISH]))).toEqual([]);
   });
 
   // An early-only check leaves the SBOM/download/sign window unrevalidated — the tag can still move before GitHub resolves it at publish time (#1115 review round 3, Greptile P1).
   test("fails when the guard runs early but not immediately before the draft release", () => {
     const OTHER = { name: "Generate source SBOM", uses: "anchore/sbom-action@e22c389" };
-    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [GUARD, OTHER, PUBLISH]));
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [GUARD, OTHER, PUBLISH]));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("immediately before");
   });
 
   test("fails when the guard step is disabled", () => {
-    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [{ ...GUARD, if: "false" }, PUBLISH]));
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [{ ...GUARD, if: "false" }, PUBLISH]));
     expect(errors[0]).toContain("#1115");
   });
 
   // `${{ false }}` disables the step exactly like bare `false`, but a naive string-equality check misses it (#1115 review round 3, Greptile P2).
   test("fails when the guard step is disabled via a wrapped expression", () => {
-    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("release", [{ ...GUARD, if: "${{ false }}" }, PUBLISH]));
+    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [{ ...GUARD, if: "${{ false }}" }, PUBLISH]));
     expect(errors[0]).toContain("#1115");
   });
 
   test("fails when the step never compares against GITHUB_SHA", () => {
     const noShaCheck = { ...GUARD, run: 'current="$(git ls-remote origin "refs/tags/$TAG_NAME^{}")"\necho "$current"\n' };
-    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [noShaCheck, PUBLISH]))[0]).toContain("#1115");
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [noShaCheck, PUBLISH]))[0]).toContain("#1115");
   });
 
   test("fails when the step never mentions refs/tags", () => {
     const noTagRef = { ...GUARD, run: 'current="$GITHUB_SHA"\nif [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n' };
-    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("release", [noTagRef, PUBLISH]))[0]).toContain("#1115");
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [noTagRef, PUBLISH]))[0]).toContain("#1115");
   });
 
   test("fails when the release job is gone", () => {
     const errors = requireReleaseVerifiesTagIsCurrent(PATH, { jobs: { build: {} } });
-    expect(errors[0]).toContain("expected a `release` job");
+    expect(errors[0]).toContain("expected a `github-release` job");
   });
 
-  // `jobs: {}` alone reports "expected a `release` job", not #1115 — the probe needs a real job.
+  // `jobs: {}` alone reports "expected a `github-release` job", not #1115 — the probe needs a real job.
   test("the file gate actually runs it", () => {
     const yaml =
-      "on:\n  push:\njobs:\n  release:\n    steps:\n      - uses: softprops/action-gh-release@3d0d9888c\n";
-    const path = join(tempDir("kesha-wf-"), "build-engine.yml");
+      "on:\n  push:\njobs:\n  github-release:\n    steps:\n      - run: bash .github/scripts/publish-release.sh a b\n";
+    const path = join(tempDir("kesha-wf-"), "release.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1115"))).toHaveLength(1);
   });
@@ -1978,10 +1813,14 @@ describe("release.yml carries the Engine release guards", () => {
     ]).toEqual([]);
   });
 
-  test("the rehearsal does not grant release-write or signing permissions", () => {
+  test("only jobs that run for a planned publish hold a write or OIDC permission", () => {
     const doc = real();
     expect(doc.permissions).toEqual({ contents: "read" });
-    expect(doc.jobs["github-release"].permissions).toBeUndefined();
+    const writers = Object.entries(doc.jobs as Record<string, { permissions?: Record<string, string> }>)
+      .filter(([, job]) => Object.values(job.permissions ?? {}).includes("write"))
+      .map(([name]) => name)
+      .sort();
+    expect(writers).toEqual(["docker", "github-release", "npm-publish", "reserve-tag"]);
   });
 
   test("a release.yml build that uploads before synthesising fails", () => {
@@ -2023,56 +1862,54 @@ describe("requireReleaseJobOrder", () => {
     doc.jobs[name] = { ...doc.jobs[name], ...patch };
     return doc;
   };
+  const flags = (doc: unknown, needle: string) => requireReleaseJobOrder(RELEASE, doc).some((e) => e.includes(needle));
 
   test("passes on the real release.yml", () => {
     expect(requireReleaseJobOrder(RELEASE, real())).toEqual([]);
   });
 
   test("ignores every other workflow", () => {
-    expect(requireReleaseJobOrder(PATH, { jobs: {} })).toEqual([]);
+    expect(requireReleaseJobOrder(CI, { jobs: {} })).toEqual([]);
   });
 
-  test("fails when github-release stops needing a smoke", () => {
-    const errors = requireReleaseJobOrder(RELEASE, withJob("github-release", { needs: ["classify", "build", "packages", "roundtrip-smoke"] }));
-    expect(errors.some((e) => e.includes("darwin-synthesis-smoke"))).toBe(true);
+  test("fails when assemble stops needing a smoke", () => {
+    expect(flags(withJob("assemble", { needs: ["classify", "plan", "build", "packages", "roundtrip-smoke"] }), "darwin-synthesis-smoke")).toBe(true);
   });
 
-  test("fails when an overriding if: lets github-release run past a failed smoke", () => {
-    const doc = real();
-    const cond = String(doc.jobs["github-release"].if).replace("needs.roundtrip-smoke.result == 'success'", "true");
-    const errors = requireReleaseJobOrder(RELEASE, withJob("github-release", { if: cond }));
-    expect(errors.some((e) => e.includes("roundtrip-smoke"))).toBe(true);
+  test("fails when an overriding if: lets assemble run past a failed smoke", () => {
+    const cond = String(real().jobs.assemble.if).replace("needs.roundtrip-smoke.result == 'success'", "true");
+    expect(flags(withJob("assemble", { if: cond }), "roundtrip-smoke")).toBe(true);
   });
 
-  test("fails when npm can run without a successful github-release", () => {
-    expect(requireReleaseJobOrder(RELEASE, withJob("npm", { if: "${{ !cancelled() }}" })).some((e) => e.includes("npm"))).toBe(true);
-    expect(requireReleaseJobOrder(RELEASE, withJob("npm", { needs: ["classify"] })).some((e) => e.includes("npm"))).toBe(true);
+  test("fails when github-release can publish what was not assembled", () => {
+    expect(flags(withJob("github-release", { if: "needs.plan.outputs.publish == 'true'" }), "github-release")).toBe(true);
+  });
+
+  test("fails when npm-publish can run without a successful github-release or a verified package", () => {
+    expect(flags(withJob("npm-publish", { if: "${{ !cancelled() && needs.plan.outputs.publish == 'true' }}" }), "npm-publish")).toBe(true);
+    expect(flags(withJob("npm-publish", { needs: ["classify", "plan", "npm", "reserve-tag"] }), "npm-publish")).toBe(true);
+  });
+
+  test("fails when a non-building publish can reach npm before its alpha tag is reserved", () => {
+    const needs = (real().jobs["npm-publish"].needs as string[]).filter((n) => n !== "reserve-tag");
+    expect(flags(withJob("npm-publish", { needs }), "reserve-tag")).toBe(true);
+    expect(flags(withJob("reserve-tag", { if: "needs.classify.outputs.build_engine == 'false'" }), "reserve-tag")).toBe(true);
+  });
+
+  test("fails when a job holding a write or OIDC permission can run in a rehearsal", () => {
+    expect(flags(withJob("npm", { permissions: { "id-token": "write" } }), "`npm` grants")).toBe(true);
   });
 
   for (const downstream of ["homebrew", "docker"]) {
     test(`fails when ${downstream} can run before a successful github-release or off the stable channel`, () => {
       const cond = String(real().jobs[downstream].if);
-      expect(requireReleaseJobOrder(RELEASE, withJob(downstream, { needs: ["classify"] })).some((e) => e.includes(downstream))).toBe(true);
-      expect(
-        requireReleaseJobOrder(RELEASE, withJob(downstream, { if: cond.replace("needs.classify.outputs.channel == 'stable'", "true") })).some((e) =>
-          e.includes(downstream),
-        ),
-      ).toBe(true);
-      expect(
-        requireReleaseJobOrder(RELEASE, withJob(downstream, { if: cond.replace(/needs\.\w+\.outputs\.publish == 'true'/, "true") })).some((e) =>
-          e.includes(downstream),
-        ),
-      ).toBe(true);
+      expect(flags(withJob(downstream, { needs: ["classify"] }), downstream)).toBe(true);
+      expect(flags(withJob(downstream, { if: cond.replace("needs.classify.outputs.channel == 'stable'", "true") }), downstream)).toBe(true);
+      expect(flags(withJob(downstream, { if: cond.replace(/needs\.\w+\.outputs\.publish == 'true'/, "true") }), downstream)).toBe(true);
     });
   }
 
-  test("fails when a non-building publish can reach npm before its alpha tag is reserved", () => {
-    const needs = (real().jobs.npm.needs as string[]).filter((n) => n !== "reserve-tag");
-    expect(requireReleaseJobOrder(RELEASE, withJob("npm", { needs })).some((e) => e.includes("reserve-tag"))).toBe(true);
-    expect(requireReleaseJobOrder(RELEASE, withJob("reserve-tag", { if: "needs.classify.outputs.build_engine == 'false'" })).some((e) => e.includes("reserve-tag"))).toBe(true);
-  });
-
   test("fails when packages stops building through the shared composite", () => {
-    expect(requireReleaseJobOrder(RELEASE, withJob("packages", { steps: [] })).some((e) => e.includes("linux-packages"))).toBe(true);
+    expect(flags(withJob("packages", { steps: [] }), "linux-packages")).toBe(true);
   });
 });

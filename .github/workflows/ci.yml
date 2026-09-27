@@ -91,8 +91,8 @@ jobs:
               - 'server.json'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
-              # workflow-lint's static check can't catch a semantic regression in the guard tests/integration/build-engine-tag-guard.test.ts pins (#1115 review round 2).
-              - '.github/workflows/build-engine.yml'
+              # workflow-lint's static check can't catch a semantic regression in the guard tests/integration/release-tag-guard.test.ts pins (#1115 review round 2).
+              - '.github/workflows/release.yml'
               # Most of these scripts have unit tests; without this a script-only edit skips the tests that cover it (check-workflows.ts enforces it). Deliberately no count — the one that lived here read 16 against an actual 25.
               - '.github/scripts/**'
               # Same reason for the repo's own scripts: mutate.ts and release-tag.ts both have unit suites, and a scripts-only edit skipped every one of them (#1091 review).
@@ -122,7 +122,7 @@ jobs:
               - '.github/scripts/install-ffmpeg.sh'
               - '.github/scripts/install-kesha-backend.sh'
               - '.github/scripts/mark-engine-version.ts'
-              - '.github/workflows/build-engine.yml'
+              - '.github/workflows/release.yml'
             real_engine_e2e:
               - 'rust/**'
               - 'package.json'
@@ -774,7 +774,7 @@ jobs:
           !startsWith(github.event.head_commit.message, 'chore(release):')
         )
       )
-    # Pinned (matches build-engine.yml): this is the only CI lane that
+    # Pinned (matches release.yml): this is the only CI lane that
     # builds the engine from source on macOS, and macos-latest's floating
     # Xcode 16.4 fails to link (`clang_rt.osx not found`).
     runs-on: macos-14

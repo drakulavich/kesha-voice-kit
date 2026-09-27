@@ -8,7 +8,7 @@
  * Usage: bun .github/scripts/smoke-synthesis.ts [--no-roundtrip] [--voice <id>] [--text <s>] <work-dir>
  *
  * `--no-roundtrip` stops after synthesis and drops to English only. It exists for
- * build-engine.yml's pre-upload gate (#671), which runs on a release builder with no ASR
+ * release.yml's pre-upload gate (#671), which runs on a release builder with no ASR
  * model set — transcribing back there would cost a multi-GB download per platform.
  * `--voice` overrides the voice, for platforms whose default engine can't run in CI.
  * `--text` overrides the sentence, for hosts that cannot synthesise the default one (#742).
