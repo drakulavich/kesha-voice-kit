@@ -72,9 +72,10 @@ describe("process leak guard", () => {
 
   /** #1160: `kill(pid, 0)` succeeds on an exited child its parent has not reaped yet. */
   posix("counts an exited but unreaped child as gone", async () => {
-    // The child outlives the exec: exiting earlier lets the shell reap it before it becomes `sleep`,
-    // which never reaps, and the pid is then simply gone (seen on CI as `Received: ""`).
-    const parent = Bun.spawn(["sh", "-c", "sh -c 'sleep 1; exit 0' & echo $!; exec sleep 30"], {
+    // The child exits only once its parent has become `sleep`, which never reaps. Exiting earlier
+    // lets the shell reap it first, and the pid is then simply gone (seen on CI as `Received: ""`).
+    const child = "until ps -o comm= -p \\$PPID | grep -q 'sleep$'; do sleep 0.05; done";
+    const parent = Bun.spawn(["sh", "-c", `sh -c "${child}" & echo $!; exec sleep 30`], {
       stdout: "pipe",
       stderr: "ignore",
     });
