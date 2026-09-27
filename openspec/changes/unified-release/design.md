@@ -1,6 +1,18 @@
 ## Context
 
-Tags today: `release-tags.mjs:11-39` (`vX.Y.Z`, `-beta.N`, `-alpha.N`, `-cli` marker). Draft/un-draft: `classify-release-tag.mjs:5-10`. Pin refusal for alphas: `check-versions.ts:82-91`. Event-triggered downstream: `npm-publish.yml:18-20`, `homebrew-tap.yml:3-5`, `post-engine-release.yml:3-5`; explicit dispatch workaround: `dispatch-npm-publish.sh:15`. Linux packages keyed on the `-cli` marker: `linux-packages.yml:43`. Docker excludes alphas: `docker.yml:6`. Nix writes an Engine version marker from `package.json#keshaEngine.version`: `flake.nix:173`.
+Tags today: `release-tags.mjs:11-39` (`vX.Y.Z`, `-beta.N`, `-alpha.N`, `-cli` marker). Draft/un-draft: `classify-release-tag.mjs:5-10`. Pin refusal for alphas: `check-versions.ts:82-91`. Event-triggered downstream: `npm-publish.yml:18-20`, `homebrew-tap.yml:3-5`, `post-engine-release.yml:3-5`; explicit dispatch workaround: `dispatch-npm-publish.sh:15`. Linux packages keyed on the `-cli` marker: `release-cli.yml`. Docker excludes alphas: `docker.yml:6`. Nix writes an Engine version marker from `package.json#keshaEngine.version`: `flake.nix:173`.
+
+Facts checked on 2026-09-27 that this design depends on:
+
+- **Immutable releases are on** (`gh api repos/drakulavich/kesha-voice-kit/immutable-releases` → `{"enabled":true}`); an asset uploaded after publication fails with 422 (`build-engine.yml:417`). `gh release create <tag> <files>` drafts, uploads and publishes in one call, so every asset of a release must exist before that call.
+- **npm Trusted Publishing** matches the calling workflow's file name and allows one publisher per package (#732, quoting npm's docs); the registered one is `npm-publish.yml`.
+- **Two files named `SHA256SUMS`** exist per version pair today: one on the Engine release (`v1.26.0`), one on the CLI release (`v1.31.0-cli`, covering the `.deb`/`.rpm`). One tag can carry only one.
+- **The Engine SHA-256 pin** (#1263): `src/engine-targets.ts` commits `PINNED_ASSET_SHA256` for `PINNED_ASSET_SHA256_VERSION`, rewritten with `sizeBytes` by the post-release PR (`post-engine-release.ts`). A version the table does not describe falls back to the release's own `SHA256SUMS`.
+- **The per-merge alpha is label-gated** (`alpha-requested.sh`): a push publishes only when its pull request carries the `alpha` label and changed packed files.
+- **Nix publishes nothing**: `flake.nix` derives its version marker from `package.json` when it builds; no workflow writes a Nix file.
+- **Docker also pushes from `main`** (`docker.yml:4`, path-filtered), not only from tags.
+- `check-workflows.ts` holds ~33 rules, not eight: #1271 added `forbidLongInlineRun` and `forbidExpressionsInRun`, which actionlint does not enforce; #1285 added `requireReleaseRowsNameOneProfile`; #1259 added the Rust toolchain pin check inside the `setup-rust` composite.
+- actionlint 1.7.12 (latest) rejects `concurrency.queue` as an unknown key, and `queue: max` is load-bearing (`npm-publish.yml:37-39`).
 
 ## Goals / Non-Goals
 
@@ -10,47 +22,70 @@ Goals: one number to bump; one workflow to read; no event cascade to reason abou
 
 ### D1. Version and pin
 
-`package.json#version` is the only version. The CLI resolves its Engine as: stable `X.Y.Z` → Engine `vX.Y.Z`; beta `X.Y.Z-beta.N` → Engine `vX.Y.Z-beta.N`; alpha `X.Y.Z-alpha.N` published from a `main` push → the newest stable Engine tag at publish time; alpha dispatched by a person → the Engine built in that same run, or the Engine Prerelease named by `engine-prerelease`, which skips the build. The resolution is written into the published package (`package.json#kesha.engine` at publish, injected the way alpha versions are injected today) and never committed to `main`. `check:versions` rule 3 becomes: `main` carries no pin field at all.
+`package.json#version` is the only version. The CLI resolves its Engine as: stable `X.Y.Z` → Engine `vX.Y.Z`; beta `X.Y.Z-beta.N` → Engine `vX.Y.Z-beta.N`; alpha `X.Y.Z-alpha.N` published from a `main` push → the newest stable Engine tag at publish time; alpha dispatched by a person → the Engine built in that same run, or the Engine Prerelease named by `engine-prerelease`, which skips the build.
 
-Why not build an Engine per per-merge CLI alpha: `release-channels` requires Engine alphas to be deliberate, and 4 merges a day × 9 min × 3 runners is real money for a rehearsal that changes no Engine bytes. A person who wants the Engine alpha dispatches one, and then both artifacts publish together at that version.
+The resolution is written into the published package as `package.json#kesha.engine = { version, assets: { <asset>: { sha256, size } } }`, injected at publish the way alpha versions are injected today, and never committed to `main`. The hashes and sizes come from the merged `SHA256SUMS` and the asset files of the release it resolves — the same run's smoked assets for stable, beta and a building alpha, the resolved release's `SHA256SUMS` otherwise. That replaces the committed `PINNED_ASSET_SHA256`, `PINNED_ASSET_SHA256_VERSION` and `sizeBytes` in `src/engine-targets.ts` and the post-release PR that rewrote them; without it, every release after the post-release job is deleted would silently fall back to trusting the release's own `SHA256SUMS`. A source checkout carries no injection: it resolves `version`, verifies against that release's `SHA256SUMS` (the #1263 fallback), and `--plan` reports the Engine size as unknown. `check:versions` rule 3 becomes: `main` carries neither `keshaEngine` nor `kesha.engine`.
+
+Interim: the cutover sets `rust/Cargo.toml` to `package.json#version` (1.32.0), not the other way round, so `package.json#version` moves only in the `release/2.0.0` PR. Between that and the `v2.0.0` tag a source checkout names an Engine that does not exist, so every CI lane that downloads a published Engine resolves the newest stable Engine instead of `version` — the rule the installation spec already states for alpha assets.
+
+Why not build an Engine per per-merge CLI alpha: `release-channels` requires Engine alphas to be deliberate, and a per-merge build costs ~9 min × 3 runners for a rehearsal that changes no Engine bytes.
 
 ### D2. `release.yml`
 
-Triggered by `push` to tags matching `v*` but not `v*-alpha.*`, `push` to `main` (the per-merge CLI alpha path), and `workflow_dispatch` (a beta with a version; or an alpha, which builds the Engine in the same run, or names an existing Engine Prerelease through `engine-prerelease` and skips the build). Alpha tags are recorded by the alpha jobs after they publish and never act as triggers, which is why the tag filter excludes their shape — a recorded tag that re-entered the workflow would publish the same version twice. The workflow declares `concurrency: { group: release-publish, queue: max }` and never `cancel-in-progress`, the queue `npm-publish.yml:37-39` provides today: three qualifying merges in quick succession each publish their own alpha, in order, and no run is discarded.
+Triggered by `push` to tags matching `v*` but not `v*-alpha.*`, `push` to `main` (the per-merge CLI alpha path), `workflow_dispatch` (a beta with a version; or an alpha, which builds the Engine in the same run, or names an existing Engine Prerelease through `engine-prerelease` and skips the build), and `pull_request` on the release machinery's paths, which **rehearses** the stable path: it builds and smokes every asset and assembles the release directory, and stops before signing (a public transparency-log write) and publishing. Alpha tags are records written after publishing and never triggers.
 
-`classify` decides the path from the event and refuses any tag not matching `^v\d+\.\d+\.\d+(-(alpha|beta)\.\d+)?$`. It publishes two outputs: `path` (`stable`, `beta`, `alpha` or `cli-alpha`) and `channel` (`stable`, `beta` or `alpha`). A tag or a dispatch runs the release path; a `main` push runs the alpha derivation (`cli-alpha`). `build-engine`, `smoke` and `github-release` carry `if: needs.classify.outputs.path != 'cli-alpha'`, because a per-merge alpha changes no Engine bytes and resolves an existing Engine per D1. `packages`, `homebrew`, `docker` and `nix-version` carry `if: needs.classify.outputs.channel == 'stable'` instead, so a beta or a dispatched alpha still builds, smokes and publishes its Engine while shipping no `.deb`, no formula bump, no image and no Nix version. The trigger tells the paths apart, so no `-cli` marker is needed.
+Concurrency: `group: release-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}`, `queue: max`, no `cancel-in-progress`. Every publishing run shares one queue, so three quick merges each publish their own alpha in order; a rehearsal queues per pull request, so it never holds a real release behind it. `requireReleaseQueue` in `check-workflows.ts` pins all three.
 
-Jobs: `classify`, `build-engine` (matrix of two profiles), `smoke` (downloads the just-built assets as artifacts, runs `describe`, `say`, `transcribe` round-trip per platform), `github-release`, `npm`, `packages` (`.deb`/`.rpm`), `homebrew`, `docker`, `nix-version`. Every downstream job `needs:` its upstream; nothing subscribes to `release:` events.
+`classify` (`.github/scripts/release-classify.ts`, a pure function under test) decides the path from the event and refuses any tag not matching `^v\d+\.\d+\.\d+(-(alpha|beta)\.\d+)?$`, any alpha tag, the legacy `-cli` marker, and any tag whose version differs from `package.json#version`. It outputs `path` (`stable`, `beta`, `alpha`, `cli-alpha`, `rehearsal`), `channel`, `version`, `tag`, `prerelease`, `dist_tag`, `build_engine` and `publish`.
 
-`github-release` publishes immediately and drafts nothing: a stable release is published as Latest, a beta and a dispatched alpha as a Prerelease, in the same run that built and smoked the assets. The smoke on the just-built assets is the gate, so there is nothing a manual un-draft would add. A `cli-alpha` creates no GitHub Release at all; it records its tag and publishes to npm. `npm`, `packages`, `homebrew`, `docker` and `nix-version` all `needs: github-release`, so a published CLI can never resolve an Engine that is still a draft.
+Jobs, in dependency order:
 
-`npm` publishes on every path with provenance, choosing the dist-tag from the channel: `latest` for stable, `beta` for a beta, `alpha` for either kind of alpha. `packages`, `homebrew`, `docker` and `nix-version` run for stable only, on the `channel` guard above rather than on the `path` guard, which would let a beta ship them. Shared steps live in composite actions under `.github/actions/`; no reusable workflow (`workflow_call`) is used, because each would be a separate file and the four-workflow target counts files. `npm` declares `needs: [classify, derive-alpha, github-release]` and runs under `if: !cancelled() && (needs.classify.outputs.path == 'cli-alpha' || needs.github-release.result == 'success')`, so the skipped `github-release` on the `cli-alpha` path does not cascade into a skipped publish; on every other path it still waits for the published release.
+1. `classify`.
+2. `build` — the three release rows, each naming one Cargo profile (`darwin`, `portable`); each row smoke-tests `describe` and, off macos-14, synthesises before upload.
+3. Smokes on the artifacts: `darwin-synthesis-smoke` (Kokoro and the AVSpeech sidecar on macos-15) and `roundtrip-smoke` (linux-x64: version, `describe`, ASR warm-up, a transcript of a fixture, synthesis transcribed back — the manual draft smoke of `release-install-smoke.yml`, moved ahead of publication).
+4. `packages` — `.deb`/`.rpm` through `./.github/actions/linux-packages`, uploaded as an artifact; stable only.
+5. `github-release` — needs every smoke and `packages`; downloads all artifacts into one directory, adds the SBOM and manifest, writes **one** `SHA256SUMS` over everything, checks the directory against the manifest (`check-release-assets.ts`), signs every asset, verifies the tag still names this run's commit, and publishes with one `gh release create` — Latest for stable, Prerelease otherwise. Nothing is left as a draft.
+6. `npm` (`needs: [classify, derive-alpha, github-release]`, `if: !cancelled() && (path == 'cli-alpha' || github-release succeeded)`), `homebrew` and `docker` (`needs: github-release`, stable only).
+
+`build`, the smokes and `github-release` carry `if: build_engine`; `packages`, `homebrew` and `docker` carry `channel == 'stable'`. No job subscribes to a `release:` event and no `workflow_call` is used: shared steps are composite actions under `.github/actions/`.
 
 ### D3. Alpha and beta
 
-Alpha keeps `release-alpha.yml`'s derivation logic (`derive-alpha-version.ts`, `alpha-publishable.ts`) as jobs inside `release.yml` on `push` to `main`; the derived version is `X.Y.Z-alpha.N`, the Engine resolution follows D1, and the Engine-building jobs are skipped on that path (D2). A dispatched alpha is the deliberate Engine alpha of `release-channels`: it builds the Engine, publishes it as a Prerelease and publishes the CLI to npm at the same version, so both artifacts appear together. The derivation runs inside that queue, so the tag it counts is always the previous run's.
+Alpha keeps `release-alpha.yml`'s derivation (`derive-alpha-version.ts`, `alpha-publishable.ts`, and the `alpha` label gate of `alpha-requested.sh`) as jobs inside `release.yml` on `push` to `main`; the derived version is `X.Y.Z-alpha.N`, the Engine resolution follows D1, and the Engine-building jobs are skipped. A dispatched alpha builds the Engine, publishes it as a Prerelease and publishes the CLI at the same version. The derivation runs inside the publish queue, so the tag it counts is always the previous run's.
 
-Beta is dispatched with a version, builds the Engine, publishes a GitHub Prerelease in the same run and reaches npm on the `beta` dist-tag; it is never a draft and is never pruned. Beta is also the carrier for the v2 migration (design spec section 4) — but that carrier ships in stages 1–3, under the old machinery, where a beta really is a draft un-drafted by hand. `release.yml` lands in stage 4, after the migration it carried is over.
+Beta is dispatched with a version extending `package.json#version`, or pushed as a tag the commit carries; it builds the Engine, publishes a Prerelease in the same run, reaches npm on the `beta` dist-tag, and is never pruned.
 
-### D4. `nightly.yml`
+### D4. `nightly.yml` and the folds
 
-Jobs: `capability-pact`, `cargo-dependency-maintenance`, `mini-model-pact`, `model-plan-size-canary`, `prune-alpha-releases`, `real-model-canary`, each with the schedule and permissions it has today, each independently dispatchable through a `job` input.
+`nightly.yml` jobs: `capability-pact`, `cargo-dependency-maintenance`, `mini-model-pact`, `model-plan-size-canary`, `prune-alpha-releases`, `real-model-canary`, each with the schedule and permissions it has today, each independently dispatchable through a `job` input. `ci.yml` absorbs `rust-test.yml` (its aggregate job keeps the exact name `🧪 Rust Tests`), `nix-build.yml`, `linux-packages.yml` (the PR lane), `cache-seed.yml`, `cache-cleanup.yml`, `cross-os-cache-probe.yml` and Docker's main-push image; `security.yml` absorbs `plugin-security-scan.yml`. Required checks match on name only (`🧪 CI`, `🧪 Rust Tests`; `🛡️ Security Audit` on the GitHub Actions app), so no branch-protection setting changes.
 
 ### D5. Lint
 
-`actionlint` runs in `ci.yml` and owns workflow syntax, expression typing and shellcheck of `run:` blocks. `check-workflows.ts` keeps the policies actionlint does not enforce — `requirePinnedActions`, `requireJobTimeouts`, `requireBashOnWindowsRunSteps`, `requirePipefailShell` — plus `requirePactVerificationCoversEveryTarget`, `requireRestoreOnlyCachesHaveAWriter`, `requireNpmPublishAfterPackaging` and the profile-row assertion from `build-profiles`; it loses the rules actionlint covers (`forbidFindPipedToHead` stays only if shellcheck does not flag it).
+`actionlint` (version pinned, SHA-256-verified download) runs in `ci.yml` and owns syntax, expression typing and shellcheck of `run:` blocks, with one ignore for the `concurrency.queue` key it does not know yet. `check-workflows.ts` keeps what actionlint does not enforce — pins, timeouts, Windows bash, pipefail, the 3-line `run:` cap and `${{ }}`-in-`run:` ban (#1271), the Rust toolchain pin in composites (#1259), the code-filter rules — plus the repository invariants: `requireReleaseRowsNameOneProfile`, `requirePreUploadSynthesisSmoke`, `requireDarwinSmokeCoversBothEngines`, `requireReleaseVerifiesTagIsCurrent` and `requireReleaseQueue` on `release.yml`, `requirePactVerificationCoversEveryTarget`, `requireRestoreOnlyCachesHaveAWriter`, and `requireNpmPublishAfterPackaging` repointed at `release.yml`. Rules whose only target is a retired workflow leave with it.
 
 ## Risks / Trade-offs
 
 - A CLI-only fix now rebuilds the Engine (~9 min, ~190 MB re-uploaded). Accepted.
 - An Engine hotfix is also a CLI release. Accepted; one CHANGELOG stream.
-- Publishing without a draft step removes the last manual gate before a release is visible. Accepted because the smoke runs on the just-built assets first, which the draft flow never did.
-- Deleting twelve workflows in one PR is unreviewable; one workflow per PR.
+- Publishing without a draft removes the last manual gate before a release is visible. Accepted because the smokes, including the round trip the manual draft smoke ran, now run on the just-built assets first.
+- The npm Trusted Publisher switch is a manual step outside the repository; until it happens `release.yml` cannot publish to npm, which is why its `npm` job stays rehearsal-only until the cutover.
+- A rehearsal costs one Engine build per pull request that touches the release machinery. Accepted: build-engine.yml had no pre-merge coverage at all.
 
 ## Migration Plan
 
-Stage 4, 8–12 PRs after `core-api-v2`: `release.yml` skeleton with `classify` + `build-engine` + `smoke`; then npm; then packages/tap/docker/nix; then alpha derivation moves in; then one deletion PR per old workflow; then `nightly.yml`; then `actionlint` + `check-workflows.ts` cut; then docs and skills; then tag `v2.0.0`.
+Stage 4, after `core-api-v2` and `build-profiles` (both archived). Every PR leaves `main` releasable through the old workflows until the cutover PR retires them:
+
+1. Spec reconciliation and the `release.yml` rehearsal skeleton: `classify`, `build`, smokes, `github-release`.
+2. `packages` before `github-release` with one merged `SHA256SUMS`; the `npm` job (rehearsal packs and verifies, never publishes); the pin derivation and injection. The maintainer switches the npm Trusted Publisher when the cutover merges.
+3. `homebrew` and `docker` jobs; Docker's main-push lane moves into `ci.yml`.
+4. Alpha derivation and dispatch inputs, inert until the cutover.
+5. Cutover, atomic: tag, main-push and dispatch triggers on; version unification; `flake.nix`; CI lanes resolve the newest stable Engine; `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml` and `release-alpha.yml` deleted in the same PR, because any one left behind would build or publish the same tag twice.
+6. Deletions of the now-idle workflows, one per PR, with their scripts and tests: `post-engine-release.yml`, `release-install-smoke.yml`, `prune-alpha-releases.yml` (into nightly), the cache workflows, `linux-packages.yml`, `rust-test.yml`, `nix-build.yml`, `plugin-security-scan.yml`.
+7. `nightly.yml`.
+8. `actionlint` and the `check-workflows.ts` cut.
+9. Docs, one `release` skill, archive this change.
+10. The maintainer tags `v2.0.0`.
 
 ## Open Questions
 
-- Whether Homebrew's formula should install the Engine too (today it installs the CLI from the tag tarball and the CLI downloads the Engine on `kesha install`). Out of scope; the formula changes only its version source.
+- Whether Homebrew's formula should install the Engine too. Out of scope; the formula changes only its version source.

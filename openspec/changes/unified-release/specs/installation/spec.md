@@ -39,7 +39,7 @@ The release pipeline SHALL verify, for each platform whose Engine is published o
 - THEN it resolves the stable Engine
 - AND the alpha does not affect that lane's outcome
 
-> *Technical Note — Replaces the post-publication `published-engine-smoke` lane (`ci.yml:518`) and `release-install-smoke.yml`; the smoke script is `.github/scripts/smoke-synthesis.ts`, invoked on artifacts instead of on a downloaded release. Two baseline scenarios are deliberately not carried over, because the verification moves ahead of publication: "Smoke on the published asset" asserted a cold `kesha install` of a published asset and the `!startsWith(github.head_ref, 'release/')` guard that made it skippable on a release branch, and "Warm-up fails but install reports success" asserted a lane reading that install's warm-up log (`.github/scripts/assert-install-warmup.ts`). The `smoke` job runs `describe`, `say` and a transcription on the just-built artifact and never installs, so neither premise exists; the guarantee that a successful install is not by itself verification stays in this requirement's first paragraph.*
+> *Technical Note — Replaces the post-publication `published-engine-smoke` lane (`ci.yml:518`) and `release-install-smoke.yml`; the smoke script is `.github/scripts/smoke-synthesis.ts`, invoked on artifacts instead of on a downloaded release. Two baseline scenarios are deliberately not carried over, because the verification moves ahead of publication: "Smoke on the published asset" asserted a cold `kesha install` of a published asset and the `!startsWith(github.head_ref, 'release/')` guard that made it skippable on a release branch, and "Warm-up fails but install reports success" asserted a lane reading that install's warm-up log (`.github/scripts/assert-install-warmup.ts`). `release.yml` smokes the just-built artifacts: every row runs `describe`; linux-x64 and windows-x64 synthesise and transcribe the result back before upload, and linux-x64 additionally checks the version, the ASR warm-up and a fixture transcript (`roundtrip-smoke`); darwin-arm64 synthesises through Kokoro and the AVSpeech Sidecar but does not transcribe, because hosted macOS runners have no Neural Engine (#678, #742), and is documented as unverified for Transcription. Neither premise above exists; the guarantee that a successful install is not by itself verification stays in this requirement's first paragraph.*
 
 ### Requirement: Linux packages ship only from a release that publishes the same CLI version
 
@@ -49,7 +49,7 @@ A `.deb` or `.rpm` SHALL be published only by the stable release whose version i
 
 - GIVEN a stable tag `vX.Y.Z` is pushed
 - WHEN the release workflow runs
-- THEN it attaches the `.deb`, the `.rpm` and their `SHA256SUMS` to that release
+- THEN that release carries the `.deb` and the `.rpm`, listed with the Engine assets in its one `SHA256SUMS`
 - AND it publishes `X.Y.Z` to npm in the same run
 - AND `X.Y.Z` is the version `package.json` carries at that tag
 
@@ -66,4 +66,4 @@ A `.deb` or `.rpm` SHALL be published only by the stable release whose version i
 - WHEN the release workflow runs
 - THEN the packages job is skipped and says why
 
-> *Technical Note — `linux-packages.yml:43` keys on the `-cli` marker today; the `packages` job of `release.yml` keys on the stable Channel through `if: needs.classify.outputs.channel == 'stable'`, and `requireNpmPublishAfterPackaging` in `.github/scripts/check-workflows.ts` keeps the npm job downstream of packaging. The baseline scenario "An engine release is cut" is deliberately not carried over: it asserted that a bare engine tag with no `-cli` marker attaches no Linux package, and under one version there is no engine-only release — every stable tag publishes both artifacts and therefore ships the packages.*
+> *Technical Note — `linux-packages.yml:43` keys on the `-cli` marker today; the `packages` job of `release.yml` keys on the stable Channel through `if: needs.classify.outputs.channel == 'stable'` and runs before `github-release`, because an immutable release refuses assets after publication, and `requireNpmPublishAfterPackaging` in `.github/scripts/check-workflows.ts` keeps the npm job downstream of packaging. The baseline scenario "An engine release is cut" is deliberately not carried over: it asserted that a bare engine tag with no `-cli` marker attaches no Linux package, and under one version there is no engine-only release — every stable tag publishes both artifacts and therefore ships the packages.*

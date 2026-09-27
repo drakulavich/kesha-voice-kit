@@ -50,11 +50,11 @@ An alpha tag SHALL be a record rather than a trigger: the alpha jobs write it af
 
 ### Requirement: CLI alphas publish on every merge that changes the CLI
 
-Every push to the default branch that changes CLI sources SHALL produce a published CLI alpha without further human action, resolving its Engine as the previous requirement states and building no Engine; a merge that changes nothing Ira could run SHALL NOT produce an alpha. Publishing SHALL remain a pipeline action performed with provenance, never from a workstation.
+Every push to the default branch that changes packed CLI sources and whose pull request carries the `alpha` label SHALL produce a published CLI alpha without further human action, resolving its Engine as the previous requirement states and building no Engine; a merge that changes nothing Ira could run SHALL NOT produce an alpha. Publishing SHALL remain a pipeline action performed with provenance, never from a workstation.
 
 #### Scenario: A merge to the default branch produces an alpha
 
-- GIVEN a pull request changing CLI sources merges to the default branch
+- GIVEN a pull request changing CLI sources and labelled `alpha` merges to the default branch
 - WHEN the release workflow's alpha jobs run
 - THEN a CLI alpha is published on the alpha Channel resolving the newest stable Engine
 - AND its release notes list the commits since the previous alpha
@@ -76,7 +76,7 @@ Every push to the default branch that changes CLI sources SHALL produce a publis
 - AND no qualifying merge is silently dropped because a later one superseded it
 - AND no published alpha version is ever reused for different source
 
-> *Technical Note — `derive-alpha-version.ts` and `alpha-publishable.ts` move under `release.yml`; behaviour is unchanged except the Engine resolution and the `if: needs.classify.outputs.path != 'cli-alpha'` guard that skips `build-engine`, `smoke` and `github-release` (`packages`, `homebrew`, `docker` and `nix-version` are guarded on the stable Channel instead, so a beta does not ship them either). Ordering across concurrent merges is a queue, not a cancelling concurrency group: GitHub cancels a pending run when a newer one joins the group, which would drop the middle merge, and the skip decision is made inside a job because a workflow-level path filter leaves no run to report from. The queue is `release.yml`'s `concurrency` group with `queue: max` (today `.github/workflows/npm-publish.yml:37-39`); `ci.yml`'s `cancel-in-progress: true` (`ci.yml:28-30`) never applies to the release workflow.*
+> *Technical Note — `derive-alpha-version.ts` and `alpha-publishable.ts` move under `release.yml`; behaviour is unchanged except the Engine resolution and the `if: needs.classify.outputs.path != 'cli-alpha'` guard that skips `build-engine`, `smoke` and `github-release` (`packages`, `homebrew` and `docker` are guarded on the stable Channel instead, so a beta does not ship them either). The `alpha` label gate is today's (`.github/scripts/alpha-requested.sh`), kept deliberately; the baseline requirement never stated it. Ordering across concurrent merges is a queue, not a cancelling concurrency group: GitHub cancels a pending run when a newer one joins the group, which would drop the middle merge, and the skip decision is made inside a job because a workflow-level path filter leaves no run to report from. The queue is `release.yml`'s `concurrency` group with `queue: max` (today `.github/workflows/npm-publish.yml:37-39`); `ci.yml`'s `cancel-in-progress: true` (`ci.yml:28-30`) never applies to the release workflow.*
 
 ### Requirement: Engine alphas are published deliberately, not per merge
 
@@ -112,7 +112,7 @@ An Engine alpha SHALL be resolvable by the CLI through the same mechanism that r
 
 ### Requirement: Alpha and stable publish through one path
 
-The steps that publish a build SHALL exist once, as jobs of one release workflow invoked by every Channel, and every downstream publication (npm, Homebrew tap, Linux packages, container image, Nix version) SHALL run as a job that depends on the job that built and verified the assets, never as a reaction to a GitHub release event. A Channel SHALL differ from another only in the inputs it supplies.
+The steps that publish a build SHALL exist once, as jobs of one release workflow invoked by every Channel, and every downstream publication (npm, Homebrew tap, container image) SHALL run as a job that depends on the job that built and verified the assets, never as a reaction to a GitHub release event. Every asset of a release — Engine binaries, Sidecars, Linux packages, SBOM, manifest — SHALL be built before the release is published and published with it in one step, under one `SHA256SUMS`, because the repository's releases are immutable once published. A Channel SHALL differ from another only in the inputs it supplies.
 
 A release SHALL be published in the run that built and smoked its assets, never left as a draft for a person to un-draft, because the smoke on the just-built assets is the verification a draft used to stand in for. Stable is published as Latest; beta and a dispatched alpha are published as Prereleases.
 
@@ -145,4 +145,4 @@ This is the property that makes an alpha meaningful as a rehearsal: a change to 
 - THEN none of them runs
 - AND the run names the failed upstream job
 
-> *Technical Note — Today npm, tap and post-release listen to `release: published` (`npm-publish.yml:18-20`, `homebrew-tap.yml:3-5`, `post-engine-release.yml:3-5`) and `dispatch-npm-publish.sh:15` works around the missing event; `release.yml` replaces all three with `needs: github-release`. The draft-and-un-draft pair at `.github/workflows/build-engine.yml:547-562` disappears with it.*
+> *Technical Note — Today npm, tap and post-release listen to `release: published` (`npm-publish.yml:18-20`, `homebrew-tap.yml:3-5`, `post-engine-release.yml:3-5`) and `dispatch-npm-publish.sh:15` works around the missing event; `release.yml` replaces all three with `needs: github-release`. The draft-and-un-draft pair in `build-engine.yml`'s `release` job disappears with it; `github-release` publishes through one `gh release create`, which drafts, uploads and publishes in a single call, the only order immutable releases accept. Nix has no job: `flake.nix` reads `package.json#version` when it builds.*
