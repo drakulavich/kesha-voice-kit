@@ -1,7 +1,7 @@
 import { getDescribe, getEngineBinPath, isEngineInstalled } from "./engine";
 import { runEngineProcess } from "./engine/spawn";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, exitCodeFor, KeshaError, type ErrorOrigin, type EventSinks } from "./engine/events";
+import { engineFailure, exitCodeFor, KeshaError, type EventSinks } from "./engine/events";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { engineAbortError, interruptedRun } from "./process-tree";
@@ -68,20 +68,6 @@ export function buildSayArgs(o: SayOptions): string[] {
   return args;
 }
 
-export class SayError extends KeshaError {
-  constructor(
-    message: string,
-    exitCode: number,
-    stderr: string,
-    code: string = "E_INTERNAL",
-    hint?: string,
-    origin: ErrorOrigin = "cli",
-  ) {
-    super(code, message, { exitCode, stderr, hint, origin });
-    this.name = "SayError";
-  }
-}
-
 /** Fault signals, by number. SIGBUS is 10 on darwin but 7 on linux. */
 const FAULT_SIGNALS: Record<number, string> = { 4: "SIGILL", 6: "SIGABRT", 8: "SIGFPE", 11: "SIGSEGV" };
 
@@ -118,23 +104,18 @@ export function engineCrashMessage(
 
 /**
  * The text contract both doors enforce, before anything that costs a subprocess.
- * Throws `SayError`; the CLI runs it before voice routing, `say()` for programmatic callers.
+ * Throws `KeshaError`; the CLI runs it before voice routing, `say()` for programmatic callers.
  */
 export function validateSayText(text: string): void {
   if (text.trim().length === 0) {
-    throw new SayError("text is empty", 2, "", "E_TEXT_EMPTY");
+    throw new KeshaError("E_TEXT_EMPTY", "text is empty", { exitCode: 2, stderr: "" });
   }
   const chars = Array.from(text).length;
   if (chars > MAX_TEXT_CHARS) {
-    throw new SayError(
-      `text exceeds ${MAX_TEXT_CHARS} chars (${chars})`,
-      5,
-      "",
-      "E_TEXT_TOO_LONG",
-    );
+    throw new KeshaError("E_TEXT_TOO_LONG", `text exceeds ${MAX_TEXT_CHARS} chars (${chars})`, { exitCode: 5, stderr: "" });
   }
   if (text.includes("\0")) {
-    throw new SayError("text contains a NUL byte", 2, "", "E_INVALID_ARG");
+    throw new KeshaError("E_INVALID_ARG", "text contains a NUL byte", { exitCode: 2, stderr: "" });
   }
 }
 
@@ -143,7 +124,10 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   validateSayText(text);
 
   if (!isEngineInstalled()) {
-    throw new SayError(`kesha-engine not installed. run: ${installHint("--tts")}`, 1, "", "E_ENGINE_SPAWN");
+    throw new KeshaError("E_ENGINE_SPAWN", `kesha-engine not installed. run: ${installHint("--tts")}`, {
+      exitCode: 1,
+      stderr: "",
+    });
   }
   const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe({ signal: opts.signal }));
   for (const warning of warnings) log.warn(warning);
@@ -161,13 +145,20 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     return new Uint8Array(stdout);
   }
   const interrupted = interruptedRun(exitCode);
-  if (interrupted) throw new SayError(interrupted.message, exitCodeFor(interrupted), "", interrupted.code);
+  if (interrupted) {
+    throw new KeshaError(interrupted.code, interrupted.message, { exitCode: exitCodeFor(interrupted), stderr: "" });
+  }
   // The crash explanation rides in `stderr`, rendered after the coded line.
   const detail = [stderrText.trim(), engineCrashMessage(exitCode, signalCode)]
     .filter((part): part is string => Boolean(part))
     .join("\n");
   const failure = engineFailure("say", events, exitCode, detail);
-  throw new SayError(failure.message, failure.exitCode || 4, failure.stderr ?? "", failure.code, failure.hint, failure.origin);
+  throw new KeshaError(failure.code, failure.message, {
+    exitCode: failure.exitCode || 4,
+    stderr: failure.stderr ?? "",
+    hint: failure.hint,
+    origin: failure.origin,
+  });
 }
 
 /** Installed voice ids as the engine lists them, one per line; a missing engine, a build without tts or a failed run is a KeshaError. */

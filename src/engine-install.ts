@@ -1003,19 +1003,3 @@ async function installLockedEngine(
   log.success(`Backend installed successfully (engine v${version}).`);
   return binPath;
 }
-
-/** Installs the Pinned Engine version. Public API (`downloadModel`); the override is CLI-only. */
-export async function downloadEngine(
-  noCache = false,
-  backend?: string,
-  options: InstallOptions = {},
-): Promise<string> {
-  // Field-by-field, not a spread: a caller's stray `version` must not reach installEngine.
-  return installEngine({
-    noCache,
-    backend,
-    ttsLangs: options.ttsLangs,
-    vad: options.vad,
-    diarize: options.diarize,
-  });
-}

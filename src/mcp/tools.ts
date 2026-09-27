@@ -4,7 +4,7 @@ import { installHint } from "../install-hint";
 import { z } from "zod";
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
 import { basename, isAbsolute, join } from "path";
-import { transcribe, transcribeWithTimestamps } from "../lib";
+import { assertAudioFileArgument, transcribeWithSegments } from "../transcribe";
 import { listVoices, aggregateLanguages } from "./voices";
 import { say, type SayFormat } from "../synth";
 import { DEFAULT_VOICE_ID, resolveSayVoice } from "../voice-routing";
@@ -129,17 +129,11 @@ export function registerTools(server: McpServer): void {
         return { isError: true, content: [{ type: "text" as const, text: `File not found: ${path}${hint}` }] };
       }
       try {
-        if (timestamps) {
-          const out = await transcribeWithTimestamps(path, { signal: extra.signal });
-          return {
-            content: [{ type: "text" as const, text: out.text }],
-            structuredContent: { text: out.text, segments: out.segments ?? [] },
-          };
-        }
-        const text = await transcribe(path, { signal: extra.signal });
+        assertAudioFileArgument(path);
+        const out = await transcribeWithSegments(path, { signal: extra.signal, timestamps });
         return {
-          content: [{ type: "text" as const, text: text }],
-          structuredContent: { text, segments: [] },
+          content: [{ type: "text" as const, text: out.text }],
+          structuredContent: { text: out.text, segments: timestamps ? out.segments : [] },
         };
       } catch (err) {
         return { isError: true, content: [{ type: "text" as const, text: errorMessage(err) }] };
