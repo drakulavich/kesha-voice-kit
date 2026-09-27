@@ -7,19 +7,23 @@ const index = (pattern: RegExp) => steps.findIndex((s) => pattern.test(s.run ?? 
 
 // openspec unified-release D5: actionlint owns syntax, expressions and shellcheck, pinned and verified.
 describe("the actionlint lane", () => {
-  test("installs the pinned, hash-verified binary before running it", () => {
+  test("installs pinned, hash-verified actionlint and shellcheck before running actionlint", () => {
     const install = index(/install-actionlint\.sh/);
     const run = index(/^actionlint\b/);
     expect(install).toBeGreaterThan(-1);
     expect(run).toBeGreaterThan(install);
     const script = readRepoFile(".github/scripts/install-actionlint.sh");
-    expect(script).toMatch(/^VERSION="\d+\.\d+\.\d+"$/m);
-    expect(script).toMatch(/^SHA256="[0-9a-f]{64}"$/m);
+    for (const tool of ["ACTIONLINT", "SHELLCHECK"]) {
+      expect(script).toMatch(new RegExp(`^${tool}_VERSION="\\d+\\.\\d+\\.\\d+"$`, "m"));
+      expect(script).toMatch(new RegExp(`^${tool}_SHA256="[0-9a-f]{64}"$`, "m"));
+    }
   });
 
-  // A broad -ignore would silence exactly the class of error the lane exists to catch.
-  test("ignores only the concurrency.queue key actionlint does not know", () => {
+  // Scope the compatibility exception to release.yml, where GitHub accepts queue: max.
+  test("ignores only release.yml's concurrency.queue key", () => {
     const run = steps[index(/^actionlint\b/)]!.run!;
-    expect([...run.matchAll(/-ignore\s+'([^']*)'/g)].map((m) => m[1])).toEqual(['unexpected key "queue" for "concurrency" section']);
+    expect(run).toBe("actionlint");
+    const config = readRepoFile(".github/actionlint.yaml");
+    expect(config).toMatch(/\.github\/workflows\/release\.yml:\s+ignore:\s+- 'unexpected key "queue" for "concurrency" section'/);
   });
 });

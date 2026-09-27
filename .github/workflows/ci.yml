@@ -247,13 +247,13 @@ jobs:
         with:
           tool: just@1.58.0
 
-      # Syntax, expression typing and shellcheck of every `run:` (openspec unified-release D5). The
-      # one ignore is `concurrency.queue`, which GitHub accepts and actionlint 1.7.12 does not know yet.
+      # Syntax, expression typing and shellcheck of every `run:` (openspec unified-release D5).
+      # .github/actionlint.yaml scopes the release.yml queue exception to that workflow only.
       - name: 🧹 Install pinned actionlint
         run: bash .github/scripts/install-actionlint.sh
 
       - name: 🧹 actionlint
-        run: actionlint -ignore 'unexpected key "queue" for "concurrency" section'
+        run: actionlint
 
       - name: 🔍 Check workflow YAML
         run: bun run check:workflows
