@@ -1,5 +1,5 @@
 name: Prepare the npm package
-description: Apply the release version, inject the Engine pin from its SHA256SUMS and verify the packed tarball; publishing is the caller's step
+description: Apply the release version, inject the Engine pin from its SHA256SUMS and asset sizes and verify the packed tarball; publishing is the caller's step
 
 inputs:
   version:
@@ -24,20 +24,22 @@ runs:
         node-version: "lts/*"
         registry-url: "https://registry.npmjs.org"
         package-manager-cache: false
-    - name: Take the checksums of the Engine built in this run
+    - name: Take the checksums and sizes of the Engine built in this run
       if: inputs.engine-built == 'true'
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: release-checksums
         path: engine-checksums
     # A per-merge alpha, or a dispatch naming an Engine prerelease, builds nothing and resolves a published Engine.
-    - name: Fetch the checksums of the published Engine it resolves
+    - name: Fetch the checksums and sizes of the published Engine it resolves
       if: inputs.engine-built != 'true'
       shell: bash
       env:
         GH_TOKEN: ${{ github.token }}
         ENGINE_VERSION: ${{ inputs.engine-version }}
-      run: gh release download "v$ENGINE_VERSION" --repo drakulavich/kesha-voice-kit --pattern SHA256SUMS --dir engine-checksums
+      run: |
+        gh release download "v$ENGINE_VERSION" --repo drakulavich/kesha-voice-kit --pattern SHA256SUMS --dir engine-checksums
+        gh release view "v$ENGINE_VERSION" --repo drakulavich/kesha-voice-kit --json assets --jq .assets > engine-checksums/assets.json
     - name: Apply the release version
       shell: bash
       env:
@@ -47,7 +49,7 @@ runs:
       shell: bash
       env:
         ENGINE_VERSION: ${{ inputs.engine-version }}
-      run: bun .github/scripts/engine-pin.ts inject engine-checksums/SHA256SUMS "$ENGINE_VERSION"
+      run: bun .github/scripts/engine-pin.ts inject engine-checksums "$ENGINE_VERSION"
     - name: Pack and verify the tarball
       shell: bash
       env:

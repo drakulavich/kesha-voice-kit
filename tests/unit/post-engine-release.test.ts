@@ -9,47 +9,6 @@ function runText(step: { run?: string }): string {
   return `${step.run ?? ""}\n${script ? readRepoFile(script) : ""}`;
 }
 
-const targetSource = `const ENGINE_TARGETS: Record<string, EngineTarget> = {
-  "darwin-arm64": {
-    assetName: "kesha-engine-darwin-arm64",
-    backend: "coreml",
-    sizeBytes: 1,
-  },
-  "linux-x64": {
-    assetName: "kesha-engine-linux-x64",
-    backend: "onnx",
-    sizeBytes: 2,
-  },
-  "win32-x64": {
-    assetName: "kesha-engine-windows-x64.exe",
-    backend: "onnx",
-    sizeBytes: 3,
-  },
-};
-
-export const PINNED_ASSET_SHA256_VERSION = "1.24.10";
-
-export const PINNED_ASSET_SHA256: Readonly<Record<string, string>> = {
-  "kesha-engine-darwin-arm64": "0000000000000000000000000000000000000000000000000000000000000000",
-  "kesha-engine-linux-x64": "0000000000000000000000000000000000000000000000000000000000000000",
-  "kesha-engine-windows-x64.exe": "0000000000000000000000000000000000000000000000000000000000000000",
-  "say-avspeech-darwin-arm64": "0000000000000000000000000000000000000000000000000000000000000000",
-  "kesha-textlang-darwin-arm64": "0000000000000000000000000000000000000000000000000000000000000000",
-};
-`;
-
-const PUBLISHED_SHA256: Record<string, string> = {
-  "kesha-engine-darwin-arm64": "1111111111111111111111111111111111111111111111111111111111111111",
-  "kesha-engine-linux-x64": "2222222222222222222222222222222222222222222222222222222222222222",
-  "kesha-engine-windows-x64.exe": "3333333333333333333333333333333333333333333333333333333333333333",
-  "say-avspeech-darwin-arm64": "4444444444444444444444444444444444444444444444444444444444444444",
-  "kesha-textlang-darwin-arm64": "5555555555555555555555555555555555555555555555555555555555555555",
-};
-
-const sha256Sums = Object.entries(PUBLISHED_SHA256)
-  .map(([name, sha]) => `${sha}  ./${name}\n`)
-  .join("");
-
 const packageSource = JSON.stringify({ name: "kesha", version: "1.24.11" });
 
 const serverSource = JSON.stringify({
@@ -91,13 +50,12 @@ function assets() {
 }
 
 describe("buildPostEngineReleaseFollowup", () => {
-  test("records published engine sizes and leads package.json, server.json and the Engine crate by one minor", () => {
+  // Hashes and sizes are injected at publish now, so the lead PR touches no source table (#1263, openspec unified-release D1).
+  test("leads package.json, server.json and the Engine crate by one minor", () => {
     const result = buildPostEngineReleaseFollowup({
       tag: "v1.24.11",
       release: { isDraft: false, isPrerelease: false, assets: assets() },
       manifest: manifest(),
-      targetSource,
-      sha256Sums,
       packageSource,
       serverSource,
       cargoSource,
@@ -105,15 +63,6 @@ describe("buildPostEngineReleaseFollowup", () => {
     });
 
     expect(result.nextVersion).toBe("1.25.0");
-    expect(result.targetSource).toContain("sizeBytes: 64_000_001");
-    expect(result.targetSource).toContain("sizeBytes: 65_000_002");
-    expect(result.targetSource).toContain("sizeBytes: 66_000_003");
-    for (const [name, sha] of Object.entries(PUBLISHED_SHA256)) {
-      expect(result.targetSource).toContain(`"${name}": "${sha}"`);
-      expect(result.prBody).toContain(sha);
-    }
-    expect(result.targetSource).not.toContain("0000000000000000000000000000000000000000000000000000000000000000");
-    expect(result.targetSource).toContain('export const PINNED_ASSET_SHA256_VERSION = "1.24.11";');
     expect(JSON.parse(result.packageSource)).toEqual({ name: "kesha", version: "1.25.0" });
     expect(JSON.parse(result.serverSource)).toMatchObject({
       version: "1.25.0",
@@ -124,7 +73,7 @@ describe("buildPostEngineReleaseFollowup", () => {
     expect(result.lockSource).toBe(lockSource.replace('"kesha-engine"\nversion = "1.24.11"', '"kesha-engine"\nversion = "1.25.0"'));
   });
 
-  test("refuses an incomplete release instead of guessing an asset size", () => {
+  test("refuses an incomplete release", () => {
     const publishedAssets = assets().filter((asset) => asset.name !== "kesha-engine-linux-x64.sigstore.json");
 
     expect(() =>
@@ -132,8 +81,6 @@ describe("buildPostEngineReleaseFollowup", () => {
         tag: "v1.24.11",
           release: { isDraft: false, isPrerelease: false, assets: publishedAssets },
         manifest: manifest(),
-        targetSource,
-        sha256Sums,
         packageSource,
         serverSource,
         cargoSource,
@@ -142,30 +89,12 @@ describe("buildPostEngineReleaseFollowup", () => {
     ).toThrow(/missing signed asset/i);
   });
 
-  test("refuses a release whose SHA256SUMS does not list a pinned asset instead of keeping the old pin", () => {
-    expect(() =>
-      buildPostEngineReleaseFollowup({
-        tag: "v1.24.11",
-          release: { isDraft: false, isPrerelease: false, assets: assets() },
-        manifest: manifest(),
-        targetSource,
-        sha256Sums: sha256Sums.split("\n").filter((line) => !line.endsWith("say-avspeech-darwin-arm64")).join("\n"),
-        packageSource,
-        serverSource,
-        cargoSource,
-        lockSource,
-      }),
-    ).toThrow(/SHA256SUMS does not list say-avspeech-darwin-arm64/);
-  });
-
   test("refuses a package.json whose version is not the published tag", () => {
     expect(() =>
       buildPostEngineReleaseFollowup({
         tag: "v1.24.11",
           release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
-        targetSource,
-        sha256Sums,
         packageSource: packageSource.replace("1.24.11", "1.24.12"),
         serverSource,
         cargoSource,
@@ -180,8 +109,6 @@ describe("buildPostEngineReleaseFollowup", () => {
         tag: "v1.24.11",
           release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
-        targetSource,
-        sha256Sums,
         packageSource,
         serverSource: serverSource.replaceAll("1.24.11", "1.24.10"),
         cargoSource,

@@ -1,104 +1,55 @@
 #!/usr/bin/env bun
 /**
- * Verifies every `ENGINE_TARGETS` row and every `PINNED_ASSET_SHA256` entry against the published release.
+ * Verifies that the newest stable release publishes every asset the installer downloads, under the
+ * names `src/engine-targets.ts` gives them. A renamed or missing asset would otherwise surface only
+ * when `release.yml` refuses to inject the Engine pin, or when a user's install 404s.
  *
- * Centralising the table removed the duplication but not the drift: the sizes are
- * hand-written and only feed `kesha install --plan`, so a wrong one misleads a user
- * about disk cost and nothing fails. `install-plan.ts` carried a stale 63_126_528
- * against an actual 63_447_040 for exactly that reason (#216).
- *
- * The table describes one published release, `PINNED_ASSET_SHA256_VERSION`, whatever unreleased
- * version main carries. A 404 means that release was never published, which is a real problem.
+ * Hashes and sizes are not committed any more: `engine-pin.ts` injects them at publish (openspec
+ * unified-release D1).
  */
-import {
-  engineTargetEntries,
-  parseSha256Sums,
-  PINNED_ASSET_SHA256,
-  PINNED_ASSET_SHA256_VERSION,
-} from "../../src/engine-targets";
+import { downloadedAssetNames } from "../../src/engine-targets";
+import { newestStableRelease } from "./engine-pin";
 
 const REPO = "drakulavich/kesha-voice-kit";
-const engineVersion = PINNED_ASSET_SHA256_VERSION;
-const url = `https://api.github.com/repos/${REPO}/releases/tags/v${engineVersion}`;
+
+type ApiRelease = { tag_name: string; draft: boolean; prerelease: boolean; assets: Array<{ name: string }> };
 
 const headers: Record<string, string> = { accept: "application/vnd.github+json" };
 if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 
-let assets: Array<{ name: string; size: number }>;
+// Every page: alpha Prereleases can push the newest stable release past the first hundred.
+const releases: ApiRelease[] = [];
 try {
-  const res = await fetch(url, { headers });
-  if (res.status === 404) {
-    console.error(
-      `FAIL: src/engine-targets.ts describes engine v${engineVersion}, but no such release exists.\n` +
-        `  Fix: correct PINNED_ASSET_SHA256_VERSION and the table beside it.`,
-    );
-    process.exit(1);
-  }
-  if (!res.ok) {
-    // A token means CI, where the API is reachable — skipping there would hide real drift.
-    if (process.env.GITHUB_TOKEN) {
-      console.error(`FAIL: release API returned HTTP ${res.status} for v${engineVersion}`);
-      process.exit(1);
+  for (let page = 1; ; page++) {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100&page=${page}`, { headers });
+    if (!res.ok) {
+      // A token means CI, where the API is reachable — skipping there would hide real drift.
+      if (process.env.GITHUB_TOKEN) {
+        console.error(`FAIL: release API returned HTTP ${res.status}`);
+        process.exit(1);
+      }
+      console.log(`skip: release API returned HTTP ${res.status}`);
+      process.exit(0);
     }
-    console.log(`skip: release API returned HTTP ${res.status}`);
-    process.exit(0);
+    const batch: ApiRelease[] = await res.json();
+    releases.push(...batch);
+    if (batch.length < 100) break;
   }
-  assets = (await res.json()).assets ?? [];
 } catch (e) {
   console.log(`skip: could not reach the release API (${e instanceof Error ? e.message : e})`);
   process.exit(0);
 }
 
-const bySize = new Map(assets.map((a) => [a.name, a.size]));
-const problems: string[] = [];
+const version = newestStableRelease(
+  releases.map((r) => ({ tagName: r.tag_name, isDraft: r.draft, isPrerelease: r.prerelease })),
+);
+const published = new Set(releases.find((r) => r.tag_name === `v${version}`)!.assets.map((a) => a.name));
+const missing = downloadedAssetNames().filter((name) => !published.has(name));
 
-for (const { platform, arch, target } of engineTargetEntries()) {
-  const key = `${platform}-${arch}`;
-  const published = bySize.get(target.assetName);
-
-  if (published === undefined) {
-    problems.push(
-      `${key}: release v${engineVersion} has no asset named ${target.assetName}` +
-        ` (published: ${assets.map((a) => a.name).join(", ") || "none"})`,
-    );
-    continue;
-  }
-  if (published !== target.sizeBytes) {
-    problems.push(
-      `${key}: ${target.assetName} is ${published} bytes in v${engineVersion}, ` +
-        `but ENGINE_TARGETS says ${target.sizeBytes}`,
-    );
-    continue;
-  }
-  console.log(`ok: ${key} → ${target.assetName} (${published} bytes)`);
-}
-
-const pinsVersion = PINNED_ASSET_SHA256_VERSION;
-let sums: Map<string, string> | null = null;
-try {
-  const res = await fetch(`https://github.com/${REPO}/releases/download/v${pinsVersion}/SHA256SUMS`, { redirect: "follow" });
-  if (res.status === 404) problems.push(`release v${pinsVersion} publishes no SHA256SUMS, so its pins cannot be checked`);
-  else if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  else sums = parseSha256Sums(await res.text());
-} catch (e) {
-  const why = e instanceof Error ? e.message : String(e);
-  if (process.env.GITHUB_TOKEN) problems.push(`could not download SHA256SUMS of v${pinsVersion} (${why})`);
-  else console.log(`skip: could not download SHA256SUMS (${why})`);
-}
-for (const [assetName, pinned] of Object.entries(sums ? PINNED_ASSET_SHA256 : {})) {
-  const published = sums!.get(assetName);
-  if (published === undefined) {
-    problems.push(`SHA256SUMS of v${pinsVersion} does not list ${assetName}`);
-  } else if (published !== pinned) {
-    problems.push(`${assetName} is sha256 ${published} in v${pinsVersion}, but PINNED_ASSET_SHA256 says ${pinned}`);
-  } else {
-    console.log(`ok: ${assetName} sha256 ${published}`);
-  }
-}
-
-if (problems.length > 0) {
-  console.error(`\nENGINE_TARGETS is out of date with release v${engineVersion}:`);
-  for (const p of problems) console.error(`  - ${p}`);
-  console.error(`\n  Fix: update src/engine-targets.ts to match the published assets (sizes from the release API; PINNED_ASSET_SHA256_VERSION and the SHA-256 from its SHA256SUMS).`);
+if (missing.length > 0) {
+  console.error(`FAIL: release v${version} publishes no asset named ${missing.join(", ")}`);
+  console.error(`  published: ${[...published].sort().join(", ") || "none"}`);
+  console.error("  Fix: correct the asset names in src/engine-targets.ts, or the release that builds them.");
   process.exit(1);
 }
+console.log(`ok: release v${version} publishes ${downloadedAssetNames().join(", ")}`);

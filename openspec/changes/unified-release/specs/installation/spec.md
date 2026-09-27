@@ -67,3 +67,60 @@ A `.deb` or `.rpm` SHALL be published only by the stable release whose version i
 - THEN the packages job is skipped and says why
 
 > *Technical Note — `linux-packages.yml:43` keys on the `-cli` marker today; the `packages` job of `release.yml` keys on the stable Channel through `if: needs.classify.outputs.channel == 'stable'` and runs before `github-release`, because an immutable release refuses assets after publication, and `requireReleaseJobOrder` in `.github/scripts/check-workflows.ts` keeps `assemble`, and so every publish, downstream of packaging. The baseline scenario "An engine release is cut" is deliberately not carried over: it asserted that a bare engine tag with no `-cli` marker attaches no Linux package, and under one version there is no engine-only release — every stable tag publishes both artifacts and therefore ships the packages.*
+
+### Requirement: `--plan` shows the download plan without changing local state
+
+The CLI SHALL print a human-readable Install plan when `--plan` is passed, listing all
+components with their sizes, cache status (cached / needed / refresh), source, and the
+expected network bytes for the current run. No files SHALL be downloaded or modified.
+On darwin-arm64 the FluidAudio Kokoro ANE chain, the shared G2P bundle and each
+requested language's voice pack SHALL appear as sized components, their sizes derived
+from the pinned manifest, so `--tts <lang>` for a language whose pack is not staged
+states the bytes it will fetch and a staged one counts as cached. The plan also
+includes warm-up steps and ends with the equivalent `kesha install …` command.
+The Engine and Sidecar sizes SHALL come from the Engine pin injected into the published
+package; for a release that pin does not describe (`--engine-version`, or a source
+checkout, which carries no pin) the plan SHALL state their size as unknown and leave them
+out of the totals rather than show another release's size.
+
+#### Scenario: Ira previews a fresh install
+
+- GIVEN no Engine or models are installed
+- WHEN Ira runs `kesha install --plan`
+- THEN the plan lists Engine, ASR, and lang-id components with sizes, all marked
+  `needed`
+- AND states `Expected Kesha-managed network for this run` in bytes
+- AND ends with `Run: kesha install`
+- AND the process exits 0 with no downloads having occurred
+
+#### Scenario: Plan for an Engine release the CLI does not pin
+
+- WHEN Ira runs `kesha install --plan --engine-version 9.9.9-alpha.1`
+- THEN the Engine component reads `size unknown`
+- AND the totals name it under `Not counted (size unknown)`
+
+#### Scenario: Plan with TTS and VAD
+
+- WHEN Maks runs `kesha install --plan --tts en ru --vad`
+- THEN the plan additionally lists TTS Kokoro, TTS Vosk RU, and VAD Silero components
+- AND already-cached components are marked `cached`
+
+#### Scenario: Plan for a FluidAudio language that is not staged
+
+- GIVEN darwin-arm64 with English staged and Spanish not
+- WHEN Ira runs `kesha install --plan --tts es`
+- THEN the plan lists the Spanish voice pack as `needed` with its size
+- AND `Expected Kesha-managed network for this run` is that size, not `0 B`
+
+#### Scenario: Plan for a FluidAudio language already staged
+
+- WHEN Ira runs `kesha install --plan --tts en` on the same machine
+- THEN the ANE chain and the English pack are marked `cached`
+- AND the expected network total is `0 B`
+
+> *Technical Note — sources: `src/install-plan.ts::renderInstallPlan`. The plan is
+> rendered entirely client-side from pinned sizes; no network access is required.
+> Engine and Sidecar sizes: `src/install-plan.ts::releaseAssetSize`, from the pin
+> `.github/scripts/engine-pin.ts::buildEnginePin` injects (openspec unified-release D1).
+> Key totals: cold-cache ASR + lang-id ~2.6 GB; VAD ~2.3 MB; Diarize ~245 MB;
+> TTS English only ~326 MB; TTS English + Russian ~937 MB.*

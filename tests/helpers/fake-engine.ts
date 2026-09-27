@@ -62,11 +62,13 @@ export function isolateEngineCache(): () => void {
   return () => {
     restore();
     engineChecksums.forRelease = realChecksums;
+    engineChecksums.pins = realPins;
     rmSync(dir, { recursive: true, force: true });
   };
 }
 
 const realChecksums = engineChecksums.forRelease;
+const realPins = engineChecksums.pins;
 
 /**
  * Makes the installer expect the SHA-256 of the stand-in body a test serves for a release, since no

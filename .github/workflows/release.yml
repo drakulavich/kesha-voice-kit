@@ -442,11 +442,14 @@ jobs:
         run: bash .github/scripts/release-checksums.sh release-assets
       - name: Check the assembled assets against the manifest
         run: bun .github/scripts/check-release-assets.ts release-assets
-      - name: Hand the checksums to the npm jobs
+      # Outside release-assets, so the size list is never published as an asset itself.
+      - name: Record the checksums and sizes the Engine pin is made from
+        run: mkdir engine-pin && cp release-assets/SHA256SUMS engine-pin/ && bun .github/scripts/engine-pin.ts asset-sizes release-assets > engine-pin/assets.json
+      - name: Hand the checksums and sizes to the npm jobs
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-checksums
-          path: release-assets/SHA256SUMS
+          path: engine-pin
           if-no-files-found: error
       - name: Hand the release to github-release
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
