@@ -1153,6 +1153,39 @@ export function requireReleaseQueue(path: string, document: unknown): string[] {
   return errors;
 }
 
+const RELEASE_GATES = ["build", "darwin-synthesis-smoke", "roundtrip-smoke"];
+
+/**
+ * Fails when release.yml could publish past a red upstream: `github-release` must need every smoke
+ * and `packages`, an overriding `if:` must still demand each smoke's success, `npm` must wait for a
+ * successful `github-release`, and `packages` must build through the composite CI shares (#728).
+ */
+export function requireReleaseJobOrder(path: string, document: unknown): string[] {
+  if (engineReleaseWorkflow(path) !== "release.yml") return [];
+
+  const jobs = (document as { jobs?: Record<string, { if?: unknown }> } | undefined)?.jobs ?? {};
+  const errors: string[] = [];
+  const releaseIf = jobs["github-release"]?.if;
+  for (const gate of [...RELEASE_GATES, "packages"]) {
+    if (!dependsOn(document, "github-release", gate)) errors.push(`${path}: \`github-release\` must \`needs: ${gate}\``);
+  }
+  if (releaseIf !== undefined) {
+    for (const gate of RELEASE_GATES) {
+      if (!String(releaseIf).includes(`needs.${gate}.result == 'success'`)) {
+        errors.push(`${path}: \`github-release\`'s \`if:\` overrides success(), so it must require \`needs.${gate}.result == 'success'\``);
+      }
+    }
+  }
+  if (!dependsOn(document, "npm", "github-release") || !String(jobs.npm?.if ?? "").includes("needs.github-release.result == 'success'")) {
+    errors.push(`${path}: \`npm\` must \`needs: github-release\` and require its success, or a CLI can resolve an Engine that is not published`);
+  }
+  const packaging = jobSteps(document, "packages");
+  if (!packaging || !usesAction(packaging, "./.github/actions/linux-packages")) {
+    errors.push(`${path}: \`packages\` must build through ./.github/actions/linux-packages, the composite the CI lane shares (#728)`);
+  }
+  return errors;
+}
+
 /**
  * Fails when the `release` job could publish a draft without first checking that the tag it is
  * building still points at the commit this run was triggered for.
@@ -1281,6 +1314,7 @@ export function checkFile(
       ...requireRustTestCancelsSupersededRuns(path, document),
       ...requireBuildEngineSerialisesRunsPerRef(path, document),
       ...requireReleaseQueue(path, document),
+      ...requireReleaseJobOrder(path, document),
       ...requireReleaseVerifiesTagIsCurrent(path, document),
       ...forbidNixBuildInCiAggregator(path, document),
       ...requireEveryJobInCiAggregator(path, document),

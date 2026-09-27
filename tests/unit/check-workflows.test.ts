@@ -24,6 +24,7 @@ import {
   requireConcurrencyOnPullRequestWorkflows,
   requireBuildEngineSerialisesRunsPerRef,
   requireBuildScriptInCoremlFilter,
+  requireReleaseJobOrder,
   requireReleaseQueue,
   requireReleaseVerifiesTagIsCurrent,
   requireRustTestCancelsSupersededRuns,
@@ -2011,5 +2012,44 @@ describe("release.yml carries the Engine release guards", () => {
     expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, queue: undefined } })[0]).toContain("queue");
     expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, "cancel-in-progress": false } })[0]).toContain("absent");
     expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, group: "release-publish" } })[0]).toContain("group");
+  });
+});
+
+describe("requireReleaseJobOrder", () => {
+  const RELEASE = ".github/workflows/release.yml";
+  const real = () => parseRepoYaml(RELEASE);
+  const withJob = (name: string, patch: Record<string, unknown>) => {
+    const doc = real();
+    doc.jobs[name] = { ...doc.jobs[name], ...patch };
+    return doc;
+  };
+
+  test("passes on the real release.yml", () => {
+    expect(requireReleaseJobOrder(RELEASE, real())).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireReleaseJobOrder(PATH, { jobs: {} })).toEqual([]);
+  });
+
+  test("fails when github-release stops needing a smoke", () => {
+    const errors = requireReleaseJobOrder(RELEASE, withJob("github-release", { needs: ["classify", "build", "packages", "roundtrip-smoke"] }));
+    expect(errors.some((e) => e.includes("darwin-synthesis-smoke"))).toBe(true);
+  });
+
+  test("fails when an overriding if: lets github-release run past a failed smoke", () => {
+    const doc = real();
+    const cond = String(doc.jobs["github-release"].if).replace("needs.roundtrip-smoke.result == 'success'", "true");
+    const errors = requireReleaseJobOrder(RELEASE, withJob("github-release", { if: cond }));
+    expect(errors.some((e) => e.includes("roundtrip-smoke"))).toBe(true);
+  });
+
+  test("fails when npm can run without a successful github-release", () => {
+    expect(requireReleaseJobOrder(RELEASE, withJob("npm", { if: "${{ !cancelled() }}" })).some((e) => e.includes("npm"))).toBe(true);
+    expect(requireReleaseJobOrder(RELEASE, withJob("npm", { needs: ["classify"] })).some((e) => e.includes("npm"))).toBe(true);
+  });
+
+  test("fails when packages stops building through the shared composite", () => {
+    expect(requireReleaseJobOrder(RELEASE, withJob("packages", { steps: [] })).some((e) => e.includes("linux-packages"))).toBe(true);
   });
 });
