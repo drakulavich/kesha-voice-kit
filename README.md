@@ -138,10 +138,10 @@ Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md). The C
 
 All of these install the Bun CLI wrapper; engine + models still download explicitly via `kesha install`. (Nix is the exception — it currently builds only the engine from source; see below.)
 
-- **Homebrew** — `brew install drakulavich/tap/kesha-voice-kit` · [docs/homebrew.md](docs/homebrew.md)
-- **Linux packages** (`.deb`/`.rpm`, x64) — published on CLI releases, see [docs/linux-packages.md](docs/linux-packages.md)
+- **Homebrew** — `brew install drakulavich/tap/kesha-voice-kit` · [docs/distribution.md](docs/distribution.md#homebrew)
+- **Linux packages** (`.deb`/`.rpm`, x64) — published on stable releases, see [docs/distribution.md](docs/distribution.md#linux-packages)
 - **Docker** (GHCR image) — [docs/docker.md](docs/docker.md)
-- **Nix** (`aarch64-darwin` / `x86_64-linux`) — builds the engine from source (`nix build github:drakulavich/kesha-voice-kit#kesha-engine`). The full `kesha` CLI via `nix run` / `nix profile install` is **not yet available** — it needs a maintainer with Nix to populate a build hash ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)). · [docs/nix-install.md](docs/nix-install.md)
+- **Nix** (`aarch64-darwin` / `x86_64-linux`) — builds the engine from source (`nix build github:drakulavich/kesha-voice-kit#kesha-engine`). The full `kesha` CLI via `nix run` / `nix profile install` is **not yet available** — it needs a maintainer with Nix to populate a build hash ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)). · [docs/distribution.md](docs/distribution.md#nix)
 - **Shell completions + manpage** — `kesha completions bash|zsh|fish` and `kesha manpage` print the packaged files to install wherever your shell expects them.
 
 ## Integrations

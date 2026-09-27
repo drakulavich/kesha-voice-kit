@@ -7,7 +7,7 @@ name: ❄️ Nix Build
 # the required check on `main` (#1105).
 #
 # Verify the Nix flake still evaluates and the engine derivation builds. Does
-# NOT replace `build-engine.yml` — distributable release artifacts continue to
+# NOT replace `release.yml` — distributable release artifacts continue to
 # go through Github-runner cargo + Swift toolchain pins.
 #
 # Currently builds only `.#kesha-engine`. The Bun wrapper package
@@ -22,7 +22,7 @@ name: ❄️ Nix Build
 # `portable` profile plus `system_tts` — not the `darwin` profile —
 # because `fluidaudio-rs`'s build.rs invokes `swift build`, which
 # tries to clone FluidAudio.git inside the offline Nix sandbox.
-# The canonical darwin release (build-engine.yml, pinned Xcode 16.2)
+# The canonical darwin release (release.yml, pinned Xcode 16.2)
 # still ships the CoreML backend.
 
 on:

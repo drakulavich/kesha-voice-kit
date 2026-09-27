@@ -27,7 +27,7 @@ The product promise is not "one model for every audio problem." The promise is a
 | Integrate with OpenClaw as a local voice model | Stable integration surface, user-configured route | `docs/openclaw.md` |
 | Integrate with Hermes Agent as local STT/TTS commands | Stable CLI surface, user-configured route | `docs/hermes.md` |
 | Use Raycast actions for selected-file transcription or clipboard speech | Beta, macOS only | `raycast/` extension |
-| Install through Nix instead of Bun/npm | Beta, selected systems | `docs/nix-install.md` |
+| Install through Nix instead of Bun/npm | Beta, selected systems | `docs/distribution.md#nix` |
 
 ## Non-goals
 
@@ -63,8 +63,8 @@ The product promise is not "one model for every audio problem." The promise is a
 | STT | Supported, CoreML path | Not shipped | Supported, ONNX CPU path | Supported, ONNX CPU path | `aarch64-darwin`, `x86_64-linux` |
 | Audio language detection | Supported | Not shipped | Supported | Supported | Supported where the flake builds |
 | VAD | Supported with `kesha install --vad` | Not shipped | Supported with `kesha install --vad` | Supported with `kesha install --vad` | Supported where the engine path includes VAD assets |
-| TTS: Kokoro (`en` `es` `fr` `it` `pt`) | Supported, FluidAudio/CoreML in release builds | Not shipped | Supported, ONNX path | Supported, ONNX path | Supported except where noted in `docs/nix-install.md` |
-| TTS: Russian Vosk-TTS | Supported | Not shipped | Supported | Supported | Supported except where noted in `docs/nix-install.md` |
+| TTS: Kokoro (`en` `es` `fr` `it` `pt`) | Supported, FluidAudio/CoreML in release builds | Not shipped | Supported, ONNX path | Supported, ONNX path | Supported except where noted in `docs/distribution.md#nix` |
+| TTS: Russian Vosk-TTS | Supported | Not shipped | Supported | Supported | Supported except where noted in `docs/distribution.md#nix` |
 | TTS: Kokoro (`hi` `ja` `zh`) | Supported, darwin-arm64 only | Not shipped | Not supported | Not supported | `aarch64-darwin` only |
 | macOS system voices | Supported | Not shipped | Not applicable | Not applicable | Supported on `aarch64-darwin` |
 | Speaker diarization | Preview, darwin-arm64 only | Not supported | Not supported | Not supported | Not wired into the Nix build yet |

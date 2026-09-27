@@ -11,9 +11,13 @@ paths:
 
 The `coreml` feature links the macOS Swift runtime via `fluidaudio-rs`. The runner, Xcode and deployment-target requirements sit on the `darwin` profile in `rust/Cargo.toml`. `rust/build.rs` emits `-Wl,-rpath,/usr/lib/swift` under `cfg(any(coreml, system_kokoro, system_diarize))` — narrowing that to `coreml` alone breaks local `system_kokoro`/`system_diarize` builds.
 
-`build-engine.yml` smoke-tests every binary with `describe` before upload. **Never remove that step.**
+`release.yml`'s `build` job smoke-tests every binary with `describe` before upload, and `darwin-synthesis-smoke` and `roundtrip-smoke` synthesise with the built artifacts before anything is published. **Never remove those steps** (`requirePreUploadSynthesisSmoke`).
 
-Every `build-engine.yml` release row names exactly one Cargo profile, `portable` or `darwin`, and `check-workflows.ts` fails any other value; a feature every release needs goes into both profiles in `rust/Cargo.toml`, never into a row.
+Every `build` row names exactly one Cargo profile, `portable` or `darwin`, and `check-workflows.ts` fails any other value (`requireReleaseRowsNameOneProfile`); a feature every release needs goes into both profiles in `rust/Cargo.toml`, never into a row.
+
+## RELEASES
+
+`release.yml` is the only workflow that publishes. A pull request that touches it runs a rehearsal: every build and smoke, no publish. Only jobs gated on `plan.publish` hold `contents: write` or `id-token: write` (`requireReleaseJobOrder`), and the run is never cancelled mid-flight (`requireReleaseQueue`). Never dispatch it to "try something": a dispatch publishes. How to cut a release: the `release` skill.
 
 ## WORKFLOW `run:` SHELL INJECTION — USE ENV PASSTHROUGH
 

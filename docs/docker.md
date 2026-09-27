@@ -4,7 +4,7 @@ Linux x64 (`amd64`) CLI image, published to GHCR — no `arm64` image is built.
 Engine and model downloads remain explicit (nothing is auto-downloaded); the
 image only ships the Bun CLI wrapper, so the first `install` still pulls
 ~2.5 GB (engine + speech-to-text models) into the cache volume. See
-[What Linux Gets](linux-packages.md#what-linux-gets) for the full feature
+[What Linux gets](distribution.md#what-linux-gets) for the full feature
 rundown.
 
 The container has no microphone access, so `kesha record` won't work inside

@@ -27,17 +27,15 @@ kesha install --vad      # opt-in: Silero VAD model
 ```
 
 The CLI is a Bun/TypeScript wrapper around `kesha-engine`, a Rust binary
-downloaded from GitHub Releases at the version pinned in
-`package.json#keshaEngine.version`. CLI and engine are versioned
-independently — see [`CLAUDE.md`](./CLAUDE.md) "Releases" for the
-full split.
+downloaded from GitHub Releases. One version, `package.json#version`, names
+both; a published CLI carries the engine it installs, with each Engine or
+Sidecar asset's SHA-256 and size, as `package.json#kesha.engine`, injected at publish.
 
-### Trying an engine build without editing the pin
+### Trying another engine release
 
-The pin decides what every CI lane on every unrelated PR and every published
-CLI downloads, so committing a throwaway build points all of them at it —
-`bun run check:versions` refuses an alpha there outright. To exercise one
-release without touching version control:
+The pin is injected at publish and never committed, and `bun run
+check:versions` refuses one in the repository. To exercise one release
+without touching version control:
 
 ```bash
 kesha install --engine-version 1.24.8-alpha.1            # exact version, no floating "latest"
@@ -109,7 +107,7 @@ kesha-voice-kit/
 │   ├── cli.ts                  # citty argument parsing, --format, install/transcribe/status
 │   ├── lib.ts                  # public API at @drakulavich/kesha-voice-kit/core
 │   ├── engine.ts               # subprocess wrapper, capability cache, IPC types
-│   ├── engine-install.ts       # engine binary download (uses keshaEngine.version)
+│   ├── engine-install.ts       # engine binary download, verified against the injected pin
 │   ├── transcribe.ts           # thin forwarder to the engine; segments shape
 │   ├── synth.ts                # TTS forwarder
 │   ├── status.ts               # `kesha status` (cache disk usage)
@@ -141,7 +139,7 @@ kesha-voice-kit/
 ├── scripts/                    # benchmark.ts, smoke-test.ts
 ├── .github/workflows/
 │   ├── ci.yml                  # PR: unit + integration + tts-e2e + type check, and the Rust lanes (🧪 Rust Tests)
-│   └── build-engine.yml        # tag push (v*, excluding -cli): build 3 binaries + draft release
+│   └── release.yml             # every release: build, smoke and publish (stable tag, beta/alpha)
 ├── raycast/                    # Raycast extension (separate npm tree, vendored)
 ├── openclaw.plugin.json        # OpenClaw manifest
 ├── openclaw-plugin.cjs         # OpenClaw entry
@@ -263,36 +261,25 @@ Handy loops:
 - `ci.yml`'s Rust lanes (`🧪 Rust Tests`) — run on PRs touching `rust/**`: nextest plus fmt/clippy,
   and macos-14 also runs the CoreML `cargo check --all-targets` and
   `just verify-darwin-full` feature set.
-- `build-engine.yml` — runs on `v*` tag pushes (excluding `v*-cli`):
-  builds 3 platform binaries, smoke-tests each with `describe`,
-  creates a draft release.
+- `release.yml` — the only workflow that publishes. A stable `vX.Y.Z` tag,
+  a dispatched beta or alpha, or a merge to `main` labelled `alpha` builds,
+  smokes and publishes; a PR that touches it runs the same jobs as a
+  rehearsal and publishes nothing.
 - No inline scripts > 3 lines — extract to `.github/scripts/`.
 
 ## Releases
 
-The full release runbook lives in [`CLAUDE.md`](./CLAUDE.md) "Releases".
-Quick orientation:
+One version names the CLI and the engine, and `release.yml` publishes both.
+The procedure is the `release` skill (`.claude/skills/release/SKILL.md`), and
+[docs/distribution.md](docs/distribution.md) covers the channels and install
+paths. In short: `main` carries the next version; a maintainer cuts a stable
+release with `just release-tag vX.Y.Z notes.md`, and the run publishes the
+GitHub release, npm (with provenance), the Homebrew tap and the Docker image.
+**Do not publish from a laptop**: that loses the provenance attestation.
 
-- **Engine release** (any change under `rust/`, or bumping
-  `keshaEngine.version`): bump `rust/Cargo.toml` + `rust/Cargo.lock` +
-  `package.json#keshaEngine.version` — leave `package.json#version` alone, it
-  carries the next unreleased CLI — on a `release/X.Y.Z` branch → merge → tag
-  `vX.Y.Z` → write release notes on the **draft** release → validate the draft
-  binary with authenticated `gh release download` (draft assets 404 to anonymous
-  clients, so `curl` cannot check them) → un-draft. A bare engine tag publishes
-  nothing to npm; the bumped pin reaches users with the next `-cli` release.
-
-- **CLI-only patch** (docs, TS fix, plugin tweak): bump `package.json#version`
-  and the two `server.json` versions with it, or `bun run check:versions`
-  rejects the commit → merge → create the `vX.Y.Z-cli` release. Publishing that
-  marker is what runs `npm publish --provenance` in GitHub Actions, and the
-  `-cli` suffix excludes the tag from `build-engine.yml` so no Rust rebuild
-  fires. **Do not publish from a laptop** — that loses the provenance
-  attestation.
-
-Tag names are one-shot — GitHub's immutable releases permanently reserve
-them after publish. Broken release → bump patch and cut a new tag. Never
-tag "just to test"; use `gh workflow run "🔨 Build Engine" --ref main`.
+Tag names are one-shot, because GitHub's immutable releases reserve them after
+publish. A broken release is fixed by the next patch. Never tag to test; a PR
+that touches `release.yml` runs a rehearsal.
 
 ## License
 

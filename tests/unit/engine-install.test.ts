@@ -182,7 +182,7 @@ describe("assertPlatformCanInstall — the pre-check before the lock and any dow
     expect(() => assertPlatformCanInstall({}, "linux", "x64")).not.toThrow();
   });
 
-  // A Nix or self-built engine on an unpublished host installs models through the same path (docs/nix-install.md).
+  // A Nix or self-built engine on an unpublished host installs models through the same path (docs/distribution.md#nix).
   test("a host with no published engine is not the pre-check's business", () => {
     expect(() => assertPlatformCanInstall({}, "linux", "arm64")).not.toThrow();
   });
