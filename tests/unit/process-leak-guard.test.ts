@@ -27,6 +27,16 @@ function spawnStranger(): number {
   return proc.pid;
 }
 
+/**
+ * A child that exits only once its parent has become `sleep`, which never reaps: exiting earlier lets
+ * the shell reap it first, and the pid is then simply gone (seen on CI as `Received: ""`). Bounded
+ * (~30 s) and ends early when its parent is gone, so an interrupted run leaves no orphan behind.
+ * Every `$` is escaped: the parent's double quotes would otherwise expand it for the parent.
+ */
+const WAIT_FOR_SLEEPING_PARENT =
+  "i=0; until ps -o comm= -p \\$PPID | grep -q 'sleep$'; do " +
+  "kill -0 \\$PPID 2>/dev/null || exit 0; i=\\$((i + 1)); [ \\$i -lt 600 ] || exit 0; sleep 0.05; done";
+
 describe("process leak guard", () => {
   posix("reaps a tracked stub the test never killed, and names it", async () => {
     const pid = trackPid(spawnStubborn("kesha-engine-leak-guard-fixture"));
@@ -72,10 +82,7 @@ describe("process leak guard", () => {
 
   /** #1160: `kill(pid, 0)` succeeds on an exited child its parent has not reaped yet. */
   posix("counts an exited but unreaped child as gone", async () => {
-    // The child exits only once its parent has become `sleep`, which never reaps. Exiting earlier
-    // lets the shell reap it first, and the pid is then simply gone (seen on CI as `Received: ""`).
-    const child = "until ps -o comm= -p \\$PPID | grep -q 'sleep$'; do sleep 0.05; done";
-    const parent = Bun.spawn(["sh", "-c", `sh -c "${child}" & echo $!; exec sleep 30`], {
+    const parent = Bun.spawn(["sh", "-c", `sh -c "${WAIT_FOR_SLEEPING_PARENT}" & echo $!; exec sleep 30`], {
       stdout: "pipe",
       stderr: "ignore",
     });
@@ -92,6 +99,13 @@ describe("process leak guard", () => {
       await parent.exited;
     }
   }, 20_000);
+
+  posix("the zombie fixture's child ends on its own when its parent never becomes sleep", async () => {
+    const parent = Bun.spawnSync(["sh", "-c", `sh -c "${WAIT_FOR_SLEEPING_PARENT}" & echo $!`]);
+    const child = Number(parent.stdout.toString());
+
+    expect(await waitForPidExit(child)).toBe(true);
+  });
 
   /** #1131: an interrupted run reaches no hook at all, so the fixture has to end itself. */
   posix("expires on its own clock when no reaper ever signals it", async () => {
