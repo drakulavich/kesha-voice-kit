@@ -18,7 +18,7 @@ import {
 } from "../../src/lib";
 // @ts-expect-error -- removed in 2.0.0; `transcribe` returns the structured result (docs/api.md#migrating-to-200)
 import type { TranscriptionOutput } from "../../src/lib";
-import { describeJson, isolateEngineCache, writeFakeEngine, writeTranscribingEngine } from "../helpers/fake-engine";
+import { describeJson, isolateEngineCache, saveEngineEnv, writeFakeEngine, writeTranscribingEngine } from "../helpers/fake-engine";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
 import { SIDECARS } from "../../src/engine-install";
 import { isDarwinArm64 } from "../../src/engine-targets";
@@ -258,10 +258,24 @@ describe("transcribe() resolves to a TranscribeResult", () => {
       ["transcribe.segments", "transcribe.diarize"],
       `  printf '%s\n' '{"text":"${ENGLISH}","segments":[{"start":0,"end":2.5,"text":"${ENGLISH}","speaker":1}]}'`,
     );
-    await withEngine(engine, async () => {
-      const result = await transcribe(audio, { speakers: true });
-      expect(result.segments).toEqual([{ start: 0, end: 2.5, text: ENGLISH, speaker: 1 }]);
-    });
+    // --speakers checks for the diarize and VAD model files before the spawn; stage both instead of relying on the host cache.
+    const models = tempDir("kesha-lib-speakers-models-");
+    mkdirSync(join(models, "models", "silero-vad"), { recursive: true });
+    writeFileSync(join(models, "models", "silero-vad", "silero_vad.onnx"), "");
+    const restoreEnv = saveEngineEnv();
+    const savedDiarize = process.env.KESHA_DIARIZE_MODEL_PATH;
+    process.env.KESHA_CACHE_DIR = models;
+    process.env.KESHA_DIARIZE_MODEL_PATH = models;
+    try {
+      await withEngine(engine, async () => {
+        const result = await transcribe(audio, { speakers: true });
+        expect(result.segments).toEqual([{ start: 0, end: 2.5, text: ENGLISH, speaker: 1 }]);
+      });
+    } finally {
+      restoreEnv();
+      if (savedDiarize === undefined) delete process.env.KESHA_DIARIZE_MODEL_PATH;
+      else process.env.KESHA_DIARIZE_MODEL_PATH = savedDiarize;
+    }
   });
 
   it("rejects a missing file with E_INPUT_NOT_FOUND naming the path", async () => {
@@ -436,5 +450,12 @@ exit 0
     const err = await rejectionOf(install({ diarize: true }));
     expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
     expect(requested).toEqual([]);
+  });
+
+  (isDarwinArm64() || !platformBackend ? it.skip : it)("reports diarize before an unavailable backend, in the CLI's order", async () => {
+    stageAbsentEngine();
+    const other: InstallOptions["backend"] = platformBackend === "coreml" ? "onnx" : "coreml";
+    const err = await rejectionOf(install({ diarize: true, backend: other }));
+    expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
   });
 });
