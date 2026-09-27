@@ -229,11 +229,11 @@ export function requireReleaseRowsNameOneProfile(path: string, document: unknown
  * exists to prevent — so adding a platform to `src/engine-targets.ts` must add a row here.
  */
 export function requirePactVerificationCoversEveryTarget(path: string, document: unknown): string[] {
-  if (!path.endsWith("capability-pact.yml")) return [];
+  if (!path.endsWith("nightly.yml")) return [];
 
-  const include = (document as { jobs?: { pact?: { strategy?: { matrix?: { include?: unknown } } } } })
-    ?.jobs?.pact?.strategy?.matrix?.include;
-  if (!Array.isArray(include)) return [`${path}: expected a \`pact\` job with a \`strategy.matrix.include\` list`];
+  const include = (document as { jobs?: Record<string, { strategy?: { matrix?: { include?: unknown } } }> })
+    ?.jobs?.["capability-pact"]?.strategy?.matrix?.include;
+  if (!Array.isArray(include)) return [`${path}: expected a \`capability-pact\` job with a \`strategy.matrix.include\` list`];
 
   const covered = new Set(include.map((row) => String((row as { target?: unknown })?.target)));
   return engineTargetEntries()

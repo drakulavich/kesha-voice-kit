@@ -90,5 +90,5 @@ node .github/scripts/build-linux-packages.mjs
 ```
 
 The installer fetches the pinned nFPM release binary (Linux x86-64) and refuses it unless its SHA-256 matches. CI runs the same three commands through `.github/actions/linux-packages`, from
-both `linux-packages.yml` (on `main`) and `release-cli.yml` (on a
-`vX.Y.Z-cli` tag, which is what publishes them).
+both `ci.yml`'s `linux-packages` job (on pull requests and `main`) and `release.yml`'s
+`packages` job (on a stable `vX.Y.Z` tag, which is what publishes them).
