@@ -96,6 +96,10 @@ jobs:
               - '.github/actions/**'
               # workflow-lint's static check can't catch a semantic regression in the guard tests/integration/release-tag-guard.test.ts pins (#1115 review round 2).
               - '.github/workflows/release.yml'
+              # tests/unit/security-workflow.test.ts reads it.
+              - '.github/workflows/security.yml'
+              # tests/unit/nightly.test.ts and the pact rule read it, and it never runs on a pull request.
+              - '.github/workflows/nightly.yml'
               # Most of these scripts have unit tests; without this a script-only edit skips the tests that cover it (check-workflows.ts enforces it). Deliberately no count — the one that lived here read 16 against an actual 25.
               - '.github/scripts/**'
               # Same reason for the repo's own scripts: mutate.ts and release-tag.ts both have unit suites, and a scripts-only edit skipped every one of them (#1091 review).
