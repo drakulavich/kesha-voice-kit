@@ -74,4 +74,10 @@ describe("the engine release lane", () => {
     // One SHA256SUMS also lists the .deb/.rpm, which the download pattern leaves out.
     expect(body).toContain("sha256sum -c --ignore-missing SHA256SUMS");
   });
+
+  test("a dispatched prerelease names the ref it was signed under, not the tag created afterwards", () => {
+    const body = composeEngineReleaseNotes("v2.0.0-beta.1", undefined, "release.yml", "refs/heads/main");
+    expect(body).toContain(".github/workflows/release.yml@refs/heads/main");
+    expect(body).not.toContain("@refs/tags/");
+  });
 });

@@ -23,7 +23,7 @@ fails, do not un-draft; inspect its log and rebuild or replace the draft with a 
 `;
 
 /** release.yml smokes the artifacts before publishing and leaves no draft, so its notes carry no draft step. */
-function verifySection(tag, workflow) {
+function verifySection(tag, workflow, ref) {
   const drafted = workflow === "build-engine.yml";
   return `### Verify release assets
 
@@ -35,7 +35,7 @@ sha256sum -c ${drafted ? "" : "--ignore-missing "}SHA256SUMS
 
 cosign verify-blob \\
   --bundle kesha-engine-darwin-arm64.sigstore.json \\
-  --certificate-identity "https://github.com/${REPO}/.github/workflows/${workflow}@refs/tags/${tag}" \\
+  --certificate-identity "https://github.com/${REPO}/.github/workflows/${workflow}@${ref}" \\
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \\
   kesha-engine-darwin-arm64${drafted ? DRAFT_SMOKE.replace("TAG", tag) : ""}
 \`\`\`
@@ -45,9 +45,10 @@ and a source SBOM in \`kesha-voice-kit-${tag}.spdx.json\`.
 ${drafted ? DRAFT_SMOKE_NOTE : ""}`;
 }
 
-export function composeEngineReleaseNotes(tag, notes, workflow = "build-engine.yml") {
+/** `ref` is what the run was signed under: the tag for a tag push, the branch for a dispatch that creates its tag at publish. */
+export function composeEngineReleaseNotes(tag, notes, workflow = "build-engine.yml", ref = `refs/tags/${tag}`) {
   const authored = notes?.trim();
-  return authored ? `${authored}\n\n${verifySection(tag, workflow)}` : verifySection(tag, workflow);
+  return authored ? `${authored}\n\n${verifySection(tag, workflow, ref)}` : verifySection(tag, workflow, ref);
 }
 
 function main() {
@@ -56,7 +57,7 @@ function main() {
     console.error("usage: TAG_NAME=… node .github/scripts/engine-release-notes.mjs > release-notes.md");
     process.exit(2);
   }
-  process.stdout.write(composeEngineReleaseNotes(tag, readTagNotes(tag), process.env.RELEASE_WORKFLOW));
+  process.stdout.write(composeEngineReleaseNotes(tag, readTagNotes(tag), process.env.RELEASE_WORKFLOW, process.env.SIGNING_REF || undefined));
 }
 
 if (isEntry(import.meta.url)) main();
