@@ -159,9 +159,8 @@
           # Write the version marker `src/engine-version-marker.ts` reads. Without
           # it the TS CLI treats the Nix-built engine as version-unknown,
           # falls into the re-download branch of `installEngine`, and
-          # EROFS-fails against the read-only `/nix/store` path. Pinned to
-          # package.json#keshaEngine.version so it matches the version the
-          # CLI checks for.
+          # EROFS-fails against the read-only `/nix/store` path. Written from
+          # package.json#version, the one version the CLI and the Engine share.
           #
           # On darwin-arm64 we also need to stage the `say-avspeech` Swift
           # sidecar next to the engine. `rust/build.rs` writes it to
@@ -170,7 +169,7 @@
           # first. Without this step, `macos-*` voices fail under Nix because
           # the build-time `$OUT_DIR` no longer exists at install time.
           postInstall = ''
-            echo "${cliPkg.keshaEngine.version}" > $out/bin/kesha-engine.version
+            echo "${cliPkg.version}" > $out/bin/kesha-engine.version
           '' + lib.optionalString (isDarwin && isAarch64) ''
             sidecar=$(find . -path '*/build/*/out/say-avspeech' -type f -print -quit 2>/dev/null)
             if [ -z "$sidecar" ]; then
@@ -181,10 +180,8 @@
           '';
         } // ortEnv // linuxEnv // darwinEnv);
 
-        # Read CLI version from package.json so the package version stays in
-        # lockstep with npm publishes (CLI version, not keshaEngine.version —
-        # the engine is shipped via `kesha-engine` above which has its own
-        # rust/Cargo.toml version).
+        # package.json#version is the version of both artifacts; rust/Cargo.toml
+        # mirrors it (check:versions).
         cliPkg = lib.importJSON ./package.json;
 
         # Bun's production dependency closure for the CLI. This is a

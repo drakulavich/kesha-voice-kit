@@ -39,9 +39,6 @@
       "openclawVersion": "2026.5.27"
     }
   },
-  "keshaEngine": {
-    "version": "1.26.0"
-  },
   "scripts": {
     "test": "bun test --timeout 30000",
     "test:watch": "bun test --timeout 30000 --watch",
