@@ -555,7 +555,7 @@ function timeoutCandidates(job: Job): string[] {
 
 /**
  * Fails when a job with its own steps has no `timeout-minutes`, or resolves to a value ≥360.
- * Generalises the apt-get-only, rust-test.yml-only rule #1090 added — the risk was never
+ * Generalises the apt-get-only, then rust-test.yml-only rule #1090 added — the risk was never
  * apt-specific, and a macOS hang costs 10.3x an Ubuntu one (#1105).
  */
 export function requireJobTimeouts(path: string, document: unknown): string[] {
@@ -834,9 +834,9 @@ export function requireFlakeNixInWorkflowsFilter(path: string, document: unknown
     : [`${path}: \`workflows\` filter must include \`${FLAKE_NIX}\`, or checkFlakeNix's guard never runs in CI (#1088)`];
 }
 
-/** Fails when rust-test.yml's `coreml` filter stops covering rust/build.rs: `coreml-regression` is the only lane that links and runs the coreml feature, and CLAUDE.md's build triple makes the build script's `/usr/lib/swift` rpath emit part of that link surface (#1145). */
+/** Fails when ci.yml's `coreml` filter stops covering rust/build.rs: `coreml-regression` is the only lane that links and runs the coreml feature, and CLAUDE.md's build triple makes the build script's `/usr/lib/swift` rpath emit part of that link surface (#1145). */
 export function requireBuildScriptInCoremlFilter(path: string, document: unknown): string[] {
-  if (!path.endsWith("rust-test.yml")) return [];
+  if (!path.endsWith("ci.yml")) return [];
 
   const filter = namedFilterOf(path, document, "coreml");
   if ("errors" in filter) return filter.errors;
@@ -932,7 +932,7 @@ function groupVariesPerRef(group: string): boolean {
 /**
  * Fails when a workflow that runs on pull requests declares no top-level `concurrency` group.
  *
- * Without one every superseded push runs to completion: `rust-test.yml` carried two macOS
+ * Without one every superseded push runs to completion: the Rust lanes carried two macOS
  * jobs that way, and macOS is 80% of this repo's CI cost at 10.3x Linux per minute (#1105).
  * The group must additionally vary per ref — any group shared across pull requests serialises
  * them into one queue, and GitHub evicts the pending run when a third arrives, so the evicted
@@ -959,14 +959,14 @@ export function requireConcurrencyOnPullRequestWorkflows(path: string, document:
 }
 
 /**
- * Fails when `rust-test.yml` stops cancelling superseded runs.
+ * Fails when `ci.yml`, which carries the Rust lanes, stops cancelling superseded runs.
  *
  * Scoped to this one workflow rather than every pull-request workflow: `security.yml` sets
  * `cancel-in-progress: false` deliberately, and auditing that choice is outside #1105. Here
  * the line is the entire saving — two macOS jobs at 10.3x Linux per minute.
  */
 export function requireRustTestCancelsSupersededRuns(path: string, document: unknown): string[] {
-  if (!path.endsWith("rust-test.yml")) return [];
+  if (!path.endsWith("ci.yml")) return [];
 
   const concurrency = (document as { concurrency?: unknown } | undefined)?.concurrency;
   const cancel = (concurrency as { "cancel-in-progress"?: unknown } | undefined)?.["cancel-in-progress"];
@@ -982,7 +982,7 @@ const RELEASE_GROUP = "release-${{ github.event_name == 'pull_request' && github
 /**
  * Fails when release.yml stops queueing its publishing runs. A cancelled run can leave an immutable
  * release short an asset, and a group without `queue: max` evicts the middle of three quick alpha
- * merges (openspec unified-release D2, the queue npm-publish.yml provides today).
+ * merges (openspec unified-release D2).
  */
 export function requireReleaseQueue(path: string, document: unknown): string[] {
   if (engineReleaseWorkflow(path) !== "release.yml") return [];
@@ -1147,20 +1147,24 @@ export function forbidNixBuildInCiAggregator(path: string, document: unknown): s
 }
 
 /**
- * Fails when a job in ci.yml is missing from the `ci` aggregator's `needs`.
+ * Fails when a job in ci.yml is missing from both required aggregators' `needs`: `ci` (🧪 CI) and
+ * `rust-tests` (🧪 Rust Tests).
  *
- * The aggregator is the single required status, so a job it does not need can go red without
- * blocking the merge — the `file-sizes` guard landed that way, always-on and never gating (#1240).
+ * An aggregator is the required status, so a job neither needs can go red without blocking the
+ * merge — the `file-sizes` guard landed that way, always-on and never gating (#1240).
  */
 export function requireEveryJobInCiAggregator(path: string, document: unknown): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
   const jobs = (document as { jobs?: Record<string, { needs?: unknown }> } | undefined)?.jobs;
   if (!jobs || typeof jobs !== "object" || !("ci" in jobs)) return [];
-  const needs = new Set([jobs.ci?.needs].flat().filter((need): need is string => typeof need === "string"));
+  const aggregators = ["ci", "rust-tests"];
+  const needs = new Set(
+    aggregators.flatMap((a) => [jobs[a]?.needs].flat()).filter((need): need is string => typeof need === "string"),
+  );
 
   return Object.keys(jobs)
-    .filter((job) => job !== "ci" && !needs.has(job))
+    .filter((job) => !aggregators.includes(job) && !needs.has(job))
     .map((job) => `${path}: \`${job}\` is not in the \`ci\` aggregator's needs, so its failure never fails the required status`);
 }
 

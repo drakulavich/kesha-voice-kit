@@ -2,7 +2,7 @@
 /**
  * Round-trip smoke for a shipped engine: synthesise with both TTS engines, then
  * transcribe the result back. Closes the last #216 acceptance criterion, which
- * no lane covered — rust-test.yml runs unit and contract tests, and the Linux
+ * no lane covered — ci.yml's Rust lanes run unit and contract tests, and the Linux
  * engine smokes transcribe a fixture but never synthesise.
  *
  * Usage: bun .github/scripts/smoke-synthesis.ts [--no-roundtrip] [--voice <id>] [--text <s>] <work-dir>

@@ -49,6 +49,12 @@ jobs:
       homebrew: ${{ steps.filter.outputs.homebrew }}
       docker: ${{ steps.filter.outputs.docker }}
       dockerfile: ${{ steps.filter.outputs.dockerfile }}
+      rust: ${{ steps.filter.outputs.rust }}
+      rust_main: ${{ steps.filter.outputs.rust_main }}
+      coreml: ${{ steps.filter.outputs.coreml }}
+      linux_packages: ${{ steps.filter.outputs.linux_packages }}
+      linux_packages_main: ${{ steps.filter.outputs.linux_packages_main }}
+      cache_probe: ${{ steps.filter.outputs.cache_probe }}
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -93,6 +99,8 @@ jobs:
               - '.github/actions/**'
               # workflow-lint's static check can't catch a semantic regression in the guard tests/integration/release-tag-guard.test.ts pins (#1115 review round 2).
               - '.github/workflows/release.yml'
+              # tests/unit/security-workflow.test.ts reads it.
+              - '.github/workflows/security.yml'
               # tests/unit/nightly.test.ts and the pact rule read it, and it never runs on a pull request.
               - '.github/workflows/nightly.yml'
               # Most of these scripts have unit tests; without this a script-only edit skips the tests that cover it (check-workflows.ts enforces it). Deliberately no count — the one that lived here read 16 against an actual 25.
@@ -227,6 +235,74 @@ jobs:
               - .dockerignore
               - compose.yml
               - '.github/workflows/ci.yml'
+            rust:
+              - 'rust/**'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-rust/**'
+              - '.github/scripts/pin-msvc-linker.ps1'
+              - '.github/scripts/check-coverage.ts'
+              - 'package.json'
+              - 'bun.lock'
+            # What rust-test.yml's push trigger was filtered on: rust-push-gate runs on main only for these.
+            rust_main:
+              - 'rust/**'
+              - 'rust-toolchain.toml'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/setup-rust/**'
+            # Narrow surface for the ANE decoder-state guard (#592): the
+            # FluidAudio backend + its regression test, the coreml feature
+            # wiring in Cargo.toml, and Cargo.lock — which pins the exact
+            # fluidaudio-rs commit, so a bump (the regression vector) always
+            # lands here even though it's a git-branch dep.
+            coreml:
+              - 'rust/src/backend/fluidaudio.rs'
+              # The lane's diagnostics ride KESHA_DEBUG's sink selection (#841).
+              - 'rust/src/fluid_stdout.rs'
+              # The only lane that *runs* diarize's tests; everything else stops at clippy (#999).
+              - 'rust/src/transcribe/diarize.rs'
+              - 'rust/build.rs'
+              - 'rust/Cargo.toml'
+              - 'rust/Cargo.lock'
+              - 'tests/fixtures/benchmark-en/03-review-pull-request.ogg'
+              - '.github/workflows/ci.yml'
+              - '.github/scripts/coreml-regression.sh'
+              - '.github/actions/setup-rust/**'
+            # release.yml shares this build and publishes it only from a tag, so a PR touching the shared
+            # machinery is the last place a broken step can surface before a release depends on it (#728).
+            linux_packages:
+              - packaging/**
+              - .github/scripts/build-linux-packages.mjs
+              - .github/scripts/linux-package-names.mjs
+              - .github/scripts/install-nfpm.sh
+              - .github/scripts/verify-linux-packages.sh
+              - .github/actions/linux-packages/action.yml
+              - '.github/workflows/ci.yml'
+            # On main, everything the packaged CLI is built from.
+            linux_packages_main:
+              - packaging/**
+              - .github/scripts/build-linux-packages.mjs
+              - .github/scripts/linux-package-names.mjs
+              - .github/scripts/install-nfpm.sh
+              - .github/scripts/verify-linux-packages.sh
+              - .github/workflows/release.yml
+              - .github/actions/setup-bun/action.yml
+              - .github/actions/linux-packages/action.yml
+              - package.json
+              - bun.lock
+              - tsconfig.json
+              - bin/**
+              - src/**
+              - README.md
+              - docs/linux-packages.md
+              - LICENSE
+              - NOTICES.md
+              - '.github/workflows/ci.yml'
+            cache_probe:
+              - .github/workflows/cache-seed.yml
+              - .github/actions/install-kesha-backend/action.yml
+              - .github/scripts/assert-cross-os-cache.sh
+              - '.github/workflows/ci.yml'
 
   workflow-lint:
     needs: changes
@@ -249,6 +325,14 @@ jobs:
       - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
         with:
           tool: just@1.58.0
+
+      # Syntax, expression typing and shellcheck of every `run:` (openspec unified-release D5).
+      # .github/actionlint.yaml scopes the release.yml queue exception to that workflow only.
+      - name: 🧹 Install pinned actionlint
+        run: bash .github/scripts/install-actionlint.sh
+
+      - name: 🧹 actionlint
+        run: actionlint
 
       - name: 🔍 Check workflow YAML
         run: bun run check:workflows
@@ -366,7 +450,7 @@ jobs:
         shell: bash
         env:
           MATRIX_OS: ${{ matrix.os }}
-        run: bun .github/scripts/junit-to-markdown.ts "Unit Tests ($MATRIX_OS)" "test-results/unit-$MATRIX_OS.xml" >> $GITHUB_STEP_SUMMARY
+        run: bun .github/scripts/junit-to-markdown.ts "Unit Tests ($MATRIX_OS)" "test-results/unit-$MATRIX_OS.xml" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload test results
         if: always()
@@ -466,7 +550,7 @@ jobs:
 
       - name: 📊 Test summary
         if: always()
-        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests (macos)" test-results/integration.xml >> $GITHUB_STEP_SUMMARY
+        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests (macos)" test-results/integration.xml >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload test results
         if: always()
@@ -553,7 +637,7 @@ jobs:
         timeout-minutes: 12
       - name: 📊 Test summary
         if: always()
-        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests — full (macos)" test-results/integration-full.xml >> $GITHUB_STEP_SUMMARY
+        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests — full (macos)" test-results/integration-full.xml >> "$GITHUB_STEP_SUMMARY"
       - name: 📤 Upload test results
         if: always()
         continue-on-error: true
@@ -829,7 +913,7 @@ jobs:
 
       - name: 📊 Test summary
         if: always()
-        run: bun .github/scripts/junit-to-markdown.ts "TTS E2E Tests (macos)" test-results/tts-e2e.xml >> $GITHUB_STEP_SUMMARY
+        run: bun .github/scripts/junit-to-markdown.ts "TTS E2E Tests (macos)" test-results/tts-e2e.xml >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload test results
         if: always()
@@ -968,6 +1052,526 @@ jobs:
           push: false
           cache-from: type=gha
 
+  # GitHub scopes a cache written during a pull_request run to that PR's merge
+  # ref, so it can only ever serve re-runs of the same PR — measured on #838: the
+  # first run missed and saved, only later pushes hit. Four such entries at
+  # ~300 MB is ~1.2 GB per open PR, and since they are the most recently used,
+  # LRU evicts the main-scoped model bundles instead. That is the mechanism
+  # behind the parakeet evictions this ticket opened with (#741).
+  #
+  # So PR runs restore and never save. `rust-push-gate` is the only rust job that
+  # runs on main, so it writes the one Linux entry `lint-ubuntu` reads through a
+  # matching `shared-key` — that lane gets *warmer* than before, since its first
+  # run per PR used to be cold. Lanes with no main-side writer (macOS, Windows,
+  # coverage) trade their second-and-later pushes going cold for the headroom;
+  # their first push was already cold either way.
+  lint-ubuntu:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: linux
+
+      - name: Check formatting
+        run: cd rust && cargo fmt -- --check
+
+      - name: Clippy
+        run: bash rust/ci/run-clippy.sh Linux
+
+  test:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read
+      # Flakiness.io CLI authenticates via GitHub OIDC; scope the
+      # write capability to this job only so a future second job in
+      # this workflow doesn't inherit it implicitly (symmetric with
+      # the per-job scoping in ci.yml per Greptile #301).
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    env:
+      KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      # This lane stages models, so a gate that can't find them is a broken
+      # layout, not a laptop — fail instead of skipping to a green run of
+      # nothing (#741). `mini` also fails if real weights reappear here, which is
+      # what keeps the download from creeping back. Lanes that stage nothing
+      # (rust-push-gate) leave it unset.
+      KESHA_REQUIRE_MODEL_TESTS: mini
+      # Its own flag, not KESHA_REQUIRE_MODEL_TESTS: that promises `mini` here and Silero has no stand-in (#990).
+      VAD_CACHE: ${{ github.workspace }}/.vad-cache
+      VAD_MODEL: ${{ github.workspace }}/.vad-cache/models/silero-vad/silero_vad.onnx
+      KESHA_REQUIRE_VAD_TESTS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode 16 (Swift 6)
+        if: matrix.os == 'macos-14'
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "16.2"
+      - uses: ./.github/actions/setup-rust
+
+      # `cargo nextest` replaces `cargo test` for the actual run — it
+      # parallelizes per-binary, surfaces flakiness explicitly, and emits
+      # JUnit XML via the `ci` profile (see rust/.config/nextest.toml).
+      # taiki-e/install-action caches a prebuilt binary per OS/arch so
+      # the install is ~1s on warm cache.
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        with:
+          tool: nextest
+
+      # Guard against coreml-backend rot: v1.0.0 shipped with broken
+      # coreml code because no PR CI job ever tried to build it.
+      - name: Check coreml feature
+        if: matrix.os == 'macos-14'
+        shell: bash
+        # --all-targets so the `#[cfg(feature = "coreml")]` tests compile here too (#708).
+        run: cd rust && cargo check --features coreml --no-default-features --all-targets
+
+      # The default-feature nextest run (`run-cargo-test.sh`) builds only
+      # `onnx,tts`, so the darwin-arm64 FluidAudio paths — `system_kokoro`
+      # (#475 `--rate`), `system_diarize`, `system_tts` — and their gated
+      # integration tests (`kokoro_rate_e2e.rs`, `diarize_e2e.rs`) never
+      # compile in PR CI. The runtime e2e bodies can't run here (the ANE
+      # Kokoro model isn't downloaded on the runner; it's a local /
+      # release-smoke gate), but `--all-targets` clippy at least type-checks
+      # and lints the test code + the install-time voice-pack staging so a
+      # darwin-only break is caught before a release tag builds it.
+      # The feature set lives in the `verify-darwin-full` recipe, so CI and the local
+      # gate cannot drift apart (#797) — hence a `just` on PATH for this lane.
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        if: matrix.os == 'macos-14'
+        with:
+          tool: just@1.58.0
+      - name: Lint darwin release feature set (incl. system_kokoro)
+        if: matrix.os == 'macos-14'
+        shell: bash
+        run: just verify-darwin-full
+
+      # No model cache on this lane at all: the Kokoro stand-in is committed,
+      # CharsiuG2P is covered once on the Linux coverage lane rather than three
+      # times, and Vosk-RU left the PR path entirely for the weekly canary (#741).
+      - name: 🎚️ Stage Kokoro stand-ins
+        shell: bash
+        run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
+
+      # Not actions/cache: 2.3 MB does not repay a PR-scoped entry that only serves re-runs and adds LRU pressure (#741).
+      - name: 🔊 Stage Silero VAD
+        shell: bash
+        run: bash rust/ci/download-vad.sh "$VAD_CACHE"
+
+      - name: Run tests
+        shell: bash
+        run: bash rust/ci/run-cargo-test.sh "$KOKORO_CACHE" "$RUNNER_OS"
+
+      - name: 📤 Upload JUnit
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-junit-${{ matrix.os }}
+          path: rust/target/nextest/ci/junit.xml
+          retention-days: 7
+
+      # The npm Flakiness CLI runs everywhere bun runs, so unlike the
+      # platform-specific curl installer it covers windows-latest too.
+      # Setup-bun is a no-op when bun is already on PATH (cached on warm
+      # runs).
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: always()
+        with:
+          bun-version-file: .bun-version
+
+      - name: 🪼 Upload to Flakiness.io
+        # `if: always()` runs the step but doesn't suppress its exit
+        # code; `continue-on-error: true` keeps a Flakiness outage /
+        # OIDC handshake failure off the test-job verdict (Greptile
+        # #301 P1). Telemetry upload is best-effort, not a release gate.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bun .github/scripts/upload-flakiness.ts \
+            rust/target/nextest/ci/junit.xml rust Laputa/kesha-voice-kit
+
+  coverage:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'
+    permissions:
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KOKORO_CACHE: ${{ github.workspace }}/.kokoro-spike
+      NEXTEST_PROFILE: ci
+      KESHA_REQUIRE_MODEL_TESTS: mini
+      # CharsiuG2P has no stand-in and its IPA goldens own phoneme fidelity, so this
+      # lane still promises it. Vosk-RU moved to nightly.yml's real-model-canary job: one synth test
+      # was not worth ~935 MB of per-PR cache, and it needs real weights either way
+      # (#741).
+      KESHA_REQUIRE_G2P_TESTS: "1"
+      VAD_CACHE: ${{ github.workspace }}/.vad-cache
+      VAD_MODEL: ${{ github.workspace }}/.vad-cache/models/silero-vad/silero_vad.onnx
+      KESHA_REQUIRE_VAD_TESTS: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No main-side writer for the llvm-cov flavour: its RUSTFLAGS never match push-gate's fingerprints (#741).
+      - uses: ./.github/actions/setup-rust
+        with:
+          extra-components: llvm-tools-preview
+
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        with:
+          tool: nextest
+
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        with:
+          tool: cargo-llvm-cov
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # The only weights left on the PR path that nothing can stand in for:
+      # CharsiuG2P, whose phonemiser the Kokoro mini does not replace (#741).
+      - name: 🎚️ Setup real TTS models
+        uses: ./.github/actions/setup-kokoro-models
+
+      # After the restore, never before: an archive written under an older key still
+      # carries a real model.onnx, and unpacking it over a staged stand-in would put
+      # this lane back on weights it did not promise.
+      - name: 🎚️ Stage Kokoro stand-ins
+        shell: bash
+        run: bash rust/ci/stage-mini-models.sh "$KOKORO_CACHE"
+
+      # Not actions/cache: 2.3 MB does not repay a PR-scoped entry that only serves re-runs and adds LRU pressure (#741).
+      - name: 🔊 Stage Silero VAD
+        shell: bash
+        run: bash rust/ci/download-vad.sh "$VAD_CACHE"
+
+      - name: 📈 Rust coverage
+        shell: bash
+        run: |
+          source rust/ci/kokoro-env.sh "$KOKORO_CACHE"
+          bun run coverage:rust
+
+      - name: 📤 Upload Ubuntu JUnit
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-junit-ubuntu-latest
+          path: rust/target/nextest/ci/junit.xml
+          retention-days: 7
+
+      - name: 🪼 Upload Ubuntu tests to Flakiness.io
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bun .github/scripts/upload-flakiness.ts \
+            rust/target/nextest/ci/junit.xml rust Laputa/kesha-voice-kit
+
+      - name: 🧯 Enforce Rust coverage gates
+        run: bun run coverage:check:rust
+
+      - name: 📊 Coverage summary
+        if: always()
+        shell: bash
+        run: |
+          if [[ -f coverage/rust/summary.md ]]; then
+            cat coverage/rust/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: 📤 Upload Rust coverage
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-rust
+          path: coverage/rust
+          retention-days: 30
+
+  rust-push-gate:
+    # Lean post-merge gate: catches semantic merge conflicts (two PRs green
+    # alone, broken together) fast and cheap. The 3-OS matrix already ran on
+    # the PR; release.yml is the cross-platform release gate. Ubuntu-only
+    # on purpose.
+    needs: changes
+    if: github.event_name == 'push' && needs.changes.outputs.rust_main == 'true'
+    permissions:
+      # A job-level block replaces the inherited grant, so omitting this breaks checkout.
+      contents: read
+      id-token: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Sole rust job on main, so this is the entry `lint-ubuntu` restores.
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: linux
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        with:
+          tool: nextest
+      - name: Check formatting
+        run: cd rust && cargo fmt -- --check
+      - name: Clippy
+        run: bash rust/ci/run-clippy.sh Linux
+      - name: Tests
+        # `--profile ci` is what emits target/nextest/ci/junit.xml for the upload below.
+        run: cd rust && cargo nextest run --profile ci --features tts
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        if: always()
+        with:
+          bun-version-file: .bun-version
+
+      - name: 🪼 Upload to Flakiness.io
+        # Gives main a Rust baseline so flip/fail rates have history to compute against.
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          bun .github/scripts/upload-flakiness.ts \
+            rust/target/nextest/ci/junit.xml rust Laputa/kesha-voice-kit
+
+  # Provisioned macOS arm64 lane for the FluidAudio TDT decoder-state guard
+  # (#592). `transcribe_samples_is_stateless_across_calls` is `#[ignore]` +
+  # `coreml`-only because it needs a real Apple Neural Engine AND the cached
+  # Parakeet CoreML bundle — the per-PR macos-14 lane above only *compiles*
+  # `coreml` (`cargo check`), so a fluidaudio-rs bump that dropped the upstream
+  # stateless-reset fix (FluidInference/fluidaudio-rs#15) would ship the
+  # multi-segment "." corruption with no automated failure.
+  #
+  # Runs only when the regression surface changes (the `coreml` paths-filter:
+  # the FluidAudio backend, the coreml feature wiring, or the fluidaudio-rs pin
+  # in Cargo.lock) — not on every PR and not nightly. The CoreML Parakeet
+  # bundle is large but cached, so the fetch is a once-per-key seed.
+  #
+  # macos-14 is GitHub-hosted Apple Silicon, but it is an `Apple M1 (Virtual)` VM
+  # with **no** Neural Engine (#742 measured `ioreg -c AppleARMIODevice | grep -ci
+  # ane` at 0 there against 32 on a real M2), so the ANE-converted Parakeet chain
+  # actually executes through BNNS on the CPU. The guard still catches a
+  # fluidaudio-rs bump that drops the stateless-reset fix, which is what #592
+  # asked of it; it just does not exercise the ANE.
+  coreml-regression:
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.coreml == 'true'
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+      NEXTEST_PROFILE: ci
+      # The Swift bridge collapses every transcribe throw to "Transcription
+      # failed" and prints the real error with `print`, i.e. onto the stdout the
+      # backend silences. Debug routes that sink to stderr so #841's warm-cache
+      # failure names its own cause (#678 does the same for darwin synthesis).
+      KESHA_DEBUG: "1"
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Select Xcode 16 (Swift 6)
+        uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
+        with:
+          xcode-version: "16.2"
+      - uses: ./.github/actions/setup-rust
+      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+        with:
+          tool: nextest
+
+      # Restore-only: this job runs on pull_request, and GitHub scopes a cache to
+      # the ref that wrote it, so anything saved here is readable by re-runs of
+      # this PR alone — never by main, never by another PR (#675, the defect #663
+      # fixed for Kokoro). cache-seed.yml writes this key from main instead.
+      # On a miss the bundle is still fetched during the test's `init_asr()`;
+      # the run is slower, not wrong.
+      - name: 🎧 Restore Parakeet CoreML models
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          # Must track `models::fluidaudio_asr_location`. A runner has no legacy bundle, so
+          # the engine roots it under the Kesha cache; caching the old Application Support
+          # path would restore where nothing reads and save where nothing wrote (#688).
+          path: ~/.cache/kesha/fluidaudio/parakeet-tdt-0.6b-v3
+          # Keyed on the fluidaudio-rs pin (Cargo.lock): a bump changes the model
+          # set. The prefix restore-key warm-starts from the prior bundle so a
+          # bump tops up the delta instead of re-fetching everything.
+          key: parakeet-coreml-models-v2-${{ runner.os }}-${{ hashFiles('rust/Cargo.lock') }}
+          restore-keys: |
+            parakeet-coreml-models-v2-${{ runner.os }}-
+
+      - name: 🧪 CoreML decoder-state regression
+        run: bash .github/scripts/coreml-regression.sh
+
+      - name: 📤 Upload JUnit
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-junit-coreml-regression
+          path: rust/target/nextest/ci/junit.xml
+          retention-days: 7
+
+  # The second required status check, kept under its old name when rust-test.yml moved in
+  # (openspec unified-release D4). Always runs so the context reports on every PR (the heavy
+  # jobs above skip on non-rust PRs → success); the step fails the gate only if a real job
+  # failed. `coreml-regression` is included so a red decoder-state guard blocks a PR that
+  # touches the regression surface (it reports 'skipped' — not 'failure' — on PRs that
+  # don't, so it never blocks unrelated work). `rust-push-gate` runs on main only, where a
+  # red one now reds this check instead of nothing.
+  rust-tests:
+    name: 🧪 Rust Tests
+    if: always()
+    needs: [changes, lint-ubuntu, test, coverage, coreml-regression, rust-push-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail if any required job failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+  # CI only. The packages users install are cut from a stable tag by release.yml (#728).
+  linux-packages:
+    needs: changes
+    if: >-
+      (github.event_name == 'pull_request' && needs.changes.outputs.linux_packages == 'true')
+      || (github.event_name == 'push' && needs.changes.outputs.linux_packages_main == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build and verify packages
+        uses: ./.github/actions/linux-packages
+
+  # Proves, in bytes rather than in prose, where a cross-OS cache entry lands on Windows.
+  #
+  # `kesha-models-tts-v3` is one entry shared by the Linux and Windows model lanes (#860). That only
+  # works because its `path:` is workspace-relative. A cross-OS archive stores members relative to
+  # GITHUB_WORKSPACE and extracts them the same way, with no remap to the consumer's home — so a
+  # `~/.cache/kesha` entry saved on Linux extracts beside the Windows workspace root, nowhere near
+  # %USERPROFILE%, **while still reporting a cache hit**. The lane would then cold-download 2.8 GB
+  # behind a green "Cache restored from key" line: the dedup silently buys nothing on half the target.
+  #
+  # Two arms, one run, so the contrast is evidence and not an argument:
+  #   workspace-relative → the file MUST be under the Windows workspace
+  #   home-anchored      → the file MUST NOT be under the Windows home
+  # Both restores are asserted to HIT first, which is the whole point: a hit says nothing about placement.
+  #
+  # Entries are a few bytes and deleted at the end, so this never competes for the 10 GB budget.
+  cache-probe-save:
+    name: Save both probe entries (ubuntu)
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.cache_probe == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      WORKSPACE_KEY: kesha-crossos-probe-workspace-${{ github.run_id }}-${{ github.run_attempt }}
+      HOME_KEY: kesha-crossos-probe-home-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Relative, not $GITHUB_WORKSPACE: under Git Bash that variable carries backslashes, which
+      # bash mangles inside quotes. Every step already runs with the workspace as its cwd.
+      - name: Stage both probe trees
+        run: |
+          mkdir -p .kesha-ci-cache-probe ~/.kesha-probe-home
+          printf kesha-cross-os-probe > .kesha-ci-cache-probe/probe.txt
+          printf kesha-cross-os-probe > ~/.kesha-probe-home/probe.txt
+
+      - name: Save the workspace-relative entry
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .kesha-ci-cache-probe
+          key: ${{ env.WORKSPACE_KEY }}
+          enableCrossOsArchive: true
+
+      - name: Save the home-anchored entry
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.kesha-probe-home
+          key: ${{ env.HOME_KEY }}
+          enableCrossOsArchive: true
+
+  cache-probe-restore:
+    name: Restore both on windows and check placement
+    needs: cache-probe-save
+    runs-on: windows-latest
+    timeout-minutes: 10
+    env:
+      WORKSPACE_KEY: kesha-crossos-probe-workspace-${{ github.run_id }}-${{ github.run_attempt }}
+      HOME_KEY: kesha-crossos-probe-home-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore the workspace-relative entry
+        id: workspace
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .kesha-ci-cache-probe
+          key: ${{ env.WORKSPACE_KEY }}
+          enableCrossOsArchive: true
+
+      - name: Restore the home-anchored entry
+        id: home
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.kesha-probe-home
+          key: ${{ env.HOME_KEY }}
+          enableCrossOsArchive: true
+
+      # Both must hit, or the placement assertions below would pass for the wrong reason.
+      - name: Both entries must report a cache hit
+        env:
+          WORKSPACE_HIT: ${{ steps.workspace.outputs.cache-hit }}
+          HOME_HIT: ${{ steps.home.outputs.cache-hit }}
+        run: |
+          echo "workspace-relative hit=$WORKSPACE_HIT   home-anchored hit=$HOME_HIT"
+          test "$WORKSPACE_HIT" = "true" && test "$HOME_HIT" = "true"
+
+      - name: Show where each archive actually landed
+        run: |
+          echo "cwd=$(pwd)  home=$HOME"
+          find . "$HOME" -maxdepth 6 -name probe.txt 2>/dev/null || true
+
+      - name: The workspace-relative entry lands in the workspace
+        run: bash .github/scripts/assert-cross-os-cache.sh present .kesha-ci-cache-probe/probe.txt workspace-relative
+
+      - name: The home-anchored entry does not land in the home dir
+        run: bash .github/scripts/assert-cross-os-cache.sh absent "$HOME/.kesha-probe-home/probe.txt" home-anchored
+
+  cache-probe-cleanup:
+    name: Delete the probe entries
+    needs: [cache-probe-save, cache-probe-restore]
+    if: always() && needs.cache-probe-save.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    env:
+      WORKSPACE_KEY: kesha-crossos-probe-workspace-${{ github.run_id }}-${{ github.run_attempt }}
+      HOME_KEY: kesha-crossos-probe-home-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Drop both keys
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          for key in "$WORKSPACE_KEY" "$HOME_KEY"; do
+            gh api --method DELETE "/repos/$REPO/actions/caches?key=$key" || echo "no entry for $key"
+          done
+
   # Aggregator gate = the single required status check for branch protection.
   # Always runs so 🧪 CI reports on every PR; the path-gated jobs above skip on
   # unrelated PRs (→ success). The step fails the gate only if a real job failed.
@@ -991,6 +1595,10 @@ jobs:
       - openspec-validate
       - docker-image
       - docker-rehearsal
+      - linux-packages
+      - cache-probe-save
+      - cache-probe-restore
+      - cache-probe-cleanup
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
