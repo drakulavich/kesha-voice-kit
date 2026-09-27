@@ -14,6 +14,7 @@ import {
 import { log } from "../../src/log";
 import { getEngineBinPath } from "../../src/engine";
 import { isDarwinArm64 } from "../../src/engine-targets";
+import { PINNED_ASSET_SHA256_VERSION as PINNED } from "../../src/engine-targets";
 import { engineVersion } from "../../src/package-info";
 import { describeJson, expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
@@ -85,7 +86,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     const binPath = stageEngineDir();
     const urls = stubRelease(sumsLine(sha256(ENGINE)));
 
-    const err = await installEngine().then(
+    const err = await installEngine({ version: PINNED }).then(
       () => null,
       (e: unknown) => e,
     );
@@ -104,7 +105,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     writeFileSync(getVersionMarkerPath(binPath), "1.0.0\n");
     stubRelease(null);
 
-    await expect(installEngine()).rejects.toThrow(/sha256/i);
+    await expect(installEngine({ version: PINNED })).rejects.toThrow(/sha256/i);
 
     expect(existsSync(binPath)).toBe(false);
     expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
@@ -182,7 +183,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
       `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
         `const body = ${JSON.stringify(ENGINE)};\n` +
         `globalThis.fetch = (async () => new Response(body, { status: 200 })) as typeof fetch;\n` +
-        `await performInstall({ noCache: false, ttsLangs: [] });\n`,
+        `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
     );
     const proc = Bun.spawn([process.execPath, script], {
       env: { ...process.env, KESHA_ENGINE_BIN: binPath },
@@ -193,7 +194,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
 
     expect(exitCode).toBe(1);
     expect(stderr).toContain(
-      `kesha-engine binary ${getEngineBinaryName()} from release v${engineVersion} does not match its pinned SHA-256`,
+      `kesha-engine binary ${getEngineBinaryName()} from release v${PINNED} does not match its pinned SHA-256`,
     );
     expect(stderr).toContain("Fix: re-run `kesha install`");
     expect(existsSync(binPath)).toBe(false);
@@ -210,7 +211,7 @@ function stageAlteredInstall(binPath: string): void {
     writeFileSync(path, ALTERED);
     chmodSync(path, 0o755);
   }
-  writeFileSync(getVersionMarkerPath(binPath), `${engineVersion}\n`);
+  writeFileSync(getVersionMarkerPath(binPath), `${PINNED}\n`);
 }
 
 describe("a cached install of the pinned engine is held to the pin", () => {
@@ -219,7 +220,7 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     stageAlteredInstall(binPath);
     stubRelease(null);
 
-    await expect(installEngine()).rejects.toThrow("does not match its pinned SHA-256");
+    await expect(installEngine({ version: PINNED })).rejects.toThrow("does not match its pinned SHA-256");
 
     expect(existsSync(binPath)).toBe(false);
     expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
@@ -231,10 +232,10 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     stubRelease(null);
     expectServedBody(() => ENGINE);
 
-    await installEngine();
+    await installEngine({ version: PINNED });
 
     expect(readFileSync(binPath, "utf8")).toBe(ENGINE);
-    expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
+    expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
   }, 30_000);
 
   sidecarTest("an altered sidecar next to a verified engine is replaced by a verified download", async () => {
@@ -244,7 +245,7 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     stubRelease(null);
     expectServedBody(() => ENGINE);
 
-    await installEngine();
+    await installEngine({ version: PINNED });
 
     for (const spec of SIDECARS) {
       expect(readFileSync(join(dirname(binPath), spec.fileBasename), "utf8")).toBe(ENGINE);
@@ -267,7 +268,7 @@ describe("a cached install of the pinned engine is held to the pin", () => {
       stubRelease(null);
       expectServedBody(() => ENGINE);
 
-      await installEngine();
+      await installEngine({ version: PINNED });
 
       expect(readFileSync(unreadablePath, "utf8")).toBe(ENGINE);
       expect(warnings.some((w) => w.includes(unreadablePath) && w.includes("EACCES"))).toBe(true);
@@ -280,7 +281,7 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     stageAlteredInstall(binPath);
     stubRelease(null);
 
-    await installEngine();
+    await installEngine({ version: PINNED });
 
     expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
   }, 30_000);

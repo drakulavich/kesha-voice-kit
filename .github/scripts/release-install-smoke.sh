@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
-# Exercise only distributed artifacts in a private scratch directory.  A draft asset cannot be
-# fetched through its public URL, so the draft mode deliberately uses authenticated `gh release
-# download`; the npm mode deliberately uses the registry package, never this checkout's binary.
+# Exercise only distributed artifacts in a private scratch directory: the artifact mode takes the
+# just-built workflow artifact, the npm mode the registry package, never this checkout's binary.
 set -euo pipefail
 
-mode=${1:?usage: release-install-smoke.sh <artifact|draft-engine|npm>}
+mode=${1:?usage: release-install-smoke.sh <artifact|npm>}
 repo_root=${GITHUB_WORKSPACE:-$PWD}
 scratch_base=${RUNNER_TEMP:-/tmp}
 scratch=$(mktemp -d "$scratch_base/kesha-release-install-smoke.XXXXXX")
@@ -38,9 +37,9 @@ verify_engine_asset() {
   jq -e '.protocolVersion == 4 and .backend == "onnx" and (.features | index("tts"))' "$scratch/describe.json" >/dev/null ||
     fail "Linux engine does not describe protocol 4 with onnx + tts"
 
-  # This is the marker `kesha install` writes after its normal download.  We stage the authenticated
-  # draft asset at that final location so the CLI can perform the user-facing model install without
-  # attempting an anonymous (and necessarily 404) re-download of the same draft.
+  # This is the marker `kesha install` writes after its normal download.  Staging the artifact at that
+  # final location lets the CLI perform the user-facing model install without downloading an engine
+  # that is not published yet.
   printf '%s\n' "$ENGINE_VERSION" > "$assets/$asset.version"
   export KESHA_ENGINE_BIN="$assets/$asset"
   export KESHA_CACHE_DIR="$scratch/cache"
@@ -52,27 +51,6 @@ verify_engine_asset() {
   "$KESHA_COMMAND" --json "$repo_root/tests/fixtures/benchmark-en/01-check-email.ogg" > "$scratch/transcript.json"
   bun "$repo_root/.github/scripts/assert-transcript.ts" "$scratch/transcript.json"
   bun "$repo_root/.github/scripts/smoke-synthesis.ts" "$scratch/synthesis"
-}
-
-run_draft_engine() {
-  require TAG
-  require ENGINE_VERSION
-
-  [ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ] ||
-    fail "$TAG is no longer a draft; draft verification must finish before undrafting"
-
-  local asset=kesha-engine-linux-x64
-  local assets="$scratch/assets"
-  mkdir -p "$assets"
-  gh release download "$TAG" --repo drakulavich/kesha-voice-kit \
-    --pattern "$asset" --pattern SHA256SUMS --dir "$assets"
-
-  (
-    cd "$assets"
-    sha256sum --ignore-missing --check SHA256SUMS
-  )
-  verify_engine_asset "$assets" "$asset"
-  echo "draft-engine smoke passed: tag=$TAG engine=$ENGINE_VERSION artifact=$asset"
 }
 
 # The just-built workflow artifact, before any release exists: nothing is downloaded but models.
@@ -115,7 +93,6 @@ run_npm() {
 
 case "$mode" in
   artifact) run_artifact ;;
-  draft-engine) run_draft_engine ;;
   npm) run_npm ;;
   *) fail "unsupported smoke mode: $mode" ;;
 esac

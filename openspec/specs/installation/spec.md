@@ -150,37 +150,21 @@ name used on POSIX platforms.
 
 ### Requirement: Every shipped platform is verified end to end before release
 
-The release pipeline SHALL verify, for each platform whose Engine is published **on the
-stable channel**, that the shipped binary performs real synthesis and real Transcription —
-not only that it builds and passes unit tests. A platform whose Engine ships without that
-verification SHALL be documented as unverified rather than presented as supported.
+The release pipeline SHALL verify, for each platform whose Engine is published on the stable Channel, that the built asset performs real synthesis and real Transcription before the release is created — by downloading the just-built asset as a workflow artifact, running `describe`, `kesha say` and a transcription of the result — and SHALL refuse to create the release when any platform fails. A platform whose Engine ships without that verification SHALL be documented as unverified. Because the install-time ASR warm-up is non-fatal by design, a successful `kesha install` SHALL NOT by itself count as verification. Engine assets on the alpha Channel SHALL NOT be presented as verified and SHALL NOT change the platform support matrix.
 
-Verification SHALL cover both the asset a user downloads today and the artifact a release is
-about to publish. These are different binaries reached by different means: a release branch
-cannot download its own Engine, because its tag does not exist until the release is un-drafted.
+#### Scenario: Smoke on the built asset
 
-Because the install-time ASR warm-up is non-fatal by design, a successful `kesha install`
-SHALL NOT by itself be treated as evidence that the Engine initialises on that platform.
+- GIVEN the release workflow built the Engine for a platform
+- WHEN the smoke job runs on that platform
+- THEN it runs `describe`, synthesises through `kesha say`, transcribes the result back
+- AND only then does the release job create the GitHub release
 
-Engine assets published on the alpha channel SHALL NOT be presented as verified. An alpha
-Engine carries only the checks that ran before it was published, and the platform support
-matrix SHALL continue to reflect the stable channel — publishing an alpha SHALL NOT change
-what any platform is claimed to support.
+#### Scenario: One platform fails the smoke
 
-#### Scenario: Smoke on the published asset
-
-- GIVEN release v`<engineVersion>` publishes an Engine asset for a platform
-- WHEN the published-asset smoke lane runs on that platform
-- THEN it performs a cold `kesha install`, synthesises through `kesha say`, and
-  transcribes the result back
-- AND the lane does not run on `release/*` branches, whose tag is not yet published
-
-#### Scenario: Warm-up fails but install reports success
-
-- GIVEN the Engine installs and the CLI exits 0
-- AND the install log carries an ASR backend warm-up failure
-- WHEN the smoke lane inspects that log
-- THEN the lane fails rather than reporting the platform verified
+- GIVEN the linux-x64 asset cannot synthesise
+- WHEN the smoke job reports it
+- THEN no GitHub release is created and nothing is published
+- AND the run names the failing platform
 
 #### Scenario: Engine builds but cannot synthesise
 
@@ -193,7 +177,7 @@ what any platform is claimed to support.
 
 - GIVEN an Engine alpha is published for a platform
 - WHEN Ira consults the platform matrix
-- THEN the matrix reflects the stable channel only
+- THEN the matrix reflects the stable Channel only
 - AND the alpha is not counted as evidence that the platform is supported
 
 #### Scenario: Alpha Engine assets do not gate stable lanes
@@ -203,56 +187,34 @@ what any platform is claimed to support.
 - THEN it resolves the stable Engine
 - AND the alpha does not affect that lane's outcome
 
-> *Technical Note — sources: `.github/workflows/ci.yml` (`published-engine-smoke` on
-> ubuntu-latest, `windows-engine-smoke` on windows-latest — both run a cold install and
-> `.github/scripts/smoke-synthesis.ts`), `.github/scripts/assert-install-warmup.ts`, and
-> `rust/src/cli/install.rs` (warm-up warns and continues, #298). The engine-downloading
-> lanes carry a `!startsWith(github.head_ref, 'release/')` guard —
-> `.github/workflows/ci.yml::integration-tests-full`,
-> `.github/workflows/ci.yml::published-engine-smoke`,
-> `.github/workflows/ci.yml::windows-engine-smoke` and
-> `.github/workflows/ci.yml::tts-e2e`; the channel those lanes resolve is what keeps
-> alpha Engine tags out of unrelated pull requests.*
+> *Technical Note — sources: `.github/workflows/release.yml::build` (every row runs `describe`; linux-x64 and windows-x64 synthesise and transcribe back before upload), `.github/workflows/release.yml::roundtrip-smoke` (`.github/scripts/release-install-smoke.sh::run_artifact`: version, `describe`, ASR warm-up, a fixture transcript, a synthesis round trip) and `.github/workflows/release.yml::darwin-synthesis-smoke` (Kokoro and the AVSpeech Sidecar; hosted macOS runners have no Neural Engine, so darwin-arm64 is documented as unverified for Transcription, #678, #742). Two earlier scenarios were retired because verification moved ahead of publication: "Smoke on the published asset" and "Warm-up fails but install reports success" described a cold install of an already-published asset.*
 
 ### Requirement: Linux packages ship only from a release that publishes the same CLI version
 
-A `.deb` or `.rpm` SHALL be published only by the release of the CLI marker tag whose version it carries, and that release SHALL publish the same version to npm in the same run. A release lane that attaches the packages without publishing that version SHALL fail rather than ship a package naming a CLI version users cannot otherwise install.
-
-The packaged version is taken from `package.json#version` at the tag, so the lane SHALL refuse a tag whose version differs from it. Prerelease markers ship no packages.
+A `.deb` or `.rpm` SHALL be published only by the stable release whose version it carries, and that release SHALL publish the same version to npm in the same run; a run that attaches the packages without publishing that version SHALL fail rather than ship a package naming a CLI version Ira cannot otherwise install. The packaged version is `package.json#version` at the tag, so the release SHALL refuse a tag whose version differs from it. Prerelease tags SHALL ship no packages.
 
 #### Scenario: Maks installs the CLI from apt
 
-- GIVEN a stable CLI marker tag `vX.Y.Z-cli` is pushed
-- WHEN the CLI release lane runs
-- THEN it attaches the `.deb`, the `.rpm`, and their `SHA256SUMS` to that tag's release
+- GIVEN a stable tag `vX.Y.Z` is pushed
+- WHEN the release workflow runs
+- THEN that release carries the `.deb` and the `.rpm`, listed with the Engine assets in its one `SHA256SUMS`
 - AND it publishes `X.Y.Z` to npm in the same run
 - AND `X.Y.Z` is the version `package.json` carries at that tag
 
 #### Scenario: The tag names a version the commit does not carry
 
-- GIVEN a CLI marker tag whose version differs from `package.json#version` at that tag
-- WHEN the CLI release lane runs
+- GIVEN a tag whose version differs from `package.json#version` at that tag
+- WHEN the release workflow classifies it
 - THEN it fails before building, naming both versions
 - AND no package and no GitHub release is produced
 
-#### Scenario: A prerelease marker is pushed
+#### Scenario: A Prerelease tag is pushed
 
-- GIVEN a CLI marker tag on the beta or alpha channel
-- WHEN the CLI release lane runs
-- THEN it exits successfully having produced no packages
-- AND it states that prerelease markers carry none
+- GIVEN a tag on the beta or alpha Channel
+- WHEN the release workflow runs
+- THEN the packages job is skipped and says why
 
-#### Scenario: An engine release is cut
-
-- GIVEN a stable engine tag `vX.Y.Z` with no CLI marker
-- WHEN the engine release lane runs
-- THEN it attaches no Linux package, because the engine version does not name the CLI the package contains
-
-> *Technical Note — sources: `.github/workflows/release-cli.yml`,
-> `.github/scripts/cli-release-plan.mjs::planCliRelease`,
-> `.github/scripts/publish-cli-release.sh`, and the two lane checks in
-> `.github/scripts/check-workflows.ts` (`forbidLinuxPackaging`,
-> `requireNpmPublishAfterPackaging`). Replaces the tag/version assertion #727 removed (#728).*
+> *Technical Note — sources: `.github/workflows/release.yml::packages` builds through `.github/actions/linux-packages/action.yml` on the stable Channel before `assemble`, because an immutable release refuses assets after publication; `.github/scripts/release-manifest.mjs::buildManifest` names them and the one `SHA256SUMS` lists them; `.github/scripts/check-workflows.ts::requireReleaseJobOrder` keeps npm downstream of the release that carries them. The earlier scenario "An engine release is cut" was retired: every stable tag now publishes both artifacts.*
 
 ### Requirement: TTS install is opt-in and requires `--tts`
 

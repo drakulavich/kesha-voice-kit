@@ -83,6 +83,7 @@ runs:
       env:
         INSTALL_ARGS: ${{ inputs.install-args }}
         INSTALL_LOG: ${{ inputs.install-log }}
+        GH_TOKEN: ${{ github.token }}
       run: bash .github/scripts/install-kesha-backend.sh
 
     # A cold install that silently reused a cached binary would green while testing nothing.

@@ -14,9 +14,8 @@ set -euo pipefail
   echo "  \`.github/workflows/capability-pact.yml\`."
   echo "- **Verification could not run.** The log ends at the \`gh release download\`"
   echo "  or \`describe\` step. The pact is not implicated; the run proved"
-  echo "  nothing either way. Common causes: a network or API failure, or the window"
-  echo "  between a release merge and its tag, where \`keshaEngine.version\` names a"
-  echo "  release that does not exist yet."
+  echo "  nothing either way. Common causes: a network or API failure, or a"
+  echo "  GH_TOKEN that cannot list releases."
   echo
   echo "Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 } > /tmp/pact-body.md

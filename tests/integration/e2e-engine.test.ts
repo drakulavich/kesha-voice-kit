@@ -114,7 +114,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     const caps = JSON.parse(stdout);
     const isDarwinArm64 = process.platform === "darwin" && process.arch === "arm64";
     if (isDarwinArm64) {
-      // KESHA_ENGINE_BIN may point at a feature-stripped dev build; capability matrix in build-engine.yml is the release source of truth.
+      // KESHA_ENGINE_BIN may point at a feature-stripped dev build; capability matrix in release.yml is the release source of truth.
       const advertises = caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE);
       if (!advertises) {
         console.warn(

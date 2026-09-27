@@ -44,10 +44,12 @@ Jobs, in dependency order:
 2. `build` — the three release rows, each naming one Cargo profile (`darwin`, `portable`); each row smoke-tests `describe` and, off macos-14, synthesises before upload.
 3. Smokes on the artifacts: `darwin-synthesis-smoke` (Kokoro and the AVSpeech sidecar on macos-15) and `roundtrip-smoke` (linux-x64: version, `describe`, ASR warm-up, a transcript of a fixture, synthesis transcribed back — the manual draft smoke of `release-install-smoke.yml`, moved ahead of publication).
 4. `packages` — `.deb`/`.rpm` through `./.github/actions/linux-packages`, uploaded as an artifact; stable only.
-5. `github-release` — needs every smoke and `packages`; downloads all artifacts into one directory, adds the SBOM and manifest, writes **one** `SHA256SUMS` over everything, checks the directory against the manifest (`check-release-assets.ts`), signs every asset, verifies the tag still names this run's commit, and publishes with one `gh release create` — Latest for stable, Prerelease otherwise. Nothing is left as a draft.
-6. `npm` (`needs: [classify, derive-alpha, github-release]`, `if: !cancelled() && (path == 'cli-alpha' || github-release succeeded)`), `homebrew` and `docker` (`needs: github-release`, stable only).
+5. `assemble` — needs every smoke and `packages`; downloads all artifacts into one directory, adds the SBOM and manifest, writes **one** `SHA256SUMS` over everything and checks the directory against the manifest (`check-release-assets.ts`). It holds no permission, so a rehearsal runs it in full.
+6. `github-release` — runs only when `plan.publish`; signs every asset, verifies the tag still names this run's commit, and publishes with one `gh release create` — Latest for stable, Prerelease otherwise. Nothing is left as a draft.
+7. `post-release` (`contents: write`, `pull-requests: write`, stable only) opens the pull request that leads `main` to the next minor, as `post-engine-release.yml` did.
+8. `npm` packs the version with the injected pin and verifies it (no permission); `npm-publish` (`id-token: write`) needs `npm`, `github-release` when an Engine was built, and `reserve-tag` for an alpha that built none; `npm-smoke` installs the published version from the registry. `homebrew` and `docker` need `github-release`, stable only.
 
-`build`, the smokes and `github-release` carry `if: build_engine`; `packages`, `homebrew` and `docker` carry `channel == 'stable'`. No job subscribes to a `release:` event and no `workflow_call` is used: shared steps are composite actions under `.github/actions/`.
+`build`, the smokes and `assemble` carry `if: build_engine`; every job holding a write or OIDC grant carries `plan.publish`; `packages`, `homebrew` and `docker` carry `channel == 'stable'`. No job subscribes to a `release:` event and no `workflow_call` is used: shared steps are composite actions under `.github/actions/`.
 
 ### D3. Alpha and beta
 
@@ -61,7 +63,7 @@ Beta is dispatched with a version extending `package.json#version`, or pushed as
 
 ### D5. Lint
 
-`actionlint` (version pinned, SHA-256-verified download) runs in `ci.yml` and owns syntax, expression typing and shellcheck of `run:` blocks, with one ignore for the `concurrency.queue` key it does not know yet. `check-workflows.ts` keeps what actionlint does not enforce — pins, timeouts, Windows bash, pipefail, the 3-line `run:` cap and `${{ }}`-in-`run:` ban (#1271), the Rust toolchain pin in composites (#1259), the code-filter rules — plus the repository invariants: `requireReleaseRowsNameOneProfile`, `requirePreUploadSynthesisSmoke`, `requireDarwinSmokeCoversBothEngines`, `requireReleaseVerifiesTagIsCurrent` and `requireReleaseQueue` on `release.yml`, `requirePactVerificationCoversEveryTarget`, `requireRestoreOnlyCachesHaveAWriter`, and `requireNpmPublishAfterPackaging` repointed at `release.yml`. Rules whose only target is a retired workflow leave with it.
+`actionlint` (version pinned, SHA-256-verified download) runs in `ci.yml` and owns syntax, expression typing and shellcheck of `run:` blocks, with one ignore for the `concurrency.queue` key it does not know yet. `check-workflows.ts` keeps what actionlint does not enforce — pins, timeouts, Windows bash, pipefail, the 3-line `run:` cap and `${{ }}`-in-`run:` ban (#1271), the Rust toolchain pin in composites (#1259), the code-filter rules — plus the repository invariants: `requireReleaseRowsNameOneProfile`, `requirePreUploadSynthesisSmoke`, `requireDarwinSmokeCoversBothEngines`, `requireReleaseVerifiesTagIsCurrent` and `requireReleaseQueue` on `release.yml`, `requirePactVerificationCoversEveryTarget`, `requireRestoreOnlyCachesHaveAWriter`, and `requireReleaseJobOrder`, which holds `npm-publish` behind `github-release` and `reserve-tag` and every write or OIDC grant behind `plan.publish`. Rules whose only target is a retired workflow leave with it.
 
 ## Risks / Trade-offs
 
@@ -79,8 +81,8 @@ Stage 4, after `core-api-v2` and `build-profiles` (both archived). Every PR leav
 2. `packages` before `github-release` with one merged `SHA256SUMS`; the `npm` job (rehearsal packs and verifies, never publishes); the pin derivation and injection. The maintainer switches the npm Trusted Publisher when the cutover merges.
 3. `homebrew` and `docker` jobs; Docker's main-push lane moves into `ci.yml`.
 4. Alpha derivation and dispatch inputs, inert until the cutover.
-5. Cutover, atomic: tag, main-push and dispatch triggers on; version unification; `flake.nix`; CI lanes resolve the newest stable Engine; `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml` and `release-alpha.yml` deleted in the same PR, because any one left behind would build or publish the same tag twice.
-6. Deletions of the now-idle workflows, one per PR, with their scripts and tests: `post-engine-release.yml`, `release-install-smoke.yml`, `prune-alpha-releases.yml` (into nightly), the cache workflows, `linux-packages.yml`, `rust-test.yml`, `nix-build.yml`, `plugin-security-scan.yml`.
+5. Cutover, atomic: tag, main-push and dispatch triggers on; version unification; `flake.nix`; CI lanes resolve the newest stable Engine; `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml`, `release-alpha.yml`, `release-install-smoke.yml` and `post-engine-release.yml` (now the `post-release` job) deleted in the same PR, because any one left behind would build or publish the same tag twice (the last had no draft left to smoke).
+6. Deletions of the now-idle workflows, one per PR, with their scripts and tests: `prune-alpha-releases.yml` (into nightly), the cache workflows, `linux-packages.yml`, `rust-test.yml`, `nix-build.yml`, `plugin-security-scan.yml`.
 7. `nightly.yml`.
 8. `actionlint` and the `check-workflows.ts` cut.
 9. Docs, one `release` skill, archive this change.

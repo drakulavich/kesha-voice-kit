@@ -1,8 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { planCliRelease } from "../../.github/scripts/cli-release-plan.mjs";
-import { parseRepoYaml, readRepoFile } from "../helpers/repo";
-
-const RELEASE_CLI = ".github/workflows/release-cli.yml";
+import { readRepoFile } from "../helpers/repo";
 
 const pkg = (version: string, engineVersion = "1.24.9") => ({
   version,
@@ -49,37 +47,7 @@ describe("planCliRelease", () => {
   });
 });
 
-describe("the CLI release lane", () => {
-  // The lane exists to publish packages and npm together; a wider filter would run it on
-  // engine tags, which publish neither (#729).
-  test("release-cli.yml fires on CLI marker tags only", () => {
-    const workflow = parseRepoYaml(RELEASE_CLI);
-
-    expect(workflow.on.push.tags).toEqual(["v*-cli"]);
-    expect(workflow.on.push.branches).toBeUndefined();
-  });
-
-  // plan holds write only so `gh release view` can see drafts; a read-only token cannot.
-  test("only the jobs that touch releases hold contents: write", () => {
-    const jobs = parseRepoYaml(RELEASE_CLI).jobs;
-
-    expect(jobs.plan.permissions).toEqual({ contents: "write" });
-    expect(jobs.packages.permissions).toEqual({ contents: "write" });
-    expect(jobs["publish-npm"].permissions).toEqual({ contents: "read", actions: "write" });
-  });
-
-  // Writing the raw dispatch input to GITHUB_OUTPUT before validating it would let a tag
-  // carrying a newline append its own output keys, so the validator echoes the tag instead.
-  test("the tag reaches GITHUB_OUTPUT only from the validator", () => {
-    const plan = parseRepoYaml(RELEASE_CLI).jobs.plan;
-    const step = plan.steps.find((s: { id?: string }) => s.id === "plan");
-
-    expect(plan.outputs.tag).toBe("${{ steps.plan.outputs.tag }}");
-    expect(step.run).toContain("cli-release-plan.mjs");
-    expect(step.run).not.toContain("${{");
-    expect(plan.steps.some((s: { run?: string }) => /tag=.*>>.*GITHUB_OUTPUT/.test(s.run ?? ""))).toBe(false);
-  });
-
+describe("publish-cli-release.sh", () => {
   // Assets go onto a draft and the release is un-drafted afterwards: releases here are
   // immutable, so an asset uploaded to a published one 422s.
   test("the packages are attached before the release goes public", () => {
@@ -108,16 +76,5 @@ describe("the CLI release lane", () => {
     expect(script).toContain("cli-release-body.mjs");
     expect(script).toContain("--notes-file");
     expect(script).not.toContain("unchanged");
-  });
-
-  // Without the tags and the history behind them, the previous pin is invisible and every
-  // release would read as the first one.
-  test("the publishing job checks out enough history to see the previous release", () => {
-    const checkout = parseRepoYaml(RELEASE_CLI).jobs.packages.steps.find((s: { uses?: string }) =>
-      s.uses?.startsWith("actions/checkout"),
-    );
-
-    expect(checkout.with["fetch-depth"]).toBe(0);
-    expect(checkout.with["fetch-tags"]).toBe(true);
   });
 });

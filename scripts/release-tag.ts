@@ -100,12 +100,7 @@ async function verifyRemoteTag(
   }
 }
 
-async function waitForWorkflow(
-  runner: CommandRunner,
-  tag: string,
-  target: string,
-  event: "push" | "workflow_dispatch",
-): Promise<void> {
+async function waitForWorkflow(runner: CommandRunner, tag: string, target: string): Promise<void> {
   for (let attempt = 0; attempt < 15; attempt++) {
     const raw = await shell(
       runner,
@@ -115,7 +110,7 @@ async function waitForWorkflow(
       "--repo",
       REPO,
       "--workflow",
-      "build-engine.yml",
+      "release.yml",
       "--branch",
       tag,
       "--limit",
@@ -124,10 +119,10 @@ async function waitForWorkflow(
       "databaseId,headSha,event,url",
     );
     const runs = parseJson<Array<{ headSha?: string; event?: string }>>(raw, "workflow runs");
-    if (runs.some((run) => run.headSha === target && run.event === event)) return;
+    if (runs.some((run) => run.headSha === target && run.event === "push")) return;
     await Bun.sleep(2_000);
   }
-  fail(`no ${event} build-engine workflow run appeared for ${tag} at ${target}`);
+  fail(`no push-triggered release.yml run appeared for ${tag} at ${target}; release.yml refuses a stable dispatch, so check the Actions tab before re-tagging`);
 }
 
 export async function createStableTag(options: Options, notes: string, runner: CommandRunner): Promise<void> {
@@ -164,11 +159,8 @@ export async function createStableTag(options: Options, notes: string, runner: C
   }
 
   await verifyRemoteTag(runner, options.tag, target, notes, identity);
-  if (options.mode === "api") {
-    await shell(runner, "gh", "workflow", "run", "build-engine.yml", "--repo", REPO, "--ref", options.tag);
-  }
-  await waitForWorkflow(runner, options.tag, target, options.mode === "push" ? "push" : "workflow_dispatch");
-  console.log(`Verified annotated tag ${options.tag} at ${target}; build-engine workflow was triggered.`);
+  await waitForWorkflow(runner, options.tag, target);
+  console.log(`Verified annotated tag ${options.tag} at ${target}; release.yml was triggered.`);
 }
 
 async function run(argv: string[], input?: string): Promise<CommandResult> {

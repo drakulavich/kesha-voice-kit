@@ -15,7 +15,6 @@ const EXEMPT: Record<string, string> = {
   "tests/integration/cli-contracts.test.ts": "removes its directories by hand; not yet converted",
   "tests/integration/compiled-cli-assets.test.ts": "removes its directories by hand; not yet converted",
   "tests/integration/error-codes-cli.test.ts": "removes its directories by hand; not yet converted",
-  "tests/unit/check-versions.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/check-workflows.test.ts": "converted where it leaked; the remaining call sites remove their directories by hand",
   "tests/unit/diagnostic-log.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/doctor.test.ts": "converted where it leaked; the remaining call sites remove their directories by hand",

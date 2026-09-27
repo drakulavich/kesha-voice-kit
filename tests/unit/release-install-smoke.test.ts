@@ -2,26 +2,13 @@ import { describe, expect, test } from "bun:test";
 import { parseRepoYaml, readRepoFile } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
 
-const WORKFLOW = ".github/workflows/release-install-smoke.yml";
 const SCRIPT = ".github/scripts/release-install-smoke.sh";
 
 describe("release install smoke", () => {
-  test("keeps the draft gate manual and makes the post-npm path reusable", () => {
-    const workflow = parseRepoYaml(WORKFLOW);
-
-    expect(workflow.on.workflow_dispatch.inputs.mode.default).toBe("draft-engine");
-    expect(workflow.on.workflow_call.inputs.version.required).toBe(true);
-    expect(workflow.on.workflow_call.inputs.mode.default).toBe("npm");
-    expect(workflow.jobs["draft-engine"].permissions).toEqual({ contents: "write" });
-    expect(workflow.jobs.npm.permissions).toEqual({ contents: "read" });
-  });
-
-  test("downloads the authenticated draft artifact into a disposable private cache", () => {
+  test("stages the built artifact into a disposable private cache", () => {
     const script = readRepoFile(SCRIPT);
     const synthesisSmoke = readRepoFile(".github/scripts/smoke-synthesis.ts");
 
-    expect(script).toContain('gh release download "$TAG"');
-    expect(script).toContain('[ "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = "true" ]');
     expect(script).toContain('KESHA_ENGINE_BIN="$assets/$asset"');
     expect(script).toContain('KESHA_CACHE_DIR="$scratch/cache"');
     expect(script).toContain('bun "$repo_root/.github/scripts/assert-install-warmup.ts"');
@@ -41,23 +28,20 @@ describe("release install smoke", () => {
     expect(script).toContain('installed npm package version was $installed_version, expected $VERSION');
   });
 
-  test("runs the npm smoke only after the release lane has observed the published version", () => {
-    const cliRelease = parseRepoYaml(".github/workflows/release-cli.yml");
-    const job = cliRelease.jobs["published-install-smoke"];
+  test("runs the npm smoke only after release.yml has published the version", () => {
+    const job = parseRepoYaml(".github/workflows/release.yml").jobs["npm-smoke"];
 
-    expect(job.needs).toEqual(["plan", "publish-npm"]);
-    expect(job.uses).toBe("./.github/workflows/release-install-smoke.yml");
-    expect(job.with).toEqual({
-      tag: "${{ needs.plan.outputs.tag }}",
-      version: "${{ needs.plan.outputs.version }}",
-    });
+    expect(job.needs).toContain("npm-publish");
+    expect(job.if).toContain("needs.npm-publish.result == 'success'");
+    expect(job.env?.VERSION ?? job.steps.find((s: { run?: string }) => s.run?.includes(SCRIPT)).env.VERSION).toBe(
+      "${{ needs.plan.outputs.version }}",
+    );
   });
 
   test("artifact mode refuses an empty artifact directory by path, before touching any model", () => {
     const dir = tempDir("artifact-smoke-");
-    const { TAG: _unset, ...env } = process.env;
     const run = Bun.spawnSync(["bash", SCRIPT, "artifact"], {
-      env: { ...env, ASSET_DIR: dir, ENGINE_VERSION: "2.0.0" },
+      env: { ...process.env, ASSET_DIR: dir, ENGINE_VERSION: "2.0.0" },
     });
     expect(run.exitCode).toBe(1);
     expect(run.stderr.toString()).toContain(`${dir}/kesha-engine-linux-x64 is missing or empty`);

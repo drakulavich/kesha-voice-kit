@@ -10,7 +10,7 @@ name: "📜 Capability Pact"
 # RE-RECORDING — the canonical procedure. A new engine release that adds, removes or renames
 # a capability fails this job on purpose, and the fix is to re-record, never to relax the check:
 #
-#   1. bump `keshaEngine.version` to the new release and merge it
+#   1. publish the new stable release
 #   2. run this workflow with `record: true` (Actions → 📜 Capability Pact → Run workflow)
 #   3. commit the contents of all three `capability-pact-<target>` artifacts
 #
@@ -19,10 +19,8 @@ name: "📜 Capability Pact"
 # clobber. `matrix.target` is passed to the recorder, which refuses a row whose runner and
 # target disagree.
 #
-# Never runs on a pull request, so it cannot interfere with a `release/*` branch. The window
-# where `keshaEngine.version` names an unpublished tag fails loudly here, which is the point:
-# it is the check the PR lane deliberately does not carry, because a release PR must be able
-# to go green before the tag it names exists.
+# Never runs on a pull request. It checks the highest published stable Engine, the one every lane that
+# downloads an Engine installs.
 
 on:
   schedule:

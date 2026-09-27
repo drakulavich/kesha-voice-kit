@@ -1,19 +1,13 @@
 #!/usr/bin/env bun
 /**
- * Verify the version sources stay aligned (#267 F16 / #313 P0):
+ * Verify the version sources stay aligned (openspec unified-release D1):
  *
- *   - `package.json#version`              — npm-published CLI version
- *   - `package.json#keshaEngine.version`  — engine binary version the CLI
- *                                            downloads from GitHub Releases
- *   - `rust/Cargo.toml#version`           — engine crate version
- *   - `server.json#version` + `#packages[].version` — the MCP registry
- *                                            manifest, which points at an
- *                                            npm version that must exist
+ *   - `package.json#version`  — the one version of both the CLI and the Engine
+ *   - `rust/Cargo.toml#version` — the Engine crate, which must mirror it
+ *   - `server.json#version` + `#packages[].version` — the MCP registry manifest,
+ *                                which points at an npm version that must exist
  *
- * A silent drift between (b) and (c) means `kesha install` downloads a
- * release that doesn't match the source the engine was built from —
- * exactly the v1.1.0 incident where TTS shipped without being in the
- * build matrix.
+ * No Engine pin is committed: `release.yml` injects `package.json#kesha.engine` at publish.
  */
 import { readFileSync } from "node:fs";
 import { cmp, fmt, parseSemver, type SemVer } from "../../src/semver.mjs";
@@ -49,45 +43,28 @@ if (!cargoVersionMatch) {
 }
 
 const cli = parseOrExit(pkgRaw.version, "package.json#version");
-const engine = parseOrExit(
-  pkgRaw.keshaEngine?.version ?? "",
-  "package.json#keshaEngine.version",
-);
 const cargo = parseOrExit(cargoVersionMatch[1], "rust/Cargo.toml#version");
 
 let failed = false;
 
-if (cmp(engine, cargo) !== 0) {
+if (cmp(cli, cargo) !== 0) {
   console.error(
-    `rule 1 violated: package.json#keshaEngine.version (${fmt(engine)}) ` +
-      `must equal rust/Cargo.toml#version (${fmt(cargo)}). ` +
-      `The npm CLI uses keshaEngine.version to pick a GitHub Release tag; ` +
-      `Cargo.toml drives what's actually compiled. If they disagree, ` +
-      `\`kesha install\` downloads a binary that doesn't match the source.`,
+    `rule 1 violated: rust/Cargo.toml#version (${fmt(cargo)}) must equal package.json#version ` +
+      `(${fmt(cli)}). One tag builds and publishes both artifacts, so the Engine a release ` +
+      `builds must carry the version the CLI resolves.`,
   );
   failed = true;
 }
 
-if (cmp(cli, engine) < 0) {
+const committedPins = [
+  ["package.json#keshaEngine", pkgRaw.keshaEngine],
+  ["package.json#kesha.engine", pkgRaw.kesha?.engine],
+].filter(([, value]) => value !== undefined);
+for (const [label] of committedPins) {
   console.error(
-    `rule 2 violated: package.json#version (${fmt(cli)}) must be >= ` +
-      `package.json#keshaEngine.version (${fmt(engine)}). ` +
-      `CLI version is allowed to lead engine version for CLI-only patches ` +
-      `(the CLI and the engine are versioned independently), ` +
-      `but it must never lag behind.`,
-  );
-  failed = true;
-}
-
-if (engine.prerelease.some((id) => id.toLowerCase().startsWith("alpha"))) {
-  console.error(
-    `rule 3 violated: package.json#keshaEngine.version (${fmt(engine)}) must not be an ` +
-      `alpha. This pin is the only thing that decides which engine every lane downloads ` +
-      `(src/engine-install.ts, check-engine-targets.ts) — nothing resolves "latest" — so ` +
-      `committing an alpha points unrelated pull requests at a throwaway build, and ships ` +
-      `it in the next release. To try one, run \`kesha install --engine-version ${fmt(engine)}\`: ` +
-      `it installs that release for that invocation only and leaves this pin alone (#738). ` +
-      `A '-beta.N' pin is a release candidate and stays allowed.`,
+    `rule 2 violated: ${label} must not be committed. The Engine a published CLI resolves is ` +
+      `derived and injected when release.yml publishes it; a committed pin would override that ` +
+      `for every source checkout and every lane.`,
   );
   failed = true;
 }
@@ -106,7 +83,7 @@ for (const [label, raw] of serverVersions) {
   const parsed = parseOrExit(raw, label);
   if (cmp(parsed, cli) !== 0) {
     console.error(
-      `rule 4 violated: ${label} (${fmt(parsed)}) must equal package.json#version ` +
+      `rule 3 violated: ${label} (${fmt(parsed)}) must equal package.json#version ` +
         `(${fmt(cli)}). server.json is the MCP registry manifest: its version tells ` +
         `registries which npm release to resolve, so a stale value points clients at ` +
         `a version that was never published.`,
@@ -117,7 +94,7 @@ for (const [label, raw] of serverVersions) {
 
 if (failed) {
   console.error(
-    `\nResolved sources:\n  package.json#version:              ${fmt(cli)}\n  package.json#keshaEngine.version: ${fmt(engine)}\n  rust/Cargo.toml#version:          ${fmt(cargo)}\n${serverVersions
+    `\nResolved sources:\n  package.json#version:              ${fmt(cli)}\n  rust/Cargo.toml#version:          ${fmt(cargo)}\n${serverVersions
       .map(([label, raw]) => `  ${label}:${" ".repeat(Math.max(1, 34 - label.length))}${raw}`)
       .join("\n")}`,
   );

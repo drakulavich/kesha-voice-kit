@@ -6,7 +6,7 @@ existing="$(gh pr list --repo "$REPOSITORY" --head "$BRANCH" --state all --json 
 count="$(printf '%s' "$existing" | jq 'length')"
 if [ "$count" = "1" ]; then
   expected="$(printf '%s' "$existing" | jq --arg tag "$TAG_NAME" '
-    ((.[0].title | startswith("chore(release): record " + $tag + " assets and lead CLI to v"))
+    ((.[0].title | startswith("chore(release): record " + $tag + " assets and lead main to v"))
     and (.[0].body | contains("Published engine tag: `" + $tag + "`")))
   ')"
   if [ "$expected" = "true" ]; then

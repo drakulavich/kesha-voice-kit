@@ -7,7 +7,7 @@ import {
   nextSequence,
   previousTag,
 } from "../../.github/scripts/derive-alpha-version";
-import { readRepoFile } from "../helpers/repo";
+import { parseRepoYaml } from "../helpers/repo";
 
 const PKG = { version: "1.27.0", keshaEngine: { version: "1.24.7" } };
 const SOME_TAGS = ["v1.24.7", "v1.26.0-cli", "v1.22.0-beta.1"];
@@ -208,11 +208,12 @@ describe("previousTag", () => {
 });
 
 describe("the alpha tag step", () => {
-  const workflow = readRepoFile(".github/workflows/release-alpha.yml");
+  const step = parseRepoYaml(".github/workflows/release.yml").jobs["reserve-tag"].steps.find(
+    (s: { run?: string }) => s.run === ".github/scripts/alpha-tag.sh",
+  );
 
   // Behaviour lives in tests/integration/alpha-tag.test.ts, which runs the script for real.
-  test("the workflow passes the derived previous tag through env", () => {
-    expect(workflow).toContain("PREVIOUS: ${{ needs.decide.outputs.previous }}");
-    expect(workflow).toContain("run: .github/scripts/alpha-tag.sh");
+  test("release.yml passes the planned previous tag through env", () => {
+    expect(step.env.PREVIOUS).toBe("${{ needs.plan.outputs.previous }}");
   });
 });

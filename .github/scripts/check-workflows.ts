@@ -124,14 +124,14 @@ function runsMatching(steps: Step[], pattern: RegExp): number[] {
   );
 }
 
-/** The job that publishes each Engine release workflow's release; both exist until the cutover retires build-engine.yml. */
-const ENGINE_RELEASE_JOB: Record<string, string> = { "build-engine.yml": "release", "release.yml": "github-release" };
+/** The workflow that publishes the Engine release, and the job in it that publishes. */
+const ENGINE_RELEASE_JOB: Record<string, string> = { "release.yml": "github-release" };
 
 const engineReleaseWorkflow = (path: string): string | undefined =>
   Object.keys(ENGINE_RELEASE_JOB).find((name) => path.split(/[\\/]/).pop() === name);
 
 /**
- * Fails when build-engine.yml's build job would upload an artifact it never synthesised with.
+ * Fails when release.yml's build job would upload an artifact it never synthesised with.
  * That workflow runs on releases only, so this is the one lane a PR can hold it to (#671).
  */
 export function requirePreUploadSynthesisSmoke(path: string, document: unknown): string[] {
@@ -193,44 +193,8 @@ export function requireDarwinSmokeCoversBothEngines(path: string, document: unkn
   return errors;
 }
 
-/**
- * Fails when build-engine.yml mentions Linux packaging at all. The `.deb`/`.rpm` carry
- * `package.json#version`, which `main` holds ahead of npm since #691, so a stable engine tag can
- * never name them after a published CLI — the gate that checked this made engine releases
- * unreleasable instead. They ship from release-cli.yml, on the tag that publishes the same
- * version to npm (#728). Matched against the raw file, not the parsed steps: `nfpm package`
- * or `cp dist/*.deb` reintroduces publishing without ever naming the old script.
- */
-const PACKAGING_TOKENS = ["build-linux-packages", "linux-packages", "nfpm", ".deb", ".rpm"];
-
-export function forbidLinuxPackaging(path: string, contents: string): string[] {
-  if (!path.endsWith("build-engine.yml")) return [];
-
-  // Comment lines are prose about the policy, not a step that ships a package.
-  const code = contents
-    .split("\n")
-    .filter((line) => !/^\s*#/.test(line))
-    .join("\n");
-
-  return PACKAGING_TOKENS.filter((token) => code.includes(token)).map(
-    (token) =>
-      `${path}: mentions \`${token}\`; Linux packages ship from release-cli.yml, which publishes npm in the same run (#728)`,
-  );
-}
-
-/**
- * Fails when release-cli.yml could publish Linux packages without publishing the same version
- * to npm in the same run. A `.deb` names `package.json#version` and npm is the only thing that
- * makes that version real; the assertion that used to hold them together is gone (#727, #728).
- *
- * Both halves have to be real: `needs:` ordering alone is satisfied by a `packages` job that
- * builds and publishes nothing, so the job's own two steps are required as well.
- */
 const usesAction = (steps: Step[], action: string) =>
   steps.some((step) => typeof step?.uses === "string" && step.uses === action);
-
-const runsScript = (steps: Step[], script: string) =>
-  runsMatching(steps, new RegExp(script.replace(/\./g, "\\."))).length > 0;
 
 /** `needs:` is a string when it names one job, a list when it names several. */
 function dependsOn(document: unknown, job: string, dependency: string): boolean {
@@ -238,44 +202,9 @@ function dependsOn(document: unknown, job: string, dependency: string): boolean 
   return [needs].flat().includes(dependency);
 }
 
-function requirePackagingJob(path: string, document: unknown): string[] {
-  const steps = jobSteps(document, "packages");
-  if (!steps) return [`${path}: expected a \`packages\` job with steps`];
-  if (!usesAction(steps, "./.github/actions/linux-packages")) {
-    return [`${path}: \`packages\` must build through ./.github/actions/linux-packages, the composite the CI lane shares (#728)`];
-  }
-  if (!runsScript(steps, "publish-cli-release.sh")) {
-    return [`${path}: \`packages\` must run publish-cli-release.sh — it is what attaches the packages to the release (#728)`];
-  }
-  return [];
-}
-
-function requireNpmDispatchJob(path: string, document: unknown): string[] {
-  const steps = jobSteps(document, "publish-npm");
-  if (!steps) return [`${path}: expected a \`publish-npm\` job with steps`];
-  if (!dependsOn(document, "publish-npm", "packages")) {
-    return [`${path}: \`publish-npm\` must \`needs: packages\`, so no .deb is published without the npm publish it names (#728)`];
-  }
-  if (!runsScript(steps, "dispatch-npm-publish.sh")) {
-    return [`${path}: \`publish-npm\` must run dispatch-npm-publish.sh — npm trusts one entry workflow (#731)`];
-  }
-  return [];
-}
-
-export function requireNpmPublishAfterPackaging(path: string, document: unknown): string[] {
-  if (!path.endsWith("release-cli.yml")) return [];
-
-  const tags = (document as { on?: { push?: { tags?: unknown } } })?.on?.push?.tags;
-  if (!Array.isArray(tags) || !tags.includes("v*-cli")) {
-    return [`${path}: must trigger on \`v*-cli\` tag pushes (#728)`];
-  }
-
-  return [...requirePackagingJob(path, document), ...requireNpmDispatchJob(path, document)];
-}
-
 const RELEASE_PROFILES = ["portable", "darwin"];
 
-/** Fails a build-engine.yml release row that is not exactly one Cargo profile: hand-listed features are how v1.1.0 shipped without `tts`. */
+/** Fails a release.yml release row that is not exactly one Cargo profile: hand-listed features are how v1.1.0 shipped without `tts`. */
 export function requireReleaseRowsNameOneProfile(path: string, document: unknown): string[] {
   if (!engineReleaseWorkflow(path)) return [];
 
@@ -947,61 +876,19 @@ function describeUnreadable(path: string, err: unknown): string {
   return `${path}: ${err instanceof Error ? err.message : String(err)}`;
 }
 
-const PERMISSION_RANK: Record<string, number> = { none: 0, read: 1, write: 2 };
-const LEVEL_NAME = ["none", "read", "write"] as const;
-
-/** GitHub grants a called workflow only what the calling job holds; a job-level block replaces the workflow-level one. */
-function permissionGrants(node: unknown): Record<string, number> | undefined {
-  if (node === undefined || node === null) return undefined;
-  if (typeof node === "string") return { "*": node === "write-all" ? 2 : node === "read-all" ? 1 : 0 };
-  if (typeof node !== "object") return undefined;
-  const out: Record<string, number> = {};
-  for (const [scope, value] of Object.entries(node as Record<string, unknown>)) {
-    out[scope] = PERMISSION_RANK[String(value)] ?? 0;
-  }
-  return out;
-}
-
-function grantedTo(scope: string, grants: Record<string, number> | undefined): number {
-  if (!grants) return 0;
-  return grants[scope] ?? grants["*"] ?? 0;
-}
-
-export function requireReusableCallPermissions(path: string, document: unknown): string[] {
-  const doc = document as { jobs?: Record<string, Job>; permissions?: unknown } | undefined;
-  const jobs = doc?.jobs;
-  if (!jobs || typeof jobs !== "object") return [];
-
-  const workflowGrants = permissionGrants(doc?.permissions);
-  const errors: string[] = [];
-
-  for (const [name, job] of Object.entries(jobs)) {
-    const uses = (job as { uses?: unknown })?.uses;
-    if (typeof uses !== "string" || !uses.startsWith("./.github/workflows/")) continue;
-
-    const calleePath = uses.slice(2);
-    if (!existsSync(calleePath)) {
-      errors.push(`${path}: \`${name}\` calls ${uses}, which does not exist`);
-      continue;
-    }
-
-    const callee = parse(readFileSync(calleePath, "utf8")) as
-      | { jobs?: Record<string, Job>; permissions?: unknown }
-      | undefined;
-    const calleeDefaults = permissionGrants(callee?.permissions);
-    const granted = permissionGrants((job as { permissions?: unknown })?.permissions) ?? workflowGrants;
-
-    for (const [calleeJob, nested] of Object.entries(callee?.jobs ?? {})) {
-      const wanted = permissionGrants((nested as { permissions?: unknown })?.permissions) ?? calleeDefaults;
-      if (!wanted) continue;
-      for (const [scope, level] of Object.entries(wanted)) {
-        if (scope === "*" || level <= grantedTo(scope, granted)) continue;
-        errors.push(
-          `${path}: \`${name}\` calls ${uses} whose job \`${calleeJob}\` requests \`${scope}: ${LEVEL_NAME[level]}\`, ` +
-            `but the calling job only grants \`${scope}: ${LEVEL_NAME[grantedTo(scope, granted)]}\`. ` +
-            `GitHub validates this before any \`if:\` runs, so the whole workflow fails to start`,
-        );
-      }
+/**
+ * Fails a reusable workflow. Each `workflow_call` target is a file of its own, which breaks the
+ * four-workflow layout, and npm Trusted Publishing matches the *calling* workflow's name, which
+ * is how the alpha lane went a month without publishing (#732; openspec unified-release D2).
+ */
+export function forbidReusableWorkflows(path: string, document: unknown): string[] {
+  const doc = document as { on?: unknown; jobs?: Record<string, { uses?: unknown }> } | undefined;
+  const errors = triggerNames(doc?.on).includes("workflow_call")
+    ? [`${path}: declares \`workflow_call\`; share steps through a composite action under .github/actions/ instead`]
+    : [];
+  for (const [name, job] of Object.entries(doc?.jobs ?? {})) {
+    if (typeof job?.uses === "string" && job.uses.startsWith("./.github/workflows/")) {
+      errors.push(`${path}: \`${name}\` calls ${job.uses}; share steps through a composite action under .github/actions/ instead`);
     }
   }
   return errors;
@@ -1090,43 +977,6 @@ export function requireRustTestCancelsSupersededRuns(path: string, document: unk
   ];
 }
 
-const BUILD_ENGINE_GROUP = "${{ github.workflow }}-${{ github.ref }}";
-
-/**
- * Fails when `build-engine.yml` stops serialising runs that share a ref.
- *
- * A tag ref is not single-use: `refs/tags/v1.0.1` carried three `push` runs at three different
- * head SHAs, because delete-and-re-push is how a failed release tag is retried here. Two in
- * flight together put two `release` jobs against one draft release, and a release published
- * short a platform binary needs a new patch tag to repair.
- *
- * The group is pinned to its exact text rather than checked with `groupVariesPerRef`, whose
- * stated residual would accept both a boolean that collapses every ref but one into a single
- * lane and a run-scoped group that serialises nothing — both mention `github.ref`. Changing
- * the group means changing this constant and saying why (#1108).
- */
-export function requireBuildEngineSerialisesRunsPerRef(path: string, document: unknown): string[] {
-  if (!path.endsWith("build-engine.yml")) return [];
-
-  const concurrency = (document as { concurrency?: unknown } | undefined)?.concurrency;
-  const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown } | undefined)?.group;
-  const errors: string[] = [];
-
-  if (group !== BUILD_ENGINE_GROUP) {
-    errors.push(
-      `${path}: \`concurrency.group\` must be exactly \`${BUILD_ENGINE_GROUP}\`, not \`${String(group)}\`; a coarser group queues unrelated refs into one lane and a finer one serialises nothing, and both can still mention \`github.ref\`. Changing it deliberately means changing this rule and saying why (#1108)`,
-    );
-  }
-
-  if ((concurrency as { "cancel-in-progress"?: unknown } | undefined)?.["cancel-in-progress"] !== false) {
-    errors.push(
-      `${path}: \`concurrency.cancel-in-progress\` must be spelled \`false\`; cancelling a superseded run mid-upload leaves the draft release short an asset, and a release name cannot be reused to repair it (#1108)`,
-    );
-  }
-
-  return errors;
-}
-
 const RELEASE_GROUP = "release-${{ github.event_name == 'pull_request' && github.ref || 'publish' }}";
 
 /**
@@ -1155,43 +1005,58 @@ export function requireReleaseQueue(path: string, document: unknown): string[] {
 
 const RELEASE_GATES = ["build", "darwin-synthesis-smoke", "roundtrip-smoke"];
 
+const grantsWrite = (permissions: unknown): boolean =>
+  typeof permissions === "string"
+    ? permissions === "write-all"
+    : Object.values((permissions ?? {}) as Record<string, unknown>).some((level) => level === "write");
+
 /**
- * Fails when release.yml could publish past a red upstream: `github-release` must need every smoke
- * and `packages`, an overriding `if:` must still demand each smoke's success, `npm`, `homebrew` and
- * `docker` must wait for a successful `github-release` (the last two on stable only), and `packages`
- * must build through the composite CI shares (#728).
+ * Fails when release.yml could publish past a red upstream, or let a rehearsal hold a write token.
+ * `assemble` needs every smoke and `packages` and spells out their success, because its `if:` overrides
+ * success(); `github-release` publishes only an assembled release; `npm-publish` waits for the release
+ * (or, building nothing, for its reserved alpha tag); `homebrew` and `docker` wait for the release on
+ * stable; and every job granting a write or OIDC permission runs only for a planned publish.
  */
 export function requireReleaseJobOrder(path: string, document: unknown): string[] {
   if (engineReleaseWorkflow(path) !== "release.yml") return [];
 
-  const jobs = (document as { jobs?: Record<string, { if?: unknown }> } | undefined)?.jobs ?? {};
+  const jobs = (document as { jobs?: Record<string, { if?: unknown; permissions?: unknown }> } | undefined)?.jobs ?? {};
+  const cond = (job: string) => String(jobs[job]?.if ?? "");
   const errors: string[] = [];
-  const releaseIf = jobs["github-release"]?.if;
   for (const gate of [...RELEASE_GATES, "packages"]) {
-    if (!dependsOn(document, "github-release", gate)) errors.push(`${path}: \`github-release\` must \`needs: ${gate}\``);
+    if (!dependsOn(document, "assemble", gate)) errors.push(`${path}: \`assemble\` must \`needs: ${gate}\``);
   }
-  if (releaseIf !== undefined) {
-    for (const gate of RELEASE_GATES) {
-      if (!String(releaseIf).includes(`needs.${gate}.result == 'success'`)) {
-        errors.push(`${path}: \`github-release\`'s \`if:\` overrides success(), so it must require \`needs.${gate}.result == 'success'\``);
-      }
+  for (const gate of RELEASE_GATES) {
+    if (!cond("assemble").includes(`needs.${gate}.result == 'success'`)) {
+      errors.push(`${path}: \`assemble\`'s \`if:\` overrides success(), so it must require \`needs.${gate}.result == 'success'\``);
     }
   }
-  if (!dependsOn(document, "npm", "github-release") || !String(jobs.npm?.if ?? "").includes("needs.github-release.result == 'success'")) {
-    errors.push(`${path}: \`npm\` must \`needs: github-release\` and require its success, or a CLI can resolve an Engine that is not published`);
+  if (!dependsOn(document, "github-release", "assemble") || !cond("github-release").includes("needs.assemble.result == 'success'")) {
+    errors.push(`${path}: \`github-release\` must \`needs: assemble\` and require its success`);
   }
-  if (!dependsOn(document, "npm", "reserve-tag") || !String(jobs["reserve-tag"]?.if ?? "").includes("needs.plan.outputs.publish == 'true'")) {
-    errors.push(`${path}: \`npm\` must \`needs: reserve-tag\`, which runs only for a planned publish: an alpha version no tag records is reused by the next derivation`);
+  if (
+    !dependsOn(document, "npm-publish", "github-release") ||
+    !cond("npm-publish").includes("needs.github-release.result == 'success'") ||
+    !cond("npm-publish").includes("needs.npm.result == 'success'")
+  ) {
+    errors.push(`${path}: \`npm-publish\` must \`needs: github-release\` and require it and \`npm\` to succeed, or a CLI can resolve an Engine that is not published`);
   }
-  for (const downstream of ["homebrew", "docker"]) {
-    const cond = String(jobs[downstream]?.if ?? "");
+  if (!dependsOn(document, "npm-publish", "reserve-tag") || !cond("reserve-tag").includes("needs.plan.outputs.publish == 'true'")) {
+    errors.push(`${path}: \`npm-publish\` must \`needs: reserve-tag\`, which runs only for a planned publish: an alpha version no tag records is reused by the next derivation`);
+  }
+  for (const downstream of ["homebrew", "docker", "post-release"]) {
     if (
       !dependsOn(document, downstream, "github-release") ||
-      !cond.includes("needs.github-release.result == 'success'") ||
-      !cond.includes("needs.classify.outputs.channel == 'stable'") ||
-      !cond.includes("outputs.publish == 'true'")
+      !cond(downstream).includes("needs.github-release.result == 'success'") ||
+      !cond(downstream).includes("needs.classify.outputs.channel == 'stable'") ||
+      !cond(downstream).includes("outputs.publish == 'true'")
     ) {
       errors.push(`${path}: \`${downstream}\` must \`needs: github-release\`, require its success and run on the stable channel only, and never in a rehearsal`);
+    }
+  }
+  for (const [job, spec] of Object.entries(jobs)) {
+    if (grantsWrite(spec?.permissions) && !cond(job).includes("needs.plan.outputs.publish == 'true'")) {
+      errors.push(`${path}: \`${job}\` grants a write or OIDC permission, so it must run only when \`needs.plan.outputs.publish == 'true'\`; a rehearsal holds none`);
     }
   }
   const packaging = jobSteps(document, "packages");
@@ -1220,9 +1085,7 @@ function isDisabled(step: Step): boolean {
   return inner === "false";
 }
 
-const createsRelease = (step: Step) =>
-  (typeof step?.uses === "string" && step.uses.startsWith("softprops/action-gh-release")) ||
-  (typeof step?.run === "string" && /publish-release\.sh\b/.test(step.run));
+const createsRelease = (step: Step) => typeof step?.run === "string" && /publish-release\.sh\b/.test(step.run);
 
 export function requireReleaseVerifiesTagIsCurrent(path: string, document: unknown): string[] {
   const workflow = engineReleaseWorkflow(path);
@@ -1241,7 +1104,7 @@ export function requireReleaseVerifiesTagIsCurrent(path: string, document: unkno
 
   const publish = steps.findIndex(createsRelease);
   if (publish === -1) {
-    return [`${path}: expected the \`${releaseJob}\` job to create the release via softprops/action-gh-release or publish-release.sh`];
+    return [`${path}: expected the \`${releaseJob}\` job to create the release via publish-release.sh`];
   }
 
   const guard = steps.findIndex(isGuard);
@@ -1315,19 +1178,16 @@ export function checkFile(
       ...requirePinnedActions(path, contents),
       ...requirePreUploadSynthesisSmoke(path, document),
       ...requireDarwinSmokeCoversBothEngines(path, document),
-      ...forbidLinuxPackaging(path, contents),
       ...forbidFindPipedToHead(path, contents),
       ...forbidLongInlineRun(path, document),
       ...forbidExpressionsInRun(path, document),
-      ...requireNpmPublishAfterPackaging(path, document),
       ...requirePactVerificationCoversEveryTarget(path, document),
       ...requireReleaseRowsNameOneProfile(path, document),
       ...requireBashOnWindowsRunSteps(path, document),
       ...requirePipefailShell(path, document),
-      ...requireReusableCallPermissions(path, document),
+      ...forbidReusableWorkflows(path, document),
       ...requireConcurrencyOnPullRequestWorkflows(path, document),
       ...requireRustTestCancelsSupersededRuns(path, document),
-      ...requireBuildEngineSerialisesRunsPerRef(path, document),
       ...requireReleaseQueue(path, document),
       ...requireReleaseJobOrder(path, document),
       ...requireReleaseVerifiesTagIsCurrent(path, document),
@@ -1353,7 +1213,7 @@ export function checkFile(
 const SEED_WORKFLOW = ".github/workflows/cache-seed.yml";
 
 /**
- * flake.nix stages the same `say-avspeech` sidecar as build-engine.yml's steps, under the same
+ * flake.nix stages the same `say-avspeech` sidecar as release.yml's steps, under the same
  * `find | head` SIGPIPE race (#1088) — but it isn't YAML, so it can't go through `checkFile`'s
  * `parse(contents)`. `forbidFindPipedToHead` is plain-text already; run it here directly instead.
  */
