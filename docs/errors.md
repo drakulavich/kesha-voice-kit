@@ -45,7 +45,7 @@ code never needs sanitizing.
   List them with `kesha-engine describe` (the `errors` section, each with its `origin`).
   When the engine also writes a line that is not an event, the CLI reports `E_INTERNAL` quoting
   that line and appends the engine's own transcript, so stderr may show two coded lines; the
-  `code` field (JSON output, `SayError.code`) names one.
+  `code` field (JSON output, `KeshaError.code` in the [Core API](api.md#errors)) names one.
 - **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`**, **`E_INSTALL_RACE`** and **`E_INTERRUPTED`** originate
   only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
   an installed engine whose protocol version the CLI does not speak, an

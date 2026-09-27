@@ -158,7 +158,7 @@
           cargoTestOptions = old: old ++ [ "--features" rustFeatures "--no-default-features" ];
           # Write the version marker `src/engine-version-marker.ts` reads. Without
           # it the TS CLI treats the Nix-built engine as version-unknown,
-          # falls into the re-download branch of `downloadEngine`, and
+          # falls into the re-download branch of `installEngine`, and
           # EROFS-fails against the read-only `/nix/store` path. Pinned to
           # package.json#keshaEngine.version so it matches the version the
           # CLI checks for.

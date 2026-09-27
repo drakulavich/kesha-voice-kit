@@ -80,7 +80,7 @@ const EVERY_SAY_OPTION: SayOptions = {
   format: "ogg-opus", bitrate: 32000, sampleRate: 24000, noExpandAbbrev: true,
 };
 
-/** The argument text of the call whose opening paren precedes `start`; SayError takes its code fourth, on any line. */
+/** The argument text of the call whose opening paren precedes `start`, which may span lines. */
 function callArguments(text: string, start: number): string {
   let depth = 1;
   let i = start;
@@ -173,7 +173,7 @@ describe("capability pact — recordings", () => {
     for await (const file of new Bun.Glob("src/**/*.ts").scan(repoPath("."))) {
       if (file.includes("__tests__") || file.endsWith(".test.ts")) continue;
       const text = readRepoFile(file);
-      for (const m of text.matchAll(/new (?:Kesha|Say)Error\(/g)) {
+      for (const m of text.matchAll(/new KeshaError\(/g)) {
         const code = /"(E_[A-Z0-9_]+)"/.exec(callArguments(text, m.index + m[0].length))?.[1];
         if (code) raised.add(code);
       }

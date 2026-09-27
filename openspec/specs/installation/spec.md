@@ -42,7 +42,7 @@ missing.
 - AND the process exits 0
 - AND subsequent `kesha audio.ogg` invocations succeed
 
-> *Technical Note — sources: `src/engine-install.ts::downloadEngine`,
+> *Technical Note — sources: `src/engine-install.ts::installEngine`,
 > `src/cli/install.ts::performInstall`. The Engine binary is fetched from
 > `https://github.com/drakulavich/kesha-voice-kit/releases/download/v<version>/<asset>`.
 > The version is pinned in `package.json#keshaEngine.version`. Required models are
@@ -143,7 +143,7 @@ name used on POSIX platforms.
 
 > *Technical Note — sources: `src/engine-install.ts::getEngineBinaryName`,
 > `src/engine-install.ts::fetchEngineBinary` (its only caller — reached from
-> `downloadEngine` only when the cached-version check fails), `src/paths.ts::defaultEngineBinPath`
+> `installEngine` only when the cached-version check fails), `src/paths.ts::defaultEngineBinPath`
 > (`.exe` on win32), `src/install-plan.ts::engineAssetForPlatform`. Built by
 > `.github/workflows/build-engine.yml` with `--features onnx,tts`; issue #216's MSVC link
 > failure was resolved by vendoring the Vosk-TTS runtime under `rust/vendor/vosk-tts/`.*
@@ -600,7 +600,7 @@ message; `--no-cache` is still forwarded to the model install step.
   `--no-cache` is skipped for the binary
 - AND model downloads still proceed (with `--no-cache` applied)
 
-> *Technical Note — sources: `src/engine-install.ts::downloadEngine`
+> *Technical Note — sources: `src/engine-install.ts::installEngine`
 > (`canWriteEngineDir` check via `fs.accessSync(engineDir, W_OK)`). The Nix flake
 > build stages models at build time; `--no-cache` reaching the model step is still
 > valid for user-managed cache overrides.*

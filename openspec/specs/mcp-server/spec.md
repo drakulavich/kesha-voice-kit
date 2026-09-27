@@ -92,7 +92,8 @@ When an MCP client cancels an in-flight `transcribe_audio` or `synthesize_speech
 - THEN it returns `isError: true` and no Engine is spawned
 
 > *Technical Note — `src/mcp/tools.ts::registerTools` forwards the request's
-> `extra.signal` into `transcribe`/`transcribeWithTimestamps` (`src/lib.ts`)
+> `extra.signal` into `transcribeWithSegments` (`src/transcribe.ts`, after the
+> same `assertAudioFileArgument` refusals the Core API makes)
 > and into `say` (`src/synth.ts::say`, which accepts `SayOptions.signal`) and
 > `resolveSayVoice` (`src/voice-routing.ts`). Every spawn goes through
 > `src/engine/spawn.ts::runEngineProcess`, which wires the signal to

@@ -284,8 +284,8 @@ pre-#688 install also `~/Library/Application Support/FluidAudio`,
   `openclaw.plugin.json` + `openclaw-plugin.cjs` register the plugin.
 - **Raycast:** the `raycast/` extension (its own package, own lockfile).
 - **Programmatic API:** `@drakulavich/kesha-voice-kit/core` (`src/lib.ts`)
-  exports `transcribe`, `transcribeWithTimestamps`, `say`, and the
-  `downloadModel` / `downloadTts` installers.
+  exports `transcribe`, `say`, `install`, `capabilities` and `toToon`, and
+  rejects only with `KeshaError` ([api.md](api.md)).
 
 ## Where to change X
 

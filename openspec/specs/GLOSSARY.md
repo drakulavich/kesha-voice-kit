@@ -21,7 +21,7 @@ verbatim; if you need a new term, add it here first.
 | **Error code** | A stable `E_*` identifier (e.g. `E_MODEL_MISSING`) carried by an `error` event on the Engine's stderr and rendered by the CLI as `error [E_CODE]: message`; the full taxonomy is the `errors` section of the describe document, and a `KeshaError` also carries `exitCode`/`stderr`. |
 | **Event stream** | The NDJSON lines the Engine writes to stderr, one JSON object per line with a `kind` of `progress`, `warn`, `error` or `debug`; stdout carries payload only, and the CLI is what renders events for a person. |
 | **Exit code** | Process status: 0 success, 1 runtime failure, 2 invalid arguments; `kesha say` additionally uses 4 (synthesis/internal) and 5 (text too long). An interrupted run reports `E_INTERRUPTED` and exits 130 (SIGINT), 143 (SIGTERM) or 129 (SIGHUP); 129 is also what `kesha-engine record` exits with when its parent dies. |
-| **KeshaError** | The single class every Core API rejection carries: `code` (a published Error code), `hint` when a remedy is known, and `exitCode`/`stderr` whenever an Engine subprocess ran or a pre-flight assigned an Exit code. Replaces `SayError`. |
+| **KeshaError** | The single class every Core API rejection carries: `code` (a published Error code), `hint` when a remedy is known, and `exitCode`/`stderr` whenever an Engine subprocess ran or a pre-flight assigned an Exit code. Replaced `SayError` in 2.0.0. |
 | **CLI package** | The npm tarball `@drakulavich/kesha-voice-kit`: the `kesha` entry point plus its TypeScript sources, run by Bun with no build step. Every distribution path unwraps this same package. |
 | **Distribution path** | A supported way to get the CLI onto a machine: the npm CLI package, the Homebrew formula, the `.deb`/`.rpm` Linux packages, the GHCR container image, or the Nix flake. None of them installs the Engine. |
 | **MCP registry manifest** | `server.json` — the manifest that advertises the CLI package to MCP clients; its version is held equal to the CLI's by the drift gate. |
@@ -54,7 +54,7 @@ verbatim; if you need a new term, add it here first.
 | **Support bundle** | Redacted `.tar.gz` diagnostics archive produced by `kesha support-bundle`. |
 | **Redaction** | Removing secrets (TOKEN/KEY/SECRET/… values), home-directory paths, and URL credentials from diagnostic output. |
 | **MCP server** | The Model Context Protocol stdio server started by `kesha mcp`, exposing transcribe/synthesize/list tools to LLM clients. |
-| **Core API** | The programmatic interface exported from `@drakulavich/kesha-voice-kit/core`: today `transcribe`, `say`, `downloadModel`, `downloadTts`, `toToon`, `SayError`; v2 replaces those with `transcribe`, `say`, `install`, `capabilities`, `toToon` and `KeshaError`. |
+| **Core API** | The programmatic interface exported from `@drakulavich/kesha-voice-kit/core`: `transcribe`, `say`, `install`, `capabilities`, `toToon`, `hasErrorRecords` and `KeshaError` (2.0.0; `docs/api.md` maps the removed 1.x names). |
 | **Model mirror** | `KESHA_MODEL_MIRROR` base URL that rewrites HuggingFace download URLs (GitHub release URLs are never rewritten); safe because of Pinned hashes. |
 | **Raycast extension** | The `kesha-voice-kit` extension published to the Raycast Store; its source of record is `raycast/` in this repo. It drives the CLI as a subprocess and never links the Engine or reimplements Transcription. |
 | **Dictation session** | One run of the Raycast extension's **Dictate to Clipboard** command: record → silence check → Transcription → clipboard. |
