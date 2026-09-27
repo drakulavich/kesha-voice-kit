@@ -30,9 +30,13 @@ describe("nightly.yml", () => {
   });
 
   // A group holds one running and one pending job, so matrix rows sharing one would evict each other.
-  test("a matrix job's concurrency group is per row", () => {
+  test("a matrix job's concurrency group is distinct for every row", () => {
     for (const [name, job] of jobs.filter(([, job]) => job.strategy?.matrix)) {
-      expect([name, job.concurrency?.group]).toEqual([name, expect.stringContaining("${{ matrix.")]);
+      const rows = (job.strategy!.matrix as { include: Record<string, string>[] }).include;
+      const groups = rows.map((row) =>
+        String(job.concurrency?.group).replace(/\$\{\{\s*matrix\.(\w+)\s*\}\}/g, (_, key: string) => row[key] ?? ""),
+      );
+      expect([name, new Set(groups).size]).toEqual([name, rows.length]);
     }
   });
 });
