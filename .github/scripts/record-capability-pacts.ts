@@ -10,7 +10,7 @@
  *   bun .github/scripts/record-capability-pacts.ts --binary ./kesha-engine-linux-x64
  *   bun .github/scripts/record-capability-pacts.ts --from-release --check
  *
- * `--from-release` fetches the binary `keshaEngine.version` pins. `--check` re-derives the
+ * `--from-release` fetches the highest published stable Engine, the one a source checkout's lanes install. `--check` re-derives the
  * pact and exits 1 on drift. Re-record per `.github/workflows/capability-pact.yml`, which
  * owns the procedure; a target can only be recorded on its own OS.
  */
@@ -19,7 +19,16 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { engineTarget, engineTargetEntries, targetKey, type EngineTarget } from "../../src/engine-targets";
-import { engineVersion } from "../../src/package-info";
+import { engineVersion as packageEngineVersion } from "../../src/package-info";
+
+function newestStableEngine(): string {
+  const run = Bun.spawnSync(["bash", join(import.meta.dir, "newest-stable-engine.sh")], { stderr: "inherit" });
+  if (run.exitCode !== 0) {
+    console.error("FAIL: could not resolve the highest published stable Engine. Check GH_TOKEN.");
+    process.exit(1);
+  }
+  return run.stdout.toString().trim();
+}
 
 const REPO = "drakulavich/kesha-voice-kit";
 const PACT_DIR = join("tests", "fixtures", "capabilities");
@@ -94,7 +103,7 @@ function parseArgs(argv: string[]): { binary: string; target: string; check: boo
  * Fetch the pinned release's binary — the artifact `kesha install` hands users. ~65 MB of
  * executable, no models. A failure must be loud: a lane that quietly skips proves nothing (#838).
  */
-async function downloadPinnedBinary(target: EngineTarget): Promise<string> {
+async function downloadPinnedBinary(target: EngineTarget, engineVersion: string): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "kesha-pact-"));
   const proc = Bun.spawn(
     ["gh", "release", "download", `v${engineVersion}`, "-R", REPO, "-p", target.assetName, "-D", dir],
@@ -103,8 +112,7 @@ async function downloadPinnedBinary(target: EngineTarget): Promise<string> {
   if ((await proc.exited) !== 0) {
     console.error(
       `FAIL: could not download ${target.assetName} from v${engineVersion}.\n` +
-        "  Check GH_TOKEN, and that the tag exists — between a release merge and its tag, " +
-        "keshaEngine.version legitimately points at an unpublished release.",
+        "  Check GH_TOKEN, and that the release exists.",
     );
     process.exit(1);
   }
@@ -139,7 +147,7 @@ const RE_RECORD =
   "Re-record per .github/workflows/capability-pact.yml: dispatch it with `record: true` and " +
   "commit the artifacts it uploads.";
 
-function verify(target: string, binary: string, recorded: string): void {
+function verify(target: string, binary: string, recorded: string, engineVersion: string): void {
   const path = pactPath(target);
   const provenance = provenancePath(target);
   if (!existsSync(path) || !existsSync(provenance)) {
@@ -151,7 +159,7 @@ function verify(target: string, binary: string, recorded: string): void {
   const failures: string[] = [];
   if (previous.engineVersion !== engineVersion) {
     failures.push(
-      `recorded from engine v${previous.engineVersion} but keshaEngine.version pins v${engineVersion}`,
+      `recorded from engine v${previous.engineVersion} but the binary checked is v${engineVersion}`,
     );
   }
   const sha256 = createHash("sha256").update(readFileSync(binary)).digest("hex");
@@ -177,10 +185,11 @@ async function main(): Promise<void> {
   const asset = targetByKey(target);
   if (!asset) usage(`unknown target '${target}' — it has no row in src/engine-targets.ts`);
 
-  const binary = fromRelease ? await downloadPinnedBinary(asset) : given;
+  const engineVersion = fromRelease ? newestStableEngine() : packageEngineVersion;
+  const binary = fromRelease ? await downloadPinnedBinary(asset, engineVersion) : given;
   const recorded = serialize(await readDescribe(binary));
 
-  if (check) return verify(target, binary, recorded);
+  if (check) return verify(target, binary, recorded, engineVersion);
 
   writeFileSync(pactPath(target), recorded);
   writeFileSync(

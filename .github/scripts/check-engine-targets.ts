@@ -7,10 +7,8 @@
  * about disk cost and nothing fails. `install-plan.ts` carried a stale 63_126_528
  * against an actual 63_447_040 for exactly that reason (#216).
  *
- * Releases here merge first and tag second, so keshaEngine.version legitimately points at an
- * unpublished tag on a `release/*` PR and on the `chore(release):` push to main that follows.
- * A 404 anywhere else means the pinned version was never published, which is a real problem —
- * skipping it would make this check vacuous exactly when it matters.
+ * The table describes one published release, `PINNED_ASSET_SHA256_VERSION`, whatever unreleased
+ * version main carries. A 404 means that release was never published, which is a real problem.
  */
 import {
   engineTargetEntries,
@@ -18,9 +16,9 @@ import {
   PINNED_ASSET_SHA256,
   PINNED_ASSET_SHA256_VERSION,
 } from "../../src/engine-targets";
-import { engineVersion } from "../../src/package-info";
 
 const REPO = "drakulavich/kesha-voice-kit";
+const engineVersion = PINNED_ASSET_SHA256_VERSION;
 const url = `https://api.github.com/repos/${REPO}/releases/tags/v${engineVersion}`;
 
 const headers: Record<string, string> = { accept: "application/vnd.github+json" };
@@ -30,20 +28,9 @@ let assets: Array<{ name: string; size: number }>;
 try {
   const res = await fetch(url, { headers });
   if (res.status === 404) {
-    const headRef = process.env.GITHUB_HEAD_REF ?? "";
-    const headCommit = process.env.HEAD_COMMIT_MESSAGE ?? "";
-    const midRelease =
-      headRef.startsWith("release/") || headCommit.startsWith("chore(release):");
-    if (midRelease) {
-      console.log(
-        `skip: v${engineVersion} is not published yet, which is expected between the release ` +
-          `merge and its tag. The scheduled run verifies the sizes once the release exists.`,
-      );
-      process.exit(0);
-    }
     console.error(
-      `FAIL: package.json pins engine v${engineVersion}, but no such release exists.\n` +
-        `  Fix: publish it, or correct keshaEngine.version.`,
+      `FAIL: src/engine-targets.ts describes engine v${engineVersion}, but no such release exists.\n` +
+        `  Fix: correct PINNED_ASSET_SHA256_VERSION and the table beside it.`,
     );
     process.exit(1);
   }
@@ -86,12 +73,6 @@ for (const { platform, arch, target } of engineTargetEntries()) {
   console.log(`ok: ${key} → ${target.assetName} (${published} bytes)`);
 }
 
-// The installer survives stale pins by reading the pinned release's own SHA256SUMS; this is what ends that window.
-if (PINNED_ASSET_SHA256_VERSION !== engineVersion) {
-  problems.push(
-    `PINNED_ASSET_SHA256 describes engine v${PINNED_ASSET_SHA256_VERSION}, but package.json pins v${engineVersion}`,
-  );
-}
 const pinsVersion = PINNED_ASSET_SHA256_VERSION;
 let sums: Map<string, string> | null = null;
 try {
