@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { classifyReleaseTag } from "../../.github/scripts/classify-release-tag.mjs";
 import {
@@ -407,5 +407,22 @@ describe("publish serialisation and provenance", () => {
       group: "npm-publish",
       queue: "max",
     });
+  });
+});
+
+describe("release manifest source consistency", () => {
+  // Only release.yml, as after the cutover: the check must still hold it to every asset the manifest names.
+  test("a release.yml that no longer builds a manifest asset fails, naming both", () => {
+    const dir = tempDir("kesha-manifest-release-");
+    mkdirSync(join(dir, ".github", "workflows"), { recursive: true });
+    for (const entry of ["src", "packaging", "package.json"]) symlinkSync(`${REPO_ROOT}/${entry}`, join(dir, entry));
+    symlinkSync(`${REPO_ROOT}/.github/scripts`, join(dir, ".github", "scripts"));
+    const workflow = readRepoFile(".github/workflows/release.yml").replaceAll("kesha-textlang-darwin-arm64", "gone");
+    writeFileSync(join(dir, ".github", "workflows", "release.yml"), workflow);
+
+    const run = Bun.spawnSync(["node", `${REPO_ROOT}/.github/scripts/release-manifest.mjs`, "--check"], { cwd: dir });
+    expect(run.exitCode).not.toBe(0);
+    expect(run.stderr.toString()).toContain(".github/workflows/release.yml is missing release manifest token: kesha-textlang-darwin-arm64");
+    for (const entry of ["src", "packaging", "package.json", ".github/scripts"]) unlinkSync(join(dir, entry));
   });
 });
