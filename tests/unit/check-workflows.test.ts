@@ -49,7 +49,7 @@ import { tempDir } from "../helpers/temp-dir";
 const PATH = ".github/workflows/release.yml";
 const CI = ".github/workflows/ci.yml";
 const RUST_TEST = ".github/workflows/rust-test.yml";
-const PACT = ".github/workflows/capability-pact.yml";
+const PACT = ".github/workflows/nightly.yml";
 
 function job(name: string, steps: unknown[]) {
   return { jobs: { [name]: { steps } } };
@@ -835,10 +835,10 @@ describe("requireReleaseRowsNameOneProfile", () => {
 
 describe("requirePactVerificationCoversEveryTarget", () => {
   const matrix = (targets: string[]) => ({
-    jobs: { pact: { strategy: { matrix: { include: targets.map((target) => ({ os: "ubuntu-latest", target })) } } } },
+    jobs: { "capability-pact": { strategy: { matrix: { include: targets.map((target) => ({ os: "ubuntu-latest", target })) } } } },
   });
 
-  test("passes on the real capability-pact.yml", () => {
+  test("passes on the real nightly.yml", () => {
     expect(requirePactVerificationCoversEveryTarget(PACT, parseRepoYaml(PACT))).toEqual([]);
   });
 
@@ -853,7 +853,7 @@ describe("requirePactVerificationCoversEveryTarget", () => {
   });
 
   test("fails when the matrix is gone", () => {
-    expect(requirePactVerificationCoversEveryTarget(PACT, { jobs: { pact: {} } })[0]).toContain(
+    expect(requirePactVerificationCoversEveryTarget(PACT, { jobs: { "capability-pact": {} } })[0]).toContain(
       "strategy.matrix.include",
     );
   });
@@ -1130,7 +1130,7 @@ describe("requireRestoreOnlyCachesHaveAWriter", () => {
 });
 
 describe("requireDepsBeforeBunTest", () => {
-  const TEST = { name: "test", run: "bun test tests/unit/derive-alpha-version.test.ts" };
+  const TEST = { name: "test", run: "bun test tests/unit/release-plan.test.ts" };
   const INSTALL = { name: "install", run: "bun install --frozen-lockfile" };
   const SETUP = { uses: "./.github/actions/setup-bun" };
 

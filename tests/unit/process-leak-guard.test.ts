@@ -27,6 +27,18 @@ function spawnStranger(): number {
   return proc.pid;
 }
 
+/**
+ * A child that exits only once its parent has become `sleep`, which never reaps: exiting earlier lets
+ * the shell reap it first, and the pid is then simply gone (seen on CI as `Received: ""`). Bounded
+ * (~30 s) and ends early when its parent is gone, so an interrupted run leaves no orphan behind.
+ * `$$` is left for the parent's double quotes to expand, so the child holds the parent's own pid;
+ * `$PPID` would re-point at an adopter once the parent exits. Every other `$` is the child's.
+ * Its output goes nowhere, so it never holds the parent's captured stdout open.
+ */
+const WAIT_FOR_SLEEPING_PARENT =
+  'sh -c "i=0; until ps -o comm= -p $$ | grep -q \'sleep$\'; do ' +
+  'kill -0 $$ 2>/dev/null || exit 0; i=\\$((i + 1)); [ \\$i -lt 600 ] || exit 0; sleep 0.05; done" >/dev/null 2>&1';
+
 describe("process leak guard", () => {
   posix("reaps a tracked stub the test never killed, and names it", async () => {
     const pid = trackPid(spawnStubborn("kesha-engine-leak-guard-fixture"));
@@ -72,14 +84,15 @@ describe("process leak guard", () => {
 
   /** #1160: `kill(pid, 0)` succeeds on an exited child its parent has not reaped yet. */
   posix("counts an exited but unreaped child as gone", async () => {
-    const parent = Bun.spawn(["sh", "-c", "sh -c 'exit 0' & echo $!; exec sleep 30"], {
+    const parent = Bun.spawn(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!; exec sleep 30`], {
       stdout: "pipe",
       stderr: "ignore",
     });
     try {
       const zombie = Number(new TextDecoder().decode((await parent.stdout.getReader().read()).value));
       const stat = () => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(zombie)]).stdout.toString();
-      for (let i = 0; i < 200 && !stat().startsWith("Z"); i++) await Bun.sleep(10);
+      const deadline = Date.now() + 15_000;
+      while (Date.now() < deadline && !stat().startsWith("Z")) await Bun.sleep(20);
       expect(stat()).toStartWith("Z");
 
       expect(pidIsAlive(zombie)).toBe(false);
@@ -87,6 +100,13 @@ describe("process leak guard", () => {
       parent.kill("SIGKILL");
       await parent.exited;
     }
+  }, 20_000);
+
+  posix("the zombie fixture's child ends on its own when its parent never becomes sleep", async () => {
+    const parent = Bun.spawnSync(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!`]);
+    const child = Number(parent.stdout.toString());
+
+    expect(await waitForPidExit(child)).toBe(true);
   });
 
   /** #1131: an interrupted run reaches no hook at all, so the fixture has to end itself. */

@@ -10,10 +10,10 @@
  * These tests read `tests/fixtures/capabilities/<target>.json` — the published binaries' own
  * `describe` documents — and drive the production seams against them, so flag routing is gated
  * by the table the real binary publishes rather than by the fake engine's mirror of it. No
- * engine, no models, no network. `.github/workflows/capability-pact.yml` re-records
+ * engine, no models, no network. `.github/workflows/nightly.yml` (`capability-pact` job) re-records
  * from the real artifacts and fails on drift, which is what stops a pact from rotting into a
  * false green; it also owns the pinned-version check, which cannot live here because a release
- * PR bumps `keshaEngine.version` before the tag it names exists.
+ * PR bumps the version before the tag it names exists.
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";

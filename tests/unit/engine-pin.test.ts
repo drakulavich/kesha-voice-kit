@@ -57,14 +57,14 @@ describe("resolveEngine", () => {
   const pin = { version: "2.0.0", sha256: { "kesha-engine-linux-x64": sha("a") } };
 
   test("an injected pin wins over every committed field", () => {
-    expect(resolveEngine({ version: "2.1.0-alpha.1", keshaEngine: { version: "1.26.0" }, kesha: { engine: pin } })).toEqual({
+    expect(resolveEngine({ version: "2.1.0-alpha.1", kesha: { engine: pin } })).toEqual({
       version: "2.0.0",
       pins: pin,
     });
   });
 
-  test("without an injection the committed keshaEngine pin applies, then the package version", () => {
-    expect(resolveEngine({ version: "1.32.0", keshaEngine: { version: "1.26.0" } })).toEqual({ version: "1.26.0" });
+  // A source checkout carries no injection, and one version names the Engine too.
+  test("without an injection the package version names the Engine", () => {
     expect(resolveEngine({ version: "2.0.0" })).toEqual({ version: "2.0.0" });
   });
 

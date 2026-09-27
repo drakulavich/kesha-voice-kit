@@ -1,18 +1,15 @@
 /**
  * SemVer 2.0 — the one place in this repo that knows the grammar.
  *
- * `kesha install --engine-version`, the version drift gate, the alpha derivation, the npm
- * dist-tag resolver, the package.json writer and the Linux package names all decide "is this
- * a version" or "which is newer". Separate copies disagree at the edges: `derive-alpha-version`
- * asserts its output sorts above the pin that `check-versions` later validates, so one parser
- * accepting what another refuses is a release that passes derivation and fails the gate
- * (#685, #738).
+ * `kesha install --engine-version`, the version drift gate, the release plan, the
+ * package.json writer and the Linux package names all decide "is this a version" or "which
+ * is newer". Separate copies disagree at the edges: one parser accepting what another
+ * refuses is a release that passes planning and fails the gate (#685, #738).
  *
- * Stays `.mjs`: npm-publish.yml, release-npm-publish.yml and homebrew-tap.yml run their
- * scripts under node, which cannot import a `.ts` module. Types live in `semver.d.mts`.
+ * Stays `.mjs`: release.yml runs some of its callers under node, which cannot import a
+ * `.ts` module. Types live in `semver.d.mts`.
  *
- * The release *tag* grammar is deliberately not here — `.github/scripts/release-tags.mjs`
- * keeps it as a POSIX ERE string so bash `=~` and JavaScript consume identical text.
+ * The release *tag* grammar is deliberately not here: it lives in `.github/scripts/release-tags.mjs`.
  */
 
 /** The pattern published with the SemVer 2.0 spec; a looser one accepts `1.0.0-01` and `01.2.3`. */

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Upsert a single findings issue when the weekly cron detects advisory/license
 # problems. Reuses one issue (by exact title + label) instead of opening a new
-# one each week. Mirrors the upsert pattern in cargo-dependency-maintenance.yml.
+# one each week. Mirrors the upsert pattern in nightly.yml's `cargo-dependency-maintenance` job.
 #
 # Usage: upsert-audit-issue.sh <body-file> [title] [label]
 #   <title> defaults to the Rust findings issue. The bun-audit job passes its
