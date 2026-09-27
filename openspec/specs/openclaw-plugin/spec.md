@@ -150,7 +150,7 @@ Publishing the plugin to the OpenClaw registry SHALL be its own deliberate step,
 
 > *Technical Note — `docs/runbooks/openclaw-plugin.md` states the ClawHub
 > publish is independent of npm publish, GitHub releases, and
-> `build-engine.yml`, and that no CI lane performs it. `--force` overwrites an
+> `release.yml`, and that no CI lane performs it. `--force` overwrites an
 > existing install; `openclaw plugins uninstall` is interactive with no
 > non-interactive flag.*
 
