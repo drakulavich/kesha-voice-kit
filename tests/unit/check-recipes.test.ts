@@ -449,18 +449,7 @@ describe("unguardedPipelines", () => {
 describe("the repository's own references", () => {
   test("CLAUDE.md spells its executable rituals as recipes, not as shell to copy", () => {
     const found = new Set(names("CLAUDE.md", readRepoFile("CLAUDE.md")));
-    expect([...found].sort()).toEqual([
-      "dev-setup",
-      "mutate",
-      "release",
-      "release-tag",
-      "rust-test",
-      "smoke-test",
-      "test",
-      "verify-darwin-full",
-      "worktree",
-      "worktree-rm",
-    ]);
+    expect([...found].sort()).toEqual(["mutate", "worktree", "worktree-rm"]);
   });
 
   test("rust-test.yml calls verify-darwin-full rather than repeating its flags", () => {
