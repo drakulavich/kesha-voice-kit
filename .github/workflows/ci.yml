@@ -47,6 +47,8 @@ jobs:
       workflows: ${{ steps.filter.outputs.workflows }}
       recipes: ${{ steps.filter.outputs.recipes }}
       homebrew: ${{ steps.filter.outputs.homebrew }}
+      docker: ${{ steps.filter.outputs.docker }}
+      dockerfile: ${{ steps.filter.outputs.dockerfile }}
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -201,6 +203,23 @@ jobs:
               - 'docs/homebrew.md'
               - '.github/workflows/ci.yml'
               - '.github/scripts/stage-homebrew-worktree-formula.mjs'
+            # What the image packs: a main push that touches it publishes `main`, `sha-*` and `latest`.
+            docker:
+              - Dockerfile
+              - .dockerignore
+              - compose.yml
+              - package.json
+              - bun.lock
+              - bin/**
+              - src/**
+              - tests/fixtures/benchmark/**
+              - tests/fixtures/benchmark-en/**
+            # A pull request builds the image only when its recipe changes; src/** alone would build on nearly every PR.
+            dockerfile:
+              - Dockerfile
+              - .dockerignore
+              - compose.yml
+              - '.github/workflows/ci.yml'
 
   workflow-lint:
     needs: changes
@@ -878,6 +897,50 @@ jobs:
   # Aggregator gate = the single required status check for branch protection.
   # Always runs so 🧪 CI reports on every PR; the path-gated jobs above skip on
   # unrelated PRs (→ success). The step fails the gate only if a real job failed.
+  # Moved from docker.yml (openspec unified-release D4); release.yml publishes the tag images.
+  docker-image:
+    needs: changes
+    if: |
+      (github.event_name == 'push' && needs.changes.outputs.docker == 'true') ||
+      (github.event_name == 'pull_request' && needs.changes.outputs.dockerfile == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: 🔐 Login to GHCR
+        if: github.event_name == 'push'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: 🏷️ Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/drakulavich/kesha-voice-kit
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+      - name: 🧰 Setup Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      # A pull request only builds and reads the cache; writing it from a PR ref is the eviction pressure #843 removed.
+      - name: 📦 Build, and publish from main
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: ${{ github.event_name == 'push' && 'type=gha,mode=max' || '' }}
+
   ci:
     name: 🧪 CI
     if: always()
@@ -896,6 +959,7 @@ jobs:
       - tts-e2e
       - raycast-lint
       - openspec-validate
+      - docker-image
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
