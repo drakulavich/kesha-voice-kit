@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { readFileSync, writeFileSync } from "node:fs";
 import { engineTargetEntries, parseSha256Sums, PINNED_ASSET_SHA256 } from "../../src/engine-targets";
-import { cmp, isStableVersion, parseSemver } from "../../src/semver.mjs";
+import { isStableVersion, parseSemver } from "../../src/semver.mjs";
+import { withCargoVersion } from "./set-cargo-version.mjs";
 
 const REPO = "drakulavich/kesha-voice-kit";
 
@@ -21,7 +22,6 @@ type Manifest = {
 
 type FollowupInput = {
   tag: string;
-  cliReleasePublished: boolean;
   release: Release;
   manifest: Manifest;
   targetSource: string;
@@ -29,13 +29,17 @@ type FollowupInput = {
   sha256Sums: string;
   packageSource: string;
   serverSource: string;
+  cargoSource: string;
+  lockSource: string;
 };
 
 export type Followup = {
-  nextCliVersion: string;
+  nextVersion: string;
   targetSource: string;
   packageSource: string;
   serverSource: string;
+  cargoSource: string;
+  lockSource: string;
   prBody: string;
 };
 
@@ -127,20 +131,22 @@ function replacePinsVersion(source: string, version: string): string {
   return source.split(matches[0]![0]).join(`export const PINNED_ASSET_SHA256_VERSION = "${version}";`);
 }
 
-function parsePackage(source: string): { version: string; keshaEngine: { version: string } } {
-  const pkg = asRecord(JSON.parse(source), "package.json");
-  const engine = asRecord(pkg.keshaEngine, "package.json#keshaEngine");
-  return {
-    version: stringAt(pkg.version, "package.json#version"),
-    keshaEngine: { version: stringAt(engine.version, "package.json#keshaEngine.version") },
-  };
+function packageVersion(source: string): string {
+  return stringAt(asRecord(JSON.parse(source), "package.json").version, "package.json#version");
 }
 
-function replaceServerVersions(source: string, currentCliVersion: string, version: string): string {
+function replaceLockVersion(source: string, version: string): string {
+  const pattern = /(\[\[package\]\]\nname = "kesha-engine"\nversion = )"[^"]*"/g;
+  const matches = [...source.matchAll(pattern)];
+  if (matches.length !== 1) throw new Error("rust/Cargo.lock must contain exactly one kesha-engine package entry");
+  return source.replace(pattern, `$1"${version}"`);
+}
+
+function replaceServerVersions(source: string, currentVersion: string, version: string): string {
   const server = asRecord(JSON.parse(source), "server.json");
   const current = stringAt(server.version, "server.json#version");
-  if (current !== currentCliVersion) {
-    throw new Error(`server.json#version (${current}) does not match package.json#version (${currentCliVersion})`);
+  if (current !== currentVersion) {
+    throw new Error(`server.json#version (${current}) does not match package.json#version (${currentVersion})`);
   }
   const packages = server.packages;
   if (!Array.isArray(packages) || packages.length === 0) throw new Error("server.json#packages must be a non-empty array");
@@ -157,7 +163,7 @@ function replaceServerVersions(source: string, currentCliVersion: string, versio
 
 function formatProvenance(
   tag: string,
-  nextCliVersion: string,
+  nextVersion: string,
   releaseAssets: Map<string, ReleaseAsset>,
   sums: Map<string, string>,
 ): string {
@@ -169,12 +175,12 @@ function formatProvenance(
   for (const assetName of Object.keys(PINNED_ASSET_SHA256)) {
     lines.push(`- \`${assetName}\`: sha256 \`${sums.get(assetName)}\``);
   }
-  return `Automated post-release follow-up for engine [\`${tag}\`](https://github.com/${REPO}/releases/tag/${tag}).
+  return `Automated post-release follow-up for [\`${tag}\`](https://github.com/${REPO}/releases/tag/${tag}).
 
 ## Provenance
 
 - Published engine tag: \`${tag}\`
-- CLI/server transition: next development baseline \`${nextCliVersion}\`
+- Next development version (package.json, server.json, rust/Cargo.toml): \`${nextVersion}\`
 ${lines.join("\n")}
 
 ## Validation
@@ -212,32 +218,23 @@ export function buildPostEngineReleaseFollowup(input: FollowupInput): Followup {
   }
   targetSource = replacePinsVersion(targetSource, version);
 
-  const pkg = parsePackage(input.packageSource);
-  if (pkg.keshaEngine.version !== version) {
-    throw new Error(
-      `package.json#keshaEngine.version (${pkg.keshaEngine.version}) does not match published tag ${input.tag}`,
-    );
+  const current = packageVersion(input.packageSource);
+  if (current !== version) {
+    throw new Error(`package.json#version (${current}) does not match published tag ${input.tag}`);
   }
-  const cli = parseSemver(pkg.version, "package.json#version");
-  const engine = parseSemver(version, "published engine tag");
-  if (cmp(cli, engine) < 0 || cli.prerelease.length > 0 || cli.build.length > 0) {
-    throw new Error(`package.json#version (${pkg.version}) is not an unambiguous stable CLI baseline`);
-  }
-  if (!input.cliReleasePublished) {
-    throw new Error(
-      `CLI marker release v${pkg.version}-cli is not published; publish it before leading the next CLI baseline`,
-    );
-  }
-  const nextCliVersion = `${cli.major}.${cli.minor + 1}.0`;
-  const packageSource = `${JSON.stringify({ ...JSON.parse(input.packageSource), version: nextCliVersion }, null, 2)}\n`;
-  const serverSource = replaceServerVersions(input.serverSource, pkg.version, nextCliVersion);
+  const released = parseSemver(version, "published tag");
+  const nextVersion = `${released.major}.${released.minor + 1}.0`;
+  const packageSource = `${JSON.stringify({ ...JSON.parse(input.packageSource), version: nextVersion }, null, 2)}\n`;
+  const serverSource = replaceServerVersions(input.serverSource, current, nextVersion);
 
   return {
-    nextCliVersion,
+    nextVersion,
     targetSource,
     packageSource,
     serverSource,
-    prBody: formatProvenance(input.tag, nextCliVersion, releaseAssets, sums),
+    cargoSource: withCargoVersion(input.cargoSource, nextVersion),
+    lockSource: replaceLockVersion(input.lockSource, nextVersion),
+    prBody: formatProvenance(input.tag, nextVersion, releaseAssets, sums),
   };
 }
 
@@ -254,24 +251,6 @@ async function fetchJson(url: string, token: string): Promise<unknown> {
   });
   if (!response.ok) throw new Error(`GitHub API request failed (${response.status}) for ${url}`);
   return response.json();
-}
-
-export async function releaseIsPublished(
-  token: string,
-  tag: string,
-  fetchImpl: typeof fetch = fetch,
-): Promise<boolean> {
-  const response = await fetchImpl(`https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`, {
-    headers: { accept: "application/vnd.github+json", authorization: `Bearer ${token}` },
-  });
-  if (response.status === 404) return false;
-  if (!response.ok) throw new Error(`GitHub API request failed (${response.status}) for CLI marker ${tag}`);
-  const release = asRecord(await response.json(), "CLI marker release");
-  return (
-    !booleanAt(release.draft, "CLI marker release draft") &&
-    !booleanAt(release.prerelease, "CLI marker release prerelease") &&
-    typeof release.published_at === "string"
-  );
 }
 
 async function main(): Promise<void> {
@@ -302,10 +281,8 @@ async function main(): Promise<void> {
   const targetSource = readFileSync("src/engine-targets.ts", "utf8");
   const packageSource = readFileSync("package.json", "utf8");
   const serverSource = readFileSync("server.json", "utf8");
-  const cliReleasePublished = await releaseIsPublished(token, `v${parsePackage(packageSource).version}-cli`);
   const result = buildPostEngineReleaseFollowup({
     tag,
-    cliReleasePublished,
     release: {
       isDraft: booleanAt(raw.draft, "release draft"),
       isPrerelease: booleanAt(raw.prerelease, "release prerelease"),
@@ -316,12 +293,16 @@ async function main(): Promise<void> {
     sha256Sums,
     packageSource,
     serverSource,
+    cargoSource: readFileSync("rust/Cargo.toml", "utf8"),
+    lockSource: readFileSync("rust/Cargo.lock", "utf8"),
   });
   writeFileSync("src/engine-targets.ts", result.targetSource);
+  writeFileSync("rust/Cargo.toml", result.cargoSource);
+  writeFileSync("rust/Cargo.lock", result.lockSource);
   writeFileSync("package.json", result.packageSource);
   writeFileSync("server.json", result.serverSource);
   writeFileSync("post-release-pr.md", result.prBody);
-  console.log(`prepared follow-up for ${tag}: CLI/server → ${result.nextCliVersion}`);
+  console.log(`prepared follow-up for ${tag}: next version ${result.nextVersion}`);
 }
 
 if (import.meta.main) {

@@ -46,7 +46,8 @@ Jobs, in dependency order:
 4. `packages` — `.deb`/`.rpm` through `./.github/actions/linux-packages`, uploaded as an artifact; stable only.
 5. `assemble` — needs every smoke and `packages`; downloads all artifacts into one directory, adds the SBOM and manifest, writes **one** `SHA256SUMS` over everything and checks the directory against the manifest (`check-release-assets.ts`). It holds no permission, so a rehearsal runs it in full.
 6. `github-release` — runs only when `plan.publish`; signs every asset, verifies the tag still names this run's commit, and publishes with one `gh release create` — Latest for stable, Prerelease otherwise. Nothing is left as a draft.
-7. `npm` packs the version with the injected pin and verifies it (no permission); `npm-publish` (`id-token: write`) needs `npm`, `github-release` when an Engine was built, and `reserve-tag` for an alpha that built none; `npm-smoke` installs the published version from the registry. `homebrew` and `docker` need `github-release`, stable only.
+7. `post-release` (`contents: write`, `pull-requests: write`, stable only) opens the pull request that leads `main` to the next minor, as `post-engine-release.yml` did.
+8. `npm` packs the version with the injected pin and verifies it (no permission); `npm-publish` (`id-token: write`) needs `npm`, `github-release` when an Engine was built, and `reserve-tag` for an alpha that built none; `npm-smoke` installs the published version from the registry. `homebrew` and `docker` need `github-release`, stable only.
 
 `build`, the smokes and `assemble` carry `if: build_engine`; every job holding a write or OIDC grant carries `plan.publish`; `packages`, `homebrew` and `docker` carry `channel == 'stable'`. No job subscribes to a `release:` event and no `workflow_call` is used: shared steps are composite actions under `.github/actions/`.
 
@@ -80,8 +81,8 @@ Stage 4, after `core-api-v2` and `build-profiles` (both archived). Every PR leav
 2. `packages` before `github-release` with one merged `SHA256SUMS`; the `npm` job (rehearsal packs and verifies, never publishes); the pin derivation and injection. The maintainer switches the npm Trusted Publisher when the cutover merges.
 3. `homebrew` and `docker` jobs; Docker's main-push lane moves into `ci.yml`.
 4. Alpha derivation and dispatch inputs, inert until the cutover.
-5. Cutover, atomic: tag, main-push and dispatch triggers on; version unification; `flake.nix`; CI lanes resolve the newest stable Engine; `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml`, `release-alpha.yml` and `release-install-smoke.yml` deleted in the same PR, because any one left behind would build or publish the same tag twice (the last had no draft left to smoke).
-6. Deletions of the now-idle workflows, one per PR, with their scripts and tests: `post-engine-release.yml`, `prune-alpha-releases.yml` (into nightly), the cache workflows, `linux-packages.yml`, `rust-test.yml`, `nix-build.yml`, `plugin-security-scan.yml`.
+5. Cutover, atomic: tag, main-push and dispatch triggers on; version unification; `flake.nix`; CI lanes resolve the newest stable Engine; `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml`, `release-alpha.yml`, `release-install-smoke.yml` and `post-engine-release.yml` (now the `post-release` job) deleted in the same PR, because any one left behind would build or publish the same tag twice (the last had no draft left to smoke).
+6. Deletions of the now-idle workflows, one per PR, with their scripts and tests: `prune-alpha-releases.yml` (into nightly), the cache workflows, `linux-packages.yml`, `rust-test.yml`, `nix-build.yml`, `plugin-security-scan.yml`.
 7. `nightly.yml`.
 8. `actionlint` and the `check-workflows.ts` cut.
 9. Docs, one `release` skill, archive this change.

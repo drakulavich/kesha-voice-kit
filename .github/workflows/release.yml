@@ -624,3 +624,57 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # A release created with GITHUB_TOKEN fires no `release: published`, so the follow-up that leads main to the next version is a job here.
+  post-release:
+    name: Lead main to the next version
+    needs: [classify, plan, github-release]
+    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.plan.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    concurrency:
+      group: post-release
+      cancel-in-progress: false
+    env:
+      REPOSITORY: drakulavich/kesha-voice-kit
+      TAG_NAME: ${{ needs.plan.outputs.tag }}
+      BRANCH: automation/post-release-${{ needs.plan.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-bun
+      - name: Decide whether this tag is ours and no other follow-up is in flight
+        id: shape
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          OPEN_HEADS="$(gh pr list --repo "$REPOSITORY" --state open --json headRefName -q '.[].headRefName')" \
+          REMOTE_HEADS="$(git ls-remote --heads origin 'refs/heads/automation/post-release-*' | cut -f2)" \
+          bun .github/scripts/post-release-guard.ts >> "$GITHUB_OUTPUT"
+      - name: Refuse an existing follow-up branch or PR
+        id: existing
+        if: steps.shape.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/refuse-existing-followup.sh
+      - name: Read the published release and prepare the follow-up
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bun .github/scripts/post-engine-release.ts --tag "$TAG_NAME"
+      - name: Validate and record output
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
+        run: bash .github/scripts/record-post-release-validation.sh
+      - name: Commit and push the follow-up branch
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
+        run: bash .github/scripts/push-post-release-branch.sh
+      - name: Open the follow-up pull request
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/open-post-release-pr.sh

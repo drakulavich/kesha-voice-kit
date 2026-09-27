@@ -1,8 +1,6 @@
 #!/usr/bin/env bun
 
-/// Decides whether a published tag belongs to the post-engine-release follow-up.
-/// `release: published` also fires for `-cli` markers and prereleases, which the
-/// follow-up script rejects — one red run per CLI publish unless they skip here.
+/// Decides whether a published tag belongs to the post-release follow-up: only a stable one does.
 export function ownsTag(tag: string): boolean {
   return /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(tag);
 }
@@ -10,7 +8,7 @@ export function ownsTag(tag: string): boolean {
 export type FollowupRefs = { branch: string; openHeads: string[]; remoteHeads: string[] };
 
 /// Refuses while any other follow-up exists, returning the reason or null to proceed.
-/// Every follow-up leads the CLI from main's current baseline, so two of them —
+/// Every follow-up leads main from its current version, so two of them —
 /// for different engine tags — otherwise compute and apply the same next version.
 /// A branch exists before its pull request does, so both lists are consulted.
 export function refuseConcurrentFollowup(refs: FollowupRefs): string | null {
@@ -21,7 +19,7 @@ export function refuseConcurrentFollowup(refs: FollowupRefs): string | null {
     if (name.startsWith(prefix) && name !== refs.branch) others.add(name);
   }
   if (others.size === 0) return null;
-  return `another post-release follow-up exists (${[...others].sort().join(", ")}); land it before leading the CLI again`;
+  return `another post-release follow-up exists (${[...others].sort().join(", ")}); land it before leading main again`;
 }
 
 export type GuardEnv = { TAG_NAME?: string; BRANCH?: string; OPEN_HEADS?: string; REMOTE_HEADS?: string };

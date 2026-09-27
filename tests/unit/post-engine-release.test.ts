@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildPostEngineReleaseFollowup, releaseIsPublished } from "../../.github/scripts/post-engine-release";
+import { buildPostEngineReleaseFollowup } from "../../.github/scripts/post-engine-release";
 import { decideFollowup, ownsTag, refuseConcurrentFollowup } from "../../.github/scripts/post-release-guard";
 import { parseRepoYaml, readRepoFile } from "../helpers/repo";
 
@@ -50,16 +50,16 @@ const sha256Sums = Object.entries(PUBLISHED_SHA256)
   .map(([name, sha]) => `${sha}  ./${name}\n`)
   .join("");
 
-const packageSource = JSON.stringify({
-  name: "kesha",
-  version: "1.29.0",
-  keshaEngine: { version: "1.24.11" },
-});
+const packageSource = JSON.stringify({ name: "kesha", version: "1.24.11" });
 
 const serverSource = JSON.stringify({
-  version: "1.29.0",
-  packages: [{ version: "1.29.0" }],
+  version: "1.24.11",
+  packages: [{ version: "1.24.11" }],
 });
+
+const cargoSource = `[package]\nname = "kesha-engine"\nversion = "1.24.11"\n\n[dependencies]\nort = { version = "2.0.0" }\n`;
+
+const lockSource = `[[package]]\nname = "itoa"\nversion = "1.24.11"\n\n[[package]]\nname = "kesha-engine"\nversion = "1.24.11"\ndependencies = [\n "itoa",\n]\n`;
 
 function manifest() {
   return {
@@ -91,19 +91,20 @@ function assets() {
 }
 
 describe("buildPostEngineReleaseFollowup", () => {
-  test("records published engine sizes and leads the CLI and registry by one minor", () => {
+  test("records published engine sizes and leads package.json, server.json and the Engine crate by one minor", () => {
     const result = buildPostEngineReleaseFollowup({
       tag: "v1.24.11",
-      cliReleasePublished: true,
       release: { isDraft: false, isPrerelease: false, assets: assets() },
       manifest: manifest(),
       targetSource,
       sha256Sums,
       packageSource,
       serverSource,
+      cargoSource,
+      lockSource,
     });
 
-    expect(result.nextCliVersion).toBe("1.30.0");
+    expect(result.nextVersion).toBe("1.25.0");
     expect(result.targetSource).toContain("sizeBytes: 64_000_001");
     expect(result.targetSource).toContain("sizeBytes: 65_000_002");
     expect(result.targetSource).toContain("sizeBytes: 66_000_003");
@@ -113,14 +114,14 @@ describe("buildPostEngineReleaseFollowup", () => {
     }
     expect(result.targetSource).not.toContain("0000000000000000000000000000000000000000000000000000000000000000");
     expect(result.targetSource).toContain('export const PINNED_ASSET_SHA256_VERSION = "1.24.11";');
-    expect(JSON.parse(result.packageSource)).toMatchObject({
-      version: "1.30.0",
-      keshaEngine: { version: "1.24.11" },
-    });
+    expect(JSON.parse(result.packageSource)).toEqual({ name: "kesha", version: "1.25.0" });
     expect(JSON.parse(result.serverSource)).toMatchObject({
-      version: "1.30.0",
-      packages: [{ version: "1.30.0" }],
+      version: "1.25.0",
+      packages: [{ version: "1.25.0" }],
     });
+    expect(result.cargoSource).toBe(cargoSource.replace('version = "1.24.11"', 'version = "1.25.0"'));
+    // Only the Engine's own lock entry moves; a dependency that happens to share the version stays.
+    expect(result.lockSource).toBe(lockSource.replace('"kesha-engine"\nversion = "1.24.11"', '"kesha-engine"\nversion = "1.25.0"'));
   });
 
   test("refuses an incomplete release instead of guessing an asset size", () => {
@@ -129,13 +130,14 @@ describe("buildPostEngineReleaseFollowup", () => {
     expect(() =>
       buildPostEngineReleaseFollowup({
         tag: "v1.24.11",
-        cliReleasePublished: true,
-        release: { isDraft: false, isPrerelease: false, assets: publishedAssets },
+          release: { isDraft: false, isPrerelease: false, assets: publishedAssets },
         manifest: manifest(),
         targetSource,
         sha256Sums,
         packageSource,
         serverSource,
+        cargoSource,
+        lockSource,
       }),
     ).toThrow(/missing signed asset/i);
   });
@@ -144,28 +146,30 @@ describe("buildPostEngineReleaseFollowup", () => {
     expect(() =>
       buildPostEngineReleaseFollowup({
         tag: "v1.24.11",
-        cliReleasePublished: true,
-        release: { isDraft: false, isPrerelease: false, assets: assets() },
+          release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
         targetSource,
         sha256Sums: sha256Sums.split("\n").filter((line) => !line.endsWith("say-avspeech-darwin-arm64")).join("\n"),
         packageSource,
         serverSource,
+        cargoSource,
+        lockSource,
       }),
     ).toThrow(/SHA256SUMS does not list say-avspeech-darwin-arm64/);
   });
 
-  test("refuses a source pin that does not identify the published tag", () => {
+  test("refuses a package.json whose version is not the published tag", () => {
     expect(() =>
       buildPostEngineReleaseFollowup({
         tag: "v1.24.11",
-        cliReleasePublished: true,
-        release: { isDraft: false, isPrerelease: false, assets: assets() },
+          release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
         targetSource,
         sha256Sums,
         packageSource: packageSource.replace("1.24.11", "1.24.12"),
         serverSource,
+        cargoSource,
+        lockSource,
       }),
     ).toThrow(/does not match published tag/i);
   });
@@ -174,99 +178,30 @@ describe("buildPostEngineReleaseFollowup", () => {
     expect(() =>
       buildPostEngineReleaseFollowup({
         tag: "v1.24.11",
-        cliReleasePublished: true,
-        release: { isDraft: false, isPrerelease: false, assets: assets() },
+          release: { isDraft: false, isPrerelease: false, assets: assets() },
         manifest: manifest(),
         targetSource,
         sha256Sums,
         packageSource,
-        serverSource: serverSource.replaceAll("1.29.0", "1.28.0"),
+        serverSource: serverSource.replaceAll("1.24.11", "1.24.10"),
+        cargoSource,
+        lockSource,
       }),
     ).toThrow(/does not match package\.json#version/i);
   });
-
-  test("waits until the current CLI marker release has published before leading its base", () => {
-    expect(() =>
-      buildPostEngineReleaseFollowup({
-        tag: "v1.24.11",
-        cliReleasePublished: false,
-        release: { isDraft: false, isPrerelease: false, assets: assets() },
-        manifest: manifest(),
-        targetSource,
-        sha256Sums,
-        packageSource,
-        serverSource,
-      }),
-    ).toThrow(/CLI marker release.*not published/i);
-  });
 });
 
-describe("releaseIsPublished", () => {
-  function fakeFetch(response: Response): typeof fetch {
-    return (async (input: RequestInfo | URL) => {
-      expect(String(input)).toBe("https://api.github.com/repos/drakulavich/kesha-voice-kit/releases/tags/v1.29.0-cli");
-      return response;
-    }) as typeof fetch;
-  }
+describe("the post-release job", () => {
+  const RELEASE = ".github/workflows/release.yml";
+  // A release created with GITHUB_TOKEN fires no `release: published`, so the follow-up is a job, not a listener.
+  test("runs only after a published stable release and never updates main directly", () => {
+    const job = parseRepoYaml(RELEASE).jobs["post-release"];
 
-  test("a 404 for the tag means not published", async () => {
-    const fetchImpl = fakeFetch(new Response(null, { status: 404 }));
-    expect(await releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).toBe(false);
-  });
-
-  test("a draft release is not published even with a published_at timestamp", async () => {
-    const body = JSON.stringify({ draft: true, prerelease: false, published_at: "2026-01-01T00:00:00Z" });
-    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
-    expect(await releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).toBe(false);
-  });
-
-  test("a null published_at means not published", async () => {
-    const body = JSON.stringify({ draft: false, prerelease: false, published_at: null });
-    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
-    expect(await releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).toBe(false);
-  });
-
-  test("a non-draft, non-prerelease release with a published_at timestamp is published", async () => {
-    const body = JSON.stringify({ draft: false, prerelease: false, published_at: "2026-01-01T00:00:00Z" });
-    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
-    expect(await releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).toBe(true);
-  });
-
-  test("a prerelease is not published even with a published_at timestamp", async () => {
-    const body = JSON.stringify({ draft: false, prerelease: true, published_at: "2026-01-01T00:00:00Z" });
-    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
-    expect(await releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).toBe(false);
-  });
-
-  test("a non-404 error status throws instead of silently reading as not published", async () => {
-    const fetchImpl = fakeFetch(new Response(null, { status: 500 }));
-    await expect(releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).rejects.toThrow(/GitHub API request failed \(500\)/);
-  });
-
-  test("a non-boolean draft field is refused instead of read as not-a-draft", async () => {
-    const body = JSON.stringify({ draft: "true", prerelease: false, published_at: "2026-01-01T00:00:00Z" });
-    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
-    await expect(releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).rejects.toThrow(/CLI marker release draft must be a boolean/);
-  });
-
-  test("a non-boolean prerelease field is refused instead of read as not-a-prerelease", async () => {
-    const body = JSON.stringify({ draft: false, prerelease: "false", published_at: "2026-01-01T00:00:00Z" });
-    const fetchImpl = fakeFetch(new Response(body, { status: 200 }));
-    await expect(releaseIsPublished("token", "v1.29.0-cli", fetchImpl)).rejects.toThrow(
-      /CLI marker release prerelease must be a boolean/,
-    );
-  });
-});
-
-describe("post-engine-release workflow", () => {
-  test("runs only after publication or an explicit maintainer replay and never updates main directly", () => {
-    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
-    const job = workflow.jobs.follow_up;
-
-    expect(workflow.on.release.types).toEqual(["published"]);
-    expect(workflow.on.workflow_dispatch.inputs.tag.required).toBe(true);
+    expect(job.needs).toContain("github-release");
+    expect(job.if).toContain("needs.github-release.result == 'success'");
+    expect(job.if).toContain("needs.classify.outputs.channel == 'stable'");
     expect(job.permissions).toMatchObject({ contents: "write", "pull-requests": "write" });
-    expect(job.concurrency.group).toContain("post-engine-release");
+    expect(job.concurrency.group).toBe("post-release");
     expect(job.steps.some((step: { run?: string }) => runText(step).includes("--state all"))).toBe(true);
     expect(job.steps.some((step: { run?: string }) => runText(step).includes("post-engine-release.ts"))).toBe(true);
     expect(job.steps.some((step: { run?: string }) => runText(step).includes("git switch -c"))).toBe(true);
@@ -278,10 +213,10 @@ describe("post-engine-release workflow", () => {
   // so those took `tee`'s and `cut`'s exit status: a failed check was recorded as output and a
   // failed ls-remote read as "no follow-up branch exists". Only `shell: bash` turns pipefail on (#1083).
   test("validation steps fail when a command inside them fails, not when the last one does", () => {
-    const workflow = parseRepoYaml(".github/workflows/post-engine-release.yml");
+    const workflow = parseRepoYaml(RELEASE);
     expect(workflow.defaults.run.shell).toBe("bash");
 
-    const steps = workflow.jobs.follow_up.steps as { shell?: string; run?: string }[];
+    const steps = workflow.jobs["post-release"].steps as { shell?: string; run?: string }[];
     expect(steps.filter((step) => step.run !== undefined).length).toBeGreaterThan(0);
     for (const step of steps) expect(step.shell ?? "bash").toBe("bash");
     // A step that hands off to a script leaves pipefail to that script, which bash runs without the step's flags.
@@ -290,7 +225,7 @@ describe("post-engine-release workflow", () => {
     }
   });
 
-  test("only a stable engine tag is owned by the follow-up", () => {
+  test("only a stable tag is owned by the follow-up", () => {
     for (const tag of ["v1.24.11", "v1.29.0", "v10.0.100", "v0.0.0"]) expect(ownsTag(tag)).toBe(true);
     for (const tag of ["v1.29.0-cli", "v1.24.11-alpha.1", "v1.24.11-beta.1", "1.24.11", "v1.24", "v01.2.3", "v1.2.3 "]) {
       expect(ownsTag(tag)).toBe(false);
@@ -323,9 +258,9 @@ describe("post-engine-release workflow", () => {
   });
 
   test("the workflow delegates both guards instead of restating them", () => {
-    const job = parseRepoYaml(".github/workflows/post-engine-release.yml").jobs.follow_up;
+    const job = parseRepoYaml(RELEASE).jobs["post-release"];
     // Per-tag serialization let two tags read main's baseline at once, so the group carries no tag.
-    expect(job.concurrency.group).toBe("post-engine-release");
+    expect(job.concurrency.group).toBe("post-release");
     expect(job.concurrency["cancel-in-progress"]).toBe(false);
     const guard = job.steps.find((step: { id?: string }) => step.id === "shape").run;
     expect(guard).toContain("post-release-guard.ts");

@@ -1820,7 +1820,7 @@ describe("release.yml carries the Engine release guards", () => {
       .filter(([, job]) => Object.values(job.permissions ?? {}).includes("write"))
       .map(([name]) => name)
       .sort();
-    expect(writers).toEqual(["docker", "github-release", "npm-publish", "reserve-tag"]);
+    expect(writers).toEqual(["docker", "github-release", "npm-publish", "post-release", "reserve-tag"]);
   });
 
   test("a release.yml build that uploads before synthesising fails", () => {
@@ -1900,7 +1900,7 @@ describe("requireReleaseJobOrder", () => {
     expect(flags(withJob("npm", { permissions: { "id-token": "write" } }), "`npm` grants")).toBe(true);
   });
 
-  for (const downstream of ["homebrew", "docker"]) {
+  for (const downstream of ["homebrew", "docker", "post-release"]) {
     test(`fails when ${downstream} can run before a successful github-release or off the stable channel`, () => {
       const cond = String(real().jobs[downstream].if);
       expect(flags(withJob(downstream, { needs: ["classify"] }), downstream)).toBe(true);
