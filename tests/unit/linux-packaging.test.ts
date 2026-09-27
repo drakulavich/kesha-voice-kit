@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readRepoFile } from "../helpers/repo";
 
-// release.yml's `packages` job attaches the pair to a stable release; linux-packages.yml builds and
+// release.yml's `packages` job attaches the pair to a stable release; ci.yml's `linux-packages` job builds and
 // smoke-installs it on main, and its path filter means an unrelated PR never exercises it — so the
 // invariants need a home that always runs.
 const PACKAGE_SCRIPT = ".github/scripts/build-linux-packages.mjs";
@@ -23,7 +23,7 @@ describe("linux packaging pipeline", () => {
   });
 
   // One composite so the CI lane and the release lane cannot build the pair differently.
-  test.each([".github/workflows/linux-packages.yml", ".github/workflows/release.yml"])(
+  test.each([".github/workflows/ci.yml", ".github/workflows/release.yml"])(
     "%s builds through the shared composite",
     (workflow) => {
       expect(readRepoFile(workflow)).toContain("./.github/actions/linux-packages");
