@@ -48,14 +48,14 @@ serde_json = "1"
 anyhow = "1"
 
 # Audio decoding
-symphonia = { version = "0.5", features = ["mp3", "ogg", "flac", "aac", "pcm", "wav", "aiff", "isomp4"] }
-symphonia-adapter-libopus = "0.2"
-rubato = "2"
+symphonia = { version = "0.6", features = ["mp3", "ogg", "flac", "aac", "pcm", "wav", "aiff", "isomp4"] }
+symphonia-adapter-libopus = "0.3"
+rubato = "5"
 
 # HTTP downloads
 # <3.4: ureq#1194 re-anchors timeouts, breaking download_request's per-stall budget (#776, #893)
 ureq = ">=3.3, <3.4"
-dirs = "6"
+dirs = "7"
 # Bounded thread pool for concurrent model fetches (#178). Rayon's blocking
 # threads fit ureq's blocking API; we cap the pool at 4 workers ourselves.
 rayon = "1"
@@ -76,7 +76,7 @@ ndarray = { version = "0.17" }
 # `init_kokoro` still takes `lang` → `zh` selects `.mandarin` (tone-aware
 # Mandarin G2P), else `.english` (#492); `--rate` stays model-native (#475).
 fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "81740dd1a343bc10428cd5df071c7cd6fe6a6f6b", optional = true } # FluidAudio Swift 0.15.7 (#709, #1098); contains all of FluidInference/main (ahead 19, behind 0); retire once upstream merges FluidInference/fluidaudio-rs#21 and a with_models_dir change
-audioadapter-buffers = "3.0.0"
+audioadapter-buffers = "5"
 
 # ITN for `--itn` (#710). Called directly: fluidaudio-rs::itn_normalize is a dlsym shim over a libnemo_text_processing nothing links, so it returns its input verbatim.
 text-processing-rs = { git = "https://github.com/FluidInference/text-processing-rs", rev = "8a043f1dae81eb18bab229f07109f72d005ec47d" }
@@ -84,7 +84,7 @@ text-processing-rs = { git = "https://github.com/FluidInference/text-processing-
 # TTS (Kokoro + SSML parser; G2P via ONNX ByT5 at runtime, see #123)
 hound = "3.5"
 thiserror = { version = "2", optional = true }
-sha2 = "0.10"
+sha2 = "0.11"
 ssml-parser = { version = "0.3", optional = true }
 
 # Opus encoding for `kesha say --format ogg-opus` (#223). Encode drives the
@@ -108,7 +108,7 @@ vosk_tts = { path = "vendor/vosk-tts" }
 flacenc = { version = "0.5.1", default-features = false, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-cpal = "0.15"
+cpal = "0.18"
 
 [dev-dependencies]
 tempfile = "3"

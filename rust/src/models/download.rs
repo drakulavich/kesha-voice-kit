@@ -644,9 +644,24 @@ fn compute_sha256(path: &Path) -> Result<String> {
     use sha2::{Digest, Sha256};
     let file = fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mut reader = std::io::BufReader::with_capacity(65_536, file);
-    let mut hasher = Sha256::new();
+    // sha2 0.11 dropped its io::Write impl.
+    struct HashWriter(Sha256);
+    impl io::Write for HashWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.update(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut hasher = HashWriter(Sha256::new());
     io::copy(&mut reader, &mut hasher)?;
-    Ok(format!("{:x}", hasher.finalize()))
+    Ok(lower_hex(&hasher.0.finalize()))
+}
+
+fn lower_hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 pub(super) fn cleanup_legacy(cache: &Path) {
@@ -1540,7 +1555,7 @@ mod retry_tests {
 
     fn model_file(rel_path: &'static str, url: String, body: &[u8]) -> ModelFile {
         use sha2::{Digest, Sha256};
-        let sha = format!("{:x}", Sha256::digest(body));
+        let sha = lower_hex(&Sha256::digest(body));
         ModelFile {
             rel_path,
             url: Box::leak(url.into_boxed_str()),
