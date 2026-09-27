@@ -1180,6 +1180,9 @@ export function requireReleaseJobOrder(path: string, document: unknown): string[
   if (!dependsOn(document, "npm", "github-release") || !String(jobs.npm?.if ?? "").includes("needs.github-release.result == 'success'")) {
     errors.push(`${path}: \`npm\` must \`needs: github-release\` and require its success, or a CLI can resolve an Engine that is not published`);
   }
+  if (!dependsOn(document, "npm", "reserve-tag") || !String(jobs["reserve-tag"]?.if ?? "").includes("needs.plan.outputs.publish == 'true'")) {
+    errors.push(`${path}: \`npm\` must \`needs: reserve-tag\`, which runs only for a planned publish: an alpha version no tag records is reused by the next derivation`);
+  }
   for (const downstream of ["homebrew", "docker"]) {
     const cond = String(jobs[downstream]?.if ?? "");
     if (

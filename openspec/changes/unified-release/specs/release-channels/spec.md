@@ -25,7 +25,7 @@ A published CLI SHALL name the Engine it resolves, and that name SHALL be derive
 
 Every release tag SHALL name one version of both artifacts and one Channel by its shape alone: `vX.Y.Z` is stable, `vX.Y.Z-alpha.N` is alpha, `vX.Y.Z-beta.N` is beta, and no other shape SHALL start any release work. A pipeline SHALL decide what to do with a tag without inspecting the commit it points at.
 
-An alpha tag SHALL be a record rather than a trigger: the alpha jobs write it after they publish, and pushing it SHALL start no run, so a published alpha version can never be published twice.
+An alpha tag SHALL be a record rather than a trigger: the alpha jobs write it when they reserve its version, before publishing — a failed publish then leaves a gap in the sequence rather than a version the next derivation reuses — and pushing it SHALL start no run, so a published alpha version can never be published twice.
 
 #### Scenario: A stable tag publishes both artifacts
 
@@ -41,7 +41,7 @@ An alpha tag SHALL be a record rather than a trigger: the alpha jobs write it af
 
 #### Scenario: A recorded alpha tag starts nothing
 
-- GIVEN the alpha jobs record `v2.2.0-alpha.3` after publishing it
+- GIVEN the alpha jobs record `v2.2.0-alpha.3` while publishing it
 - WHEN that tag reaches the remote
 - THEN no release run starts from it
 - AND the published `2.2.0-alpha.3` is not republished

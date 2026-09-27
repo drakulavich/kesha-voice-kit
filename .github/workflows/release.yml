@@ -23,6 +23,11 @@ on:
       - .github/scripts/engine-pin.ts
       - .github/scripts/npm-pack-verify.ts
       - .github/scripts/set-package-version.mjs
+      - .github/scripts/release-plan.ts
+      - .github/scripts/alpha-publishable.ts
+      - .github/scripts/alpha-requested.sh
+      - .github/scripts/alpha-tag.sh
+      - .github/scripts/changed-paths.sh
       - .github/actions/linux-packages/**
       - src/package-info.ts
       - src/engine-install.ts
@@ -56,7 +61,7 @@ jobs:
       prerelease: ${{ steps.classify.outputs.prerelease }}
       dist_tag: ${{ steps.classify.outputs.dist_tag }}
       build_engine: ${{ steps.classify.outputs.build_engine }}
-      publish: ${{ steps.classify.outputs.publish }}
+      json: ${{ steps.classify.outputs.json }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -71,9 +76,80 @@ jobs:
           REF_NAME: ${{ github.ref_name }}
         run: bun .github/scripts/release-classify.ts >> "$GITHUB_OUTPUT"
 
+  # Every run passes through here; only an alpha consults the tags, the label and the published Engines.
+  plan:
+    name: Plan the publish
+    needs: classify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      engine_version: ${{ steps.plan.outputs.engine_version }}
+      publish: ${{ steps.plan.outputs.publish }}
+      previous: ${{ steps.plan.outputs.previous }}
+    steps:
+      # The alpha sequence is counted from tags; a shallow checkout looks like a repository with none.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - uses: ./.github/actions/setup-bun
+      - name: Changed paths
+        if: needs.classify.outputs.path == 'cli-alpha'
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: .github/scripts/changed-paths.sh
+      - name: Is the change publishable
+        id: packed
+        if: needs.classify.outputs.path == 'cli-alpha'
+        run: bun .github/scripts/alpha-publishable.ts < changed-paths.txt >> "$GITHUB_OUTPUT"
+      # The `alpha` label is the intent, the packed-path check the safety net (#685).
+      - name: Did the merged PR ask for an alpha
+        id: requested
+        if: needs.classify.outputs.path == 'cli-alpha'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          MANUAL: "false"
+          PACKED: ${{ steps.packed.outputs.publish }}
+        run: .github/scripts/alpha-requested.sh >> "$GITHUB_OUTPUT"
+      - name: Plan
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLASSIFICATION: ${{ needs.classify.outputs.json }}
+          PUBLISHABLE: ${{ steps.requested.outputs.publish }}
+        run: bun .github/scripts/release-plan.ts >> "$GITHUB_OUTPUT"
+
+  # Before the npm publish, not after: npm holding a version no tag records lets the next derivation reuse it.
+  reserve-tag:
+    name: Reserve the alpha tag
+    needs: [classify, plan]
+    if: needs.plan.outputs.publish == 'true' && needs.classify.outputs.build_engine == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Tag the built commit
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          SHA: ${{ github.sha }}
+          PREVIOUS: ${{ needs.plan.outputs.previous }}
+        run: .github/scripts/alpha-tag.sh
+
   build:
     name: Build Engine (${{ matrix.binary }})
-    needs: classify
+    needs: [classify, plan]
     if: needs.classify.outputs.build_engine == 'true'
     strategy:
       fail-fast: false
@@ -112,7 +188,7 @@ jobs:
       # `kesha-engine --version` reports CARGO_PKG_VERSION; a prerelease no commit carries is applied here (#685).
       - name: Apply the release version
         env:
-          VERSION: ${{ needs.classify.outputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: node .github/scripts/set-cargo-version.mjs "$VERSION"
 
       - name: Build release binary
@@ -248,7 +324,7 @@ jobs:
   # The manual draft smoke of release-install-smoke.yml, moved ahead of publication onto the artifact.
   roundtrip-smoke:
     name: Smoke (linux-x64 round trip)
-    needs: [classify, build]
+    needs: [plan, build]
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -261,13 +337,13 @@ jobs:
       - name: Round-trip the artifact through an isolated user path
         env:
           ASSET_DIR: ${{ github.workspace }}/engine-artifact
-          ENGINE_VERSION: ${{ needs.classify.outputs.version }}
+          ENGINE_VERSION: ${{ needs.plan.outputs.version }}
         run: .github/scripts/release-install-smoke.sh artifact
 
   # Before the release, not after it: an immutable release refuses any asset once published.
   packages:
     name: Linux packages
-    needs: classify
+    needs: [classify, plan]
     if: needs.classify.outputs.channel == 'stable' && needs.classify.outputs.build_engine == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -275,7 +351,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Apply the release version
         env:
-          VERSION: ${{ needs.classify.outputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: node .github/scripts/set-package-version.mjs "$VERSION"
       - name: Build and verify packages
         uses: ./.github/actions/linux-packages
@@ -291,7 +367,7 @@ jobs:
   # `!cancelled()` lets a beta through its skipped `packages`, so every smoke's success is spelled out.
   github-release:
     name: GitHub release
-    needs: [classify, build, darwin-synthesis-smoke, roundtrip-smoke, packages]
+    needs: [classify, plan, build, darwin-synthesis-smoke, roundtrip-smoke, packages]
     if: >-
       !cancelled()
       && needs.classify.outputs.build_engine == 'true'
@@ -309,7 +385,7 @@ jobs:
           fetch-depth: 0
       - name: Prepare release notes from the tag annotation
         env:
-          TAG_NAME: ${{ needs.classify.outputs.tag }}
+          TAG_NAME: ${{ needs.plan.outputs.tag }}
           RELEASE_WORKFLOW: release.yml
           SIGNING_REF: ${{ github.ref }}
         run: node .github/scripts/engine-release-notes.mjs > release-notes.md
@@ -321,7 +397,7 @@ jobs:
         with:
           path: .
           format: spdx-json
-          output-file: release-assets/kesha-voice-kit-${{ needs.classify.outputs.tag }}.spdx.json
+          output-file: release-assets/kesha-voice-kit-${{ needs.plan.outputs.tag }}.spdx.json
           upload-artifact: false
           upload-release-assets: false
           dependency-snapshot: false
@@ -333,7 +409,7 @@ jobs:
           path: release-assets
       - name: Generate release manifest
         env:
-          TAG_NAME: ${{ needs.classify.outputs.tag }}
+          TAG_NAME: ${{ needs.plan.outputs.tag }}
           WITH_PACKAGES: ${{ needs.packages.result == 'success' }}
         run: |
           packages=(); if [ "$WITH_PACKAGES" = true ]; then packages=(--linux-packages); fi
@@ -351,35 +427,35 @@ jobs:
 
       # A rehearsal stops here: signing writes to the public transparency log.
       - name: Install Cosign
-        if: needs.classify.outputs.publish == 'true'
+        if: needs.plan.outputs.publish == 'true'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Sign release assets
-        if: needs.classify.outputs.publish == 'true'
+        if: needs.plan.outputs.publish == 'true'
         run: bash .github/scripts/sign-release-assets.sh release-assets
 
       # Immediately before publishing: a re-pointed tag must not publish a superseded commit (#1115); a dispatch has no tag yet.
       - name: Verify tag has not been superseded
-        if: needs.classify.outputs.publish == 'true'
+        if: needs.plan.outputs.publish == 'true'
         env:
-          TAG_NAME: ${{ needs.classify.outputs.tag }}
+          TAG_NAME: ${{ needs.plan.outputs.tag }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
           current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"
           if [ -z "$current" ] && [ "$REF_TYPE" != tag ]; then echo "$TAG_NAME does not exist yet; the publish creates it at $GITHUB_SHA."; exit 0; fi
           [ "$current" = "$GITHUB_SHA" ] || { echo "::error::tag $TAG_NAME points at ${current:-nothing}, but this run built $GITHUB_SHA. Refusing to publish."; exit 1; }
       - name: Publish the release
-        if: needs.classify.outputs.publish == 'true'
+        if: needs.plan.outputs.publish == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ needs.classify.outputs.tag }}
+          TAG_NAME: ${{ needs.plan.outputs.tag }}
           PRERELEASE: ${{ needs.classify.outputs.prerelease }}
         run: bash .github/scripts/publish-release.sh release-assets release-notes.md
 
   # Publishes only once npm's single Trusted Publisher names release.yml, switched at the cutover (#732).
   npm:
     name: npm
-    needs: [classify, github-release]
-    if: ${{ !cancelled() && needs.github-release.result == 'success' }}
+    needs: [classify, plan, github-release, reserve-tag]
+    if: ${{ !cancelled() && (needs.github-release.result == 'success' || needs.reserve-tag.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -393,43 +469,52 @@ jobs:
           node-version: "lts/*"
           registry-url: "https://registry.npmjs.org"
           package-manager-cache: false
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - name: Take the checksums of the Engine built in this run
+        if: needs.github-release.result == 'success'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: release-checksums
           path: engine-checksums
+      # A per-merge alpha, or a dispatch naming an Engine prerelease, builds nothing and resolves a published Engine.
+      - name: Fetch the checksums of the published Engine it resolves
+        if: needs.github-release.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ENGINE_VERSION: ${{ needs.plan.outputs.engine_version }}
+        run: gh release download "v$ENGINE_VERSION" --pattern SHA256SUMS --dir engine-checksums
       - name: Apply the release version
         env:
-          VERSION: ${{ needs.classify.outputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
         run: node .github/scripts/set-package-version.mjs "$VERSION"
       - name: Inject the Engine pin
         env:
-          ENGINE_VERSION: ${{ needs.classify.outputs.version }}
+          ENGINE_VERSION: ${{ needs.plan.outputs.engine_version }}
         run: bun .github/scripts/engine-pin.ts inject engine-checksums/SHA256SUMS "$ENGINE_VERSION"
       - name: Pack and verify the tarball
         env:
-          VERSION: ${{ needs.classify.outputs.version }}
-          ENGINE_VERSION: ${{ needs.classify.outputs.version }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          ENGINE_VERSION: ${{ needs.plan.outputs.engine_version }}
         run: bun .github/scripts/npm-pack-verify.ts
       - name: Ensure npm supports Trusted Publishing
-        if: needs.classify.outputs.publish == 'true'
+        if: needs.plan.outputs.publish == 'true'
         run: npm install -g npm@latest && npm --version
       # A re-run after a successful publish no-ops instead of failing.
       - name: Check npm registry for prior publish
         id: registry
-        if: needs.classify.outputs.publish == 'true'
+        if: needs.plan.outputs.publish == 'true'
         run: |
           spec="$(jq -r '.name + "@" + .version' package.json)"
           if npm view "$spec" version >/dev/null 2>&1; then echo "already_published=true" >> "$GITHUB_OUTPUT"; echo "$spec is already on npm."; else echo "already_published=false" >> "$GITHUB_OUTPUT"; fi
       - name: Publish to npm with provenance
-        if: needs.classify.outputs.publish == 'true' && steps.registry.outputs.already_published == 'false'
+        if: needs.plan.outputs.publish == 'true' && steps.registry.outputs.already_published == 'false'
         env:
           NPM_DIST_TAG: ${{ needs.classify.outputs.dist_tag }}
         run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"
 
   homebrew:
     name: Homebrew tap
-    needs: [classify, github-release]
-    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.classify.outputs.publish == 'true' }}
+    needs: [classify, plan, github-release]
+    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.plan.outputs.publish == 'true' }}
     runs-on: macos-latest
     timeout-minutes: 15
     env:
@@ -451,20 +536,20 @@ jobs:
           git -C tap remote set-url origin "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/$TAP_REPO.git"
       - name: Update formula
         env:
-          TAG: ${{ needs.classify.outputs.tag }}
+          TAG: ${{ needs.plan.outputs.tag }}
         run: node .github/scripts/update-homebrew-tap.mjs --tag "$TAG" --tap-dir tap
       - name: Validate updated formula
         run: bash .github/scripts/validate-homebrew-formula.sh
       - name: Commit and push tap update
         env:
-          TAG: ${{ needs.classify.outputs.tag }}
+          TAG: ${{ needs.plan.outputs.tag }}
         run: bash .github/scripts/push-homebrew-tap.sh
 
   # Tag images only; the main-push image lives in ci.yml, and `latest` still comes from main as it did in docker.yml.
   docker:
     name: Docker image
-    needs: [classify, github-release]
-    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.classify.outputs.publish == 'true' }}
+    needs: [classify, plan, github-release]
+    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.plan.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
