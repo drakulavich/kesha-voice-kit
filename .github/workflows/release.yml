@@ -425,3 +425,72 @@ jobs:
         env:
           NPM_DIST_TAG: ${{ needs.classify.outputs.dist_tag }}
         run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"
+
+  homebrew:
+    name: Homebrew tap
+    needs: [classify, github-release]
+    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.classify.outputs.publish == 'true' }}
+    runs-on: macos-latest
+    timeout-minutes: 15
+    env:
+      TAP_REPO: drakulavich/homebrew-tap
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+      - name: Require tap token
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: test -n "$HOMEBREW_TAP_TOKEN" || { echo "::error::HOMEBREW_TAP_TOKEN is required to update $TAP_REPO"; exit 1; }
+      - name: Clone tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          git clone "https://github.com/$TAP_REPO.git" tap
+          git -C tap remote set-url origin "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/$TAP_REPO.git"
+      - name: Update formula
+        env:
+          TAG: ${{ needs.classify.outputs.tag }}
+        run: node .github/scripts/update-homebrew-tap.mjs --tag "$TAG" --tap-dir tap
+      - name: Validate updated formula
+        run: bash .github/scripts/validate-homebrew-formula.sh
+      - name: Commit and push tap update
+        env:
+          TAG: ${{ needs.classify.outputs.tag }}
+        run: bash .github/scripts/push-homebrew-tap.sh
+
+  # Tag images only; the main-push image lives in ci.yml, and `latest` still comes from main as it did in docker.yml.
+  docker:
+    name: Docker image
+    needs: [classify, github-release]
+    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.classify.outputs.publish == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/drakulavich/kesha-voice-kit
+          tags: |
+            type=ref,event=tag
+            type=sha,prefix=sha-
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -13,7 +13,7 @@
 
 - [x] 2.1 Rehearsal skeleton: `classify` (pure, tested) → `build` (three rows, one profile each) → `darwin-synthesis-smoke` + `roundtrip-smoke` on the artifacts → `github-release`, which assembles, checks against the manifest, signs and publishes in one `gh release create`; `requireReleaseRowsNameOneProfile`, the smoke rules and the tag-currency rule cover `release.yml`; `requireReleaseQueue` pins the publish queue
 - [x] 2.2 `packages` before `github-release`, one merged `SHA256SUMS`; `npm` job (rehearsal packs and verifies the injected pin; publishing steps gated on `publish`); dist-tag per channel; `requireReleaseJobOrder` pins the order; pin derivation (pure, tested) and injection. The `cli-alpha` arm of `npm`'s `if:` arrives with 2.4
-- [ ] 2.3 `homebrew` and `docker` jobs with `needs: github-release`, stable only; Docker's main-push image moves into `ci.yml`
+- [x] 2.3 `homebrew` and `docker` jobs with `needs: github-release`, stable only and skipped on a rehearsal; Docker's main-push image moves into `ci.yml` as `docker-image` (a PR builds without pushing when the recipe changes) and `docker.yml` keeps only tag images until the cutover; `requireReleaseJobOrder` covers both
 - [ ] 2.4 Alpha derivation jobs moved in from `release-alpha.yml`, keeping the `alpha` label gate; dispatch inputs (`channel`, `version`, `engine-prerelease`); the `cli-alpha` path skips every Engine-building job and records its tag without triggering a run
 
 ## 3. Cutover and deletions

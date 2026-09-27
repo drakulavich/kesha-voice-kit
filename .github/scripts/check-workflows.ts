@@ -1157,8 +1157,9 @@ const RELEASE_GATES = ["build", "darwin-synthesis-smoke", "roundtrip-smoke"];
 
 /**
  * Fails when release.yml could publish past a red upstream: `github-release` must need every smoke
- * and `packages`, an overriding `if:` must still demand each smoke's success, `npm` must wait for a
- * successful `github-release`, and `packages` must build through the composite CI shares (#728).
+ * and `packages`, an overriding `if:` must still demand each smoke's success, `npm`, `homebrew` and
+ * `docker` must wait for a successful `github-release` (the last two on stable only), and `packages`
+ * must build through the composite CI shares (#728).
  */
 export function requireReleaseJobOrder(path: string, document: unknown): string[] {
   if (engineReleaseWorkflow(path) !== "release.yml") return [];
@@ -1178,6 +1179,17 @@ export function requireReleaseJobOrder(path: string, document: unknown): string[
   }
   if (!dependsOn(document, "npm", "github-release") || !String(jobs.npm?.if ?? "").includes("needs.github-release.result == 'success'")) {
     errors.push(`${path}: \`npm\` must \`needs: github-release\` and require its success, or a CLI can resolve an Engine that is not published`);
+  }
+  for (const downstream of ["homebrew", "docker"]) {
+    const cond = String(jobs[downstream]?.if ?? "");
+    if (
+      !dependsOn(document, downstream, "github-release") ||
+      !cond.includes("needs.github-release.result == 'success'") ||
+      !cond.includes("needs.classify.outputs.channel == 'stable'") ||
+      !cond.includes("outputs.publish == 'true'")
+    ) {
+      errors.push(`${path}: \`${downstream}\` must \`needs: github-release\`, require its success and run on the stable channel only, and never in a rehearsal`);
+    }
   }
   const packaging = jobSteps(document, "packages");
   if (!packaging || !usesAction(packaging, "./.github/actions/linux-packages")) {
