@@ -31,11 +31,13 @@ function spawnStranger(): number {
  * A child that exits only once its parent has become `sleep`, which never reaps: exiting earlier lets
  * the shell reap it first, and the pid is then simply gone (seen on CI as `Received: ""`). Bounded
  * (~30 s) and ends early when its parent is gone, so an interrupted run leaves no orphan behind.
- * Every `$` is escaped: the parent's double quotes would otherwise expand it for the parent.
+ * `$$` is left for the parent's double quotes to expand, so the child holds the parent's own pid;
+ * `$PPID` would re-point at an adopter once the parent exits. Every other `$` is the child's.
+ * Its output goes nowhere, so it never holds the parent's captured stdout open.
  */
 const WAIT_FOR_SLEEPING_PARENT =
-  "i=0; until ps -o comm= -p \\$PPID | grep -q 'sleep$'; do " +
-  "kill -0 \\$PPID 2>/dev/null || exit 0; i=\\$((i + 1)); [ \\$i -lt 600 ] || exit 0; sleep 0.05; done";
+  'sh -c "i=0; until ps -o comm= -p $$ | grep -q \'sleep$\'; do ' +
+  'kill -0 $$ 2>/dev/null || exit 0; i=\\$((i + 1)); [ \\$i -lt 600 ] || exit 0; sleep 0.05; done" >/dev/null 2>&1';
 
 describe("process leak guard", () => {
   posix("reaps a tracked stub the test never killed, and names it", async () => {
@@ -82,7 +84,7 @@ describe("process leak guard", () => {
 
   /** #1160: `kill(pid, 0)` succeeds on an exited child its parent has not reaped yet. */
   posix("counts an exited but unreaped child as gone", async () => {
-    const parent = Bun.spawn(["sh", "-c", `sh -c "${WAIT_FOR_SLEEPING_PARENT}" & echo $!; exec sleep 30`], {
+    const parent = Bun.spawn(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!; exec sleep 30`], {
       stdout: "pipe",
       stderr: "ignore",
     });
@@ -101,7 +103,7 @@ describe("process leak guard", () => {
   }, 20_000);
 
   posix("the zombie fixture's child ends on its own when its parent never becomes sleep", async () => {
-    const parent = Bun.spawnSync(["sh", "-c", `sh -c "${WAIT_FOR_SLEEPING_PARENT}" & echo $!`]);
+    const parent = Bun.spawnSync(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!`]);
     const child = Number(parent.stdout.toString());
 
     expect(await waitForPidExit(child)).toBe(true);
