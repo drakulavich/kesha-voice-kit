@@ -96,7 +96,7 @@ The CLI package SHALL declare Bun >= 1.3.0 as its required runtime, and every wr
 > `packaging/homebrew/Formula/kesha-voice-kit.rb` declares
 > `depends_on "oven-sh/bun/bun"`. The `Dockerfile` pins
 > `oven/bun:1.4.0-slim`. The Linux binary is compiled for `bun-linux-x64`
-> (glibc); `docs/linux-packages.md` states the musl limitation and points at the
+> (glibc); `docs/distribution.md` states the musl limitation and points at the
 > container image.*
 
 ### Requirement: The published package runs no install-time lifecycle script
@@ -205,9 +205,10 @@ The published container image SHALL run the CLI as a non-root user, resolve the 
   first run's download died with its container
 
 > *Technical Note — `Dockerfile`: `KESHA_CACHE_DIR=/cache/kesha`,
-> `USER bun`, `WORKDIR /work`, `ENTRYPOINT ["kesha"]`, `CMD ["--help"]`. Published to GHCR by
-> `.github/workflows/docker.yml` for `linux/amd64` only, on pushes to `main`
-> and on `v*` tags excluding `v*-alpha*`. `compose.yml` mirrors the same mount
+> `USER bun`, `WORKDIR /work`, `ENTRYPOINT ["kesha"]`, `CMD ["--help"]`. Published to GHCR for
+> `linux/amd64` only: by the `docker` job of `.github/workflows/release.yml` on a
+> stable release, and by the `docker-image` job of `.github/workflows/ci.yml` on a
+> push to `main` that changes what the image packs. `compose.yml` mirrors the same mount
 > layout; usage is documented in `docs/docker.md`.*
 
 ### Requirement: The Nix flake is an alternate build path, and never a release gate
@@ -227,7 +228,7 @@ The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `
 - GIVEN the CLI's dependency derivation carries a placeholder output hash that
   no one has populated, so `nix run` / `nix build .#kesha` fail with a hash
   mismatch
-- WHEN a user reads the README or `docs/nix-install.md`
+- WHEN a user reads the README or `docs/distribution.md`
 - THEN no doc presents `nix run` / `nix profile install .#kesha` as a working
   install method — the only documented Nix path is `nix build .#kesha-engine`
 - AND the flake still exposes `.#kesha`, so a maintainer with Nix can populate
@@ -236,7 +237,7 @@ The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `
 
 > *Technical Note — `flake.nix` exposes `packages.kesha` and
 > `packages.kesha-engine`; `kesha-engine` is built with naersk and records
-> `package.json#keshaEngine.version` into `bin/kesha-engine.version`
+> `package.json#version`, the one version the CLI and the Engine share, into `bin/kesha-engine.version`
 > (`flake.nix::kesha-engine`), and the `kesha` wrapper sets `KESHA_ENGINE_BIN`
 > to it (`flake.nix::kesha`). `rustFeatures` in `flake.nix` is `portable,system_tts` on
 > darwin-arm64 and `portable` elsewhere; the comment above it records why the
@@ -244,10 +245,11 @@ The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `
 > `outputHash = lib.fakeHash`, and the comment above it states
 > plainly that `packages.default`, `apps.default`, and any `nix run` /
 > `nix profile install .#kesha` invocation fail until it is populated — so the
-> docs (README "Other install methods", `docs/nix-install.md`) present only
+> docs (README "Other install methods", `docs/distribution.md`) present only
 > `nix build .#kesha-engine` as usable and mark the CLI path as not yet
-> available (#946). CLAUDE.md states the flake is not a CI gate; `nix-build` in
-> `ci.yml` builds `.#kesha-engine` only, on push.*
+> available (#946). CLAUDE.md states the flake is not a CI gate; `nix-build.yml`
+> builds `.#kesha-engine` only, on a pull request that touches the flake and
+> weekly, and stays a standalone workflow outside the required checks.*
 
 ### Requirement: The MCP registry manifest names a published CLI version
 

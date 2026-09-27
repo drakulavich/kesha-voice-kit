@@ -198,8 +198,9 @@ version.
 > *Technical Note — the base version comes from `package.json#version`, which this change
 > makes "the next unreleased version" rather than "the last released one".
 > `.github/scripts/check-versions.ts` is the existing drift gate across
-> `package.json#version`, `package.json#keshaEngine.version`, and `rust/Cargo.toml`; it
-> already parses prerelease identifiers and must keep passing for alpha versions.*
+> `package.json#version`, `server.json` and `rust/Cargo.toml`, and refuses a committed
+> `keshaEngine` or `kesha.engine`; it parses prerelease identifiers and keeps passing
+> for alpha versions.*
 
 ### Requirement: Alpha and stable publish through one path
 

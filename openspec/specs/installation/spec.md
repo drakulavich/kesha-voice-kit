@@ -45,7 +45,8 @@ missing.
 > *Technical Note — sources: `src/engine-install.ts::installEngine`,
 > `src/cli/install.ts::performInstall`. The Engine binary is fetched from
 > `https://github.com/drakulavich/kesha-voice-kit/releases/download/v<version>/<asset>`.
-> The version is pinned in `package.json#keshaEngine.version`. Required models are
+> The version is `package.json#kesha.engine.version`, injected at publish, or
+> `package.json#version` in a source checkout (`src/package-info.ts::resolveEngine`). Required models are
 > installed by delegating `kesha-engine install` to the Rust binary after the binary
 > download completes.*
 
@@ -145,7 +146,7 @@ name used on POSIX platforms.
 > `src/engine-install.ts::fetchEngineBinary` (its only caller — reached from
 > `installEngine` only when the cached-version check fails), `src/paths.ts::defaultEngineBinPath`
 > (`.exe` on win32), `src/install-plan.ts::buildEngineComponent`. Built by
-> `.github/workflows/build-engine.yml` with `--features onnx,tts`; issue #216's MSVC link
+> the `build` job of `.github/workflows/release.yml` from the `portable` profile; issue #216's MSVC link
 > failure was resolved by vendoring the Vosk-TTS runtime under `rust/vendor/vosk-tts/`.*
 
 ### Requirement: Every shipped platform is verified end to end before release
@@ -505,6 +506,10 @@ requested language's voice pack SHALL appear as sized components, their sizes de
 from the pinned manifest, so `--tts <lang>` for a language whose pack is not staged
 states the bytes it will fetch and a staged one counts as cached. The plan also
 includes warm-up steps and ends with the equivalent `kesha install …` command.
+The Engine and Sidecar sizes SHALL come from the Engine pin injected into the published
+package; for a release that pin does not describe (`--engine-version`, or a source
+checkout, which carries no pin) the plan SHALL state their size as unknown and leave them
+out of the totals rather than show another release's size.
 
 #### Scenario: Ira previews a fresh install
 
@@ -515,6 +520,12 @@ includes warm-up steps and ends with the equivalent `kesha install …` command.
 - AND states `Expected Kesha-managed network for this run` in bytes
 - AND ends with `Run: kesha install`
 - AND the process exits 0 with no downloads having occurred
+
+#### Scenario: Plan for an Engine release the CLI does not pin
+
+- WHEN Ira runs `kesha install --plan --engine-version 9.9.9-alpha.1`
+- THEN the Engine component reads `size unknown`
+- AND the totals name it under `Not counted (size unknown)`
 
 #### Scenario: Plan with TTS and VAD
 
@@ -537,6 +548,8 @@ includes warm-up steps and ends with the equivalent `kesha install …` command.
 
 > *Technical Note — sources: `src/install-plan.ts::renderInstallPlan`. The plan is
 > rendered entirely client-side from pinned sizes; no network access is required.
+> Engine and Sidecar sizes: `src/install-plan.ts::releaseAssetSize`, from the pin
+> `.github/scripts/engine-pin.ts::buildEnginePin` injects (openspec unified-release D1).
 > Key totals: cold-cache ASR + lang-id ~2.6 GB; VAD ~2.3 MB; Diarize ~245 MB;
 > TTS English only ~326 MB; TTS English + Russian ~937 MB.*
 

@@ -30,8 +30,9 @@ The CLI and the engine share one version: `package.json#version`, mirrored in
 - **Beta** — a dispatched `X.Y.Z-beta.N` that extends `package.json#version`, or a
   pushed `vX.Y.Z-beta.N` tag on a commit whose `package.json#version` is that beta.
   It publishes the engine prerelease and npm under `beta`.
-- **Alpha** — a merge to `main` that changes what the package ships publishes a CLI
-  `-alpha.N` to npm under `alpha`, against the newest stable engine. A dispatched
+- **Alpha** — a merge to `main` of a PR labelled `alpha` that changes what the
+  package ships publishes a CLI `-alpha.N` to npm under `alpha`, against the newest
+  stable engine; without the label, a merge publishes nothing. A dispatched
   alpha can pin an engine prerelease instead. Alpha tags record what was
   published; pushing one by hand starts nothing.
 
