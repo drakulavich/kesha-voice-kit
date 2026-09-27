@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { parseRepoYaml } from "../helpers/repo";
 import { classifyRelease, type ClassifyInput } from "../../.github/scripts/release-classify";
 import { deriveReleaseAlpha, planRelease } from "../../.github/scripts/release-plan";
 
@@ -73,5 +74,16 @@ describe("planRelease", () => {
   test("a rehearsal plans the classified version and publishes nothing", () => {
     const plan = planRelease({ classification: classify({ eventName: "pull_request", refType: "branch" }), pkgVersion: "1.32.0", tags: [], releases: [] });
     expect(plan).toMatchObject({ version: "1.32.0", engineVersion: "1.32.0", publish: false });
+  });
+});
+
+describe("the alpha tag step", () => {
+  const step = parseRepoYaml(".github/workflows/release.yml").jobs["reserve-tag"].steps.find(
+    (s: { run?: string }) => s.run === ".github/scripts/alpha-tag.sh",
+  );
+
+  // Behaviour lives in tests/integration/alpha-tag.test.ts, which runs the script for real.
+  test("release.yml passes the planned previous tag through env", () => {
+    expect(step.env.PREVIOUS).toBe("${{ needs.plan.outputs.previous }}");
   });
 });

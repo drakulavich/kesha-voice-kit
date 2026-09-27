@@ -1130,7 +1130,7 @@ describe("requireRestoreOnlyCachesHaveAWriter", () => {
 });
 
 describe("requireDepsBeforeBunTest", () => {
-  const TEST = { name: "test", run: "bun test tests/unit/derive-alpha-version.test.ts" };
+  const TEST = { name: "test", run: "bun test tests/unit/release-plan.test.ts" };
   const INSTALL = { name: "install", run: "bun install --frozen-lockfile" };
   const SETUP = { uses: "./.github/actions/setup-bun" };
 
