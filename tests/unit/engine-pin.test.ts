@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { cpSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildEnginePin, newestStableRelease, PINNED_ASSETS, withEnginePin } from "../../.github/scripts/engine-pin";
 import { resolveEngine } from "../../src/package-info";
+import { readRepoFile, REPO_ROOT } from "../helpers/repo";
+import { tempDir } from "../helpers/temp-dir";
 
 const sha = (c: string) => c.repeat(64);
 const SUMS = PINNED_ASSETS.map((name, i) => `${sha("abcde"[i]!)}  ./${name}`).join("\n") + `\n${sha("f")}  ./kesha-voice-kit_2.0.0-1_amd64.deb\n`;
@@ -66,5 +70,25 @@ describe("resolveEngine", () => {
 
   test("a malformed injection is ignored rather than trusted", () => {
     expect(resolveEngine({ version: "2.0.0", kesha: { engine: { version: 2, sha256: "x" } } })).toEqual({ version: "2.0.0" });
+  });
+});
+
+describe("the installer verifies against the injected pin", () => {
+  // A published tarball, not this checkout: src/ beside a package.json carrying kesha.engine.
+  test("a pinned asset of the injected Engine is checked against its injected SHA-256, with no network", () => {
+    const dir = tempDir("kesha-injected-");
+    cpSync(`${REPO_ROOT}/src`, join(dir, "src"), { recursive: true });
+    symlinkSync(`${REPO_ROOT}/node_modules`, join(dir, "node_modules"));
+    const pkg = JSON.parse(readRepoFile("package.json"));
+    const pin = { version: "9.9.9", sha256: { "kesha-engine-linux-x64": sha("c") } };
+    writeFileSync(join(dir, "package.json"), JSON.stringify({ ...pkg, kesha: { engine: pin } }));
+    const probe =
+      'import { releaseChecksums } from "./src/engine-install";' +
+      'globalThis.fetch = () => { throw new Error("network used"); };' +
+      'console.log(JSON.stringify(await releaseChecksums("9.9.9")("kesha-engine-linux-x64")));';
+    const run = Bun.spawnSync(["bun", "-e", probe], { cwd: dir });
+    expect(run.stderr.toString()).toBe("");
+    expect(JSON.parse(run.stdout.toString())).toEqual({ sha256: sha("c"), source: "its pinned SHA-256" });
+    unlinkSync(join(dir, "node_modules"));
   });
 });
