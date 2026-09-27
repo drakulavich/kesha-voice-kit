@@ -426,3 +426,26 @@ describe("release manifest source consistency", () => {
     for (const entry of ["src", "packaging", "package.json", ".github/scripts"]) unlinkSync(join(dir, entry));
   });
 });
+
+describe("release manifest Linux packages", () => {
+  const manifestFor = (...args: string[]) => {
+    const run = Bun.spawnSync(["node", `${REPO_ROOT}/.github/scripts/release-manifest.mjs`, ...args], { cwd: REPO_ROOT });
+    expect(run.exitCode).toBe(0);
+    return JSON.parse(run.stdout.toString()) as { assets: Array<{ name: string; kind: string; checksummed: boolean }> };
+  };
+  const tag = `v${JSON.parse(readRepoFile("package.json")).keshaEngine.version}`;
+
+  test("a stable release with packages names the .deb and .rpm of its own version, checksummed", () => {
+    const version = tag.slice(1);
+    const packages = manifestFor("--tag", tag, "--linux-packages").assets.filter((a) => a.kind === "linux-package");
+    expect(packages.map((a) => a.name).sort()).toEqual([
+      `kesha-voice-kit-${version}-1.x86_64.rpm`,
+      `kesha-voice-kit_${version}-1_amd64.deb`,
+    ]);
+    expect(packages.every((a) => a.checksummed)).toBe(true);
+  });
+
+  test("without the flag the manifest names no package", () => {
+    expect(manifestFor("--tag", tag).assets.some((a) => a.kind === "linux-package")).toBe(false);
+  });
+});
