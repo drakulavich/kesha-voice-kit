@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// PostToolUse(Edit|Write) gate for CLAUDE.md -> Code Style: judges only *added* comment lines, so legacy blocks stay put.
+// PostToolUse(Edit|Write) gate for the comment rule: judges only *added* comment lines, so legacy blocks stay put.
 import { $ } from "bun";
 import { dirname, isAbsolute, resolve } from "node:path";
 
@@ -110,7 +110,7 @@ console.log(
   JSON.stringify({
     decision: "block",
     reason:
-      `CLAUDE.md -> Code Style violated in ${file}.\n` +
+      `Comment rule violated in ${file}.\n` +
       `Comments are ONE line, carrying only what the code cannot: non-obvious why, ` +
       `a gotcha, an issue ref, a spec citation, SAFETY, or a doc contract. ` +
       `Never narrate mechanics or restate the code. More than one line is a bug, not a style ` +

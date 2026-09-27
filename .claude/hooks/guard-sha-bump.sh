@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # PreToolUse hook: refuse silent SHA-256 pin bumps in rust/src/models.rs or rust/src/models/*.rs.
 #
-# Why: CLAUDE.md "MODEL HASHES ARE PINNED". Incident #174 was a regression
-# where verification was disabled silently. This hook blocks edits that
+# Why: incident #174 (ASR and lang-id downloads went unverified). This hook blocks edits that
 # CHANGE an existing sha256 value without a justification comment in the
 # new content (e.g. `// bumped: upstream re-export <hf-commit>`).
 #
@@ -97,7 +96,7 @@ cat >&2 <<EOF
 You changed ${REMOVED_COUNT} pinned SHA(s):
 $(printf "$REMOVED" | sed 's/^/  - /')
 
-Per CLAUDE.md "MODEL HASHES ARE PINNED" + incident #174, every bump must be
+Per incident #174, every bump must be
 deliberate. Add a justification comment on or near the changed line, e.g.:
 
     // bumped: upstream re-export at hf commit a1b2c3d (tokenizer fix)
