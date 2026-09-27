@@ -2,7 +2,7 @@
 
 ### Requirement: The Engine names its release profile
 
-The `describe` document SHALL carry `profile`, whose value is `portable` or `darwin`, and every Engine binary published on a release SHALL have been built from exactly one of those two profiles; a release row that names any other feature set SHALL fail the workflow check before a build starts.
+Every Engine binary published on a release SHALL have been built from exactly one of the two profiles `portable` and `darwin`, and its `describe` document SHALL report that profile as `profile`; a release row that names any other feature set SHALL fail the workflow check before a build starts.
 
 #### Scenario: Maks reads which profile his Engine is
 
@@ -16,4 +16,4 @@ The `describe` document SHALL carry `profile`, whose value is `portable` or `dar
 - WHEN the workflow lint runs in CI
 - THEN it fails naming the row and the two allowed profiles
 
-> *Technical Note — `PROFILE` in `rust/src/platform.rs`; the row assertion joins `.github/scripts/check-workflows.ts` and reads the release workflow's build rows wherever they live — `.github/workflows/build-engine.yml:106-117` today, `release.yml` once `unified-release` lands.*
+> *Technical Note — the bundles are `[features] portable` and `darwin` in `rust/Cargo.toml`; `PROFILE` in `rust/src/platform.rs` feeds `describe.rs::document`. The row assertion is `requireReleaseRowsNameOneProfile` in `.github/scripts/check-workflows.ts`, reading the `build` job's matrix in `.github/workflows/build-engine.yml:99-111` (`release.yml` once `unified-release` lands).*
