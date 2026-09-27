@@ -73,7 +73,7 @@ if (cmp(cli, engine) < 0) {
     `rule 2 violated: package.json#version (${fmt(cli)}) must be >= ` +
       `package.json#keshaEngine.version (${fmt(engine)}). ` +
       `CLI version is allowed to lead engine version for CLI-only patches ` +
-      `(see CLAUDE.md → "CLI AND ENGINE ARE VERSIONED INDEPENDENTLY"), ` +
+      `(the CLI and the engine are versioned independently), ` +
       `but it must never lag behind.`,
   );
   failed = true;
