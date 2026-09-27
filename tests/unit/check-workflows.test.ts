@@ -2066,6 +2066,12 @@ describe("requireReleaseJobOrder", () => {
     });
   }
 
+  test("fails when a non-building publish can reach npm before its alpha tag is reserved", () => {
+    const needs = (real().jobs.npm.needs as string[]).filter((n) => n !== "reserve-tag");
+    expect(requireReleaseJobOrder(RELEASE, withJob("npm", { needs })).some((e) => e.includes("reserve-tag"))).toBe(true);
+    expect(requireReleaseJobOrder(RELEASE, withJob("reserve-tag", { if: "needs.classify.outputs.build_engine == 'false'" })).some((e) => e.includes("reserve-tag"))).toBe(true);
+  });
+
   test("fails when packages stops building through the shared composite", () => {
     expect(requireReleaseJobOrder(RELEASE, withJob("packages", { steps: [] })).some((e) => e.includes("linux-packages"))).toBe(true);
   });

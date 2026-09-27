@@ -124,6 +124,12 @@ describe("formatOutputs", () => {
     expect(text).toContain("path=stable\n");
     expect(text).toContain("build_engine=true\n");
     expect(text).toContain("dist_tag=latest\n");
-    expect(text.split("\n").filter(Boolean)).toHaveLength(8);
+    expect(text.split("\n").filter(Boolean)).toHaveLength(9);
+  });
+
+  test("carries the whole classification as one JSON line, booleans intact, for the plan job", () => {
+    const c = classifyRelease(input({ eventName: "pull_request", refType: "branch" }));
+    const json = formatOutputs(c).split("\n").find((line) => line.startsWith("json="))!;
+    expect(JSON.parse(json.slice(5))).toEqual(c);
   });
 });

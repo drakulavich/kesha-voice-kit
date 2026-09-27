@@ -110,6 +110,7 @@ export function formatOutputs(c: Classification): string {
     `dist_tag=${c.distTag}`,
     `build_engine=${c.buildEngine}`,
     `publish=${c.publish}`,
+    `json=${JSON.stringify(c)}`,
   ]
     .map((line) => `${line}\n`)
     .join("");
