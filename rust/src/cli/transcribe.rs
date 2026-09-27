@@ -31,7 +31,7 @@ pub fn run(
     // the process and emit the JSON through the saved original stdout. See
     // `fluid_stdout::StdoutShield`. `--speakers` always implies `--json`, so the
     // only stdout write on this path is the single JSON blob.
-    #[cfg(all(feature = "system_diarize", target_os = "macos"))]
+    #[cfg(system_diarize)]
     if speakers {
         let shield = crate::fluid_stdout::StdoutShield::new();
         let output = transcribe::transcribe_with_options(&audio_path, &opts)?;

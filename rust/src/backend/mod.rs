@@ -6,7 +6,7 @@ use crate::transcribe::WordTiming;
 
 #[cfg(feature = "coreml")]
 pub mod fluidaudio;
-#[cfg(all(feature = "onnx", not(feature = "coreml")))]
+#[cfg(portable)]
 pub mod onnx;
 
 /// One backend pass over a waveform. `words` is `None` on backends that cannot
@@ -57,7 +57,7 @@ pub fn create_backend(model_dir: &Path) -> Result<Box<dyn TranscribeBackend>> {
         let _ = model_dir;
         Ok(Box::new(fluidaudio::FluidAudioBackend::new()?))
     }
-    #[cfg(all(feature = "onnx", not(feature = "coreml")))]
+    #[cfg(portable)]
     {
         Ok(Box::new(onnx::OnnxBackend::new(model_dir)?))
     }

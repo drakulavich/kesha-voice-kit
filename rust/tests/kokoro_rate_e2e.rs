@@ -30,11 +30,7 @@
 //! (Requires `kesha install --tts` to have staged the ANE Kokoro model + the
 //! `am_michael` voice pack into `~/.cache/fluidaudio/Models/kokoro-82m-coreml/ANE/`.)
 
-#![cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#![cfg(all(system_kokoro, target_arch = "aarch64"))]
 
 mod common;
 

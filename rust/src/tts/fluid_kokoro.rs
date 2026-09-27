@@ -4,11 +4,7 @@
 //! replacing the previous Swift sidecar. Non-Darwin builds stay on the existing
 //! ONNX Kokoro implementation.
 
-#![cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#![cfg(all(system_kokoro, target_arch = "aarch64"))]
 
 use anyhow::{Context, Result};
 

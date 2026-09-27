@@ -25,7 +25,7 @@ pub struct TextLangResult {
     pub confidence: f64,
 }
 
-#[cfg(all(feature = "system_text_lang", target_os = "macos"))]
+#[cfg(system_text_lang)]
 pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
     use std::path::PathBuf;
 
@@ -50,7 +50,7 @@ pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
 /// inject a fake helper binary without touching the production path. Pipes
 /// `text` on stdin (UTF-8, no escaping required — Swift reads bytes verbatim
 /// via `readDataToEndOfFile`), reads JSON from stdout.
-#[cfg(all(feature = "system_text_lang", target_os = "macos"))]
+#[cfg(system_text_lang)]
 pub(crate) fn detect_with_helper(
     text: &str,
     helper: &std::path::Path,
@@ -92,7 +92,7 @@ pub(crate) fn detect_with_helper(
     })
 }
 
-#[cfg(all(not(feature = "system_text_lang"), target_os = "macos"))]
+#[cfg(all(target_os = "macos", not(system_text_lang)))]
 pub fn detect_text_language(text: &str) -> anyhow::Result<TextLangResult> {
     use std::process::Command;
 
@@ -122,7 +122,7 @@ pub fn detect_text_language(_text: &str) -> anyhow::Result<TextLangResult> {
     anyhow::bail!("detect-text-lang is only available on macOS");
 }
 
-#[cfg(all(test, feature = "system_text_lang", target_os = "macos"))]
+#[cfg(all(test, system_text_lang))]
 mod tests {
     use super::*;
     use std::os::unix::fs::PermissionsExt;

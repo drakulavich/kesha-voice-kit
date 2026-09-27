@@ -5,11 +5,7 @@ use std::path::Path;
 pub mod charsiu;
 pub mod en;
 pub mod encode;
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub mod fluid_kokoro;
 pub mod g2p;
 pub mod kokoro;
@@ -30,7 +26,7 @@ pub mod wav;
 pub use encode::OutputFormat;
 pub use say::say;
 
-#[cfg(all(feature = "system_tts", target_os = "macos"))]
+#[cfg(system_tts)]
 pub mod avspeech;
 
 /// Soft limit on input text length. Rejects absurdly long inputs that would
@@ -131,15 +127,11 @@ pub enum EngineChoice<'a> {
         speed: f32,
     },
     /// Kokoro via FluidAudio CoreML sidecar on darwin-arm64.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     FluidKokoro { voice_id: &'a str, speed: f32 },
     /// macOS AVSpeechSynthesizer via the Swift sidecar (#141).
     /// `speed` is the user-facing multiplier (0.5–2.0); mapped onto AVSpeech 0.0–1.0 inside the sidecar (#546).
-    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[cfg(system_tts)]
     AVSpeech { voice_id: &'a str, speed: f32 },
     /// Vosk-TTS Russian: G2P happens inside vosk, not in the caller.
     Vosk {

@@ -7,7 +7,7 @@
 //! 16000 Hz for the Eloquence set) from stdout. Stderr is surfaced in the error
 //! message when synthesis fails.
 
-#![cfg(all(feature = "system_tts", target_os = "macos"))]
+#![cfg(system_tts)]
 
 use std::io::Write;
 use std::path::{Path, PathBuf};

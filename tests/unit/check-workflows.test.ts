@@ -40,6 +40,7 @@ import {
   requirePactVerificationCoversEveryTarget,
   requirePinnedRustToolchain,
   requirePreUploadSynthesisSmoke,
+  requireReleaseRowsNameOneProfile,
   readRustToolchainPin,
   requireTestedScriptsInCodeFilter,
 } from "../../.github/scripts/check-workflows";
@@ -867,6 +868,40 @@ describe("requireBuildScriptInCoremlFilter", () => {
     const path = join(tempDir("kesha-wf-"), "rust-test.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1145"))).toHaveLength(1);
+  });
+});
+
+describe("requireReleaseRowsNameOneProfile", () => {
+  const rows = (...features: unknown[]) => ({
+    jobs: { build: { strategy: { matrix: { include: features.map((f, i) => ({ binary: `bin-${i}`, features: f })) } } } },
+  });
+
+  test("passes on the real build-engine.yml", () => {
+    expect(requireReleaseRowsNameOneProfile(PATH, parseRepoYaml(PATH))).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireReleaseRowsNameOneProfile(CI, rows("onnx"))).toEqual([]);
+  });
+
+  test("passes when every row names one profile", () => {
+    expect(requireReleaseRowsNameOneProfile(PATH, rows("darwin", "portable", "portable"))).toEqual([]);
+  });
+
+  test("fails a row that spells granular features, naming the row and both profiles", () => {
+    const errors = requireReleaseRowsNameOneProfile(PATH, rows("portable", "onnx"));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("bin-1");
+    expect(errors[0]).toContain("`onnx`");
+    expect(errors[0]).toContain("`portable` or `darwin`");
+  });
+
+  test("fails a row that names a profile plus a feature, or no features at all", () => {
+    expect(requireReleaseRowsNameOneProfile(PATH, rows("portable,system_tts", "darwin portable", undefined))).toHaveLength(3);
+  });
+
+  test("fails when the build matrix is gone", () => {
+    expect(requireReleaseRowsNameOneProfile(PATH, { jobs: { build: {} } })[0]).toContain("strategy.matrix.include");
   });
 });
 

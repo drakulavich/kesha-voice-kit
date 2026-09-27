@@ -53,11 +53,7 @@ pub enum ResolvedVoice {
         espeak_lang: &'static str,
     },
     /// Kokoro via FluidAudio CoreML sidecar on darwin-arm64.
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     FluidKokoro {
         voice_id: String,
         espeak_lang: &'static str,
@@ -71,7 +67,7 @@ pub enum ResolvedVoice {
     /// whatever the user passed after the `macos-` prefix — forwarded to the
     /// Swift helper, which tries `AVSpeechSynthesisVoice(identifier:)` first
     /// and falls back to `AVSpeechSynthesisVoice(language:)`.
-    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[cfg(system_tts)]
     AVSpeech { voice_id: String },
 }
 
@@ -79,15 +75,11 @@ impl ResolvedVoice {
     pub fn espeak_lang(&self) -> &'static str {
         match self {
             Self::Kokoro { espeak_lang, .. } => espeak_lang,
-            #[cfg(all(
-                feature = "system_kokoro",
-                target_os = "macos",
-                target_arch = "aarch64"
-            ))]
+            #[cfg(all(system_kokoro, target_arch = "aarch64"))]
             Self::FluidKokoro { espeak_lang, .. } => espeak_lang,
             Self::Vosk { .. } => "",
             // AVSpeech does its own G2P; the espeak language tag is unused.
-            #[cfg(all(feature = "system_tts", target_os = "macos"))]
+            #[cfg(system_tts)]
             Self::AVSpeech { .. } => "",
         }
     }
@@ -95,21 +87,13 @@ impl ResolvedVoice {
 
 /// The prefixes this build's [`resolve_voice`] actually routes, so the unknown-language hint cannot drift from it (T2-2).
 fn supported_prefixes() -> String {
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     let kokoro = "'en-*', 'es-*', 'fr-*', 'hi-*', 'it-*', 'ja-*', 'pt-*', 'zh-*'";
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     let kokoro = "'en-*', 'es-*', 'fr-*', 'it-*', 'pt-*'";
-    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[cfg(system_tts)]
     let system = ", 'macos-*'";
-    #[cfg(not(all(feature = "system_tts", target_os = "macos")))]
+    #[cfg(not(system_tts))]
     let system = "";
     format!("{kokoro}, 'ru-*'{system}")
 }
@@ -124,23 +108,15 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
     };
     match lang {
         "en" => resolve_kokoro(cache_dir, voice_id, name),
-        #[cfg(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        ))]
+        #[cfg(all(system_kokoro, target_arch = "aarch64"))]
         "es" | "fr" | "hi" | "it" | "ja" | "pt" | "zh" => resolve_fluid_kokoro(voice_id),
-        #[cfg(not(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        )))]
+        #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
         "es" | "fr" | "it" | "pt" => resolve_multilang_kokoro(cache_dir, voice_id, lang, name),
         "ru" => {
             let suffix = name.strip_prefix("vosk-").unwrap_or(name);
             resolve_vosk_ru(cache_dir, voice_id, suffix)
         }
-        #[cfg(all(feature = "system_tts", target_os = "macos"))]
+        #[cfg(system_tts)]
         "macos" => {
             if name.is_empty() {
                 coded_bail!(
@@ -152,7 +128,7 @@ pub fn resolve_voice(cache_dir: &Path, voice_id: &str) -> anyhow::Result<Resolve
                 voice_id: name.to_string(),
             })
         }
-        #[cfg(not(all(feature = "system_tts", target_os = "macos")))]
+        #[cfg(not(system_tts))]
         "macos" => coded_bail!(
             ErrorCode::UnsupportedPlatform,
             "'macos-*' voices require a macOS build with --features system_tts (got '{voice_id}')"
@@ -202,11 +178,7 @@ fn build_kokoro_voice(
 
 /// ONNX Kokoro path for es/fr/it/pt voices.
 /// Only compiled on non-`system_kokoro` builds; on darwin-arm64 these route through `resolve_fluid_kokoro`.
-#[cfg(not(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-)))]
+#[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
 fn resolve_multilang_kokoro(
     cache_dir: &Path,
     voice_id: &str,
@@ -235,11 +207,7 @@ fn resolve_multilang_kokoro(
 }
 
 /// Default voice pack name (without `.bin`) for each supported non-English Kokoro language.
-#[cfg(not(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-)))]
+#[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
 fn default_voice_for_lang(lang: &str) -> &'static str {
     match lang {
         "es" => "em_alex",   // male ✓
@@ -251,11 +219,7 @@ fn default_voice_for_lang(lang: &str) -> &'static str {
 }
 
 fn resolve_kokoro(_cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Result<ResolvedVoice> {
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     {
         let _ = name;
         return resolve_fluid_kokoro(voice_id);
@@ -264,11 +228,7 @@ fn resolve_kokoro(_cache_dir: &Path, voice_id: &str, name: &str) -> anyhow::Resu
     build_kokoro_voice(_cache_dir, voice_id, name, "en-us")
 }
 
-#[cfg(all(
-    feature = "system_kokoro",
-    target_os = "macos",
-    target_arch = "aarch64"
-))]
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
 fn resolve_fluid_kokoro(voice_id: &str) -> anyhow::Result<ResolvedVoice> {
     let Some(spec) = crate::tts::fluid_kokoro::resolve_voice(voice_id) else {
         coded_bail!(
@@ -324,11 +284,7 @@ mod tests {
         tmp
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     fn unwrap_kokoro(r: ResolvedVoice) -> (PathBuf, PathBuf, &'static str) {
         match r {
             ResolvedVoice::Kokoro {
@@ -385,11 +341,7 @@ mod tests {
         assert_eq!(s[VOICE_COLS - 1], 8.0);
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     fn populate_cache(cache: &Path) {
         let voices = cache.join("models/kokoro-82m/voices");
         std::fs::create_dir_all(&voices).unwrap();
@@ -397,11 +349,7 @@ mod tests {
         std::fs::write(cache.join("models/kokoro-82m/model.onnx"), b"dummy").unwrap();
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     #[test]
     fn resolve_installed_kokoro_voice() {
         let tmp = tempfile::tempdir().unwrap();
@@ -413,11 +361,7 @@ mod tests {
         assert_eq!(espeak_lang, "en-us");
     }
 
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn resolve_kokoro_voice_uses_fluid_audio_on_darwin() {
         let tmp = tempfile::tempdir().unwrap();
@@ -434,11 +378,7 @@ mod tests {
         }
     }
 
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn resolve_multilingual_kokoro_voice_uses_fluid_audio_on_darwin() {
         let tmp = tempfile::tempdir().unwrap();
@@ -455,11 +395,7 @@ mod tests {
         }
     }
 
-    #[cfg(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    ))]
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
     #[test]
     fn reject_cross_language_fluid_kokoro_alias() {
         let tmp = tempfile::tempdir().unwrap();
@@ -472,7 +408,7 @@ mod tests {
         );
     }
 
-    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[cfg(system_tts)]
     #[test]
     fn resolve_macos_voice_returns_avspeech() {
         let tmp = tempfile::tempdir().unwrap();
@@ -486,7 +422,7 @@ mod tests {
         }
     }
 
-    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[cfg(system_tts)]
     #[test]
     fn resolve_macos_empty_suffix_errors() {
         // `macos-` alone would forward an empty string to the Swift helper,
@@ -496,7 +432,7 @@ mod tests {
         assert!(err.contains("requires a suffix"), "msg: {err}");
     }
 
-    #[cfg(all(feature = "system_tts", target_os = "macos"))]
+    #[cfg(system_tts)]
     #[test]
     fn resolve_macos_short_voice_id_works() {
         let tmp = tempfile::tempdir().unwrap();
@@ -507,7 +443,7 @@ mod tests {
         }
     }
 
-    #[cfg(not(all(feature = "system_tts", target_os = "macos")))]
+    #[cfg(not(system_tts))]
     #[test]
     fn resolve_macos_voice_errors_without_feature() {
         let tmp = tempfile::tempdir().unwrap();
@@ -550,11 +486,7 @@ mod tests {
     #[test]
     fn espeak_lang_reports_the_kokoro_language_tag() {
         let tmp = tempfile::tempdir().unwrap();
-        #[cfg(not(all(
-            feature = "system_kokoro",
-            target_os = "macos",
-            target_arch = "aarch64"
-        )))]
+        #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
         populate_cache(tmp.path());
         let r = resolve_voice(tmp.path(), "en-am_michael").unwrap();
         assert_eq!(r.espeak_lang(), "en-us");
@@ -600,11 +532,7 @@ mod tests {
     // here, but on darwin-arm64 `system_kokoro` they resolve through FluidAudio
     // (which validates the id and defers model loading), so the "install --tts"
     // hint doesn't apply — gate this test off the fluid build.
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     #[test]
     fn resolve_missing_voice_errors_with_hint() {
         let tmp = tempfile::tempdir().unwrap();
@@ -613,11 +541,7 @@ mod tests {
         assert!(err.to_string().contains("install --tts"), "msg: {err}");
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     #[test]
     fn resolve_missing_model_errors() {
         let tmp = tempfile::tempdir().unwrap();
@@ -684,11 +608,7 @@ mod tests {
         );
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     fn populate_multilang_cache(cache: &Path) {
         let voices = cache.join("models/kokoro-82m/voices");
         std::fs::create_dir_all(&voices).unwrap();
@@ -702,11 +622,7 @@ mod tests {
         std::fs::write(cache.join("models/kokoro-82m/model.onnx"), b"dummy").unwrap();
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     #[test]
     fn resolve_multilang_voices_on_onnx_path() {
         let tmp = tempfile::tempdir().unwrap();
@@ -734,11 +650,7 @@ mod tests {
         }
     }
 
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     #[test]
     fn multilang_missing_voice_errors_with_install_hint() {
         let tmp = tempfile::tempdir().unwrap();
@@ -748,11 +660,7 @@ mod tests {
     }
 
     // "es-" splits to lang="es", name="" — triggers default_voice_for_lang; verifies espeak_lang matches.
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     #[test]
     fn multilang_default_voice_for_lang() {
         let cases: &[(&str, &str, &str)] = &[
@@ -778,11 +686,7 @@ mod tests {
 
     // Test the "voice file present but model.onnx missing" branch in resolve_multilang_kokoro.
     // This exercises lines 198-203 (model_path check), which the "no files at all" test skips.
-    #[cfg(not(all(
-        feature = "system_kokoro",
-        target_os = "macos",
-        target_arch = "aarch64"
-    )))]
+    #[cfg(not(all(system_kokoro, target_arch = "aarch64")))]
     #[test]
     fn multilang_missing_model_errors_with_install_hint() {
         let tmp = tempfile::tempdir().unwrap();

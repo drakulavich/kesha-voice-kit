@@ -17,6 +17,6 @@
 ## 4. `nightly.yml`, lint, docs
 
 - [ ] 4.1 `nightly.yml` with the six canary jobs
-- [ ] 4.2 `actionlint` in `ci.yml`; cut `check-workflows.ts` to the four policy rules (pins, timeouts, Windows bash, pipefail) plus the four repository-specific rules
+- [ ] 4.2 `actionlint` in `ci.yml`; cut `check-workflows.ts` to the four policy rules (pins, timeouts, Windows bash, pipefail) plus the four repository-specific rules; `requireReleaseRowsNameOneProfile` keys on `build-engine.yml`, so repoint it at the engine build rows in `release.yml` in the same commit that moves them
 - [ ] 4.3 `docs/distribution.md` from the four distribution docs; one `release` skill; CLAUDE.md Releases section to one paragraph
 - [ ] 4.4 Tag `v2.0.0`

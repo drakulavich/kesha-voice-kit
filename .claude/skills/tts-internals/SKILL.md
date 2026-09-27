@@ -11,7 +11,7 @@ Text-to-speech via three engines selected by voice id prefix:
 
 - `en-*` → **Kokoro-82M**. Separate model + per-voice style embedding. Output 24 kHz.
 - `ru-*` → **Vosk-TTS** (`alphacep/vosk-tts`). Multi-speaker model, 5 baked-in speakers. Output 22.05 kHz.
-- `macos-*` → **AVSpeechSynthesizer** Swift sidecar (#141). Zero model download, notification-grade quality, darwin-arm64 release feature set `coreml,tts,system_tts`; `kesha install` places `say-avspeech-darwin-arm64` next to the engine and runtime lookup is sibling-first (`rust/src/tts/avspeech.rs::helper_path`).
+- `macos-*` → **AVSpeechSynthesizer** Swift sidecar (#141). Zero model download, notification-grade quality, shipped in the darwin-arm64 `darwin` profile; `kesha install` places `say-avspeech-darwin-arm64` next to the engine and runtime lookup is sibling-first (`rust/src/tts/avspeech.rs::helper_path`).
 
 Install Kokoro + Vosk-TTS explicitly with `kesha install --tts` (~990 MB). `macos-*` voices use installed macOS voices and need no model install.
 
