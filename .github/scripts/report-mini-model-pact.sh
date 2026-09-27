@@ -10,7 +10,7 @@ set -euo pipefail
   echo "- **The signature drifted.** The log shows a \`left\`/\`right\` mismatch of"
   echo "  tensor names, dtypes or ranks. Every mini-backed lane is now asserting"
   echo "  against a shape the real model no longer has. Re-record per the header of"
-  echo "  \`.github/workflows/mini-model-pact.yml\` — and regenerate the mini too,"
+  echo "  \`.github/workflows/nightly.yml (mini-model-pact job)\` — and regenerate the mini too,"
   echo "  or the recording will match the real model but not the stand-in."
   echo "- **The committed mini is not what the generator produces.** The log shows"
   echo "  a \`git diff\` against tests/fixtures/mini-models/kokoro. Someone edited the"
