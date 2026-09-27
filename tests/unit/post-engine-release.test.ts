@@ -199,6 +199,9 @@ describe("the post-release job", () => {
 
     expect(job.needs).toContain("github-release");
     expect(job.if).toContain("needs.github-release.result == 'success'");
+    // The old follow-up refused until the CLI of the released version was out; a lead PR must not outrun npm.
+    expect(job.needs).toContain("npm-smoke");
+    expect(job.if).toContain("needs.npm-smoke.result == 'success'");
     expect(job.if).toContain("needs.classify.outputs.channel == 'stable'");
     expect(job.permissions).toMatchObject({ contents: "write", "pull-requests": "write" });
     expect(job.concurrency.group).toBe("post-release");
@@ -212,6 +215,13 @@ describe("the post-release job", () => {
   // `git ls-remote | cut`. GitHub's *unspecified* default shell is `bash -e {0}` with no pipefail,
   // so those took `tee`'s and `cut`'s exit status: a failed check was recorded as output and a
   // failed ls-remote read as "no follow-up branch exists". Only `shell: bash` turns pipefail on (#1083).
+  // Unauthenticated, check:engine-targets reads a rate-limited release API as "skip" and passes.
+  test("the validation step is authenticated", () => {
+    const steps = parseRepoYaml(RELEASE).jobs["post-release"].steps as { run?: string; env?: Record<string, string> }[];
+    const validate = steps.find((step) => step.run?.includes("record-post-release-validation.sh"));
+    expect(validate?.env?.GITHUB_TOKEN).toBe("${{ github.token }}");
+  });
+
   test("validation steps fail when a command inside them fails, not when the last one does", () => {
     const workflow = parseRepoYaml(RELEASE);
     expect(workflow.defaults.run.shell).toBe("bash");

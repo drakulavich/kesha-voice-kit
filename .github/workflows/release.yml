@@ -625,11 +625,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # A release created with GITHUB_TOKEN fires no `release: published`, so the follow-up that leads main to the next version is a job here.
+  # A release created with GITHUB_TOKEN fires no `release: published`, so the follow-up that leads main to the next version is a job here, after npm serves the released CLI.
   post-release:
     name: Lead main to the next version
-    needs: [classify, plan, github-release]
-    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.plan.outputs.publish == 'true' }}
+    needs: [classify, plan, github-release, npm-smoke]
+    if: ${{ !cancelled() && needs.github-release.result == 'success' && needs.npm-smoke.result == 'success' && needs.classify.outputs.channel == 'stable' && needs.plan.outputs.publish == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -669,6 +669,8 @@ jobs:
         run: bun .github/scripts/post-engine-release.ts --tag "$TAG_NAME"
       - name: Validate and record output
         if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: bash .github/scripts/record-post-release-validation.sh
       - name: Commit and push the follow-up branch
         if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
