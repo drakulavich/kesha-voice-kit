@@ -18,7 +18,7 @@ Run inside a throwaway venv, per .claude/rules/python.md:
         tests/fixtures/mini-models/kokoro
     rm -rf /tmp/mini-venv
 
-Output is byte-reproducible at a fixed onnx version, which mini-model-pact.yml
+Output is byte-reproducible at a fixed onnx version, which nightly.yml's `mini-model-pact` job
 re-checks weekly — hence the pin above. Bumping it re-writes the artifacts.
 """
 

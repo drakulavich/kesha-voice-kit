@@ -11,7 +11,7 @@ set -euo pipefail
   echo "  sha256 mismatch, or an engine-version mismatch. Every per-PR assertion"
   echo "  derived from \`tests/fixtures/capabilities/$TARGET.json\` is now gating"
   echo "  against a binary nobody has. Re-record per the header of"
-  echo "  \`.github/workflows/capability-pact.yml\`."
+  echo "  \`.github/workflows/nightly.yml (capability-pact job)\`."
   echo "- **Verification could not run.** The log ends at the \`gh release download\`"
   echo "  or \`describe\` step. The pact is not implicated; the run proved"
   echo "  nothing either way. Common causes: a network or API failure, or a"

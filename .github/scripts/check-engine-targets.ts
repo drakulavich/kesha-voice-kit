@@ -17,19 +17,24 @@ type ApiRelease = { tag_name: string; draft: boolean; prerelease: boolean; asset
 const headers: Record<string, string> = { accept: "application/vnd.github+json" };
 if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 
-let releases: ApiRelease[];
+// Every page: alpha Prereleases can push the newest stable release past the first hundred.
+const releases: ApiRelease[] = [];
 try {
-  const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100`, { headers });
-  if (!res.ok) {
-    // A token means CI, where the API is reachable — skipping there would hide real drift.
-    if (process.env.GITHUB_TOKEN) {
-      console.error(`FAIL: release API returned HTTP ${res.status}`);
-      process.exit(1);
+  for (let page = 1; ; page++) {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100&page=${page}`, { headers });
+    if (!res.ok) {
+      // A token means CI, where the API is reachable — skipping there would hide real drift.
+      if (process.env.GITHUB_TOKEN) {
+        console.error(`FAIL: release API returned HTTP ${res.status}`);
+        process.exit(1);
+      }
+      console.log(`skip: release API returned HTTP ${res.status}`);
+      process.exit(0);
     }
-    console.log(`skip: release API returned HTTP ${res.status}`);
-    process.exit(0);
+    const batch: ApiRelease[] = await res.json();
+    releases.push(...batch);
+    if (batch.length < 100) break;
   }
-  releases = await res.json();
 } catch (e) {
   console.log(`skip: could not reach the release API (${e instanceof Error ? e.message : e})`);
   process.exit(0);

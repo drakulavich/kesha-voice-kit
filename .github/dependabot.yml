@@ -25,7 +25,7 @@ updates:
   # Dependabot runner image ships a libcurl that mishandles the sparse
   # HTTP framing, and no cargo PR has ever merged successfully since we
   # added the ecosystem in PR #160.
-  # Replacement signal: `.github/workflows/cargo-dependency-maintenance.yml`
+  # Replacement signal: `.github/workflows/nightly.yml` (`cargo-dependency-maintenance` job)
   # opens a monthly checklist issue for the manual `cargo update` pass.
   # Revisit Dependabot once it ships a fix upstream.
 
