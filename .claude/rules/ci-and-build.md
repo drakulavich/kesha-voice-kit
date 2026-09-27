@@ -7,26 +7,13 @@ paths:
 
 # CI workflows and the engine build
 
-## COREML BUILD TRIPLE
+## COREML BUILD
 
-The `coreml` feature links the macOS Swift runtime via `fluidaudio-rs`. All three must hold:
-
-1. `macos-14` runner + `maxim-lobanov/setup-xcode@v1` pinned to `16.2`
-2. `MACOSX_DEPLOYMENT_TARGET=14.0`, so the linker elides `@rpath/libswift_Concurrency.dylib`
-3. `rust/build.rs` emits `-Wl,-rpath,/usr/lib/swift` under `cfg(any(coreml, system_kokoro, system_diarize))` — narrowing that to `coreml` alone breaks local `system_kokoro`/`system_diarize` builds
+The `coreml` feature links the macOS Swift runtime via `fluidaudio-rs`. The runner, Xcode and deployment-target requirements sit on the `darwin` profile in `rust/Cargo.toml`. `rust/build.rs` emits `-Wl,-rpath,/usr/lib/swift` under `cfg(any(coreml, system_kokoro, system_diarize))` — narrowing that to `coreml` alone breaks local `system_kokoro`/`system_diarize` builds.
 
 `build-engine.yml` smoke-tests every binary with `describe` before upload. **Never remove that step.**
 
-## BUILD-ENGINE FEATURE MATRIX MIRRORS CARGO DEFAULTS
-
-`build-engine.yml` passes `--features <matrix> --no-default-features` per platform. Adding a feature to cargo's default set **also requires adding it to every matrix row**, or released binaries silently ship without it (v1.1.0 shipped without `tts`). Check before a release:
-
-```bash
-grep -E '^\s+features:' .github/workflows/build-engine.yml   # every matrix row
-grep '^default =' rust/Cargo.toml                            # cargo's default set
-```
-
-Every **additive** default (today `tts`) must appear in every row. The ASR backends are mutually exclusive on purpose: `onnx` is a default yet must never appear on the CoreML row, and vice versa.
+Every `build-engine.yml` release row names exactly one Cargo profile, `portable` or `darwin`, and `check-workflows.ts` fails any other value; a feature every release needs goes into both profiles in `rust/Cargo.toml`, never into a row.
 
 ## WORKFLOW `run:` SHELL INJECTION — USE ENV PASSTHROUGH
 

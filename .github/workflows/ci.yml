@@ -704,7 +704,7 @@ jobs:
 
       - name: 🦀 Build local engine
         shell: bash
-        run: cd rust && cargo build --release --features onnx,tts --no-default-features
+        run: cd rust && cargo build --release --features portable --no-default-features
 
       - name: 🧾 Mark local engine version
         shell: bash

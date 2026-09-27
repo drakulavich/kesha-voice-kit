@@ -47,8 +47,8 @@
         # Rust features per platform
         # Note: --no-default-features disables download-binaries from ort/ort-sys
         #
-        # darwin-arm64 deliberately uses `onnx` rather than `coreml`. The
-        # `coreml` feature pulls in `fluidaudio-rs`, whose build script
+        # darwin-arm64 deliberately uses the `portable` profile rather than
+        # `darwin`: its `coreml` feature pulls in `fluidaudio-rs`, whose build script
         # invokes `swift build` against a Package.swift that depends on
         # `github.com/FluidInference/FluidAudio.git`. Nix derivations run in
         # a sandboxed, offline environment, so the SwiftPM clone fails. The
@@ -57,8 +57,8 @@
         # ONNX path + Swift toolchain + Apple SDK frameworks + the
         # `say-avspeech` sidecar postInstall on darwin.
         rustFeatures = if isDarwin && isAarch64
-          then "onnx,tts,system_tts"
-          else "onnx,tts";
+          then "portable,system_tts"
+          else "portable";
 
         # Build-time dependencies (tools needed to compile).
         # `swift` drives `rust/build.rs` for the `system_tts` feature on
