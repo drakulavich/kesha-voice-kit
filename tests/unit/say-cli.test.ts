@@ -285,7 +285,7 @@ function missingEngine(): string {
   return binPath;
 }
 
-// getDescribe()/validateArgv() throw a bare KeshaError, not SayError — must not flatten to E_INTERNAL/exit 4.
+// getDescribe()/validateArgv() throw a KeshaError with no exit code; it must not flatten to E_INTERNAL/exit 4.
 describe("kesha say relays a bare KeshaError from the describe/validateArgv preflight", () => {
   skipOnWin32("an ungated flag reports E_INVALID_ARG and exits 2, never spawning `say`", async () => {
     engineAdvertising(["tts"]);

@@ -7,7 +7,6 @@ import {
   engineCrashMessage,
   MAX_TEXT_CHARS,
   say,
-  SayError,
   validateSayText,
   type SayOptions,
 } from "../../src/synth";
@@ -170,15 +169,14 @@ describe("say on protocol 4", () => {
     return path;
   }
 
-  posixIt("carries the engine's error code and hint on a SayError", async () => {
+  posixIt("carries the engine's error code and hint on a KeshaError", async () => {
     const engine = sayEngine(
       `  printf '%s\\n' '{"kind":"error","code":"E_VOICE_UNKNOWN","message":"no such voice: xx","hint":"kesha say --list-voices"}' >&2\n  exit 1`,
     );
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as SayError);
-      expect(err).toBeInstanceOf(SayError);
+      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as KeshaError);
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_VOICE_UNKNOWN");
       expect(err!.hint).toBe("kesha say --list-voices");
@@ -197,8 +195,8 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
-      expect(err).toBeInstanceOf(SayError);
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as KeshaError);
+      expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_INTERNAL");
       expect(err!.exitCode).toBe(4);
       expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
@@ -213,7 +211,7 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as KeshaError);
       expect(err!.code).toBe("E_INTERNAL");
       const rendered = errorMessage(err);
       expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "thread 'main' panicked/);
@@ -229,7 +227,7 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as SayError);
+      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as KeshaError);
       expect(err!.code).toBe("E_INTERNAL");
       expect(err!.exitCode).toBe(134);
       const rendered = errorMessage(err);
@@ -248,8 +246,8 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as SayError);
-      expect(err).toBeInstanceOf(SayError);
+      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as KeshaError);
+      expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_VOICE_UNKNOWN");
       expect(err!.exitCode).toBe(4);
       expect(err!.stderr).toContain("error [E_VOICE_UNKNOWN]: no such voice: xx");
@@ -343,10 +341,10 @@ describe("say input preflight", () => {
       await say({ text: "" });
       throw new Error("expected say() to reject");
     } catch (err) {
-      expect(err).toBeInstanceOf(SayError);
-      expect((err as SayError).exitCode).toBe(2);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).exitCode).toBe(2);
       expect((err as Error).message).toBe("text is empty");
-      expect((err as SayError).origin).toBe("cli");
+      expect((err as KeshaError).origin).toBe("cli");
     }
   });
 });
@@ -357,7 +355,7 @@ describe("validateSayText", () => {
     try {
       validateSayText(text);
     } catch (err) {
-      const e = err as SayError;
+      const e = err as KeshaError;
       return { code: e.code, exitCode: e.exitCode, message: e.message };
     }
     throw new Error(`expected validateSayText(${JSON.stringify(text)}) to throw`);

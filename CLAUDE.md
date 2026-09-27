@@ -143,7 +143,7 @@ A Nix flake is an alternate reproducible build path (`nix run .#kesha`, `nix bui
 
 - Cargo features: `default = ["onnx", "tts"]`; `ort`/`ndarray` are unconditional (lang_id always needs them), so the `onnx` feature only gates `backend/onnx.rs`. `coreml = ["dep:fluidaudio-rs"]` is mutually exclusive with it at module level.
 - Prefer `--toon` over `--json` when piping multi-file results into an LLM (30-60% fewer tokens, round-trips to the same `TranscribeResult[]`). The two are mutually exclusive (exit 2).
-- The public API is whatever `src/lib.ts` exports (`downloadModel` and `downloadEngine` are both exported and are the same function; `downloadModel` is the preferred name); `getEngineCapabilities` is **not** exported from `./core`, and `installEngine` is not either.
+- The public API is whatever `src/lib.ts` exports: `transcribe`, `say`, `install`, `capabilities`, `toToon`, `hasErrorRecords`, `KeshaError` and their types. `install()` is the only export that downloads; every rejection is a `KeshaError`. Neither the CLI nor the MCP server imports `src/lib.ts`, so a change there cannot alter their output.
 
 ## TTS
 

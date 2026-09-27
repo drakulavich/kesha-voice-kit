@@ -199,7 +199,7 @@ jobs:
         shell: bash
         run: bun link
 
-      # Load-bearing: on a version mismatch `downloadEngine` fetches the published engine, whose tag does not exist yet.
+      # Load-bearing: on a version mismatch `installEngine` fetches the published engine, whose tag does not exist yet.
       - name: 🧾 Mark staged engine version
         if: matrix.os != 'macos-14'
         shell: bash
@@ -292,7 +292,7 @@ jobs:
         shell: bash
         run: bun link
 
-      # Load-bearing: on a version mismatch `downloadEngine` fetches the published engine, whose tag does not exist yet.
+      # Load-bearing: on a version mismatch `installEngine` fetches the published engine, whose tag does not exist yet.
       - name: 🧾 Mark staged engine version
         shell: bash
         run: bun .github/scripts/mark-engine-version.ts

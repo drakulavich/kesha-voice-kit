@@ -11,10 +11,9 @@ import {
 import { validateArgv } from "./engine/describe";
 import { KeshaError } from "./engine/events";
 import { installHint } from "./install-hint";
-import { statSync } from "fs";
+import { existsSync, statSync } from "fs";
 
 export type { VadMode };
-export type { TranscriptionOutput };
 
 /** True when `path` exists and is a directory; the CLI and the Core API both refuse one before any engine spawn. */
 export function isDirectoryPath(path: string): boolean {
@@ -47,8 +46,14 @@ export interface TranscribeOptions {
   onProgressLine?: (line: string) => void;
 }
 
-export async function transcribe(audioPath: string, opts: TranscribeOptions = {}): Promise<string> {
-  return (await transcribeWithSegments(audioPath, opts)).text;
+/** The refusals the CLI makes before it spawns anything, so an agent branching on the documented code sees it on every surface. */
+export function assertAudioFileArgument(audioPath: string): void {
+  if (!existsSync(audioPath)) {
+    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`);
+  }
+  if (isDirectoryPath(audioPath)) {
+    throw new KeshaError("E_INVALID_ARG", `${audioPath}: is a directory (expected an audio file)`);
+  }
 }
 
 /** The CLI's gate before any progress UI: the engine, its describe document, the request's flags, and the model files a request needs; the argv actually sent is validated again at the spawn. */

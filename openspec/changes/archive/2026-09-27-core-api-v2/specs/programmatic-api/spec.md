@@ -2,7 +2,7 @@
 
 ### Requirement: `transcribe(path, opts?)` returns a `TranscribeResult`
 
-`transcribe` SHALL accept an audio file path and an optional `TranscribeOptions` object and SHALL resolve to a `TranscribeResult` — the same shape one file produces under `kesha --json` — whose `text` is the transcript and whose `segments` is present only when `opts.timestamps` or `opts.speakers` was set. It SHALL reject with `KeshaError` `E_INPUT_NOT_FOUND` before spawning the Engine when the file does not exist, SHALL NOT surface Engine events on the caller's stderr, and SHALL reject with the Engine's Error code when the Engine fails.
+`transcribe` SHALL accept an audio file path and an optional `TranscribeOptions` object and SHALL resolve to a `TranscribeResult` — the type one file produces under `kesha --json` — whose `file` is the path it was given, whose `text` is the transcript, whose `lang` is the language the CLI-side text detector names (empty when it names none above the confidence floor), and whose `segments` is present only when `opts.timestamps` or `opts.speakers` was set. It SHALL reject with `KeshaError` `E_INPUT_NOT_FOUND` before spawning the Engine when the file does not exist, and with `E_INVALID_ARG` when the path is a directory; it SHALL NOT surface Engine events on the caller's stderr, and SHALL reject with the Engine's Error code when the Engine fails.
 
 #### Scenario: Sona transcribes a voice note
 
@@ -22,11 +22,17 @@
 - WHEN Sona calls `await transcribe("ghost.ogg")`
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_INPUT_NOT_FOUND`
 
-> *Technical Note — `transcribe` is `src/lib.ts:44-53` today, returning `Promise<string>`; `transcribeWithTimestamps` (`src/lib.ts:55`) and the alias `transcribeWithSegments` (`src/lib.ts:74`) are removed by this change.*
+#### Scenario: Path is a directory
+
+- WHEN Sona calls `await transcribe("recordings/")` and `recordings` is a directory
+- THEN the promise rejects with a `KeshaError` whose `code` is `E_INVALID_ARG`
+- AND no Engine is spawned
+
+> *Technical Note — `src/lib.ts::transcribe` runs `src/transcribe.ts::assertAudioFileArgument`, then `transcribeWithSegments`, then `src/language-routing.ts::detectTextLanguageFallback` and `routeLanguage`. The Engine's audio language ID and the macOS text detector stay CLI-only: each is another Engine spawn, and each warns on the caller's stderr when it fails. `transcribeWithTimestamps` and the alias `transcribeWithSegments` are removed by this change.*
 
 ### Requirement: `install(opts?)` is the one programmatic installer
 
-The Core API SHALL expose `install(opts?)`, which performs what `kesha install` performs for the same options: `engine` (default true), `tts` (a list of language codes, default none), `vad`, `diarize`, `noCache`, `engineVersion`. It SHALL be the only exported function that downloads anything.
+The Core API SHALL expose `install(opts?)`, which performs what `kesha install` performs for the same options: `tts` (a list of language codes, `--tts <langs>`, default none), `vad` (`--vad`), `diarize` (`--diarize`), `noCache` (`--no-cache`), `backend` (`"coreml"` or `"onnx"`, `--coreml`/`--onnx`), `engineVersion` (`--engine-version`). With no options it installs the Engine and the ASR models. It SHALL make the refusals `kesha install` makes before any download, with the same Error codes, and SHALL be the only exported function that downloads anything.
 
 #### Scenario: Sona installs the Engine and English TTS from her setup script
 
@@ -41,11 +47,17 @@ The Core API SHALL expose `install(opts?)`, which performs what `kesha install` 
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_UNSUPPORTED_PLATFORM`
 - AND nothing was downloaded
 
-> *Technical Note — Wraps `installEngine` in `src/engine-install.ts` (today reached through `downloadEngine` at `src/lib.ts:11` and `downloadTts` at `src/lib.ts:37`). The platform pre-check stays where it is, per the engine-contract rule that platform pre-checks precede schema validation (protocol-v4): with no Engine on disk there is no describe document to validate against, so the platform pre-check reports `E_UNSUPPORTED_PLATFORM` (`assertPlatformCanInstall` in `src/engine-install.ts`) rather than `E_INVALID_ARG`.*
+#### Scenario: A malformed Engine version
+
+- WHEN Sona calls `await install({ engineVersion: "latest" })`
+- THEN the promise rejects with a `KeshaError` whose `code` is `E_INVALID_ARG`
+- AND nothing was downloaded
+
+> *Technical Note — Wraps `installEngine` in `src/engine-install.ts`, after the refusals `src/cli/install.ts` makes: `resolveEngineVersionFlag`, `unavailableBackendRefusal`, and the TTS language check against the Engine's list or `installableTtsLangs()`. The platform pre-check stays where it is, per the engine-contract rule that platform pre-checks precede schema validation (protocol-v4): with no Engine on disk there is no describe document to validate against, so the platform pre-check reports `E_UNSUPPORTED_PLATFORM` (`assertPlatformCanInstall`) rather than `E_INVALID_ARG`. `--plan` has no counterpart: it installs nothing.*
 
 ### Requirement: `capabilities()` exposes the Engine's schema
 
-The Core API SHALL expose `capabilities()`, resolving to the describe document of the installed Engine, so Sona can feature-gate her agent without spawning the Engine herself.
+The Core API SHALL expose `capabilities()`, resolving to the describe document of the installed Engine (`EngineDescription`), so Sona can feature-gate her agent without spawning the Engine herself. Changing the returned object SHALL NOT change what later calls see.
 
 #### Scenario: Sona checks for diarization before offering it
 
@@ -59,11 +71,11 @@ The Core API SHALL expose `capabilities()`, resolving to the describe document o
 - WHEN Sona calls `await capabilities()`
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_ENGINE_SPAWN` and whose `hint` names `kesha install`
 
-> *Technical Note — Reads through the cached describe document in `src/engine/describe.ts` (protocol-v4 change).*
+> *Technical Note — Reads through the describe document `src/engine.ts::getDescribe` caches per binary identity, and returns a `structuredClone` of it.*
 
 ### Requirement: Every rejection is a `KeshaError`
 
-Every promise the Core API returns SHALL reject with a `KeshaError` carrying `code` (a published Error code), `hint` when a remedy is known, and `exitCode` and `stderr` whenever an Engine subprocess ran or a pre-flight assigned an Exit code; no Core API function SHALL reject with a bare `Error`.
+Every promise the Core API returns SHALL reject with a `KeshaError` carrying `code` (a published Error code), `hint` when a remedy is known, and `exitCode` and `stderr` whenever an Engine subprocess ran or a pre-flight assigned an Exit code; no Core API function SHALL reject with a bare `Error`. A failure nothing coded SHALL reject as `E_INTERNAL` carrying the original message.
 
 #### Scenario: A successful call raises nothing
 
@@ -84,13 +96,20 @@ Every promise the Core API returns SHALL reject with a `KeshaError` carrying `co
 - THEN the rejection is a `KeshaError` with `code` `E_INPUT_NOT_FOUND`
 - AND `message` contains `ghost.ogg`
 
+#### Scenario: An uncoded failure is still coded
+
+- GIVEN the Engine's model install exits non-zero without an error event
+- WHEN Sona calls `await install()`
+- THEN the rejection is a `KeshaError` with `code` `E_INTERNAL`
+- AND `message` carries the exit status
+
 #### Scenario: Exit codes survive the rename
 
 - GIVEN `say` is called with empty `text`
 - WHEN the promise rejects
 - THEN the rejection is a `KeshaError` with `code` `E_TEXT_EMPTY` and `exitCode` `2`
 
-> *Technical Note — `KeshaError` in `src/engine/events.ts`; replaces `SayError` (`src/synth.ts:103-113`) and the `Error("File not found: ...")` at `src/lib.ts:49`.*
+> *Technical Note — `KeshaError` in `src/engine/events.ts`; `src/lib.ts` wraps each exported async function so a non-`KeshaError` rejection becomes `E_INTERNAL`, the one catch-all the Engine publishes with origin `both` (`tests/unit/capabilities-pact.test.ts`). `SayError` (`src/synth.ts`) is removed.*
 
 ## MODIFIED Requirements
 
@@ -107,6 +126,8 @@ file and the returned `Uint8Array` is empty.
   `code: "E_TEXT_EMPTY"`.
 - `text` exceeds `MAX_TEXT_CHARS` (5000 Unicode code points) → `KeshaError`
   with `exitCode: 5` and `code: "E_TEXT_TOO_LONG"`.
+- `text` contains a NUL byte → `KeshaError` with `exitCode: 2` and
+  `code: "E_INVALID_ARG"`.
 - Engine not installed → `KeshaError` with `exitCode: 1` and
   `code: "E_ENGINE_SPAWN"`.
 
@@ -150,17 +171,14 @@ rule of the `describe` schema (engine-contract, protocol-v4).
 - THEN the file `/tmp/hello.wav` is written with WAV audio
 - AND the returned `Uint8Array` is empty
 
-> *Technical Note — `say` in `src/synth.ts:157`. `MAX_TEXT_CHARS = 5000` at
-> `src/synth.ts:25`. `E_TEXT_EMPTY` exit code 2 at `src/synth.ts:160`;
-> `E_TEXT_TOO_LONG` exit code 5 at `src/synth.ts:163-169`. Engine-not-installed
-> throws `E_ENGINE_SPAWN` with exit code 1 at `src/synth.ts:172-178`; its
-> message embeds `installHint("--tts")` (`src/install-hint.ts:9`) — `kesha init
-> --tts` when `process.stderr.isTTY`, `kesha install --tts` otherwise. The
-> `noExpandAbbrev` capability check is `applyNoExpandAbbrev` at
-> `src/synth.ts:69-85`, reached from `buildSayArgs` at `src/synth.ts:98` — today;
-> under v4 the drop is schema-driven in `src/engine/describe.ts`.
-> `KeshaError` in `src/engine/events.ts` carries `exitCode` and `stderr` exactly
-> as `SayError` did (`src/synth.ts:103-113`).*
+> *Technical Note — `say` in `src/synth.ts`, wrapped by `src/lib.ts::say`.
+> `MAX_TEXT_CHARS = 5000`; the text pre-flight is `validateSayText`, which the
+> CLI runs too. Engine-not-installed throws `E_ENGINE_SPAWN` with exit code 1;
+> its message embeds `installHint("--tts")` (`src/install-hint.ts`) — `kesha init
+> --tts` when `process.stderr.isTTY`, `kesha install --tts` otherwise — and it
+> carries no separate `hint`, because `kesha say` prints the same error and its
+> output does not change. The `noExpandAbbrev` drop is schema-driven in
+> `src/engine/describe.ts::validateArgv`.*
 
 ### Requirement: Exported types cover the full public surface
 
@@ -176,20 +194,22 @@ The Core API SHALL export the following TypeScript types: `TranscribeResult`, `T
 - WHEN Sona writes `import type { TranscriptionOutput } from "@drakulavich/kesha-voice-kit/core"`
 - THEN the TypeScript compiler reports that the module has no such export
 
-> *Technical Note — Today's list at `src/lib.ts:9-31`; `TranscriptionOutput` and `SayError` leave, `WordTiming` (already exported at `src/lib.ts:10`), `InstallOptions`, `EngineDescription` and `KeshaError` join.*
+> *Technical Note — `src/lib.ts`; `TranscriptionOutput` and `SayError` leave, `InstallOptions` and `EngineDescription` (an alias of `src/engine/describe.ts::DescribeDocument`) join. `hasErrorRecords`, the type guard for `TranscribeJsonOutput`, stays exported.*
 
 ### Requirement: Never-auto-download — all functions throw when prerequisites are missing
 
-No Core API function SHALL silently download the Engine or models. When a
-prerequisite is absent, the function SHALL reject with a `KeshaError` whose
-`hint` names the `kesha install` command needed to fix the situation.
+No Core API function other than `install` SHALL download the Engine or models.
+When a prerequisite is absent, the function SHALL reject with a `KeshaError`
+that names the `kesha install` command needed to fix the situation: in its
+`hint` for `transcribe` and `capabilities`, in its message for `say`, as
+`kesha say` prints it.
 
 #### Scenario: Transcribing without the Engine installed
 
 - GIVEN the Engine binary has never been downloaded
 - WHEN Sona calls `await transcribe("note.ogg")`
-- THEN the promise rejects with a `KeshaError` carrying an actionable setup hint —
-  `kesha init` on an interactive TTY, `kesha install` when stderr is piped
+- THEN the promise rejects with a `KeshaError` whose `code` is `E_ENGINE_SPAWN`
+  and whose `hint` names `kesha install`
 
 #### Scenario: Transcribing with the Engine installed downloads nothing
 
@@ -197,12 +217,12 @@ prerequisite is absent, the function SHALL reject with a `KeshaError` whose
 - WHEN Sona calls `await transcribe("note.ogg")`
 - THEN the call resolves without contacting GitHub Releases or HuggingFace
 
-> *Technical Note — the CLI's Engine-presence check in `src/engine/spawn.ts` gates
-> every Engine-dependent call; it replaces `isEngineInstalled()` (`src/engine.ts:86`)
-> called from `preflightTranscribeWithSegments` (`src/transcribe.ts:42`), whose
-> `bun add -g` + `installHint()` block at `src/transcribe.ts:46-51` becomes the
-> `hint` carried by `KeshaError`. `installHint()` (`src/install-hint.ts:9`) yields
-> `kesha init` on a TTY, `kesha install` otherwise.*
+> *Technical Note — the describe lookup in `src/engine.ts::getDescribe` and the
+> spawn in `src/engine/spawn.ts::runEngineProcess` both throw `E_ENGINE_SPAWN`
+> with `spawnHint()` — "run `kesha install`", or, when `KESHA_ENGINE_BIN` is set,
+> a hint to fix that path. The CLI's own transcribe gate,
+> `src/transcribe.ts::validateTranscribeRequest`, keeps its `bun add -g` +
+> `installHint()` block; the Core API does not run it.*
 
 ## REMOVED Requirements
 
@@ -216,8 +236,8 @@ prerequisite is absent, the function SHALL reject with a `KeshaError` whose
 
 ### Requirement: `downloadModel` / `downloadEngine` installs the Engine binary
 
-**Reason**: the name said "model" and installed the Engine; replaced by `install()`. **Migration**: `downloadModel()` becomes `install()`; `downloadCoreML()` likewise.
+**Reason**: the name said "model" and installed the Engine; replaced by `install()`. **Migration**: `downloadModel()` becomes `install()`; `downloadEngine()` and `downloadCoreML()` likewise; `downloadModel(noCache, backend)` becomes `install({ noCache, backend })`.
 
 ### Requirement: `downloadTts(noCache?, langs?)` installs TTS models
 
-**Reason**: folded into `install({ tts, noCache })`. **Migration**: `downloadTts(false, ["en", "ru"])` becomes `install({ engine: false, tts: ["en", "ru"] })`.
+**Reason**: folded into `install({ tts, noCache })`. **Migration**: `downloadTts(false, ["en", "ru"])` becomes `install({ tts: ["en", "ru"] })`; `downloadTts()` becomes `install({ tts: ["en"] })`.

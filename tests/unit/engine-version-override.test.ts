@@ -2,13 +2,8 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { accessSync, chmodSync, constants, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import {
-  downloadEngine,
-  getEngineBinaryName,
-  installEngine,
-  readInstalledEngineVersion,
-  type InstallOptions,
-} from "../../src/engine-install";
+import { getEngineBinaryName, installEngine, readInstalledEngineVersion } from "../../src/engine-install";
+import { install, type InstallOptions } from "../../src/lib";
 import { resolveEngineVersionFlag } from "../../src/cli/install";
 import { engineVersion } from "../../src/package-info";
 import { errorMessage } from "../../src/error-utils";
@@ -187,15 +182,17 @@ describe("installEngine --engine-version (#738)", () => {
     expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
   }, 30_000);
 
-  posixTest("the public downloadEngine cannot be talked into a non-pinned version", async () => {
+  posixTest("the public install() takes a version from engineVersion only", async () => {
     const binPath = stageEngineDir("kesha-engine-public-api-");
-    const urls = stubReleases([engineVersion]);
+    const urls = stubReleases([engineVersion, OVERRIDE]);
 
-    await downloadEngine(false, undefined, { version: OVERRIDE } as InstallOptions);
-
+    await install({ version: OVERRIDE } as InstallOptions);
     expect(urls[0]).toContain(`/download/v${engineVersion}/`);
     expect(urls.some((u) => u.includes(`/download/v${OVERRIDE}/`))).toBe(false);
     expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
+
+    await install({ engineVersion: OVERRIDE });
+    expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
   }, 30_000);
 
   posixTest("no override installs the pin, and a later install reverts to it", async () => {
