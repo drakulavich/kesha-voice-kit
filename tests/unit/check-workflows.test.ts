@@ -2049,6 +2049,18 @@ describe("requireReleaseJobOrder", () => {
     expect(requireReleaseJobOrder(RELEASE, withJob("npm", { needs: ["classify"] })).some((e) => e.includes("npm"))).toBe(true);
   });
 
+  for (const downstream of ["homebrew", "docker"]) {
+    test(`fails when ${downstream} can run before a successful github-release or off the stable channel`, () => {
+      const cond = String(real().jobs[downstream].if);
+      expect(requireReleaseJobOrder(RELEASE, withJob(downstream, { needs: ["classify"] })).some((e) => e.includes(downstream))).toBe(true);
+      expect(
+        requireReleaseJobOrder(RELEASE, withJob(downstream, { if: cond.replace("needs.classify.outputs.channel == 'stable'", "true") })).some((e) =>
+          e.includes(downstream),
+        ),
+      ).toBe(true);
+    });
+  }
+
   test("fails when packages stops building through the shared composite", () => {
     expect(requireReleaseJobOrder(RELEASE, withJob("packages", { steps: [] })).some((e) => e.includes("linux-packages"))).toBe(true);
   });
