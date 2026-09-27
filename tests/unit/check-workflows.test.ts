@@ -48,7 +48,7 @@ import { tempDir } from "../helpers/temp-dir";
 
 const PATH = ".github/workflows/release.yml";
 const CI = ".github/workflows/ci.yml";
-const RUST_TEST = ".github/workflows/rust-test.yml";
+const RUST_TEST = ".github/workflows/ci.yml";
 const PACT = ".github/workflows/capability-pact.yml";
 
 function job(name: string, steps: unknown[]) {
@@ -305,7 +305,7 @@ describe("namedFilterOf", () => {
     expect(namedFilterOf(CI, codeFilter(["src/**"]), "code")).toEqual({ entries: ["src/**"] });
   });
 
-  test("reads a filter other than code, from the real rust-test.yml", () => {
+  test("reads a filter other than code, from the real ci.yml", () => {
     expect(namedFilterOf(RUST_TEST, parseRepoYaml(RUST_TEST), "coreml")).toEqual({
       entries: expect.arrayContaining(["rust/build.rs"]),
     });
@@ -755,7 +755,7 @@ const coremlFilter = (paths: string[]) =>
   job("changes", [{ with: { filters: `coreml:\n${paths.map((p) => `  - '${p}'`).join("\n")}\n` } }]);
 
 describe("requireBuildScriptInCoremlFilter", () => {
-  test("passes on the real rust-test.yml", () => {
+  test("passes on the real ci.yml", () => {
     expect(requireBuildScriptInCoremlFilter(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
   });
 
@@ -782,7 +782,8 @@ describe("requireBuildScriptInCoremlFilter", () => {
   });
 
   test("ignores every other workflow", () => {
-    expect(requireBuildScriptInCoremlFilter(CI, parseRepoYaml(CI))).toEqual([]);
+    const SECURITY = ".github/workflows/security.yml";
+    expect(requireBuildScriptInCoremlFilter(SECURITY, parseRepoYaml(SECURITY))).toEqual([]);
   });
 
   test("reports a coreml filter that is gone entirely", () => {
@@ -793,7 +794,7 @@ describe("requireBuildScriptInCoremlFilter", () => {
   test("the file gate actually runs it", () => {
     const yaml =
       "on:\n  pull_request:\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            coreml:\n              - 'rust/src/backend/fluidaudio.rs'\n";
-    const path = join(tempDir("kesha-wf-"), "rust-test.yml");
+    const path = join(tempDir("kesha-wf-"), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1145"))).toHaveLength(1);
   });
@@ -1299,11 +1300,11 @@ describe("forbidReusableWorkflows", () => {
 });
 
 describe("requireConcurrencyOnPullRequestWorkflows", () => {
-  const RUST_TEST = ".github/workflows/rust-test.yml";
+  const RUST_TEST = ".github/workflows/security.yml";
   const SYNTHETIC = ".github/workflows/synthetic.yml";
   const GROUP = "${{ github.workflow }}-${{ github.ref }}";
 
-  test("passes on the real rust-test.yml", () => {
+  test("passes on the real security.yml", () => {
     expect(requireConcurrencyOnPullRequestWorkflows(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
   });
 
@@ -1547,10 +1548,10 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
 });
 
 describe("requireRustTestCancelsSupersededRuns", () => {
-  const RUST_TEST = ".github/workflows/rust-test.yml";
+  const RUST_TEST = ".github/workflows/ci.yml";
   const ref = { group: "${{ github.workflow }}-${{ github.ref }}" };
 
-  test("passes on the real rust-test.yml", () => {
+  test("passes on the real ci.yml", () => {
     expect(requireRustTestCancelsSupersededRuns(RUST_TEST, parseRepoYaml(RUST_TEST))).toEqual([]);
   });
 
@@ -1579,7 +1580,7 @@ describe("requireRustTestCancelsSupersededRuns", () => {
 
   test("the file gate actually runs it", () => {
     const yaml = "on:\n  pull_request:\nconcurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n";
-    const path = join(tempDir("kesha-wf-"), "rust-test.yml");
+    const path = join(tempDir("kesha-wf-"), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
   });
@@ -1597,6 +1598,12 @@ describe("requireEveryJobInCiAggregator", () => {
     expect(errors[0]).toContain("`file-sizes`");
   });
 
+  // The Rust lanes report through their own required check, which is aggregation just the same.
+  test("a job the 🧪 Rust Tests aggregator needs counts as aggregated", () => {
+    const doc = { jobs: { coverage: {}, "rust-tests": { needs: ["coverage"] }, ci: { needs: [] } } };
+    expect(requireEveryJobInCiAggregator(CI, doc)).toEqual([]);
+  });
+
   test("a single-string needs counts as a list of one", () => {
     const doc = { jobs: { "unit-tests": {}, ci: { needs: "unit-tests" } } };
     expect(requireEveryJobInCiAggregator(CI, doc)).toEqual([]);
@@ -1604,7 +1611,7 @@ describe("requireEveryJobInCiAggregator", () => {
 
   test("ignores workflows other than ci.yml", () => {
     const doc = { jobs: { "file-sizes": {}, ci: { needs: [] } } };
-    expect(requireEveryJobInCiAggregator(".github/workflows/rust-test.yml", doc)).toEqual([]);
+    expect(requireEveryJobInCiAggregator(".github/workflows/security.yml", doc)).toEqual([]);
   });
 
   test("the file gate actually runs it", () => {
@@ -1628,7 +1635,7 @@ describe("forbidNixBuildInCiAggregator", () => {
 
   test("ignores workflows other than ci.yml", () => {
     const doc = { jobs: { ci: { needs: ["nix-build"] } } };
-    expect(forbidNixBuildInCiAggregator(".github/workflows/rust-test.yml", doc)).toEqual([]);
+    expect(forbidNixBuildInCiAggregator(".github/workflows/security.yml", doc)).toEqual([]);
   });
 
   // A gate is only a gate if checkFile still calls it, and the live suite cannot notice a gate

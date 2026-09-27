@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { parseRepoYaml } from "../helpers/repo";
 
 const ROOT = join(import.meta.dir, "..", "..");
-const WORKFLOW = ".github/workflows/rust-test.yml";
+const WORKFLOW = ".github/workflows/ci.yml";
 const LANE_SCRIPT = ".github/scripts/coreml-regression.sh";
 
 // Modules `cfg`-gated to features only `coreml-regression` builds: every other lane either
