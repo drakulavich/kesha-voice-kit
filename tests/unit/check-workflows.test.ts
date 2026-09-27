@@ -1977,6 +1977,12 @@ describe("release.yml carries the Engine release guards", () => {
     ]).toEqual([]);
   });
 
+  test("the rehearsal does not grant release-write or signing permissions", () => {
+    const doc = real();
+    expect(doc.permissions).toEqual({ contents: "read" });
+    expect(doc.jobs["github-release"].permissions).toBeUndefined();
+  });
+
   test("a release.yml build that uploads before synthesising fails", () => {
     expect(requirePreUploadSynthesisSmoke(RELEASE, job("build", [UPLOAD, SMOKE]))[0]).toContain("#671");
   });

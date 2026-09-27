@@ -262,9 +262,6 @@ jobs:
     needs: [classify, build, darwin-synthesis-smoke, roundtrip-smoke]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: write
-      id-token: write
     steps:
       # Tag objects for the annotation the notes come from; a lightweight tag carries none (#815).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

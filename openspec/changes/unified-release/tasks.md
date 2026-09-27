@@ -17,7 +17,7 @@
 
 ## 3. Cutover and deletions
 
-- [ ] 3.1 Cutover, one PR: `release.yml` triggers on; tasks 1.1 and 1.3; delete `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml`, `release-alpha.yml`; `requireNpmPublishAfterPackaging` repointed at `release.yml`
+- [ ] 3.1 Cutover, one PR: `release.yml` triggers on, and `github-release` (`contents: write`, `id-token: write`) and `npm` (`id-token: write`) gain the permissions a rehearsal must not hold; tasks 1.1 and 1.3; delete `build-engine.yml`, `release-cli.yml`, `npm-publish.yml`, `release-npm-publish.yml`, `homebrew-tap.yml`, `docker.yml`, `release-alpha.yml`; `requireNpmPublishAfterPackaging` repointed at `release.yml`
 - [ ] 3.2 `post-engine-release.yml` 3.3 `release-install-smoke.yml` 3.4 `prune-alpha-releases.yml` (into nightly) 3.5 `cache-seed.yml`/`cache-cleanup.yml`/`cross-os-cache-probe.yml` (into `ci.yml`) 3.6 `linux-packages.yml` (into `ci.yml`) 3.7 `rust-test.yml` (into `ci.yml`, job name `🧪 Rust Tests`) 3.8 `nix-build.yml` (into `ci.yml`) 3.9 `plugin-security-scan.yml` (into `security.yml`) — each with its orphaned scripts and tests
 
 ## 4. `nightly.yml`, lint, docs
