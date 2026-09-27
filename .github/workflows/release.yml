@@ -27,6 +27,7 @@ on:
       - .github/workflows/release.yml
       - .github/actions/setup-rust/**
       - .github/actions/install-kesha-backend/**
+      - .github/actions/prepare-npm-package/**
       - .github/scripts/release-classify.ts
       - .github/scripts/check-release-assets.ts
       - .github/scripts/release-install-smoke.sh
