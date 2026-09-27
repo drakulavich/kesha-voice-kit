@@ -1,7 +1,6 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { existsSync } from "fs";
-import { detectAll } from "tinyld";
 import { isDirectoryPath, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
 
 export { isDirectoryPath };
@@ -26,7 +25,7 @@ import { runCommandSession, type CommandSession } from "./command-session";
 import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
 import { exitCodeFor, KeshaError } from "../engine/events";
-import { routeLanguage } from "../language-routing";
+import { detectTextLanguageFallback, routeLanguage } from "../language-routing";
 import { renderInvalidArg } from "./options";
 
 interface MainCommandArgs {
@@ -47,18 +46,7 @@ interface MainCommandArgs {
   "no-color": boolean;
 }
 
-/**
- * The CLI-side `tinyld` fallback, tagged `source: "tinyld"` so a consumer can
- * tell it apart from an Engine detection instead of reading the placeholder
- * `confidence: 0` it used to carry as a genuine zero (#941). The score is
- * tinyld's own and is not on the Engine's scale.
- */
-export function detectTextLanguageFallback(text: string): TextLangDetectResult | undefined {
-  if (!text) return undefined;
-  const [best] = detectAll(text);
-  if (!best) return undefined;
-  return { code: best.lang, confidence: best.accuracy, source: "tinyld" };
-}
+export { detectTextLanguageFallback };
 
 export function detectLanguage(text: string): string {
   return detectTextLanguageFallback(text)?.code ?? "";

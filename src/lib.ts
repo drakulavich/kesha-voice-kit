@@ -1,82 +1,111 @@
-import { existsSync } from "fs";
-import {
-  isDirectoryPath,
-  transcribe as internalTranscribe,
-  transcribeWithSegments as internalTranscribeWithSegments,
-  type TranscribeOptions,
-} from "./transcribe";
-import { downloadEngine } from "./engine-install";
+import { getDescribe } from "./engine";
+import type { DescribeDocument } from "./engine/describe";
 import { KeshaError } from "./engine/events";
+import { assertPlatformCanInstall, installEngine } from "./engine-install";
+import { errorMessage } from "./error-utils";
+import {
+  installableTtsLangs,
+  probeCapabilitiesForInstall,
+  resolveEngineVersionFlag,
+  resolveTtsLangs,
+  unavailableBackendRefusal,
+} from "./cli/install";
+import { detectTextLanguageFallback, routeLanguage } from "./language-routing";
+import { say as synthesize, type SayOptions } from "./synth";
+import { assertAudioFileArgument, transcribeWithSegments, type TranscribeOptions } from "./transcribe";
+import type { TranscribeResult } from "./types";
 
-export type { TranscribeOptions };
-export type { TranscriptionOutput, TranscriptionSegment, VadMode, WordTiming } from "./engine";
-export { downloadEngine, downloadEngine as downloadModel };
-export { say, type SayOptions, SayError } from "./synth";
-export { KeshaError } from "./engine/events";
-
-/**
- * Encode a `TranscribeResult[]` as TOON (#138). Same data shape as the
- * `--json` / `--toon` CLI output; the CLI reads from stdin of a transcribe
- * run, this helper is for programmatic callers that already have the array.
- */
-export { formatToonOutput as toToon } from "./toon";
-
-/**
- * Output shape returned by `kesha --json` and the input shape expected by
- * `toToon`. Lives in `./types` (since #179) so the public API stops
- * reaching into the CLI-layer file.
- */
-export type {
-  TranscribeErrorRecord,
-  TranscribeJsonOutput,
-  TranscribeResult,
-} from "./types";
+export { KeshaError };
+export type { SayOptions, TranscribeOptions };
+export type { TranscriptionSegment, VadMode, WordTiming } from "./engine";
+export type { TranscribeErrorRecord, TranscribeJsonOutput, TranscribeResult } from "./types";
 export { hasErrorRecords } from "./types";
 
-/**
- * Install TTS models for the given languages (default: English only, matching
- * `kesha install --tts`). Pass e.g. `["en", "ru"]` for more.
- */
-export async function downloadTts(noCache = false, langs: string[] = ["en"]): Promise<void> {
-  await downloadEngine(noCache, undefined, { ttsLangs: langs });
+/** Encodes a `TranscribeResult[]` exactly as `kesha --toon` prints it; pass `errors` for the `--include-errors` envelope. */
+export { formatToonOutput as toToon } from "./toon";
+
+/** The installed Engine's `describe` document: its backend, profile, features, per-command flags and TTS languages. */
+export type EngineDescription = DescribeDocument;
+
+/** One field per `kesha install` flag; `install()` with none installs the Engine and the ASR models. */
+export interface InstallOptions {
+  /** `--tts <langs…>`: the TTS languages to install. Empty or absent installs none. */
+  tts?: string[];
+  /** `--vad`: the Silero VAD model for long-audio preprocessing. */
+  vad?: boolean;
+  /** `--diarize`: the speaker-diarization model; darwin-arm64 only. */
+  diarize?: boolean;
+  /** `--no-cache`: re-download even what is cached. */
+  noCache?: boolean;
+  /** `--coreml` / `--onnx`: refused unless it is the backend this platform ships. */
+  backend?: "coreml" | "onnx";
+  /** `--engine-version`: an exact Engine release instead of the pinned one, for this call only. */
+  engineVersion?: string;
 }
 
-/** @deprecated Use `downloadModel` instead. */
-export const downloadCoreML = downloadEngine;
-
-/** The same refusals the CLI makes before it spawns anything, so an agent branching on the documented code sees it on either surface. */
-function assertAudioFileArgument(audioPath: string): void {
-  if (!existsSync(audioPath)) {
-    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`);
+/** Every Core API rejection is a `KeshaError`; one nothing coded becomes `E_INTERNAL`, the catch-all the Engine publishes for both origins. */
+async function coded<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof KeshaError) throw err;
+    throw new KeshaError("E_INTERNAL", errorMessage(err));
   }
-  if (isDirectoryPath(audioPath)) {
-    throw new KeshaError("E_INVALID_ARG", `${audioPath}: is a directory (expected an audio file)`);
-  }
 }
 
-export async function transcribe(
-  audioPath: string,
-  options: TranscribeOptions = {},
-): Promise<string> {
-  assertAudioFileArgument(audioPath);
-  return internalTranscribe(audioPath, options);
-}
-
-export async function transcribeWithTimestamps(
-  audioPath: string,
-  options: TranscribeOptions = {},
-) {
-  assertAudioFileArgument(audioPath);
-
-  return internalTranscribeWithSegments(audioPath, {
-    ...options,
-    timestamps: true,
+/** Transcribes one audio file. `segments` is present only when `timestamps` or `speakers` is set; `lang` comes from the transcript text. */
+export function transcribe(audioPath: string, options: TranscribeOptions = {}): Promise<TranscribeResult> {
+  return coded(async () => {
+    assertAudioFileArgument(audioPath);
+    const startedAt = performance.now();
+    const { text, segments } = await transcribeWithSegments(audioPath, options);
+    const textLanguage = detectTextLanguageFallback(text);
+    const result: TranscribeResult = {
+      file: audioPath,
+      text,
+      lang: routeLanguage({ textLanguage }).lang,
+      sttTimeMs: Math.round(performance.now() - startedAt),
+    };
+    if (textLanguage) result.textLanguage = textLanguage;
+    if (options.timestamps || options.speakers) result.segments = segments;
+    return result;
   });
 }
 
-/**
- * @deprecated Renamed to {@link transcribeWithTimestamps} (#248). The old
- * name shipped briefly in v1.9.0; this alias keeps existing imports working.
- * No removal is scheduled before the next major version.
- */
-export const transcribeWithSegments = transcribeWithTimestamps;
+/** Synthesizes speech; resolves to the audio bytes, or to an empty array when `out` names a file. */
+export function say(options: SayOptions): Promise<Uint8Array> {
+  return coded(() => synthesize(options));
+}
+
+/** Resolves to a copy of the installed Engine's describe document; never downloads anything. */
+export function capabilities(): Promise<EngineDescription> {
+  return coded(async () => structuredClone(await getDescribe()));
+}
+
+/** The one Core API call that downloads: what `kesha install` does for the same flags, with the same refusals first. */
+export function install(options: InstallOptions = {}): Promise<void> {
+  return coded(async () => {
+    const version = resolveEngineVersionFlag(options.engineVersion);
+    const ttsLangs = options.tts ?? [];
+    if (ttsLangs.length > 0) {
+      const caps = await probeCapabilitiesForInstall();
+      const supported = caps?.tts?.languages.map((l) => l.code) ?? installableTtsLangs();
+      try {
+        resolveTtsLangs({ tts: true, positionals: ttsLangs }, supported);
+      } catch (err) {
+        throw new KeshaError("E_INVALID_ARG", errorMessage(err));
+      }
+    }
+    assertPlatformCanInstall({ diarize: options.diarize });
+    const refusal = unavailableBackendRefusal(options.backend);
+    if (refusal) throw refusal;
+    await installEngine({
+      noCache: options.noCache ?? false,
+      backend: options.backend,
+      ttsLangs,
+      vad: options.vad ?? false,
+      diarize: options.diarize ?? false,
+      version,
+    });
+  });
+}

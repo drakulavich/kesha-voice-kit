@@ -836,8 +836,8 @@ a `macos-*` voice the machine has not downloaded SHALL be `E_VOICE_UNKNOWN`
 > `E_MODEL_MISSING` from `models::missing_kokoro_assets` all reach the caller as
 > `TtsError::Coded`, so the code alone decides the exit: 4 for the first two, 1 for
 > the missing pack. CLI side: `KeshaError`
-> (`src/engine/events.ts`) carries the Engine exit code exactly as `SayError`
-> did (`src/synth.ts::SayError`, now a `KeshaError` subclass), and
+> (`src/engine/events.ts`) carries the Engine exit code exactly as the removed
+> `SayError` did, and
 > `src/synth.ts::say` pre-checks empty text (2) and the length limit (5).*
 
 ## Open Issues

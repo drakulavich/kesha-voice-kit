@@ -430,7 +430,7 @@ Any failure to launch the `kesha-engine` binary (missing file, permission denied
 - WHEN any CLI or MCP code path spawns the Engine and the binary path does not exist
 - THEN the surfaced `KeshaError` carries `code` `E_ENGINE_SPAWN`, names the path, and carries an actionable `hint`
 
-> *Technical Note — `KeshaError` in `src/engine/events.ts` is the failure type on every path; `SayError` (`src/synth.ts`) extends it and stays `say()`'s failure type, carrying the same `code`, `exitCode`, `stderr`, `hint` and `origin`.*
+> *Technical Note — `KeshaError` in `src/engine/events.ts` is the failure type on every path, `say()` included: it carries `code`, `exitCode`, `stderr`, `hint` and `origin` (`SayError`, its former subclass, was removed in 2.0.0).*
 
 ## Open Issues
 

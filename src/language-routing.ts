@@ -1,3 +1,4 @@
+import { detectAll } from "tinyld";
 import type { LangDetectResult } from "./engine";
 import type { TextLangDetectResult } from "./types";
 
@@ -34,4 +35,17 @@ export function routeLanguage(input: {
     return { lang: audioLanguage.code, source: "audio", belowFloor };
   }
   return { lang: "", source: null, belowFloor };
+}
+
+/**
+ * The CLI-side `tinyld` fallback, tagged `source: "tinyld"` so a consumer can
+ * tell it apart from an Engine detection instead of reading the placeholder
+ * `confidence: 0` it used to carry as a genuine zero (#941). The score is
+ * tinyld's own and is not on the Engine's scale.
+ */
+export function detectTextLanguageFallback(text: string): TextLangDetectResult | undefined {
+  if (!text) return undefined;
+  const [best] = detectAll(text);
+  if (!best) return undefined;
+  return { code: best.lang, confidence: best.accuracy, source: "tinyld" };
 }
