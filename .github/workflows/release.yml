@@ -24,6 +24,9 @@ on:
       - .github/scripts/npm-pack-verify.ts
       - .github/scripts/set-package-version.mjs
       - .github/actions/linux-packages/**
+      - src/package-info.ts
+      - src/engine-install.ts
+      - src/engine-targets.ts
 
 permissions:
   contents: read
