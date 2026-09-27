@@ -30,6 +30,6 @@
 ## 4. `nightly.yml`, lint, docs
 
 - [x] 4.1 `nightly.yml` with the six scheduled jobs (`capability-pact`, `cargo-dependency-maintenance`, `mini-model-pact`, `model-plan-size-canary`, `prune-alpha-releases`, `real-model-canary`), each on its own cron and concurrency group and dispatchable alone through `job`; `requirePactVerificationCoversEveryTarget` reads its `capability-pact` matrix
-- [ ] 4.2 Pinned `actionlint` in `ci.yml`; cut `check-workflows.ts` to the rules D5 keeps
+- [x] 4.2 Pinned `actionlint` 1.7.12 (SHA-256-verified, `install-actionlint.sh`) and shellcheck 0.11.0 in `ci.yml`'s `workflow-lint`; `.github/actionlint.yaml` ignores only `release.yml`'s `concurrency.queue`; the four SC2086 findings it raised are fixed. `check-workflows.ts` needs no further cut: the cutover removed the rules whose only target was a retired workflow, and none of the remaining rules overlaps what actionlint checks
 - [ ] 4.3 `docs/distribution.md` from the four distribution docs; one `release` skill; `.claude/rules/ci-and-build.md` names `release.yml`
 - [ ] 4.4 Tag `v2.0.0` (maintainer), after switching the npm Trusted Publisher to `release.yml`

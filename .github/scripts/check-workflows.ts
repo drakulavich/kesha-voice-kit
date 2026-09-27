@@ -982,7 +982,7 @@ const RELEASE_GROUP = "release-${{ github.event_name == 'pull_request' && github
 /**
  * Fails when release.yml stops queueing its publishing runs. A cancelled run can leave an immutable
  * release short an asset, and a group without `queue: max` evicts the middle of three quick alpha
- * merges (openspec unified-release D2, the queue npm-publish.yml provides today).
+ * merges (openspec unified-release D2).
  */
 export function requireReleaseQueue(path: string, document: unknown): string[] {
   if (engineReleaseWorkflow(path) !== "release.yml") return [];

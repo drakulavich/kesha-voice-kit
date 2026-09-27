@@ -325,6 +325,14 @@ jobs:
         with:
           tool: just@1.58.0
 
+      # Syntax, expression typing and shellcheck of every `run:` (openspec unified-release D5).
+      # .github/actionlint.yaml scopes the release.yml queue exception to that workflow only.
+      - name: 🧹 Install pinned actionlint
+        run: bash .github/scripts/install-actionlint.sh
+
+      - name: 🧹 actionlint
+        run: actionlint
+
       - name: 🔍 Check workflow YAML
         run: bun run check:workflows
 
@@ -441,7 +449,7 @@ jobs:
         shell: bash
         env:
           MATRIX_OS: ${{ matrix.os }}
-        run: bun .github/scripts/junit-to-markdown.ts "Unit Tests ($MATRIX_OS)" "test-results/unit-$MATRIX_OS.xml" >> $GITHUB_STEP_SUMMARY
+        run: bun .github/scripts/junit-to-markdown.ts "Unit Tests ($MATRIX_OS)" "test-results/unit-$MATRIX_OS.xml" >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload test results
         if: always()
@@ -541,7 +549,7 @@ jobs:
 
       - name: 📊 Test summary
         if: always()
-        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests (macos)" test-results/integration.xml >> $GITHUB_STEP_SUMMARY
+        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests (macos)" test-results/integration.xml >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload test results
         if: always()
@@ -628,7 +636,7 @@ jobs:
         timeout-minutes: 12
       - name: 📊 Test summary
         if: always()
-        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests — full (macos)" test-results/integration-full.xml >> $GITHUB_STEP_SUMMARY
+        run: bun .github/scripts/junit-to-markdown.ts "Integration Tests — full (macos)" test-results/integration-full.xml >> "$GITHUB_STEP_SUMMARY"
       - name: 📤 Upload test results
         if: always()
         continue-on-error: true
@@ -904,7 +912,7 @@ jobs:
 
       - name: 📊 Test summary
         if: always()
-        run: bun .github/scripts/junit-to-markdown.ts "TTS E2E Tests (macos)" test-results/tts-e2e.xml >> $GITHUB_STEP_SUMMARY
+        run: bun .github/scripts/junit-to-markdown.ts "TTS E2E Tests (macos)" test-results/tts-e2e.xml >> "$GITHUB_STEP_SUMMARY"
 
       - name: 📤 Upload test results
         if: always()
