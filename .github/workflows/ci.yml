@@ -141,6 +141,7 @@ jobs:
               - 'tests/integration/e2e-engine.test.ts'
               - 'tests/integration/mcp-e2e.test.ts'
               - 'src/engine-install.ts'
+              - 'src/engine-targets.ts'
               - 'src/engine.ts'
               - 'src/lib.ts'
               - 'src/paths.ts'
@@ -192,7 +193,7 @@ jobs:
               - '.github/scripts/**'
               - 'package.json'
               - 'bun.lock'
-              # The file check:engine-targets guards; without it a size edit never runs the check.
+              # The file check:engine-targets guards; without it an asset-name edit never runs the check.
               - 'src/engine-targets.ts'
               # checkFlakeNix (#1088) scans this file; without it here workflow-lint never runs on a flake.nix-only change.
               - 'flake.nix'
@@ -321,7 +322,7 @@ jobs:
 
       # check:recipes parses `just --dump`; without a `just` here it fails loudly rather than
       # skipping, which is the point — a silently-skipped gate is the drift it exists to catch.
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         with:
           tool: just@1.58.0
 
@@ -1124,7 +1125,7 @@ jobs:
       # JUnit XML via the `ci` profile (see rust/.config/nextest.toml).
       # taiki-e/install-action caches a prebuilt binary per OS/arch so
       # the install is ~1s on warm cache.
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         with:
           tool: nextest
 
@@ -1147,7 +1148,7 @@ jobs:
       # darwin-only break is caught before a release tag builds it.
       # The feature set lives in the `verify-darwin-full` recipe, so CI and the local
       # gate cannot drift apart (#797) — hence a `just` on PATH for this lane.
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         if: matrix.os == 'macos-14'
         with:
           tool: just@1.58.0
@@ -1230,11 +1231,11 @@ jobs:
         with:
           extra-components: llvm-tools-preview
 
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         with:
           tool: nextest
 
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         with:
           tool: cargo-llvm-cov
 
@@ -1321,7 +1322,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: linux
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         with:
           tool: nextest
       - name: Check formatting
@@ -1386,7 +1387,7 @@ jobs:
         with:
           xcode-version: "16.2"
       - uses: ./.github/actions/setup-rust
-      - uses: taiki-e/install-action@9114bf4d891761788c546334fd37538eae1bf8b3 # v2.87.16
+      - uses: taiki-e/install-action@9983c65e42da123ff25d1f78505eb6de315aa172 # v2.87.20
         with:
           tool: nextest
 

@@ -144,7 +144,7 @@ name used on POSIX platforms.
 > *Technical Note — sources: `src/engine-install.ts::getEngineBinaryName`,
 > `src/engine-install.ts::fetchEngineBinary` (its only caller — reached from
 > `installEngine` only when the cached-version check fails), `src/paths.ts::defaultEngineBinPath`
-> (`.exe` on win32), `src/install-plan.ts::engineAssetForPlatform`. Built by
+> (`.exe` on win32), `src/install-plan.ts::buildEngineComponent`. Built by
 > `.github/workflows/build-engine.yml` with `--features onnx,tts`; issue #216's MSVC link
 > failure was resolved by vendoring the Vosk-TTS runtime under `rust/vendor/vosk-tts/`.*
 

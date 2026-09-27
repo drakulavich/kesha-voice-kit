@@ -158,8 +158,7 @@ function validateWorkflow(path) {
 }
 
 function validateSourceConsistency(manifest) {
-  const installer = readFileSync("src/engine-install.ts", "utf8");
-  // Asset names moved out of engine-install.ts into the one platform table (#216).
+  // Engine and sidecar asset names live in the one platform table (#216).
   const targets = readFileSync("src/engine-targets.ts", "utf8");
 
   for (const p of ENGINE_ASSETS) {
@@ -168,8 +167,8 @@ function validateSourceConsistency(manifest) {
     }
   }
   for (const s of DARWIN_SIDECARS) {
-    assertIncludes(installer, `assetName: "${s.name}"`, "src/engine-install.ts");
-    assertIncludes(installer, `fileBasename: "${s.install.filename}"`, "src/engine-install.ts");
+    assertIncludes(targets, `assetName: "${s.name}"`, "src/engine-targets.ts");
+    assertIncludes(targets, `fileBasename: "${s.install.filename}"`, "src/engine-targets.ts");
   }
   validateWorkflow(ENGINE_WORKFLOW);
   for (const [script, token] of [

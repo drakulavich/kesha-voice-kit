@@ -6,7 +6,7 @@ import { SIDECARS } from "./engine-install";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";
 import { readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
-import { engineVersion, packageVersion } from "./package-info";
+import { engineVersion, injectedEnginePins, packageVersion } from "./package-info";
 import { KOKORO_ANE_NOTE, kokoroAneComponents, voicePackLanguage } from "./kokoro-ane";
 import { kokoroAneDir, kokoroAneZhDir, kokoroG2pDir } from "./fluid-roots";
 import modelPlan from "../model-plan.json" with { type: "json" };
@@ -52,7 +52,8 @@ interface ModelPlan {
 interface PlanComponent {
   name: string;
   source: string;
-  sizeBytes: number;
+  /** Null for a release asset whose size only a published CLI's Engine pin carries. */
+  sizeBytes: number | null;
   cached: boolean;
   refresh: boolean;
   note?: string;
@@ -63,11 +64,6 @@ interface PlanComponent {
 interface PlanWarmup {
   name: string;
   note: string;
-}
-
-interface ReleaseAssetSpec {
-  assetName: string;
-  sizeBytes: number;
 }
 
 // Shared plan metadata keeps `kesha install --plan` usable before the engine
@@ -108,33 +104,13 @@ function kokoroPlanFiles(langs: string[]): PlanFile[] {
   return files;
 }
 
-// The sidecar list (and the asset-name → installed-filename mapping) lives in
-// SIDECARS in engine-install.ts; only the release-asset sizes are pinned here,
-// like the model tables above.
-const SIDECAR_ASSET_SIZES: Record<string, number> = {
-  "say-avspeech-darwin-arm64": 63_056,
-  "kesha-textlang-darwin-arm64": 57_648,
-};
-
-const DARWIN_SIDECARS = SIDECARS.map((s) => {
-  const sizeBytes = SIDECAR_ASSET_SIZES[s.assetName];
-  if (sizeBytes === undefined) {
-    // Fail fast at module load: a sidecar added to SIDECARS without a size
-    // entry here would otherwise silently render as "0 B" in the plan.
-    throw new Error(
-      `install-plan: missing release-asset size for sidecar "${s.assetName}"; add it to SIDECAR_ASSET_SIZES`,
-    );
-  }
-  return { assetName: s.assetName, fileBasename: s.fileBasename, sizeBytes };
-});
-
 function sumFiles(files: PlanFile[]): number {
   return files.reduce((sum, file) => sum + file.sizeBytes, 0);
 }
 
-function engineAssetForPlatform(): ReleaseAssetSpec | null {
-  const target = engineTarget();
-  return target && { assetName: target.assetName, sizeBytes: target.sizeBytes };
+/** Known only for the Engine a published CLI pins: a source checkout, or `--engine-version`, names a release whose sizes it never saw. */
+function releaseAssetSize(assetName: string, version: string): number | null {
+  return injectedEnginePins?.version === version ? (injectedEnginePins.size[assetName] ?? null) : null;
 }
 
 function filesCached(cacheRoot: string, files: PlanFile[]): boolean {
@@ -209,12 +185,12 @@ function buildEngineComponent(
   version: string,
   engineCached: boolean,
 ): PlanComponent {
-  const engineAsset = engineAssetForPlatform();
-  if (engineAsset) {
+  const target = engineTarget();
+  if (target) {
     return {
-      name: `Engine ${engineAsset.assetName}`,
+      name: `Engine ${target.assetName}`,
       source: `GitHub release v${version}`,
-      sizeBytes: engineAsset.sizeBytes,
+      sizeBytes: releaseAssetSize(target.assetName, version),
       cached: engineCached,
       refresh: noCache,
     };
@@ -236,10 +212,10 @@ function buildSidecarComponents(
   engineCached: boolean,
 ): PlanComponent[] {
   if (!isDarwinArm64()) return [];
-  return DARWIN_SIDECARS.map((sidecar) => ({
+  return SIDECARS.map((sidecar) => ({
     name: `Sidecar ${sidecar.assetName}`,
     source: `GitHub release v${version}`,
-    sizeBytes: sidecar.sizeBytes,
+    sizeBytes: releaseAssetSize(sidecar.assetName, version),
     // A cold engine fetch re-downloads every sidecar; only a cache hit tops up the missing ones.
     cached: engineCached && existsSync(join(engineDir, sidecar.fileBasename)),
     refresh: noCache,
@@ -444,8 +420,8 @@ function renderComponentLines(components: PlanComponent[]): string[] {
   const status = (c: PlanComponent) => (c.refresh ? "refresh" : c.cached ? "cached" : "needed");
   const lines: string[] = [];
   for (const c of components) {
-    const size = c.external ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
-    const detail = c.external ? "approximate" : `${c.sizeBytes} bytes`;
+    const size = c.sizeBytes === null ? "size unknown" : c.external ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
+    const detail = c.sizeBytes === null ? "not pinned in this build" : c.external ? "approximate" : `${c.sizeBytes} bytes`;
     lines.push(`  - ${c.name}: ${size} (${detail}, ${status(c)}, ${c.source})`);
     if (c.note) lines.push(`    ${c.note}`);
   }
@@ -462,15 +438,18 @@ function renderTotalLines(components: PlanComponent[]): string[] {
   // sit under a total labelled "Kesha-managed" — they get their own line (#684).
   const managed = components.filter((c) => !c.external);
   const external = components.filter((c) => c.external);
-  const coldBytes = managed.reduce((sum, c) => sum + c.sizeBytes, 0);
-  const expectedNetworkBytes = managed.reduce((sum, c) => (c.cached && !c.refresh ? sum : sum + c.sizeBytes), 0);
+  const bytes = (c: PlanComponent) => c.sizeBytes ?? 0;
+  const coldBytes = managed.reduce((sum, c) => sum + bytes(c), 0);
+  const expectedNetworkBytes = managed.reduce((sum, c) => (c.cached && !c.refresh ? sum : sum + bytes(c)), 0);
   const lines = [
     "",
     "Totals:",
     `  Cold-cache Kesha-managed download: ${humanBytes(coldBytes)}`,
     `  Expected Kesha-managed network for this run: ${humanBytes(expectedNetworkBytes)}`,
   ];
-  const externalPending = external.reduce((sum, c) => (c.cached ? sum : sum + c.sizeBytes), 0);
+  const unknown = managed.filter((c) => c.sizeBytes === null).map((c) => c.name);
+  if (unknown.length > 0) lines.push(`  Not counted (size unknown): ${unknown.join(", ")}`);
+  const externalPending = external.reduce((sum, c) => (c.cached ? sum : sum + bytes(c)), 0);
   if (externalPending > 0) {
     lines.push(
       `  Additionally fetched by the backend into its own cache: ~${humanBytes(externalPending)}`,

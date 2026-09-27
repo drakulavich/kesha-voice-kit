@@ -9,8 +9,8 @@ import {
   engineTargetEntries,
   isDarwinArm64,
   parseSha256Sums,
-  PINNED_ASSET_SHA256,
-  PINNED_ASSET_SHA256_VERSION,
+  SIDECARS,
+  type SidecarSpec,
   targetKey,
 } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
@@ -29,6 +29,7 @@ import {
   writeInstalledEngineVersion,
 } from "./engine-version-marker";
 
+export { SIDECARS } from "./engine-targets";
 export {
   getVersionMarkerPath,
   readInstalledEngineVersion,
@@ -42,9 +43,11 @@ interface ExpectedSha256 {
   source: string;
 }
 
+/** `package.json#kesha.engine`, injected at publish by `engine-pin.ts`: what every downloaded asset of that Engine hashes to and weighs. */
 export interface AssetPins {
   version: string;
   sha256: Readonly<Record<string, string>>;
+  size: Readonly<Record<string, number>>;
 }
 
 /** Without `--engine-version` nothing but the maintainer can make an unverifiable pinned release verifiable. */
@@ -75,30 +78,19 @@ async function fetchSha256Sums(version: string): Promise<Map<string, string>> {
 }
 
 /**
- * The pins for the release they were recorded from, never the network; any other release, including
- * the pinned engine while its pins still describe the previous one, against its own SHA256SUMS.
+ * The pinned Engine's assets against the pins, never the network; any other release, and every release
+ * in a source checkout (which carries no pin), against that release's own SHA256SUMS.
  */
-const COMMITTED_PINS: AssetPins = { version: PINNED_ASSET_SHA256_VERSION, sha256: PINNED_ASSET_SHA256 };
-
-/** A published CLI carries the pins of the Engine it resolves; a source checkout falls back to the committed table. */
-export const defaultAssetPins: AssetPins = injectedEnginePins ?? COMMITTED_PINS;
-
 export function releaseChecksums(
   version: string,
-  pins: AssetPins = defaultAssetPins,
+  pins: AssetPins | undefined,
 ): (assetName: string) => Promise<ExpectedSha256> {
   let sums: Promise<Map<string, string>> | undefined;
   return async (assetName) => {
-    if (version === pins.version) {
+    if (version === pins?.version) {
       const pinned = pins.sha256[assetName];
       if (!pinned) throw new Error(`No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete.\n  Fix: report it at https://github.com/${GITHUB_REPO}/issues.`);
       return { sha256: pinned, source: "its pinned SHA-256" };
-    }
-    if (!sums && version === engineVersion) {
-      log.warn(
-        `The SHA-256 pins in this CLI describe engine v${pins.version}, not v${version}; ` +
-          `verifying against the SHA256SUMS of release v${version} instead.`,
-      );
     }
     sums ??= fetchSha256Sums(version);
     const sha256 = (await sums).get(assetName);
@@ -112,8 +104,11 @@ export function releaseChecksums(
   };
 }
 
-/** Tests that serve a stand-in engine replace `forRelease`, the way they replace `fetch`. */
-export const engineChecksums = { forRelease: releaseChecksums };
+/** Tests that serve a stand-in engine replace these, the way they replace `fetch`. */
+export const engineChecksums = {
+  pins: injectedEnginePins,
+  forRelease: (version: string) => releaseChecksums(version, engineChecksums.pins),
+};
 
 async function sha256OfFile(path: string): Promise<string> {
   const hasher = new Bun.CryptoHasher("sha256");
@@ -145,7 +140,7 @@ async function rejectMismatchedDownload(
  */
 async function cachedAssetMatchesPin(path: string, assetName: string, what: string, version: string): Promise<boolean> {
   // KESHA_ENGINE_BIN names the user's own build, which no release pin describes.
-  if (version !== defaultAssetPins.version || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
+  if (version !== engineChecksums.pins?.version || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
   const expected = await engineChecksums.forRelease(version)(assetName);
   const actual = await sha256OfFile(path);
   if (actual === expected.sha256) return true;
@@ -185,44 +180,6 @@ export function assertPlatformCanInstall(
     );
   }
 }
-
-/** Sidecar spec — centralises AVSpeech (#141) and future sidecars so each is one entry. */
-interface SidecarSpec {
-  /** Written next to the engine binary; Rust probes this exact name. */
-  fileBasename: string;
-  /** Release asset name — may differ from fileBasename (e.g. `say-avspeech-darwin-arm64` vs `say-avspeech`). */
-  assetName: string;
-  displayName: string;
-  availableHint: string;
-  unavailableHint: string;
-}
-
-export const SIDECARS: SidecarSpec[] = [
-  {
-    fileBasename: "say-avspeech",
-    assetName: "say-avspeech-darwin-arm64",
-    displayName: "AVSpeech sidecar",
-    availableHint: "macOS voices available",
-    unavailableHint: "macos-* voices unavailable",
-  },
-  // Kokoro TTS (#207) and speaker diarization (#199) no longer ship as Swift
-  // sidecars — both run in-engine via the native `fluidaudio-rs` binding. Only
-  // the AVSpeech and text-lang sidecars remain.
-  {
-    // Runtime resolver looks for plain `kesha-textlang` next to the engine
-    // (see `rust/src/text_lang.rs::helper_path`), not the platform-suffixed
-    // release-asset name. Mismatch is intentional: the asset name needs the
-    // suffix for GitHub-release uniqueness; the sidecar lookup wants the
-    // unsuffixed binary so the same Rust code path works on the build-time
-    // OUT_DIR baked fallback.
-    fileBasename: "kesha-textlang",
-    assetName: "kesha-textlang-darwin-arm64",
-    displayName: "Text-lang sidecar",
-    availableHint: "detect-text-lang fast path",
-    unavailableHint:
-      "detect-text-lang will fail until next `kesha install` (no swift -e fallback)",
-  },
-];
 
 const RETIRED_SIDECAR_FILENAMES = [
   // Historical installed filenames.

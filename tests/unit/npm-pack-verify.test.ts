@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { packedPackageProblems } from "../../.github/scripts/npm-pack-verify";
 
-const pin = { version: "2.0.0", sha256: { "kesha-engine-linux-x64": "a".repeat(64) } };
+const pin = { version: "2.0.0", sha256: { "kesha-engine-linux-x64": "a".repeat(64) }, size: { "kesha-engine-linux-x64": 1 } };
 
 describe("packedPackageProblems", () => {
   test("a tarball carrying the release version and its Engine pin passes", () => {

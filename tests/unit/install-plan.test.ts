@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
 import { renderInstallPlan } from "../../src/install-plan";
 import { engineVersion } from "../../src/package-info";
+import { downloadedAssetNames } from "../../src/engine-targets";
+import { REPO_ROOT } from "../helpers/repo";
 import modelPlan from "../../model-plan.json" with { type: "json" };
 
 const savedEnv = {
@@ -276,6 +278,58 @@ describe("the plan's download economics", () => {
       expect(onnx).not.toContain("Additionally fetched by the backend");
       expect(total(coreml, cold)).not.toBe(total(onnx, cold));
     });
+  });
+});
+
+describe("release asset sizes come from the injected Engine pin", () => {
+  const assetLine = /\n {2}- Engine kesha-engine-[^\n]*/;
+
+  test("a source checkout, which carries no pin, shows the Engine size as unknown and leaves it out of the totals", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-unpinned-"));
+    try {
+      process.env.HOME = dir;
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      process.env.KESHA_ENGINE_BIN = join(dir, "engine", "bin", "kesha-engine");
+      const output = await renderInstallPlan({});
+      expect(output.match(assetLine)?.[0]).toContain("size unknown (not pinned in this build, needed,");
+      expect(output).toMatch(/Not counted \(size unknown\): Engine kesha-engine-/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // A published tarball, not this checkout: src/ beside a package.json carrying kesha.engine.
+  test("a published CLI shows the size its pin carries, and only for the Engine it pins", () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-install-plan-pinned-"));
+    try {
+      cpSync(join(REPO_ROOT, "src"), join(dir, "src"), { recursive: true });
+      cpSync(join(REPO_ROOT, "model-plan.json"), join(dir, "model-plan.json"));
+      symlinkSync(join(REPO_ROOT, "node_modules"), join(dir, "node_modules"));
+      const pkg = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8"));
+      const names = downloadedAssetNames();
+      const pin = {
+        version: "9.9.9",
+        sha256: Object.fromEntries(names.map((name) => [name, "a".repeat(64)])),
+        size: Object.fromEntries(names.map((name) => [name, 12_345_678])),
+      };
+      writeFileSync(join(dir, "package.json"), JSON.stringify({ ...pkg, kesha: { engine: pin } }));
+      const render = (engineVersion?: string) => {
+        const probe = `import { renderInstallPlan } from "./src/install-plan"; process.stdout.write(await renderInstallPlan(${JSON.stringify({ engineVersion })}));`;
+        const run = Bun.spawnSync(["bun", "-e", probe], {
+          cwd: dir,
+          env: { ...process.env, HOME: dir, KESHA_CACHE_DIR: join(dir, "cache"), KESHA_ENGINE_BIN: join(dir, "engine", "kesha-engine") },
+        });
+        return run.stdout.toString();
+      };
+
+      const pinned = render();
+      expect(pinned.match(assetLine)?.[0]).toContain("11.8 MB (12345678 bytes, needed, GitHub release v9.9.9)");
+      expect(pinned).not.toContain("Not counted");
+      expect(render("9.9.8").match(assetLine)?.[0]).toContain("size unknown");
+    } finally {
+      unlinkSync(join(dir, "node_modules"));
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
