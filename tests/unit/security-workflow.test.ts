@@ -18,8 +18,10 @@ describe("security.yml", () => {
 
   test("a push to main runs no audit, and the scan never gates the required check", () => {
     for (const audit of ["cargo-deny", "bun-audit"]) {
-      expect(security.jobs[audit]!.if).not.toContain("github.event_name != 'pull_request'");
-      expect(security.jobs[audit]!.if).toContain("github.event_name == 'pull_request' && needs.changes.outputs.deps == 'true'");
+      expect([audit, security.jobs[audit]!.if]).toEqual([
+        audit,
+        "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && needs.changes.outputs.deps == 'true')",
+      ]);
     }
     expect(security.jobs["security-audit"]!.needs).not.toContain("plugin-scan");
   });
