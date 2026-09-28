@@ -292,10 +292,9 @@ A published CLI SHALL name the Engine it resolves, and that name SHALL be derive
 - Whether a CLI alpha should be able to name an Engine alpha at all, or whether alpha CLIs
   must always resolve a stable Engine, is unresolved. Allowing it makes the two channels
   interact; forbidding it means an Engine change cannot be exercised through a CLI alpha.
-- Lanes that download the published Engine carry a `release/*` branch guard
+- Lanes that download the published Engine
   (`.github/workflows/ci.yml::integration-tests-full`,
-  `.github/workflows/ci.yml::published-engine-smoke`,
-  `.github/workflows/ci.yml::windows-engine-smoke` and
-  `.github/workflows/ci.yml::tts-e2e`). Whether alpha Engine tags need an
-  analogous guard, or whether pinning those lanes to the stable channel is sufficient, is
-  not settled.
+  `.github/workflows/ci.yml::published-engine-smoke` and
+  `.github/workflows/ci.yml::windows-engine-smoke`) install the newest stable one, so they
+  carry no branch guard. Whether alpha Engine tags need a guard of their own, or whether
+  pinning those lanes to the stable channel is sufficient, is not settled.

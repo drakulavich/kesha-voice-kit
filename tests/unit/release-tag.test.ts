@@ -75,4 +75,13 @@ describe("release tag helper", () => {
     await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, notes, runner)).rejects.toThrow("remote state is uncertain");
     expect(calls.some((call) => call.join(" ") === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -")).toBe(false);
   });
+
+  // #218: the annotation becomes the release body, and v1.4.4-cli's told users to `npm update -g`.
+  test("refuses notes that tell users to install through npm's global mode, before touching git", async () => {
+    const { runner, calls } = fakeRunner();
+    const npmNotes = "## Upgrade\n\nnpm update -g @drakulavich/kesha-voice-kit\n";
+
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, npmNotes, runner)).rejects.toThrow("bun add -g");
+    expect(calls).toEqual([]);
+  });
 });

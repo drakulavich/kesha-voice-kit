@@ -2,16 +2,23 @@ import { describe, expect, test } from "bun:test";
 import {
   commandLines,
   interpolatedParameters,
+  isNpmSwept,
   isSwept,
   type JustDump,
   knownRecipeNames,
+  npmGlobalCommands,
+  npmSweptFiles,
   referencedRecipes,
+  sweepErrors,
   sweptFiles,
   undocumentedRecipes,
   unguardedPipelines,
   unknownReferences,
 } from "../../.github/scripts/check-recipes";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { readRepoFile, REPO_ROOT } from "../helpers/repo";
+import { tempDir } from "../helpers/temp-dir";
 
 const MD = "CLAUDE.md";
 const YML = ".github/workflows/ci.yml";
@@ -454,5 +461,111 @@ describe("the repository's own references", () => {
 
   test("ci.yml calls verify-darwin-full rather than repeating its flags", () => {
     expect(names(YML, readRepoFile(YML))).toContain("verify-darwin-full");
+  });
+});
+
+// #218: v1.4.4-cli release notes told users to `npm update -g`; install text says bun (#1278).
+describe("npmGlobalCommands", () => {
+  test.each([
+    "npm install -g @drakulavich/kesha-voice-kit",
+    "npm i -g @drakulavich/kesha-voice-kit@latest",
+    "npm update -g @drakulavich/kesha-voice-kit",
+    "npm remove -g @drakulavich/kesha-voice-kit",
+    "npm uninstall --global @drakulavich/kesha-voice-kit",
+    "npm install --global=true @drakulavich/kesha-voice-kit",
+    "npm install --location=global @drakulavich/kesha-voice-kit",
+    "npm -g install @drakulavich/kesha-voice-kit",
+    "Upgrade with `npm up @drakulavich/kesha-voice-kit -g`.",
+  ])("refuses %s", (line) => {
+    const errors = npmGlobalCommands("README.md", `# Install\n\n${line}\n`);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("README.md:3:");
+    expect(errors[0]).toContain("bun add -g");
+  });
+
+  test("follows a shell line continuation, reporting the command's first line", () => {
+    const errors = npmGlobalCommands("SKILL.md", "```bash\nnpm install \\\n  -g @drakulavich/kesha-voice-kit\n```\n");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("SKILL.md:2:");
+  });
+
+  test.each([
+    "npm publish --provenance --access public",
+    "npm install",
+    "npm view @drakulavich/kesha-voice-kit@1.0.0 kesha.engine.version",
+    "bun add -g @drakulavich/kesha-voice-kit",
+    "bun remove -g @drakulavich/kesha-voice-kit",
+    "npm install --save-dev typescript && bun add -g x",
+    "pnpm install -g @scope/pkg",
+    "npm install --global-style",
+  ])("allows %s", (line) => {
+    expect(npmGlobalCommands("README.md", line)).toEqual([]);
+  });
+});
+
+describe("isNpmSwept", () => {
+  test.each([
+    "README.md",
+    "CONTRIBUTING.md",
+    "CHANGELOG.md",
+    "SKILL.md",
+    "docs/distribution.md",
+    ".claude/skills/release/SKILL.md",
+    ".github/scripts/engine-release-notes.mjs",
+    ".github/scripts/release-manifest.mjs",
+  ])("sweeps %s", (path) => {
+    expect(isNpmSwept(path)).toBe(true);
+  });
+
+  // raycast/ is an npm tree by design; workflows and smoke scripts are the maintainer publish path.
+  test.each([
+    "raycast/README.md",
+    ".github/workflows/release.yml",
+    ".github/scripts/release-install-smoke.sh",
+    "docs/superpowers/specs/2026-05-30-lanes.md",
+    "docs/assets/demo.webp",
+  ])("leaves %s alone", (path) => {
+    expect(isNpmSwept(path)).toBe(false);
+  });
+
+  test("the repository's own user-facing text carries no npm global install", () => {
+    const files = npmSweptFiles(REPO_ROOT);
+    expect(files).toContain("SKILL.md");
+    expect(files).toContain(".github/scripts/engine-release-notes.mjs");
+    expect(files.flatMap((path) => npmGlobalCommands(path, readRepoFile(path)))).toEqual([]);
+  });
+});
+
+describe("sweepErrors", () => {
+  function tree(files: Record<string, string>): string {
+    const root = tempDir("recipes-sweep-");
+    for (const dir of ["docs", ".claude/skills", ".github/workflows"]) mkdirSync(join(root, dir), { recursive: true });
+    const defaults = { "README.md": "", "CONTRIBUTING.md": "", "CLAUDE.md": "" };
+    for (const [path, content] of Object.entries({ ...defaults, ...files })) {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), content);
+    }
+    return root;
+  }
+
+  test("reports an npm global install in SKILL.md alongside an unknown recipe", () => {
+    const root = tree({
+      "SKILL.md": "Upgrade:\n\n    npm update -g @drakulavich/kesha-voice-kit\n",
+      "README.md": "Run `just nope`.\n",
+    });
+    const errors = sweepErrors(root, new Set(["test"]));
+    expect(errors.some((error) => error.startsWith("SKILL.md:3:"))).toBe(true);
+    expect(errors.some((error) => error.includes("`just nope`"))).toBe(true);
+  });
+
+  test("a checkout without .claude/skills/ still sweeps the rest", () => {
+    const root = tree({ "SKILL.md": "npm i -g @drakulavich/kesha-voice-kit\n" });
+    rmSync(join(root, ".claude/skills"), { recursive: true });
+    expect(sweepErrors(root, new Set()).some((error) => error.startsWith("SKILL.md:1:"))).toBe(true);
+  });
+
+  test("a clean tree has nothing to report", () => {
+    const root = tree({ "SKILL.md": "bun add -g @drakulavich/kesha-voice-kit\n", "README.md": "Run `just test`.\n" });
+    expect(sweepErrors(root, new Set(["test"]))).toEqual([]);
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { oversized } from "../../.github/scripts/check-file-sizes";
+import { isLfsPointer, lfsFilterLines, oversized } from "../../.github/scripts/check-file-sizes";
 import { REPO_ROOT } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
 
@@ -47,16 +47,16 @@ async function blobOf(dir: string, bytes: number): Promise<string> {
 }
 
 async function check(
-  tracked: Record<string, number>,
-  untracked: Record<string, number> = {},
+  tracked: Record<string, number | string>,
+  untracked: Record<string, number | string> = {},
   afterAdd: (dir: string) => Promise<void> = async () => {},
 ) {
   const dir = tempDir("file-sizes-");
   await git(dir, "init", "-q");
-  const write = (files: Record<string, number>) => {
-    for (const [path, bytes] of Object.entries(files)) {
+  const write = (files: Record<string, number | string>) => {
+    for (const [path, content] of Object.entries(files)) {
       mkdirSync(dirname(join(dir, path)), { recursive: true });
-      writeFileSync(join(dir, path), Buffer.alloc(bytes));
+      writeFileSync(join(dir, path), typeof content === "number" ? Buffer.alloc(content) : content);
     }
   };
   write(tracked);
@@ -128,5 +128,75 @@ describe("check:file-sizes against a repository", () => {
     });
 
     expect({ exitCode, stderr }).toEqual({ exitCode: 0, stderr: "" });
+  });
+});
+
+const POINTER = [
+  "version https://git-lfs.github.com/spec/v1",
+  "oid sha256:4d7a214614ab2935c943f9e0ff69d22eadbb8f32b1258daaa5e2ca24d17e2393",
+  "size 12345",
+  "",
+].join("\n");
+
+describe("isLfsPointer", () => {
+  test("a pointer's first line is the LFS spec line, with LF or CRLF endings", () => {
+    expect(isLfsPointer(Buffer.from(POINTER))).toBe(true);
+    expect(isLfsPointer(Buffer.from(POINTER.replaceAll("\n", "\r\n")))).toBe(true);
+  });
+
+  test("the spec line anywhere but first, or a near miss, is not a pointer", () => {
+    expect(isLfsPointer(Buffer.from(`# notes\n${POINTER}`))).toBe(false);
+    expect(isLfsPointer(Buffer.from("version https://git-lfs.github.com/spec/v10\n"))).toBe(false);
+    expect(isLfsPointer(Buffer.alloc(0))).toBe(false);
+  });
+});
+
+describe("lfsFilterLines", () => {
+  test("names every attribute line that routes a path through the LFS filter", () => {
+    const attributes = "*.wav binary\n*.onnx filter=lfs diff=lfs merge=lfs -text\n  *.bin   filter=lfs\n";
+    expect(lfsFilterLines(attributes)).toEqual([2, 3]);
+  });
+
+  test("a comment, another filter or a mere mention is not a route", () => {
+    expect(lfsFilterLines("# *.onnx filter=lfs\n*.txt filter=crlf\n*.md -filter=lfs\n*.x myfilter=lfs\n")).toEqual([]);
+  });
+});
+
+describe("check:file-sizes refuses Git LFS", () => {
+  test("a tracked LFS pointer fails, however small, naming the file", async () => {
+    const { exitCode, stderr } = await check({ "tests/fixtures/model.onnx": POINTER, "README.md": "# hi\n" });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("tests/fixtures/model.onnx");
+    expect(stderr).toContain("Git LFS pointer");
+    expect(stderr).not.toContain("README.md");
+  });
+
+  test("filter=lfs in any tracked .gitattributes fails, naming the file and line", async () => {
+    const root = await check({ ".gitattributes": "*.wav binary\n*.onnx filter=lfs diff=lfs merge=lfs -text\n" });
+    expect(root.exitCode).toBe(1);
+    expect(root.stderr).toContain(".gitattributes:2");
+
+    const nested = await check({ "tests/fixtures/.gitattributes": "*.ogg filter=lfs -text\n" });
+    expect(nested.exitCode).toBe(1);
+    expect(nested.stderr).toContain("tests/fixtures/.gitattributes:1");
+  });
+
+  test("a staged pointer is refused even after the worktree copy is replaced", async () => {
+    const { exitCode, stderr } = await check({ "a.bin": POINTER }, {}, async (dir) => {
+      writeFileSync(join(dir, "a.bin"), "plain bytes now\n");
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("a.bin");
+  });
+
+  test("attributes without the LFS filter and a file quoting the spec line later pass", async () => {
+    const { exitCode, stdout, stderr } = await check({
+      ".gitattributes": "*.wav binary\n# never filter=lfs\n",
+      "docs/lfs.md": `Why we left LFS:\n\n${POINTER}`,
+    });
+
+    expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
   });
 });
