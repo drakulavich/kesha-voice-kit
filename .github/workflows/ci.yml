@@ -183,6 +183,8 @@ jobs:
             raycast:
               - 'raycast/**'
               - '.github/workflows/ci.yml'
+              - '.github/scripts/raycast-lint.sh'
+              - '.github/raycast/**'
             openspec:
               - 'openspec/**'
               - 'package.json'
@@ -959,7 +961,7 @@ jobs:
         run: npm ci
 
       - name: 🔍 Lint (ray lint includes tsc --noEmit)
-        run: npm run lint
+        run: ../.github/scripts/raycast-lint.sh
 
       - name: 🧪 Test
         run: npm test
