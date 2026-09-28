@@ -2038,6 +2038,42 @@ process.exit(99);
     expect(await waitForPidExit(enginePid)).toBe(true);
   });
 
+  test("the force-kill report survives an event loop stalled across the force-kill deadline (#1305)", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-sigkill-stall-");
+    const enginePidPath = join(dir, "engine.pid");
+    const enginePath = createSignalIgnoringTranscribeEngine(dir, enginePidPath);
+    const mediaPath = join(dir, "meeting.ogg");
+    writeFileSync(mediaPath, "fake media");
+    const stallPath = join(dir, "stall.ts");
+    writeFileSync(
+      stallPath,
+      `process.once("SIGINT", () => setTimeout(() => { const end = Date.now() + 400; while (Date.now() < end); }, 900));\n`,
+    );
+
+    const proc = Bun.spawn([process.execPath, "run", "--preload", stallPath, "src/cli-entry.ts", mediaPath], {
+      cwd: DEFAULT_CWD,
+      stdout: "pipe",
+      stderr: "pipe",
+      env: {
+        ...process.env,
+        NO_COLOR: "1",
+        FORCE_COLOR: "0",
+        ...isolatedEnv(dir),
+        KESHA_ENGINE_BIN: enginePath,
+      },
+    });
+    const drained = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+    const enginePid = await waitForPidFile(enginePidPath);
+
+    proc.kill("SIGINT");
+
+    const [[, stderr], exitCode] = await Promise.all([drained, proc.exited]);
+    expect(exitCode).toBe(130);
+    expect(stderr).toContain(`${mediaPath}: error [E_INTERRUPTED]: interrupted (SIGINT)`);
+    expect(await waitForPidExit(enginePid)).toBe(true);
+  });
+
   for (const [phase, args] of [
     ["probe", ["install"]],
     ["model-install", ["install"]],
