@@ -147,8 +147,9 @@ size only what Kesha owns. For a managed install (the binary at
 `<Model cache>/engine/bin/`) it covers the whole `<Model cache>/engine` directory. For
 any other binary location — a `KESHA_ENGINE_BIN` override or a read-only Nix store
 path — the row's path SHALL be the binary itself and its size SHALL be the binary plus
-the Sidecars beside it (`say-avspeech`, `kesha-textlang`); neither command SHALL walk
-the binary's parent or grandparent directory. The cache total adds those Engine bytes
+the Sidecars beside it (`say-avspeech`, `kesha-textlang`), each counted only when it is
+(or links to) a regular file; neither command SHALL walk the binary's parent or
+grandparent directory, nor any directory reached through those names. The cache total adds those Engine bytes
 only when they lie outside the Model cache, so nothing is counted twice. The JSON
 shape does not change.
 

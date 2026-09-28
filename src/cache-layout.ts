@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { dirname, join, resolve, sep } from "path";
 import { dirSizeBytes } from "./diagnostic-paths";
 
@@ -15,6 +15,7 @@ export interface CacheComponentSize {
 interface EngineFootprint {
   path: string;
   members: string[];
+  sizeOf: (path: string) => number;
 }
 
 /**
@@ -39,20 +40,35 @@ export function isInsideDir(child: string, parent: string): boolean {
 function engineFootprint(binPath: string, cacheRoot: string): EngineFootprint {
   const managedRoot = join(cacheRoot, "engine");
   if (resolve(dirname(binPath)) === resolve(managedRoot, "bin")) {
-    return { path: managedRoot, members: [managedRoot] };
+    return { path: managedRoot, members: [managedRoot], sizeOf: dirSizeBytes };
   }
   const binDir = dirname(binPath);
-  return { path: binPath, members: [binPath, ...SIDECAR_FILES.map((f) => join(binDir, f))] };
+  return {
+    path: binPath,
+    members: [binPath, ...SIDECAR_FILES.map((f) => join(binDir, f))],
+    sizeOf: regularFileBytes,
+  };
 }
 
-function sumBytes(paths: string[]): number {
-  return paths.reduce((n, p) => n + dirSizeBytes(p), 0);
+/** A sidecar name that is (or links to) a directory is not ours to walk. */
+function regularFileBytes(path: string): number {
+  try {
+    const st = statSync(path);
+    return st.isFile() ? st.size : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function footprintBytes(engine: EngineFootprint, members: string[]): number {
+  return members.reduce((n, p) => n + engine.sizeOf(p), 0);
 }
 
 /** The cache plus whatever engine bytes live outside it, each counted once (#790). */
 export function cacheTotalBytes(cacheRoot: string, binPath: string): number {
-  const outside = engineFootprint(binPath, cacheRoot).members.filter((m) => !isInsideDir(m, cacheRoot));
-  return dirSizeBytes(cacheRoot) + sumBytes(outside);
+  const engine = engineFootprint(binPath, cacheRoot);
+  const outside = engine.members.filter((m) => !isInsideDir(m, cacheRoot));
+  return dirSizeBytes(cacheRoot) + footprintBytes(engine, outside);
 }
 
 /**
@@ -73,7 +89,7 @@ export function cacheComponents(
     label: "Engine",
     path: engine.path,
     exists: existsSync(engine.path),
-    sizeBytes: sumBytes(engine.members),
+    sizeBytes: footprintBytes(engine, engine.members),
   };
   const modelRows = [
     ...(coreml
