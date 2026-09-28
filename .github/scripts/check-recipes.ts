@@ -27,8 +27,12 @@
  * `Bash(just:*)` allowlist entries are permission patterns, not invocations. Known false positive:
  * an English sentence that both sits in a code span and reads `just <lowercase-word>` — none exist
  * in the swept set today, and the fix would be to drop backticks that are wrong anyway.
+ *
+ * It also refuses an npm global install, upgrade or removal in user-facing text and in what
+ * generates release bodies: those say `bun add -g` / `bun remove -g` (#218: release notes drafted
+ * with `npm update -g`; #1278). `npm publish` and `raycast/` (an npm tree by design) are out of scope.
  */
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 type Recipe = {
@@ -62,6 +66,47 @@ export function sweptFiles(root: string): string[] {
       .map((entry) => `${dir}${entry.split("\\").join("/")}`),
   );
   return [...SWEPT_ROOT_FILES, ...nested].filter(isSwept).sort();
+}
+
+const NPM_SWEPT_FILES = [
+  "README.md",
+  "CONTRIBUTING.md",
+  "CHANGELOG.md",
+  "SKILL.md",
+  ".github/scripts/engine-release-notes.mjs",
+  ".github/scripts/release-manifest.mjs",
+];
+const NPM_SWEPT_DIRS = ["docs/", ".claude/skills/"];
+
+export function isNpmSwept(path: string): boolean {
+  if (NPM_SWEPT_FILES.includes(path)) return true;
+  if (!path.endsWith(".md") || EXCLUDED_DIRS.some((dir) => path.startsWith(dir))) return false;
+  return NPM_SWEPT_DIRS.some((dir) => path.startsWith(dir));
+}
+
+export function npmSweptFiles(root: string): string[] {
+  const nested = NPM_SWEPT_DIRS.flatMap((dir) =>
+    readdirSync(join(root, dir), { recursive: true })
+      .filter((entry): entry is string => typeof entry === "string")
+      .map((entry) => `${dir}${entry.split("\\").join("/")}`),
+  );
+  return [...NPM_SWEPT_FILES.filter((path) => existsSync(join(root, path))), ...nested].filter(isNpmSwept).sort();
+}
+
+const NPM_VERB = "(?:install|i|in|add|update|up|upgrade|remove|rm|r|uninstall|un|unlink)";
+const NPM_GLOBAL = new RegExp(
+  `\\bnpm\\s+(?:${NPM_VERB}\\b[^\\n;&|]*?\\s(?:-g|--global)(?![\\w-])|(?:-g|--global)\\s+${NPM_VERB}\\b)`,
+);
+
+export function npmGlobalCommands(path: string, contents: string): string[] {
+  return contents.split("\n").flatMap((text, at) =>
+    NPM_GLOBAL.test(text)
+      ? [
+          `${path}:${at + 1}: user-facing install text uses npm's global mode (in \`${text.trim()}\`) — ` +
+            "write `bun add -g` / `bun remove -g` instead (#218, #1278)",
+        ]
+      : [],
+  );
 }
 
 export type CommandLine = { line: number; text: string };
@@ -352,18 +397,24 @@ function loadDump(): JustDump {
   return JSON.parse(result.stdout.toString());
 }
 
+/** Every finding that comes from reading files under `root` rather than from the justfile itself. */
+export function sweepErrors(root: string, known: Set<string>): string[] {
+  const read = (path: string) => readFileSync(join(root, path), "utf8");
+  return [
+    ...sweptFiles(root).flatMap((path) => unknownReferences(path, read(path), known)),
+    ...npmSweptFiles(root).flatMap((path) => npmGlobalCommands(path, read(path))),
+  ];
+}
+
 function main(): void {
   const dump = loadDump();
   const known = knownRecipeNames(dump);
-  const root = process.cwd();
 
   const errors = [
     ...undocumentedRecipes(dump),
     ...interpolatedParameters(dump),
     ...unguardedPipelines(dump),
-    ...sweptFiles(root).flatMap((path) =>
-      unknownReferences(path, readFileSync(join(root, path), "utf8"), known),
-    ),
+    ...sweepErrors(process.cwd(), known),
   ];
   for (const error of errors) console.error(error);
 

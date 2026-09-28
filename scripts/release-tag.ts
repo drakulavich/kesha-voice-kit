@@ -8,6 +8,7 @@
  *         https://docs.github.com/en/rest/git/refs?apiVersion=2022-11-28#create-a-reference
  */
 import { readFile } from "node:fs/promises";
+import { npmGlobalCommands } from "../.github/scripts/check-recipes";
 
 const REPO = "drakulavich/kesha-voice-kit";
 const TAG = /^v\d+\.\d+\.\d+$/;
@@ -127,6 +128,8 @@ async function waitForWorkflow(runner: CommandRunner, tag: string, target: strin
 
 export async function createStableTag(options: Options, notes: string, runner: CommandRunner): Promise<void> {
   if (!notes.trim()) fail("release notes must not be empty");
+  const npm = npmGlobalCommands(options.notesPath, notes);
+  if (npm.length > 0) fail(npm.join("\n"));
   await shell(runner, "git", "fetch", "origin", "main");
   const target = await shell(runner, "git", "rev-parse", "origin/main");
   if (!/^[0-9a-f]{40}$/i.test(target)) fail("origin/main did not resolve to a commit SHA");

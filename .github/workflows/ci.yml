@@ -208,6 +208,9 @@ jobs:
               - 'README.md'
               - 'CONTRIBUTING.md'
               - 'CLAUDE.md'
+              # check:recipes also refuses npm global installs in these (#1278).
+              - 'SKILL.md'
+              - 'CHANGELOG.md'
               - 'docs/**'
               - '.claude/**'
               - '.github/workflows/**'
