@@ -1,4 +1,3 @@
-import { join } from "path";
 import {
   isEngineInstalled,
   getEngineBinPath,
@@ -10,7 +9,7 @@ import {
   NOT_FUNCTIONAL_STATE,
   type EngineFunctionalHealth,
 } from "./engine-health";
-import { cacheComponentPaths, isInsideDir } from "./cache-layout";
+import { cacheComponents, cacheTotalBytes } from "./cache-layout";
 import { humanBytes } from "./format";
 import { installHint } from "./install-hint";
 import { log } from "./log";
@@ -22,7 +21,6 @@ import {
   fluidExternalTotalBytes,
   type FluidExternalRoot,
 } from "./fluid-roots";
-import { dirSizeBytes } from "./diagnostic-paths";
 import { resolveStatePaths, type StatePath } from "./state-paths";
 import { installedVoiceIds } from "./voice-inventory";
 import pc from "picocolors";
@@ -232,19 +230,10 @@ function logExternalRoots(disk: StatusDiskUsage): void {
 
 function collectDiskUsage(binPath: string, backend?: string, homeDir?: string): StatusDiskUsage {
   const cache = keshaCacheDir();
-  // Two levels up from the binary (`<cache>/engine/bin/`) so future engine-root siblings are counted.
-  const engineDir = join(binPath, "..", "..");
-
-  const components: StatusDiskComponent[] = [];
-  for (const c of cacheComponentPaths(cache, engineDir, isCoremlBackend(backend))) {
-    const sizeBytes = dirSizeBytes(c.path);
-    if (sizeBytes > 0) components.push({ label: c.label, sizeBytes });
-  }
-
-  // Sum cache root + engine dir separately so `KESHA_ENGINE_BIN` overrides outside the cache are still counted.
-  const cacheTotal = dirSizeBytes(cache);
-  const engineOutsideCache = isInsideDir(engineDir, cache) ? 0 : dirSizeBytes(engineDir);
-  const totalBytes = cacheTotal + engineOutsideCache;
+  const components: StatusDiskComponent[] = cacheComponents(cache, binPath, isCoremlBackend(backend))
+    .filter((c) => c.sizeBytes > 0)
+    .map((c) => ({ label: c.label, sizeBytes: c.sizeBytes }));
+  const totalBytes = cacheTotalBytes(cache, binPath);
   const externalRoots = fluidExternalRoots({ homeDir, cacheRoot: cache });
   const externalTotalBytes = fluidExternalTotalBytes(externalRoots);
 

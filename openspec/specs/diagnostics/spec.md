@@ -142,6 +142,16 @@ Language ID, VAD, TTS Kokoro, TTS Vosk) and the grand total. The FluidAudio Koko
 external cache is reported separately when it exists, because it lives outside
 Kesha's Model cache.
 
+The Engine row, in `kesha status --disk` and in `kesha doctor`'s cache components, SHALL
+size only what Kesha owns. For a managed install (the binary at
+`<Model cache>/engine/bin/`) it covers the whole `<Model cache>/engine` directory. For
+any other binary location — a `KESHA_ENGINE_BIN` override or a read-only Nix store
+path — the row's path SHALL be the binary itself and its size SHALL be the binary plus
+the Sidecars beside it (`say-avspeech`, `kesha-textlang`); neither command SHALL walk
+the binary's parent or grandparent directory. The cache total adds those Engine bytes
+only when they lie outside the Model cache, so nothing is counted twice. The JSON
+shape does not change.
+
 When the Engine is not installed, `kesha status` prints an actionable setup hint
 (`kesha init` on an interactive TTY, `kesha install` when stderr is piped) and
 exits 0.
@@ -196,6 +206,13 @@ Engine is installed, matching the human path.
 - WHEN Maks runs `kesha status --disk`
 - THEN a disk-usage table appears with per-component sizes and a bold Total
 - AND if FluidAudio Kokoro cache exists it is listed under "External caches"
+
+#### Scenario: Ira's engine lives under /usr/local
+
+- GIVEN `KESHA_ENGINE_BIN=/usr/local/bin/kesha-engine`
+- WHEN she runs `kesha status --disk` or `kesha doctor`
+- THEN the Engine row reports that binary plus any Sidecar next to it
+- AND nothing else under `/usr/local` is walked or counted in the cache total
 
 #### Scenario: Engine missing
 
