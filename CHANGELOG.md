@@ -22,6 +22,8 @@ binary.
 
 ### Fixed
 - **`kesha install` no longer fails when FluidAudio retries a download.** On macOS the engine's FluidAudio logger wrote a recovered retry (`[WARN] [FluidAudio.DownloadUtils] Download attempt 1 … Retrying in 1.0s.`) straight to stderr, and the CLI treated that line as a protocol violation and exited 4 with `E_INTERNAL`. The engine now relays FluidAudio's stderr from the ASR init and the diarization warm-up as warning events. The CLI prints such a line as a warning when a model install succeeds, so installs with the already-published engine 1.26.0 are fixed as well. A failed install still reports the line as `E_INTERNAL` ([#1301](https://github.com/drakulavich/kesha-voice-kit/issues/1301)).
+- **FluidAudio's own log lines no longer reach stderr raw during `kesha record --live`, `--speakers` or a CoreML transcription.** The engine now relays FluidAudio's stderr as warning events for the whole live session, the diarization run and every transcribe call, the moment each line arrives, so progress is not held back. With `KESHA_DEBUG` set, the diagnostics FluidAudio prints to stdout arrive as debug events instead of raw lines ([#1316](https://github.com/drakulavich/kesha-voice-kit/issues/1316), [#1317](https://github.com/drakulavich/kesha-voice-kit/issues/1317)).
+- **A missing TTS model reports `E_MODEL_MISSING` (exit 1) instead of `E_INTERNAL` (exit 4).** `kesha say` with an es/fr/it/pt voice whose CharsiuG2P pack is not installed, and `kesha-engine say --model` with a path that does not exist, now name the fix (`kesha install --tts es`, `kesha install --tts`) instead of asking for a bug report ([#1262](https://github.com/drakulavich/kesha-voice-kit/issues/1262)).
 
 ## [1.25.0] — 2026-08-01
 
