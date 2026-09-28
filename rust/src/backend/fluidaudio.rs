@@ -27,11 +27,16 @@ pub struct FluidAudioBackend {
 
 impl FluidAudioBackend {
     pub fn new() -> Result<Self> {
-        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location()?)
-            .context("failed to initialize FluidAudio bridge")?;
-        audio
-            .init_asr()
-            .context("failed to initialize FluidAudio ASR (first run compiles models for ANE)")?;
+        // init_asr downloads a missing bundle, and FluidAudio logs each retry to fd 2 (#1301).
+        let audio = crate::fluid_stderr::with_relayed_stderr(|| {
+            let audio =
+                crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location()?)
+                    .context("failed to initialize FluidAudio bridge")?;
+            audio.init_asr().context(
+                "failed to initialize FluidAudio ASR (first run compiles models for ANE)",
+            )?;
+            Ok(audio)
+        })?;
         Ok(Self {
             audio,
             sink: crate::fluid_stdout::oneshot_sink(),
@@ -426,6 +431,51 @@ mod tests {
     }
 
     // Regression: below FluidAudio's ~0.25 s floor this was E_INTERNAL; ONNX transcribes it (#995).
+    /// #1301: FluidAudio logs a failed model fetch on raw fd 2, which the CLI rejects as off-protocol.
+    /// An unreachable registry and an empty cache make init_asr try a fetch with no network.
+    #[test]
+    fn a_failed_model_fetch_during_asr_init_reaches_stderr_only_as_events() {
+        use std::io::{Read, Seek};
+        use std::os::fd::AsRawFd;
+
+        let home = tempfile::tempdir().expect("scratch home");
+        std::env::set_var("HOME", home.path());
+        std::env::set_var("KESHA_CACHE_DIR", home.path().join("cache"));
+        std::env::set_var("REGISTRY_URL", "http://127.0.0.1:9");
+
+        let mut capture = tempfile::tempfile().expect("capture tempfile");
+        // SAFETY: dup of fd 2, restored below before any assertion can panic.
+        let saved = unsafe { libc::dup(libc::STDERR_FILENO) };
+        assert!(saved >= 0);
+        // SAFETY: points fd 2 at the capture file this test owns.
+        assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDERR_FILENO) } >= 0);
+        let result = FluidAudioBackend::new();
+        // SAFETY: fflush(NULL) flushes every open C output stream and borrows nothing.
+        unsafe { libc::fflush(std::ptr::null_mut()) };
+        // SAFETY: saved is our dup of the original fd 2; dup2 keeps its own reference.
+        unsafe { libc::dup2(saved, libc::STDERR_FILENO) };
+        // SAFETY: closing saved drops only our copy.
+        unsafe { libc::close(saved) };
+
+        let mut stderr = String::new();
+        capture.rewind().expect("rewind capture");
+        capture.read_to_string(&mut stderr).expect("read capture");
+        let err = result
+            .err()
+            .expect("no registry, so init_asr cannot succeed");
+        for line in stderr.lines().filter(|l| !l.trim().is_empty()) {
+            assert!(
+                serde_json::from_str::<serde_json::Value>(line)
+                    .is_ok_and(|v| v["kind"].is_string()),
+                "a raw library line reached stderr: {line:?}"
+            );
+        }
+        assert!(
+            format!("{err:#}").contains("FluidAudio.DownloadUtils"),
+            "the library's own reason rides in the error: {err:#}"
+        );
+    }
+
     #[test]
     #[ignore = "needs cached CoreML Parakeet models + an Apple Neural Engine, which no CI runner has; run with `just ane-tests`"]
     fn a_sub_second_file_transcribes_instead_of_erroring() {

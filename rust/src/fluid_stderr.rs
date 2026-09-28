@@ -65,7 +65,17 @@ pub(crate) fn with_captured_stderr<R>(f: impl FnOnce() -> R) -> (R, String) {
         }
     }
 
-    let Some(mut file) = capture_file() else {
+    // Losing the library's lines beats letting them reach the CLI raw, so an unwritable temp dir falls back to /dev/null.
+    let capture = capture_file();
+    let dropped = capture.is_none();
+    let fallback = || {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/null")
+            .ok()
+    };
+    let Some(mut file) = capture.or_else(fallback) else {
         return (f(), String::new());
     };
     let saved = dup_owned(libc::STDERR_FILENO);
@@ -78,6 +88,15 @@ pub(crate) fn with_captured_stderr<R>(f: impl FnOnce() -> R) -> (R, String) {
 
     let result = f();
     drop(guard);
+    if dropped {
+        events::warn(
+            events::W_GENERIC,
+            format!(
+                "FluidAudio's stderr was not captured (no capture file could be created in {}); anything it wrote there was discarded",
+                std::env::temp_dir().display()
+            ),
+        );
+    }
 
     let mut captured = String::new();
     if file.rewind().is_ok() {
@@ -118,12 +137,32 @@ pub(crate) fn relay_events_only(captured: &str) {
     }
 }
 
-/// The first library line, as a suffix for the coded error the failed call returns.
+/// A FluidAudio call whose own logger writes to fd 2: its lines come back as warn events on success, inside the error on failure (#1301).
+pub(crate) fn with_relayed_stderr<T>(f: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+    let (result, captured) = with_captured_stderr(f);
+    match result {
+        Ok(value) => {
+            relay_captured(&captured);
+            Ok(value)
+        }
+        Err(err) => {
+            relay_events_only(&captured);
+            let detail = failure_detail(&captured);
+            Err(if detail.is_empty() {
+                err
+            } else {
+                err.context(format!("FluidAudio reported{detail}"))
+            })
+        }
+    }
+}
+
+/// The last library line, as a suffix for the error the failed call returns: after a retry or two, that is the one that says why it gave up.
 pub(crate) fn failure_detail(captured: &str) -> String {
     captured
         .lines()
         .map(str::trim_end)
-        .find(|l| !l.is_empty() && !l.starts_with("{\"kind\":"))
+        .rfind(|l| !l.is_empty() && !l.starts_with("{\"kind\":"))
         .map(|l| format!(" ({})", truncated(l)))
         .unwrap_or_default()
 }
@@ -170,6 +209,8 @@ mod tests {
         // SAFETY: dup2 atomically points fd 2 at the capture file this test owns.
         assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDERR_FILENO) } >= 0);
         f();
+        // SAFETY: fflush(NULL) flushes every open C output stream, so a buffered library line lands before the read.
+        unsafe { libc::fflush(std::ptr::null_mut()) };
         // SAFETY: saved is our dup of the original fd 2; dup2 keeps its own reference.
         unsafe { libc::dup2(saved.as_raw_fd(), libc::STDERR_FILENO) };
         let mut contents = String::new();
@@ -200,6 +241,80 @@ mod tests {
             "{\"kind\":\"debug\",\"t_ms\":1,\"message\":\"ours\"}",
             "a failed call keeps the library line out of stderr"
         );
+    }
+
+    /// #1301: a download retry FluidAudio recovered from reached the CLI as raw fd 2 prose and failed `kesha install`.
+    #[test]
+    fn a_fluidaudio_log_line_from_a_call_that_succeeds_becomes_one_warn_event() {
+        let raw = "[WARN] [FluidAudio.DownloadUtils] Download attempt 1 for parakeet failed: The network connection was lost.. Retrying in 1.0s.";
+        let mut returned = None;
+        let out = relayed(|| {
+            returned = Some(with_relayed_stderr(|| {
+                c_print_stderr(c"[WARN] [FluidAudio.DownloadUtils] Download attempt 1 for parakeet failed: The network connection was lost.. Retrying in 1.0s.\n");
+                Ok(5)
+            }));
+        });
+        assert_eq!(returned.expect("ran").expect("the call succeeded"), 5);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 1, "{out:?}");
+        let v: serde_json::Value =
+            serde_json::from_str(lines[0]).expect("the library line is wrapped in an event");
+        assert_eq!(v["kind"], "warn");
+        assert_eq!(v["message"], raw);
+    }
+
+    /// An unwritable temp dir must not let the library line through raw (Codex on #1312).
+    #[test]
+    fn a_capture_file_that_cannot_be_created_still_keeps_library_lines_off_stderr() {
+        let mut returned = None;
+        let out = relayed(|| {
+            std::env::set_var("TMPDIR", "/nonexistent/kesha-fluid-stderr");
+            returned = Some(with_relayed_stderr(|| {
+                c_print_stderr(c"[WARN] [FluidAudio.DownloadUtils] Retrying in 1.0s.\n");
+                Ok(1)
+            }));
+        });
+        assert_eq!(returned.expect("ran").expect("the call succeeded"), 1);
+        assert!(
+            !out.contains("[WARN]"),
+            "a raw library line reached stderr: {out:?}"
+        );
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "one warning says the capture failed: {out:?}"
+        );
+        let v: serde_json::Value = serde_json::from_str(lines[0]).expect("an event");
+        assert_eq!(v["kind"], "warn");
+        assert!(
+            v["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("FluidAudio's stderr was not captured")),
+            "{v}"
+        );
+    }
+
+    #[test]
+    fn a_fluidaudio_log_line_from_a_call_that_fails_rides_in_the_error() {
+        let mut returned = None;
+        let out = relayed(|| {
+            returned = Some(with_relayed_stderr::<()>(|| {
+                c_print_stderr(
+                    c"[WARN] [FluidAudio.DownloadUtils] Download attempt 1 failed. Retrying in 1.0s.\n",
+                );
+                c_print_stderr(
+                    c"[ERROR] [FluidAudio.DownloadUtils] Download failed after 3 attempts\n",
+                );
+                Err(anyhow::anyhow!("failed to initialize FluidAudio ASR"))
+            }));
+        });
+        let err = returned.expect("ran").expect_err("the call failed");
+        assert!(
+            format!("{err:#}").contains("Download failed after 3 attempts"),
+            "the terminal line explains the failure, not the first retry: {err:#}"
+        );
+        assert!(out.trim().is_empty(), "no raw line reaches stderr: {out:?}");
     }
 
     #[test]
