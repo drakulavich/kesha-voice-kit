@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join, sep } from "path";
 import { tmpdir } from "os";
 import {
@@ -741,6 +741,29 @@ describe("collectStatus disk accounting (#647)", () => {
 
       expect(disk.components.find((c) => c.label === "Engine")?.sizeBytes).toBe(engineBytes);
       expect(disk.totalBytes).toBe(64 + engineBytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an overridden engine never walks a directory behind a sidecar name (#1313)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-sidecar-dir-"));
+    const cache = join(dir, ".cache", "kesha");
+    const prefix = join(dir, "usr", "local");
+    const binPath = writeFakeEngine(join(prefix, "bin"));
+    mkdirSync(join(prefix, "share"), { recursive: true });
+    writeFileSync(join(prefix, "share", "blob"), "x".repeat(4096));
+    symlinkSync(join(prefix, "share"), join(prefix, "bin", "say-avspeech"));
+    mkdirSync(join(prefix, "bin", "kesha-textlang"));
+    writeFileSync(join(prefix, "bin", "kesha-textlang", "blob"), "x".repeat(2048));
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      expect(disk.components.find((c) => c.label === "Engine")?.sizeBytes).toBe(statSync(binPath).size);
+      expect(disk.totalBytes).toBe(statSync(binPath).size);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
