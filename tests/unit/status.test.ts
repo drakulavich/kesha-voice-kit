@@ -769,6 +769,27 @@ describe("collectStatus disk accounting (#647)", () => {
     }
   });
 
+  posixEngineTest("an outside engine symlink into the cache is counted once (#1313)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-engine-link-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = join(dir, "override", "kesha-engine");
+    mkdirSync(dirname(binPath), { recursive: true });
+    const cachedEngine = writeFakeEngine(join(cache, "owned-engine"));
+    symlinkSync(cachedEngine, binPath);
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      const engineBytes = statSync(cachedEngine).size;
+      expect(disk.components.find((c) => c.label === "Engine")?.sizeBytes).toBe(engineBytes);
+      expect(disk.totalBytes).toBe(engineBytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   posixEngineTest("a sibling directory sharing the cache path prefix is counted (#790)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-sibling-"));
     const cache = join(dir, ".cache", "kesha");
