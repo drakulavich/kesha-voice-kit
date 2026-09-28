@@ -85,7 +85,7 @@ export function isNpmSwept(path: string): boolean {
 }
 
 export function npmSweptFiles(root: string): string[] {
-  const nested = NPM_SWEPT_DIRS.flatMap((dir) =>
+  const nested = NPM_SWEPT_DIRS.filter((dir) => existsSync(join(root, dir))).flatMap((dir) =>
     readdirSync(join(root, dir), { recursive: true })
       .filter((entry): entry is string => typeof entry === "string")
       .map((entry) => `${dir}${entry.split("\\").join("/")}`),
@@ -99,15 +99,24 @@ const NPM_GLOBAL = new RegExp(
   `\\bnpm\\s+(?:${NPM_VERB}\\b[^\\n;&|]*?\\s${NPM_GLOBAL_FLAG}(?![\\w-])|${NPM_GLOBAL_FLAG}\\s+${NPM_VERB}\\b)`,
 );
 
+/** A command continued with a trailing `\` is matched whole and reported at its first line. */
 export function npmGlobalCommands(path: string, contents: string): string[] {
-  return contents.split("\n").flatMap((text, at) =>
-    NPM_GLOBAL.test(text)
-      ? [
-          `${path}:${at + 1}: user-facing install text uses npm's global mode (in \`${text.trim()}\`) — ` +
-            "write `bun add -g` / `bun remove -g` instead (#218, #1278)",
-        ]
-      : [],
-  );
+  const errors: string[] = [];
+  let command = "";
+  let start = 0;
+  for (const [at, raw] of contents.replace(/\r\n/g, "\n").split("\n").entries()) {
+    if (command === "") start = at + 1;
+    command += raw.endsWith("\\") ? `${raw.slice(0, -1)} ` : raw;
+    if (raw.endsWith("\\")) continue;
+    if (NPM_GLOBAL.test(command)) {
+      errors.push(
+        `${path}:${start}: user-facing install text uses npm's global mode (in \`${command.trim().replace(/\s+/g, " ")}\`) — ` +
+          "write `bun add -g` / `bun remove -g` instead (#218, #1278)",
+      );
+    }
+    command = "";
+  }
+  return errors;
 }
 
 export type CommandLine = { line: number; text: string };

@@ -15,7 +15,7 @@ import {
   unguardedPipelines,
   unknownReferences,
 } from "../../.github/scripts/check-recipes";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { readRepoFile, REPO_ROOT } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
@@ -483,6 +483,12 @@ describe("npmGlobalCommands", () => {
     expect(errors[0]).toContain("bun add -g");
   });
 
+  test("follows a shell line continuation, reporting the command's first line", () => {
+    const errors = npmGlobalCommands("SKILL.md", "```bash\nnpm install \\\n  -g @drakulavich/kesha-voice-kit\n```\n");
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("SKILL.md:2:");
+  });
+
   test.each([
     "npm publish --provenance --access public",
     "npm install",
@@ -550,6 +556,12 @@ describe("sweepErrors", () => {
     const errors = sweepErrors(root, new Set(["test"]));
     expect(errors.some((error) => error.startsWith("SKILL.md:3:"))).toBe(true);
     expect(errors.some((error) => error.includes("`just nope`"))).toBe(true);
+  });
+
+  test("a checkout without .claude/skills/ still sweeps the rest", () => {
+    const root = tree({ "SKILL.md": "npm i -g @drakulavich/kesha-voice-kit\n" });
+    rmSync(join(root, ".claude/skills"), { recursive: true });
+    expect(sweepErrors(root, new Set()).some((error) => error.startsWith("SKILL.md:1:"))).toBe(true);
   });
 
   test("a clean tree has nothing to report", () => {
