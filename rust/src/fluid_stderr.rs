@@ -65,7 +65,15 @@ pub(crate) fn with_captured_stderr<R>(f: impl FnOnce() -> R) -> (R, String) {
         }
     }
 
-    let Some(mut file) = capture_file() else {
+    // Losing the library's lines beats letting them reach the CLI raw, so an unwritable temp dir falls back to /dev/null.
+    let devnull = || {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/null")
+            .ok()
+    };
+    let Some(mut file) = capture_file().or_else(devnull) else {
         return (f(), String::new());
     };
     let saved = dup_owned(libc::STDERR_FILENO);
@@ -190,6 +198,8 @@ mod tests {
         // SAFETY: dup2 atomically points fd 2 at the capture file this test owns.
         assert!(unsafe { libc::dup2(capture.as_raw_fd(), libc::STDERR_FILENO) } >= 0);
         f();
+        // SAFETY: fflush(NULL) flushes every open C output stream, so a buffered library line lands before the read.
+        unsafe { libc::fflush(std::ptr::null_mut()) };
         // SAFETY: saved is our dup of the original fd 2; dup2 keeps its own reference.
         unsafe { libc::dup2(saved.as_raw_fd(), libc::STDERR_FILENO) };
         let mut contents = String::new();
@@ -240,6 +250,24 @@ mod tests {
             serde_json::from_str(lines[0]).expect("the library line is wrapped in an event");
         assert_eq!(v["kind"], "warn");
         assert_eq!(v["message"], raw);
+    }
+
+    /// An unwritable temp dir must not let the library line through raw (Codex on #1312).
+    #[test]
+    fn a_capture_file_that_cannot_be_created_still_keeps_library_lines_off_stderr() {
+        let mut returned = None;
+        let out = relayed(|| {
+            std::env::set_var("TMPDIR", "/nonexistent/kesha-fluid-stderr");
+            returned = Some(with_relayed_stderr(|| {
+                c_print_stderr(c"[WARN] [FluidAudio.DownloadUtils] Retrying in 1.0s.\n");
+                Ok(1)
+            }));
+        });
+        assert_eq!(returned.expect("ran").expect("the call succeeded"), 1);
+        assert!(
+            !out.contains("[WARN]"),
+            "a raw library line reached stderr: {out:?}"
+        );
     }
 
     #[test]
