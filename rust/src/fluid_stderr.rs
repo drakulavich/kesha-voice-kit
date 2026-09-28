@@ -66,14 +66,16 @@ pub(crate) fn with_captured_stderr<R>(f: impl FnOnce() -> R) -> (R, String) {
     }
 
     // Losing the library's lines beats letting them reach the CLI raw, so an unwritable temp dir falls back to /dev/null.
-    let devnull = || {
+    let capture = capture_file();
+    let dropped = capture.is_none();
+    let fallback = || {
         std::fs::OpenOptions::new()
             .read(true)
             .write(true)
             .open("/dev/null")
             .ok()
     };
-    let Some(mut file) = capture_file().or_else(devnull) else {
+    let Some(mut file) = capture.or_else(fallback) else {
         return (f(), String::new());
     };
     let saved = dup_owned(libc::STDERR_FILENO);
@@ -86,6 +88,15 @@ pub(crate) fn with_captured_stderr<R>(f: impl FnOnce() -> R) -> (R, String) {
 
     let result = f();
     drop(guard);
+    if dropped {
+        events::warn(
+            events::W_GENERIC,
+            format!(
+                "FluidAudio diagnostics were dropped: no capture file could be created in {}",
+                std::env::temp_dir().display()
+            ),
+        );
+    }
 
     let mut captured = String::new();
     if file.rewind().is_ok() {
@@ -267,6 +278,20 @@ mod tests {
         assert!(
             !out.contains("[WARN]"),
             "a raw library line reached stderr: {out:?}"
+        );
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "one warning says the diagnostics were dropped: {out:?}"
+        );
+        let v: serde_json::Value = serde_json::from_str(lines[0]).expect("an event");
+        assert_eq!(v["kind"], "warn");
+        assert!(
+            v["message"]
+                .as_str()
+                .is_some_and(|m| m.contains("FluidAudio diagnostics were dropped")),
+            "{v}"
         );
     }
 
