@@ -367,8 +367,9 @@ mod tests {
             Ok(ipa) => panic!("a g2p dir with no model must fail, got {ipa:?}"),
             Err(e) => e,
         };
-        assert!(
-            format!("{err:#}").contains("G2P model not installed"),
+        assert_eq!(
+            crate::errors::code_of(&err),
+            crate::errors::ErrorCode::ModelMissing,
             "wrong error for an empty g2p dir: {err:#}"
         );
         let ipa3 = cache.to_ipa(staged, "hola", "es").unwrap();
