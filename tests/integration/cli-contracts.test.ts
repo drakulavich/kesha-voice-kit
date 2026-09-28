@@ -2137,7 +2137,10 @@ exit 2
   // Two cold TS-transpile spawns; wide budget needed under CPU contention.
   test("diagnostic and support commands return parseable/readable contracts without leaking temp home", async () => {
     const dir = makeTempDir("kesha-cli-contract-diagnostics-");
-    const enginePath = createFakeEngine(dir);
+    // Doctor sizes the binary's grandparent, which directly under tmpdir is the whole shared tmpdir (#1295).
+    const binDir = join(dir, "bin");
+    mkdirSync(binDir);
+    const enginePath = createFakeEngine(binDir);
     const env: Record<string, string> = {
       ...isolatedEnv(dir),
       KESHA_ENGINE_BIN: enginePath,
@@ -2152,9 +2155,9 @@ exit 2
     const report = JSON.parse(doctor.stdout);
     expect(report.redacted).toBe(true);
     expect(report.package.name).toBe("@drakulavich/kesha-voice-kit");
-    expect(report.engine.path).toBe("~/kesha-engine");
+    expect(report.engine.path).toBe("~/bin/kesha-engine");
     expect(report.engine.capabilities.backend).toBe("fake");
-    expect(report.env.KESHA_ENGINE_BIN).toBe("~/kesha-engine");
+    expect(report.env.KESHA_ENGINE_BIN).toBe("~/bin/kesha-engine");
     expect(report.env.KESHA_STATS_DB).toBe("~/stats.sqlite");
     expect(report.diagnosticLogs.activePath).toBe("~/logs/kesha.ndjson");
     expect(report.diagnosticLogs.mode).toBe("retain-on-failure");
