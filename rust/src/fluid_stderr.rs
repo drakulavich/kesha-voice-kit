@@ -3,15 +3,30 @@
 use crate::protocol::events;
 use std::io::{Read, Seek};
 use std::os::fd::{AsRawFd, OwnedFd};
-use std::sync::{Mutex, MutexGuard, OnceLock};
+use std::sync::{mpsc, Mutex, MutexGuard, OnceLock};
 
 /// A captured line is the library's, not ours; the cap keeps a 5 kB input from being echoed back.
 const MAX_LINE_CHARS: usize = 200;
 
-fn stderr_ownership() -> MutexGuard<'static, ()> {
-    static OWNER: OnceLock<Mutex<()>> = OnceLock::new();
+/// How long dropping the last relay waits for its reader to drain: a child that inherited fd 2 can hold the pipe open.
+const RELAY_DRAIN: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Serializes every fd 2 transition. A capture holds it for its whole call; a live relay only while it swaps fd 2.
+#[derive(Default)]
+struct Owner {
+    relays: usize,
+    relay: Option<Installed>,
+}
+
+struct Installed {
+    saved: OwnedFd,
+    drained: mpsc::Receiver<()>,
+}
+
+fn stderr_ownership() -> MutexGuard<'static, Owner> {
+    static OWNER: OnceLock<Mutex<Owner>> = OnceLock::new();
     OWNER
-        .get_or_init(|| Mutex::new(()))
+        .get_or_init(|| Mutex::new(Owner::default()))
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
@@ -105,6 +120,18 @@ pub(crate) fn with_captured_stderr<R>(f: impl FnOnce() -> R) -> (R, String) {
     (result, captured)
 }
 
+/// Rendered form of one line fd 2 received: ours verbatim, a library line as one warn event.
+fn relayed_line(line: &str) -> Option<String> {
+    let line = line.trim_end();
+    if line.is_empty() {
+        return None;
+    }
+    if line.starts_with("{\"kind\":") {
+        return Some(line.to_string());
+    }
+    Some(events::Event::warn(events::W_GENERIC, truncated(line)).render())
+}
+
 fn truncated(line: &str) -> String {
     if line.chars().count() <= MAX_LINE_CHARS {
         return line.to_string();
@@ -115,16 +142,8 @@ fn truncated(line: &str) -> String {
 
 /// Re-emit what the call wrote: our own events verbatim, a library line as one warn event.
 pub(crate) fn relay_captured(captured: &str) {
-    for line in captured.lines() {
-        let line = line.trim_end();
-        if line.is_empty() {
-            continue;
-        }
-        if line.starts_with("{\"kind\":") {
-            events::emit_rendered(line);
-            continue;
-        }
-        events::warn(events::W_GENERIC, truncated(line));
+    for rendered in captured.lines().filter_map(relayed_line) {
+        events::emit_rendered(&rendered);
     }
 }
 
@@ -165,6 +184,84 @@ pub(crate) fn failure_detail(captured: &str) -> String {
         .rfind(|l| !l.is_empty() && !l.starts_with("{\"kind\":"))
         .map(|l| format!(" ({})", truncated(l)))
         .unwrap_or_default()
+}
+
+/// Holds fd 2 on a pipe while alive; a reader thread re-emits each line the moment it lands (#1316).
+///
+/// For spans too long to capture to a file and read afterwards — a live session, a diarization run —
+/// because that would hold back the engine's own progress events until the span ends. Relays nest:
+/// fd 2 goes back when the last one drops. Never start one inside [`with_captured_stderr`]'s closure,
+/// which holds the lock this needs.
+pub(crate) struct StderrRelay(());
+
+impl StderrRelay {
+    pub(crate) fn start() -> Self {
+        let mut owner = stderr_ownership();
+        owner.relays += 1;
+        if owner.relays == 1 {
+            match install_relay() {
+                Ok(installed) => owner.relay = Some(installed),
+                Err(err) => events::warn(
+                    events::W_GENERIC,
+                    format!("FluidAudio's stderr is not being relayed ({err}); a line it logs may reach the CLI raw"),
+                ),
+            }
+        }
+        StderrRelay(())
+    }
+}
+
+impl Drop for StderrRelay {
+    fn drop(&mut self) {
+        let mut owner = stderr_ownership();
+        owner.relays -= 1;
+        if owner.relays > 0 {
+            return;
+        }
+        if let Some(Installed { saved, drained }) = owner.relay.take() {
+            // SAFETY: fflush(NULL) flushes every open C output stream and borrows nothing.
+            unsafe { libc::fflush(std::ptr::null_mut()) };
+            // SAFETY: saved is a dup'd fd 2 we own; dup2 is atomic, and dropping fd 2's pipe reference lets the reader see EOF.
+            unsafe { libc::dup2(saved.as_raw_fd(), libc::STDERR_FILENO) };
+            let _ = drained.recv_timeout(RELAY_DRAIN);
+        }
+    }
+}
+
+fn install_relay() -> std::io::Result<Installed> {
+    let (reader, writer) = std::io::pipe()?;
+    let saved = dup_owned(libc::STDERR_FILENO).ok_or_else(std::io::Error::last_os_error)?;
+    let mut out = std::fs::File::from(saved.try_clone()?);
+    let (drained_tx, drained) = mpsc::channel::<()>();
+    std::thread::Builder::new()
+        .name("fluid-stderr-relay".into())
+        .spawn(move || {
+            let _drained = drained_tx;
+            relay_stream(std::io::BufReader::new(reader), &mut out);
+        })?;
+    // SAFETY: dup2 atomically points fd 2 at the pipe's write end; `writer` drops below, so fd 2 holds the only one.
+    if unsafe { libc::dup2(writer.as_raw_fd(), libc::STDERR_FILENO) } < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok(Installed { saved, drained })
+}
+
+/// A failed write keeps reading, so a library blocked on a full pipe is never stranded.
+fn relay_stream(mut reader: impl std::io::BufRead, out: &mut std::fs::File) {
+    let mut chunk = Vec::new();
+    loop {
+        chunk.clear();
+        match reader.read_until(b'\n', &mut chunk) {
+            Ok(0) | Err(_) => return,
+            Ok(_) => {}
+        }
+        for rendered in String::from_utf8_lossy(&chunk)
+            .lines()
+            .filter_map(relayed_line)
+        {
+            let _ = events::write_line(out, &rendered);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -322,5 +419,62 @@ mod tests {
         let captured = "{\"kind\":\"warn\",\"code\":\"W_GENERIC\",\"message\":\"ours\"}\nKokoro synthesize error: boom\n";
         assert_eq!(failure_detail(captured), " (Kokoro synthesize error: boom)");
         assert_eq!(failure_detail("\n\n"), "");
+    }
+
+    /// #1316: a sliding-window failure logs on FluidAudio's background task, long after init returned.
+    #[test]
+    fn a_library_line_written_while_a_relay_is_held_becomes_one_warn_event() {
+        let raw = "[ERROR] [FluidAudio.SlidingWindowAsrManager] Model processing error (window failure #1): boom";
+        let out = relayed(|| {
+            let relay = StderrRelay::start();
+            c_print_stderr(c"[ERROR] [FluidAudio.SlidingWindowAsrManager] Model processing error (window failure #1): boom\n");
+            drop(relay);
+        });
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 1, "{out:?}");
+        let v: serde_json::Value =
+            serde_json::from_str(lines[0]).expect("the library line is wrapped in an event");
+        assert_eq!(v["kind"], "warn");
+        assert_eq!(v["message"], raw);
+    }
+
+    /// #1316: the relay spans a whole live session, so our own progress must not wait for it to end.
+    #[test]
+    fn our_event_reaches_stderr_while_the_relay_is_still_held() {
+        let capture = tempfile::NamedTempFile::new().expect("capture file");
+        let saved = dup_owned(libc::STDERR_FILENO).expect("dup fd 2");
+        // SAFETY: dup2 atomically points fd 2 at the capture file this test owns.
+        assert!(unsafe { libc::dup2(capture.as_file().as_raw_fd(), libc::STDERR_FILENO) } >= 0);
+
+        let relay = StderrRelay::start();
+        events::progress(None, "Listening... 1s");
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut seen = String::new();
+        while std::time::Instant::now() < deadline && !seen.contains('\n') {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            seen = std::fs::read_to_string(capture.path()).expect("read capture");
+        }
+        drop(relay);
+        // SAFETY: saved is our dup of the original fd 2; dup2 keeps its own reference.
+        unsafe { libc::dup2(saved.as_raw_fd(), libc::STDERR_FILENO) };
+
+        assert_eq!(
+            seen, "{\"kind\":\"progress\",\"message\":\"Listening... 1s\"}\n",
+            "the event must land while the relay is held, verbatim"
+        );
+    }
+
+    #[test]
+    fn a_nested_relay_keeps_relaying_until_the_outer_one_ends() {
+        let out = relayed(|| {
+            let outer = StderrRelay::start();
+            drop(StderrRelay::start());
+            c_print_stderr(c"[WARN] [FluidAudio.Sortformer] after the inner relay ended\n");
+            drop(outer);
+        });
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 1, "{out:?}");
+        let v: serde_json::Value = serde_json::from_str(lines[0]).expect("an event");
+        assert_eq!(v["kind"], "warn");
     }
 }

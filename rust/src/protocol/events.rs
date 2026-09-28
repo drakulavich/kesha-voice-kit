@@ -96,10 +96,7 @@ impl<'a> Event<'a> {
     }
 
     pub fn emit(&self) {
-        let line = self.render();
-        let stderr = std::io::stderr();
-        let mut lock = stderr.lock();
-        let _ = writeln!(lock, "{line}");
+        let _ = write_line(&mut std::io::stderr().lock(), &self.render());
     }
 }
 
@@ -117,9 +114,15 @@ pub fn error(code: ErrorCode, message: impl Into<String>, hint: Option<&str>) {
 
 /// Put back a line that is already a rendered event, captured from a descriptor this process redirected.
 pub fn emit_rendered(line: &str) {
-    let stderr = std::io::stderr();
-    let mut lock = stderr.lock();
-    let _ = writeln!(lock, "{line}");
+    let _ = write_line(&mut std::io::stderr().lock(), line);
+}
+
+/// One `write` per event: a library writing to the same pipe cannot land between the line and its newline.
+pub fn write_line(out: &mut impl Write, line: &str) -> std::io::Result<()> {
+    let mut buf = String::with_capacity(line.len() + 1);
+    buf.push_str(line);
+    buf.push('\n');
+    out.write_all(buf.as_bytes())
 }
 
 #[cfg(test)]

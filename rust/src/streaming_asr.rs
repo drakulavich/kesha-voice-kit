@@ -28,6 +28,8 @@ pub struct StreamingAsrSession {
     audio: FluidAudio,
     devnull: Option<OwnedFd>,
     resampler: StreamResampler,
+    /// Last, so it outlives the FluidAudio instance: the recognizer logs window failures on its own task (#1316).
+    _stderr: crate::fluid_stderr::StderrRelay,
 }
 
 impl StreamingAsrSession {
@@ -41,19 +43,25 @@ impl StreamingAsrSession {
             .ok()
             .map(OwnedFd::from);
 
-        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location()?)
-            .context("failed to initialize FluidAudio bridge")?;
-        with_silenced_stdout(devnull.as_ref(), || audio.init_streaming_asr()).context(
-            "failed to initialize FluidAudio streaming ASR \
-             (first run compiles models for ANE)",
-        )?;
-        with_silenced_stdout(devnull.as_ref(), || audio.streaming_asr_start())
-            .context("failed to start FluidAudio streaming ASR session")?;
+        // init downloads a missing bundle and logs each retry to fd 2, which a failed init folds into its error (#1301).
+        let audio = crate::fluid_stderr::with_relayed_stderr(|| {
+            let audio =
+                crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location()?)
+                    .context("failed to initialize FluidAudio bridge")?;
+            with_silenced_stdout(devnull.as_ref(), || audio.init_streaming_asr()).context(
+                "failed to initialize FluidAudio streaming ASR \
+                 (first run compiles models for ANE)",
+            )?;
+            with_silenced_stdout(devnull.as_ref(), || audio.streaming_asr_start())
+                .context("failed to start FluidAudio streaming ASR session")?;
+            Ok(audio)
+        })?;
 
         Ok(Self {
             audio,
             devnull,
             resampler,
+            _stderr: crate::fluid_stderr::StderrRelay::start(),
         })
     }
 

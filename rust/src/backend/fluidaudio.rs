@@ -22,6 +22,8 @@ pub struct FluidAudioBackend {
     /// Pre-opened sink reused across `transcribe_samples` calls to skip the open
     /// syscall on the per-segment hot path (~10K saved on a 1 h meeting).
     sink: crate::fluid_stdout::Sink,
+    /// Last, so it outlives the FluidAudio instance: a transcribe call can log to fd 2 too (#1316).
+    _stderr: crate::fluid_stderr::StderrRelay,
 }
 
 impl FluidAudioBackend {
@@ -39,6 +41,7 @@ impl FluidAudioBackend {
         Ok(Self {
             audio,
             sink: crate::fluid_stdout::oneshot_sink(),
+            _stderr: crate::fluid_stderr::StderrRelay::start(),
         })
     }
 }
