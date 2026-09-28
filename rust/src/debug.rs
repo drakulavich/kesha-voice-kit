@@ -105,6 +105,24 @@ pub fn trace_json(event: &str, fields: serde_json::Value) {
 /// ```
 ///
 /// Zero-cost when off: the gate sits before `serde_json::json!`, skipping the heap allocation the eager form had (Greptile P2 #321).
+/// A line a linked library wrote on its own, as a `debug` event naming where it came from (#1317).
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+pub(crate) fn trace_line(event: &str, message: &str) {
+    if enabled() {
+        Event::Debug {
+            t_ms: engine_t0().elapsed().as_millis(),
+            event: Some(event),
+            message: message.to_string(),
+            fields: serde_json::Value::Null,
+        }
+        .emit();
+    }
+}
+
 #[macro_export]
 macro_rules! dtrace_json {
     ($event:expr, $fields:tt) => {

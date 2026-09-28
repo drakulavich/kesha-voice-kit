@@ -143,7 +143,7 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
 }
 
 /// Where FluidAudio's stdout chatter goes while a silencing guard is held:
-/// `/dev/null` normally, stderr under `KESHA_DEBUG`.
+/// `/dev/null` normally, `debug` events under `KESHA_DEBUG`.
 ///
 /// CoreML reports real failures — the ANE-less prepare error and the E5RT
 /// exceptions behind it (#678) — on stdout, so discarding it unconditionally
@@ -151,7 +151,8 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
 /// cannot attach to. The ASR path is the same story: the bridge collapses every
 /// `transcribeSamples` throw to a bare "Transcription failed" and prints the
 /// underlying error with Swift `print`, so /dev/null is where #841's warm-cache
-/// flake diagnosis went.
+/// flake diagnosis went. Those lines ride as events, never raw: stderr is the
+/// protocol-4 event stream (#1317).
 ///
 /// Scope of what this changes, precisely: only where fd 1 points *while the
 /// guard is held*. Callers write their payload after it returns, so the
@@ -165,17 +166,85 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
     feature = "system_kokoro",
     feature = "system_diarize"
 ))]
-pub(crate) fn oneshot_sink() -> Option<OwnedFd> {
-    if crate::debug::enabled() {
-        if let Some(stderr) = dup_owned(libc::STDERR_FILENO) {
-            return Some(stderr);
+pub(crate) struct Sink {
+    fd: Option<OwnedFd>,
+    relay_done: Option<std::sync::mpsc::Receiver<()>>,
+}
+
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+impl Sink {
+    pub(crate) fn fd(&self) -> Option<&OwnedFd> {
+        self.fd.as_ref()
+    }
+}
+
+/// Closing the write end ends the relay; waiting for it keeps the last lines ahead of whatever the caller emits next.
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+impl Drop for Sink {
+    fn drop(&mut self) {
+        drop(self.fd.take());
+        if let Some(done) = self.relay_done.take() {
+            let _ = done.recv_timeout(std::time::Duration::from_secs(2));
         }
     }
-    std::fs::OpenOptions::new()
-        .write(true)
-        .open("/dev/null")
-        .ok()
-        .map(OwnedFd::from)
+}
+
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+fn debug_sink() -> Option<Sink> {
+    use std::io::BufRead;
+    let (reader, writer) = std::io::pipe().ok()?;
+    let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+    std::thread::Builder::new()
+        .name("fluid-stdout-debug".into())
+        .spawn(move || {
+            let _done = done_tx;
+            for line in std::io::BufReader::new(reader).split(b'\n') {
+                let Ok(line) = line else { break };
+                let line = String::from_utf8_lossy(&line);
+                let line = line.trim_end();
+                if !line.is_empty() {
+                    crate::debug::trace_line("fluidaudio.stdout", line);
+                }
+            }
+        })
+        .ok()?;
+    Some(Sink {
+        fd: Some(OwnedFd::from(writer)),
+        relay_done: Some(done_rx),
+    })
+}
+
+#[cfg(any(
+    feature = "coreml",
+    feature = "system_kokoro",
+    feature = "system_diarize"
+))]
+pub(crate) fn oneshot_sink() -> Sink {
+    if crate::debug::enabled() {
+        if let Some(sink) = debug_sink() {
+            return sink;
+        }
+    }
+    Sink {
+        fd: std::fs::OpenOptions::new()
+            .write(true)
+            .open("/dev/null")
+            .ok()
+            .map(OwnedFd::from),
+        relay_done: None,
+    }
 }
 
 /// One-shot variant for non-hot-path FluidAudio calls (Kokoro synth,
@@ -185,7 +254,7 @@ pub(crate) fn oneshot_sink() -> Option<OwnedFd> {
 #[cfg(any(feature = "system_kokoro", feature = "system_diarize"))]
 pub(crate) fn with_silenced_stdout_oneshot<R>(f: impl FnOnce() -> R) -> R {
     let sink = oneshot_sink();
-    with_silenced_stdout(sink.as_ref(), f)
+    with_silenced_stdout(sink.fd(), f)
 }
 
 /// Permanently redirect the process's stdout to `/dev/null` and hand back a
@@ -375,33 +444,36 @@ mod tests {
 
     /// #841: the bridge collapses every transcribe throw to "Transcription
     /// failed" and prints the real error with Swift `print`, so `KESHA_DEBUG`
-    /// has to land that stdout on stderr — the coreml-regression lane sets it
-    /// for exactly this, and /dev/null would keep the flake undiagnosable.
+    /// has to surface that stdout — the coreml-regression lane sets it for
+    /// exactly this. #1317: it surfaces as `debug` events, because a raw line on
+    /// stderr is off-protocol and the CLI rejects it.
     #[cfg(any(
         feature = "coreml",
         feature = "system_kokoro",
         feature = "system_diarize"
     ))]
     #[test]
-    fn debug_routes_silenced_chatter_to_stderr() {
+    fn debug_routes_silenced_chatter_to_stderr_as_debug_events() {
         std::env::set_var("KESHA_DEBUG", "1");
         let mut capture = tempfile::tempfile().expect("capture tempfile");
-        let _restore = redirect(libc::STDERR_FILENO, &capture);
+        let restore = redirect(libc::STDERR_FILENO, &capture);
 
-        // Taken after the redirect: the sink dups whatever fd 2 points at now.
         let sink = oneshot_sink();
-        with_silenced_stdout(sink.as_ref(), || {
+        with_silenced_stdout(sink.fd(), || {
             c_print(c"Transcribe samples error: simulated\n");
         });
-        drop(_restore);
+        drop(sink);
+        drop(restore);
 
         let mut contents = String::new();
         capture.rewind().unwrap();
         capture.read_to_string(&mut contents).unwrap();
-        assert!(
-            contents.contains("Transcribe samples error"),
-            "KESHA_DEBUG must route FluidAudio's stdout chatter to stderr, got {contents:?}"
-        );
+        let lines: Vec<&str> = contents.lines().collect();
+        assert_eq!(lines.len(), 1, "{contents:?}");
+        let v: serde_json::Value =
+            serde_json::from_str(lines[0]).expect("the chatter is wrapped in an event");
+        assert_eq!(v["kind"], "debug", "{v}");
+        assert_eq!(v["message"], "Transcribe samples error: simulated", "{v}");
     }
 
     /// #543: a C-stdio write buffered inside the guarded scope (a Swift
