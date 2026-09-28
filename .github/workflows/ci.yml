@@ -259,6 +259,7 @@ jobs:
               - 'rust/src/backend/fluidaudio.rs'
               # The lane's diagnostics ride KESHA_DEBUG's sink selection (#841).
               - 'rust/src/fluid_stdout.rs'
+              - 'rust/src/fluid_stderr.rs'
               # The only lane that *runs* diarize's tests; everything else stops at clippy (#999).
               - 'rust/src/transcribe/diarize.rs'
               - 'rust/build.rs'

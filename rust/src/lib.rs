@@ -33,7 +33,11 @@ pub mod capabilities;
 pub mod cli;
 pub mod debug;
 pub mod errors;
-#[cfg(all(system_kokoro, target_arch = "aarch64"))]
+#[cfg(any(
+    darwin_native,
+    system_diarize,
+    all(system_kokoro, target_arch = "aarch64")
+))]
 mod fluid_stderr;
 #[cfg(any(darwin_native, system_diarize, system_kokoro))]
 mod fluid_stdout;

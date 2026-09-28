@@ -87,7 +87,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
             Err(e) => events::warn(
                 events::W_INSTALL,
                 format!(
-                    "warning: ASR backend warm-up failed ({e}); install \
+                    "warning: ASR backend warm-up failed ({e:#}); install \
                      still complete but the first `kesha audio.ogg` will \
                      pay the cold-start cost."
                 ),
@@ -107,9 +107,12 @@ pub fn run(args: InstallArgs) -> Result<()> {
             "Warming up diarization model (one-time compile ~1-2 min on first install, ~4 s after)...",
         );
         let t = std::time::Instant::now();
-        let result = crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
-            models::fluidaudio_bridge(&diarize_loc)
-                .and_then(|fa| fa.compile_diarization_model(&diarize_pkg))
+        let result = crate::fluid_stderr::with_relayed_stderr(|| {
+            crate::fluid_stdout::with_silenced_stdout_oneshot(|| {
+                models::fluidaudio_bridge(&diarize_loc)
+                    .and_then(|fa| fa.compile_diarization_model(&diarize_pkg))
+            })
+            .map_err(anyhow::Error::new)
         });
         match result {
             Ok(_) => {
@@ -134,7 +137,7 @@ pub fn run(args: InstallArgs) -> Result<()> {
             Err(e) => events::warn(
                 events::W_INSTALL,
                 format!(
-                    "warning: diarization warm-up failed ({e}); install still \
+                    "warning: diarization warm-up failed ({e:#}); install still \
                      complete but the first `kesha transcribe --speakers` will \
                      pay the cold-start compile."
                 ),

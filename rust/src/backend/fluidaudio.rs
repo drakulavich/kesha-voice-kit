@@ -27,11 +27,16 @@ pub struct FluidAudioBackend {
 
 impl FluidAudioBackend {
     pub fn new() -> Result<Self> {
-        let audio = crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location()?)
-            .context("failed to initialize FluidAudio bridge")?;
-        audio
-            .init_asr()
-            .context("failed to initialize FluidAudio ASR (first run compiles models for ANE)")?;
+        // init_asr downloads a missing bundle, and FluidAudio logs each retry to fd 2 (#1301).
+        let audio = crate::fluid_stderr::with_relayed_stderr(|| {
+            let audio =
+                crate::models::fluidaudio_bridge(&crate::models::fluidaudio_asr_location()?)
+                    .context("failed to initialize FluidAudio bridge")?;
+            audio.init_asr().context(
+                "failed to initialize FluidAudio ASR (first run compiles models for ANE)",
+            )?;
+            Ok(audio)
+        })?;
         Ok(Self {
             audio,
             sink: crate::fluid_stdout::oneshot_sink(),

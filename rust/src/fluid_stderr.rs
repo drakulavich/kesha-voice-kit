@@ -118,6 +118,26 @@ pub(crate) fn relay_events_only(captured: &str) {
     }
 }
 
+/// A FluidAudio call whose own logger writes to fd 2: its lines come back as warn events on success, inside the error on failure (#1301).
+pub(crate) fn with_relayed_stderr<T>(f: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+    let (result, captured) = with_captured_stderr(f);
+    match result {
+        Ok(value) => {
+            relay_captured(&captured);
+            Ok(value)
+        }
+        Err(err) => {
+            relay_events_only(&captured);
+            let detail = failure_detail(&captured);
+            Err(if detail.is_empty() {
+                err
+            } else {
+                err.context(format!("FluidAudio reported{detail}"))
+            })
+        }
+    }
+}
+
 /// The first library line, as a suffix for the coded error the failed call returns.
 pub(crate) fn failure_detail(captured: &str) -> String {
     captured
@@ -200,6 +220,45 @@ mod tests {
             "{\"kind\":\"debug\",\"t_ms\":1,\"message\":\"ours\"}",
             "a failed call keeps the library line out of stderr"
         );
+    }
+
+    /// #1301: a download retry FluidAudio recovered from reached the CLI as raw fd 2 prose and failed `kesha install`.
+    #[test]
+    fn a_fluidaudio_log_line_from_a_call_that_succeeds_becomes_one_warn_event() {
+        let raw = "[WARN] [FluidAudio.DownloadUtils] Download attempt 1 for parakeet failed: The network connection was lost.. Retrying in 1.0s.";
+        let mut returned = None;
+        let out = relayed(|| {
+            returned = Some(with_relayed_stderr(|| {
+                c_print_stderr(c"[WARN] [FluidAudio.DownloadUtils] Download attempt 1 for parakeet failed: The network connection was lost.. Retrying in 1.0s.\n");
+                Ok(5)
+            }));
+        });
+        assert_eq!(returned.expect("ran").expect("the call succeeded"), 5);
+        let lines: Vec<&str> = out.lines().collect();
+        assert_eq!(lines.len(), 1, "{out:?}");
+        let v: serde_json::Value =
+            serde_json::from_str(lines[0]).expect("the library line is wrapped in an event");
+        assert_eq!(v["kind"], "warn");
+        assert_eq!(v["message"], raw);
+    }
+
+    #[test]
+    fn a_fluidaudio_log_line_from_a_call_that_fails_rides_in_the_error() {
+        let mut returned = None;
+        let out = relayed(|| {
+            returned = Some(with_relayed_stderr::<()>(|| {
+                c_print_stderr(
+                    c"[ERROR] [FluidAudio.DownloadUtils] Download failed after 3 attempts\n",
+                );
+                Err(anyhow::anyhow!("failed to initialize FluidAudio ASR"))
+            }));
+        });
+        let err = returned.expect("ran").expect_err("the call failed");
+        assert!(
+            format!("{err:#}").contains("Download failed after 3 attempts"),
+            "{err:#}"
+        );
+        assert!(out.trim().is_empty(), "no raw line reaches stderr: {out:?}");
     }
 
     #[test]

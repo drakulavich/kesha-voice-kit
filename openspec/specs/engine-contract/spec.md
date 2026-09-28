@@ -164,9 +164,9 @@ The CLI SHALL refuse to use an Engine whose describe document reports a `protoco
 
 ### Requirement: Engine stderr is an event stream
 
-The Engine SHALL write every non-payload line to stderr as one JSON object per line with a `kind` of `progress`, `warn`, `error` or `debug` and a `message`; `error` and `warn` SHALL each carry a `code` that is one of the published codes, and `error` MAY carry a `hint`. Diagnostics that a linked library writes to the Engine's file descriptor 2 on its own (the FluidAudio bridge on darwin-arm64) SHALL be captured and re-emitted as events — a `warn` on a successful call, or folded into the coded `error` of a failed one — so no raw library line ever reaches the CLI. Argument-parsing failures SHALL join the Event stream rather than bypass it: a clap parse error and a missing subcommand SHALL each be emitted as one `error` event whose `code` is `E_INVALID_ARG` and whose `message` contains the usage text, and the process SHALL exit 2. stdout SHALL carry only the command's payload; `--help` and `--version` SHALL remain plain prose on stdout and are the only prose exemption. A fatal `error` SHALL be followed by exit code 1, except where the tts-synthesis spec assigns another Exit code.
+The Engine SHALL write every non-payload line to stderr as one JSON object per line with a `kind` of `progress`, `warn`, `error` or `debug` and a `message`; `error` and `warn` SHALL each carry a `code` that is one of the published codes, and `error` MAY carry a `hint`. Diagnostics that a linked library writes to the Engine's file descriptor 2 on its own (the FluidAudio bridge on darwin-arm64, including its logger's download-retry lines while a model bundle is fetched) SHALL be captured and re-emitted as events — a `warn` on a successful call, or folded into the coded `error` of a failed one — so no raw library line ever reaches the CLI. Argument-parsing failures SHALL join the Event stream rather than bypass it: a clap parse error and a missing subcommand SHALL each be emitted as one `error` event whose `code` is `E_INVALID_ARG` and whose `message` contains the usage text, and the process SHALL exit 2. stdout SHALL carry only the command's payload; `--help` and `--version` SHALL remain plain prose on stdout and are the only prose exemption. A fatal `error` SHALL be followed by exit code 1, except where the tts-synthesis spec assigns another Exit code.
 
-The CLI SHALL render events for humans and SHALL treat a stderr line that is not a JSON object as `E_INTERNAL`, quoting at most the first 200 characters of the line once, never echoing the user's whole input. The CLI SHALL accept `\r\n` line endings.
+The CLI SHALL render events for humans and SHALL treat a stderr line that is not a JSON object as `E_INTERNAL`, quoting at most the first 200 characters of the line once, never echoing the user's whole input. The one exception is a model install (`kesha-engine install`) that exits 0 with no `error` event: the CLI SHALL render each such line as a warning with the same bounded quote and SHALL NOT fail the install, because Engines released before this fix (1.26.0 and earlier) let FluidAudio log a download retry they recovered from straight to fd 2 (#1301). The CLI SHALL accept `\r\n` line endings.
 
 #### Scenario: Missing model produces a parseable Error code
 
@@ -193,6 +193,13 @@ The CLI SHALL render events for humans and SHALL treat a stderr line that is not
 - WHEN the CLI parses stderr
 - THEN the failure is reported as `E_INTERNAL` with the first 200 characters of the raw line in the message
 
+#### Scenario: A recovered download retry does not fail an install
+
+- GIVEN an Engine whose FluidAudio logger writes `[WARN] [FluidAudio.DownloadUtils] Download attempt 1 … Retrying in 1.0s.` to fd 2 during `kesha-engine install`
+- WHEN the install recovers and the Engine exits 0 with no `error` event
+- THEN the CLI prints the line as a warning quoting it, and `kesha install` exits 0
+- AND the same line on an install that exits non-zero is still reported as `E_INTERNAL`
+
 #### Scenario: A library warning stays on the event stream
 
 - GIVEN a word FluidAudio's G2P cannot encode
@@ -200,7 +207,7 @@ The CLI SHALL render events for humans and SHALL treat a stderr line that is not
 - THEN the failure reaches the CLI as one coded `error` event and the library's own diagnostic as a `warn` event or inside that error's message
 - AND the CLI prints one `error [E_SCRIPT_UNSUPPORTED]: …` line and no unprefixed line
 
-> *Technical Note — Emitter in `rust/src/protocol/events.rs` (`rust/tests/no_stray_eprintln.rs` keeps it the only writer); parser `readEvents` in `src/engine/events.ts`. `Cli::try_parse()` in `rust/src/main.rs` turns a usage error into one `E_INVALID_ARG` event and exit 2, which `rust/tests/describe_cli.rs` pins for the deleted flags.*
+> *Technical Note — Emitter in `rust/src/protocol/events.rs` (`rust/tests/no_stray_eprintln.rs` keeps it the only writer); parser `readEvents` in `src/engine/events.ts`. `with_relayed_stderr` in `rust/src/fluid_stderr.rs` wraps the FluidAudio ASR init and the diarization warm-up; the install-only tolerance is `runEngineModelInstall` in `src/engine-install.ts`, pinned by `tests/integration/cli-contracts.test.ts`. `Cli::try_parse()` in `rust/src/main.rs` turns a usage error into one `E_INVALID_ARG` event and exit 2, which `rust/tests/describe_cli.rs` pins for the deleted flags.*
 
 ### Requirement: A panic is reported through the Event stream
 
