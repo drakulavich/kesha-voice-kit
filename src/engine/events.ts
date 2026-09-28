@@ -233,6 +233,11 @@ function quoteInvalidLine(line: string): string {
   return chars.length <= MAX_QUOTED_LINE_CHARS ? line : `${chars.slice(0, MAX_QUOTED_LINE_CHARS).join("")}…`;
 }
 
+/** One wording for an off-protocol line, whether it fails the run or only warns. */
+export function offProtocolLine(command: string, line: string): string {
+  return `kesha-engine ${command} wrote a line that is not a protocol event: "${quoteInvalidLine(line)}"`;
+}
+
 /** The KeshaError for a run that wrote a non-event line, reported an error event, or exited non-zero in silence; `stderr` is the transcript unless the caller substitutes one. */
 export function engineFailure(command: string, outcome: StderrOutcome, exitCode: number | undefined, stderr = outcome.stderr.trim()): KeshaError {
   const extra = { exitCode, stderr, origin: "engine" as const };
@@ -240,7 +245,7 @@ export function engineFailure(command: string, outcome: StderrOutcome, exitCode:
     const rest = stderr.split("\n").filter((line) => !outcome.invalid.includes(line)).join("\n").trim();
     return new KeshaError(
       "E_INTERNAL",
-      `kesha-engine ${command} wrote a line that is not a protocol event: "${quoteInvalidLine(outcome.invalid[0]!)}"`,
+      offProtocolLine(command, outcome.invalid[0]!),
       { ...extra, stderr: rest },
     );
   }

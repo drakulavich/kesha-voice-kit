@@ -14,7 +14,7 @@ import {
   targetKey,
 } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, KeshaError } from "./engine/events";
+import { engineFailure, KeshaError, offProtocolLine } from "./engine/events";
 import { runEngineProcess } from "./engine/spawn";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
@@ -726,6 +726,11 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
     status.clear();
   }
   const { exitCode, events } = run;
+  // #1301: engine 1.26.0 lets FluidAudio log a download retry it recovers from on raw fd 2; a clean exit outranks that line.
+  if (exitCode === 0 && events.error === null) {
+    for (const line of events.invalid) log.warn(offProtocolLine("install", line));
+    return;
+  }
   if (events.error || events.invalid.length > 0) throw engineFailure("install", events, exitCode);
   if (exitCode !== 0) {
     // Nothing coded and nothing off-protocol: the engine failed without saying why, so neither do we.

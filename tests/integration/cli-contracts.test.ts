@@ -140,6 +140,11 @@ if (args[0] === "install") {
     console.error(process.env.KESHA_FAKE_INSTALL_ERROR);
     process.exit(42);
   }
+  if (process.env.KESHA_FAKE_INSTALL_RAW_LINE) {
+    console.error(JSON.stringify({ kind: "progress", message: "GET parakeet" }));
+    console.error(process.env.KESHA_FAKE_INSTALL_RAW_LINE);
+    console.error(JSON.stringify({ kind: "progress", message: "OK  parakeet" }));
+  }
   if (process.env.KESHA_FAKE_INSTALL_SILENT_EXIT) {
     process.exit(Number(process.env.KESHA_FAKE_INSTALL_SILENT_EXIT));
   }
@@ -1718,6 +1723,23 @@ process.exit(99);
       command: "install",
       status: "failed",
       errorKind: "install_failed",
+    });
+  });
+
+  // #1301: engine 1.26.0 lets FluidAudio log a recovered download retry straight to fd 2.
+  test("a non-event line from a model install that succeeds is a warning, not E_INTERNAL", async () => {
+    const dir = makeTempDir("kesha-cli-contract-install-raw-line-");
+    const enginePath = createFakeEngine(dir);
+    markFakeEngineInstalled(enginePath);
+    const rawLine =
+      "[WARN] [FluidAudio.DownloadUtils] Download attempt 1 for parakeet failed: The network connection was lost.. Retrying in 1.0s.";
+    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath, KESHA_FAKE_INSTALL_RAW_LINE: rawLine };
+
+    const run = await runCli(["install", "--vad"], { env });
+    expectContract(run, {
+      exitCode: 0,
+      stderrContains: [`kesha-engine install wrote a line that is not a protocol event: "${rawLine}"`],
+      stderrNotContains: ["E_INTERNAL"],
     });
   });
 
