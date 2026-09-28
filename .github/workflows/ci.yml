@@ -131,7 +131,6 @@ jobs:
               - '.github/actions/**'
               - '.github/scripts/install-ffmpeg.sh'
               - '.github/scripts/install-kesha-backend.sh'
-              - '.github/scripts/mark-engine-version.ts'
               - '.github/workflows/release.yml'
             real_engine_e2e:
               - 'rust/**'
@@ -592,13 +591,7 @@ jobs:
       needs.changes.result == 'success' &&
       needs.unit-tests.result != 'failure' &&
       needs.unit-tests.result != 'cancelled' &&
-      (
-        github.event_name == 'schedule' ||
-        (
-          needs.changes.outputs.real_engine_e2e == 'true' &&
-          !startsWith(github.event.head_commit.message, 'chore(release):')
-        )
-      )
+      (github.event_name == 'schedule' || needs.changes.outputs.real_engine_e2e == 'true')
     runs-on: macos-latest
     timeout-minutes: 15
     permissions:
@@ -670,13 +663,7 @@ jobs:
       needs.changes.result == 'success' &&
       needs.unit-tests.result != 'failure' &&
       needs.unit-tests.result != 'cancelled' &&
-      (
-        github.event_name == 'schedule' ||
-        (
-          needs.changes.outputs.real_engine_e2e == 'true' &&
-          !startsWith(github.event.head_commit.message, 'chore(release):')
-        )
-      )
+      (github.event_name == 'schedule' || needs.changes.outputs.real_engine_e2e == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
@@ -721,13 +708,7 @@ jobs:
       needs.changes.result == 'success' &&
       needs.unit-tests.result != 'failure' &&
       needs.unit-tests.result != 'cancelled' &&
-      (
-        github.event_name == 'schedule' ||
-        (
-          needs.changes.outputs.real_engine_e2e == 'true' &&
-          !startsWith(github.event.head_commit.message, 'chore(release):')
-        )
-      )
+      (github.event_name == 'schedule' || needs.changes.outputs.real_engine_e2e == 'true')
     runs-on: windows-latest
     # Higher than the Linux lane's 12: model downloads are slower on this runner.
     timeout-minutes: 20
@@ -771,75 +752,6 @@ jobs:
         shell: bash
         run: bash .github/scripts/assert-coreml-rejected.sh
 
-  release-branch-engine-smoke:
-    # P1.11: on a chore(release) push to main this replaces the published-engine lanes with a
-    # from-source smoke (#216, #464); whether that swap is still wanted is open in #1309.
-    needs: [changes, unit-tests]
-    if: |
-      needs.changes.outputs.integration == 'true' &&
-      (
-        startsWith(github.event.head_commit.message, 'chore(release):')
-      ) &&
-      needs.unit-tests.result == 'success'
-    strategy:
-      # A network flake on one platform must not cancel the other's verification.
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            ffmpeg-provider: apt
-            engine-bin: kesha-engine
-            timeout: 35
-          # Cargo emits the .exe suffix, and a cold MSVC build dominates the job.
-          - os: windows-latest
-            ffmpeg-provider: skip
-            engine-bin: kesha-engine.exe
-            timeout: 50
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: ${{ matrix.timeout }}
-    env:
-      KESHA_ENGINE_BIN: ${{ github.workspace }}/rust/target/release/${{ matrix.engine-bin }}
-      KESHA_CACHE_DIR: ${{ github.workspace }}/.kesha-ci-cache
-    steps:
-      - name: 📥 Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: 🍞 Setup Bun workspace
-        uses: ./.github/actions/setup-bun
-
-      - name: 🦀 Setup Rust
-        uses: ./.github/actions/setup-rust
-
-      - name: 🦀 Build local engine
-        shell: bash
-        run: cd rust && cargo build --release --features portable --no-default-features
-
-      - name: 🧾 Mark local engine version
-        shell: bash
-        run: bun .github/scripts/mark-engine-version.ts
-
-      # Its own key was restore-only and nothing ever wrote it, so every run cold-downloaded ~3.5GB.
-      - name: 🔊 Install models through local backend
-        uses: ./.github/actions/install-kesha-backend
-        with:
-          cache-path: .kesha-ci-cache
-          cache-key: kesha-models-tts-v3
-          cache-cross-os: "true"
-          ffmpeg-provider: ${{ matrix.ffmpeg-provider }}
-          install-args: --onnx --tts en
-          cache-write: "false"
-
-      - name: 🚬 Smoke release branch local engine
-        shell: bash
-        run: |
-          kesha status
-          kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > kesha-release-smoke.json
-          bun .github/scripts/assert-transcript.ts kesha-release-smoke.json
-
-      - name: 🗣️ Synthesis round-trip
-        shell: bash
-        run: bun .github/scripts/smoke-synthesis.ts kesha-release-synth
-
   tts-e2e:
     # Runs whenever rust engine code, the TS CLI that drives `kesha say`,
     # or the say-e2e test itself changes. Wait for `unit-tests` so a red
@@ -853,13 +765,7 @@ jobs:
       needs.changes.result == 'success' &&
       needs.unit-tests.result != 'failure' &&
       needs.unit-tests.result != 'cancelled' &&
-      (
-        github.event_name == 'schedule' ||
-        (
-          needs.changes.outputs.tts_e2e == 'true' &&
-          !startsWith(github.event.head_commit.message, 'chore(release):')
-        )
-      )
+      (github.event_name == 'schedule' || needs.changes.outputs.tts_e2e == 'true')
     # Pinned (matches release.yml): this is the only CI lane that
     # builds the engine from source on macOS, and macos-latest's floating
     # Xcode 16.4 fails to link (`clang_rt.osx not found`).
@@ -1591,7 +1497,6 @@ jobs:
       - integration-tests-full
       - published-engine-smoke
       - windows-engine-smoke
-      - release-branch-engine-smoke
       - tts-e2e
       - raycast-lint
       - openspec-validate
