@@ -94,8 +94,9 @@ export function npmSweptFiles(root: string): string[] {
 }
 
 const NPM_VERB = "(?:install|i|in|add|update|up|upgrade|remove|rm|r|uninstall|un|unlink)";
+const NPM_GLOBAL_FLAG = "(?:-g|--global(?:=true)?|--location=global)";
 const NPM_GLOBAL = new RegExp(
-  `\\bnpm\\s+(?:${NPM_VERB}\\b[^\\n;&|]*?\\s(?:-g|--global)(?![\\w-])|(?:-g|--global)\\s+${NPM_VERB}\\b)`,
+  `\\bnpm\\s+(?:${NPM_VERB}\\b[^\\n;&|]*?\\s${NPM_GLOBAL_FLAG}(?![\\w-])|${NPM_GLOBAL_FLAG}\\s+${NPM_VERB}\\b)`,
 );
 
 export function npmGlobalCommands(path: string, contents: string): string[] {

@@ -472,6 +472,8 @@ describe("npmGlobalCommands", () => {
     "npm update -g @drakulavich/kesha-voice-kit",
     "npm remove -g @drakulavich/kesha-voice-kit",
     "npm uninstall --global @drakulavich/kesha-voice-kit",
+    "npm install --global=true @drakulavich/kesha-voice-kit",
+    "npm install --location=global @drakulavich/kesha-voice-kit",
     "npm -g install @drakulavich/kesha-voice-kit",
     "Upgrade with `npm up @drakulavich/kesha-voice-kit -g`.",
   ])("refuses %s", (line) => {
