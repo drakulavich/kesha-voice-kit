@@ -720,6 +720,32 @@ describe("collectStatus disk accounting (#647)", () => {
     }
   });
 
+  posixEngineTest("an overridden engine counts itself and its sidecars, never its prefix (#1313)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-prefix-"));
+    const cache = join(dir, ".cache", "kesha");
+    const prefix = join(dir, "usr", "local");
+    const binPath = writeFakeEngine(join(prefix, "bin"));
+    writeFileSync(join(prefix, "bin", "say-avspeech"), "x".repeat(16));
+    writeFileSync(join(prefix, "bin", "unrelated-tool"), "x".repeat(1000));
+    mkdirSync(join(prefix, "share", "big"), { recursive: true });
+    writeFileSync(join(prefix, "share", "big", "blob"), "x".repeat(4096));
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      const engineBytes = statSync(binPath).size + 16;
+
+      expect(disk.components.find((c) => c.label === "Engine")?.sizeBytes).toBe(engineBytes);
+      expect(disk.totalBytes).toBe(64 + engineBytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   posixEngineTest("a sibling directory sharing the cache path prefix is counted (#790)", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-sibling-"));
     const cache = join(dir, ".cache", "kesha");
