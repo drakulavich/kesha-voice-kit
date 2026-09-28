@@ -13,6 +13,7 @@ on:
     - cron: "0 11 * * 1" # real-model-canary
     - cron: "0 14 * * 1" # model-plan-size-canary
     - cron: "17 7 1 * *" # cargo-dependency-maintenance
+    - cron: "30 6 * * 1" # raycast-schema-drift
   workflow_dispatch:
     inputs:
       job:
@@ -26,6 +27,7 @@ on:
           - real-model-canary
           - model-plan-size-canary
           - cargo-dependency-maintenance
+          - raycast-schema-drift
       record:
         description: "capability-pact only: re-record the pacts and upload them as artifacts instead of verifying."
         type: boolean
@@ -431,3 +433,27 @@ jobs:
           REQUESTED_MONTH: ${{ inputs.month }}
         shell: bash
         run: .github/scripts/cargo-maintenance-issue.sh
+
+  # raycast-lint validates the manifest against a vendored schema so a flaky fetch cannot fail a PR (#1292); this catches the Store moving on.
+  raycast-schema-drift:
+    name: "🧩 Raycast Schema Drift"
+    if: github.event.schedule == '30 6 * * 1' || (github.event_name == 'workflow_dispatch' && inputs.job == 'raycast-schema-drift')
+    concurrency:
+      group: nightly-raycast-schema-drift
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🧩 Compare the vendored schema with the Store's
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPORT: ${{ github.event_name == 'schedule' }}
+        shell: bash
+        run: bash .github/scripts/raycast-schema-drift.sh

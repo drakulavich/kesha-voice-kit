@@ -183,7 +183,7 @@ jobs:
             raycast:
               - 'raycast/**'
               - '.github/workflows/ci.yml'
-              - '.github/scripts/raycast-lint.sh'
+              - '.github/scripts/raycast-*'
               - '.github/raycast/**'
             openspec:
               - 'openspec/**'
@@ -962,6 +962,9 @@ jobs:
 
       - name: 🔍 Lint (ray lint includes tsc --noEmit)
         run: ../.github/scripts/raycast-lint.sh
+
+      - name: 🔍 Lint still rejects a schema-invalid manifest
+        run: ../.github/scripts/raycast-lint-rejects-bad-manifest.sh
 
       - name: 🧪 Test
         run: npm test
