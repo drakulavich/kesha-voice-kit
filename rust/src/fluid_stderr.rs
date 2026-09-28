@@ -92,7 +92,7 @@ pub(crate) fn with_captured_stderr<R>(f: impl FnOnce() -> R) -> (R, String) {
         events::warn(
             events::W_GENERIC,
             format!(
-                "FluidAudio diagnostics were dropped: no capture file could be created in {}",
+                "FluidAudio's stderr was not captured (no capture file could be created in {}); anything it wrote there was discarded",
                 std::env::temp_dir().display()
             ),
         );
@@ -283,14 +283,14 @@ mod tests {
         assert_eq!(
             lines.len(),
             1,
-            "one warning says the diagnostics were dropped: {out:?}"
+            "one warning says the capture failed: {out:?}"
         );
         let v: serde_json::Value = serde_json::from_str(lines[0]).expect("an event");
         assert_eq!(v["kind"], "warn");
         assert!(
             v["message"]
                 .as_str()
-                .is_some_and(|m| m.contains("FluidAudio diagnostics were dropped")),
+                .is_some_and(|m| m.contains("FluidAudio's stderr was not captured")),
             "{v}"
         );
     }
