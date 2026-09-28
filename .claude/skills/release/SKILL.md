@@ -58,6 +58,6 @@ npm publish is effectively permanent (72 h unpublish window). Never publish from
 
 ## Reference
 
-- `integration-tests-full` and the other published-Engine lanes in `ci.yml` resolve the newest stable Engine, so they run on every branch and on release follow-up merges alike.
+- `integration-tests-full` and the other published-Engine lanes in `ci.yml` resolve the newest stable Engine, so a release follow-up merge gets the same path-filtered coverage as any other pull request or push to `main`.
 - Greptile updates one top-level comment. Confirm a re-review through its "Last reviewed commit" SHA and the issue comment's `updated_at` (`gh api repos/drakulavich/kesha-voice-kit/issues/<N>/comments`). Gate on findings, never on its confidence score.
 - Where each path installs from, and the release manifest: [docs/distribution.md](../../../docs/distribution.md).
