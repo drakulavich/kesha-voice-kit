@@ -16,9 +16,9 @@ issue/PR that drove it). Newest concerns first within each section.
   binary (`kesha-engine`) as a subprocess, rather than linking native code in-process.
 - **Rationale:** keeps the CLI install fast and dependency-light (no native build at
   `npm`/`bun add` time); the heavy ML work lives in a self-contained binary downloaded
-  from GitHub Releases. The two are versioned independently (`package.json#version` vs
-  `package.json#keshaEngine.version`) so CLI-only patches ship without rebuilding the engine.
-- **Status:** active.
+  from GitHub Releases. Before 2.0.0 they were versioned independently; since 2.0.0
+  `package.json#version` names both the CLI and engine, and one stable tag releases both.
+- **Status:** active (the subprocess boundary); independent versioning is superseded by 2.0.0.
 
 ### Engine and models are never auto-downloaded
 - **Decision:** `kesha install` downloads the engine/models explicitly; nothing is

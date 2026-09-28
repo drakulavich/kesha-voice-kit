@@ -4,11 +4,11 @@ All notable changes to `@drakulavich/kesha-voice-kit` are documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); the
 project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-CLI and engine versions are **decoupled** — see `CLAUDE.md` for details. Tags
-with a `-cli` suffix are CLI-only patches that reuse the previous engine
-binary.
+From 2.0.0 one version names the CLI and the engine, and one `vX.Y.Z` tag
+releases both. Before 2.0.0 they were versioned separately, and `-cli` tags
+were CLI-only releases that reused the previous engine binary.
 
-## [Unreleased]
+## [2.0.0] — 2026-09-28
 
 ### Changed
 - **BREAKING (Core API, `@drakulavich/kesha-voice-kit/core`):** the programmatic API is v2, for the 2.0.0 CLI release. `transcribe(path, opts?)` resolves to a `TranscribeResult` (`file`, `text`, `lang`, `sttTimeMs`, and `segments` only with `timestamps` or `speakers`) instead of a string. `install(opts?)` replaces `downloadModel`, `downloadEngine`, `downloadCoreML` and `downloadTts`; its options mirror the `kesha install` flags (`tts`, `vad`, `diarize`, `noCache`, `backend`, `engineVersion`) and it makes the same refusals before downloading. `capabilities()` returns the engine's describe document as `EngineDescription`. `transcribeWithTimestamps`, `transcribeWithSegments`, `SayError` and the `TranscriptionOutput` type are removed; every rejection is a `KeshaError` with `code` and, when known, `hint` (`say` keeps `exitCode` and `stderr`), and an uncoded failure becomes `E_INTERNAL`. The CLI, the MCP server and TOON output are unchanged. Every removed name and its replacement: [docs/api.md](docs/api.md#migrating-to-200).
