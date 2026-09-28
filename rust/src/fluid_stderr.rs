@@ -138,12 +138,12 @@ pub(crate) fn with_relayed_stderr<T>(f: impl FnOnce() -> anyhow::Result<T>) -> a
     }
 }
 
-/// The first library line, as a suffix for the coded error the failed call returns.
+/// The last library line, as a suffix for the error the failed call returns: after a retry or two, that is the one that says why it gave up.
 pub(crate) fn failure_detail(captured: &str) -> String {
     captured
         .lines()
         .map(str::trim_end)
-        .find(|l| !l.is_empty() && !l.starts_with("{\"kind\":"))
+        .rfind(|l| !l.is_empty() && !l.starts_with("{\"kind\":"))
         .map(|l| format!(" ({})", truncated(l)))
         .unwrap_or_default()
 }
@@ -248,6 +248,9 @@ mod tests {
         let out = relayed(|| {
             returned = Some(with_relayed_stderr::<()>(|| {
                 c_print_stderr(
+                    c"[WARN] [FluidAudio.DownloadUtils] Download attempt 1 failed. Retrying in 1.0s.\n",
+                );
+                c_print_stderr(
                     c"[ERROR] [FluidAudio.DownloadUtils] Download failed after 3 attempts\n",
                 );
                 Err(anyhow::anyhow!("failed to initialize FluidAudio ASR"))
@@ -256,7 +259,7 @@ mod tests {
         let err = returned.expect("ran").expect_err("the call failed");
         assert!(
             format!("{err:#}").contains("Download failed after 3 attempts"),
-            "{err:#}"
+            "the terminal line explains the failure, not the first retry: {err:#}"
         );
         assert!(out.trim().is_empty(), "no raw line reaches stderr: {out:?}");
     }
