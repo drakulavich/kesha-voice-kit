@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "fs";
+import { existsSync, realpathSync, statSync } from "fs";
 import { dirname, join, resolve, sep } from "path";
 import { dirSizeBytes } from "./diagnostic-paths";
 
@@ -67,8 +67,18 @@ function footprintBytes(engine: EngineFootprint, members: string[]): number {
 /** The cache plus whatever engine bytes live outside it, each counted once (#790). */
 export function cacheTotalBytes(cacheRoot: string, binPath: string): number {
   const engine = engineFootprint(binPath, cacheRoot);
-  const outside = engine.members.filter((m) => !isInsideDir(m, cacheRoot));
+  const realCache = existingPath(cacheRoot);
+  const outside = engine.members.filter((m) => !isInsideDir(existingPath(m), realCache));
   return dirSizeBytes(cacheRoot) + footprintBytes(engine, outside);
+}
+
+/** Compared by target, so an outside symlink into the cache is not counted twice. */
+function existingPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
 }
 
 /**
