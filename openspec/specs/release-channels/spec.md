@@ -296,5 +296,5 @@ A published CLI SHALL name the Engine it resolves, and that name SHALL be derive
   (`.github/workflows/ci.yml::integration-tests-full`,
   `.github/workflows/ci.yml::published-engine-smoke` and
   `.github/workflows/ci.yml::windows-engine-smoke`) install the newest stable one, so they
-  carry no branch guard. Whether alpha Engine tags need a guard of their own, or whether
+  carry no branch or commit-message guard. Whether alpha Engine tags need a guard of their own, or whether
   pinning those lanes to the stable channel is sufficient, is not settled.

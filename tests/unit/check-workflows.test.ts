@@ -1250,8 +1250,8 @@ describe("requireJobTimeouts", () => {
     expect(requireJobTimeouts(CI, doc)).toEqual([]);
   });
 
-  // release-branch-engine-smoke's real shape: `timeout-minutes: ${{ matrix.timeout }}` with the
-  // value living only in strategy.matrix.include, not a top-level matrix key.
+  // `timeout-minutes: ${{ matrix.timeout }}` with the value living only in
+  // strategy.matrix.include, not a top-level matrix key.
   test("resolves a matrix-templated timeout-minutes per leg", () => {
     const doc = {
       jobs: {
