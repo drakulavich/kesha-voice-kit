@@ -1252,6 +1252,38 @@ exit 2
     }
   });
 
+  posixEngineTest("an overridden engine is sized as its binary and sidecars in both (#1313)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-status-prefix-"));
+    const cache = join(dir, ".cache", "kesha");
+    const prefix = join(dir, "usr", "local");
+    const binDir = join(prefix, "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeEngineStub(binPath, "#!/bin/sh\nexit 2\n");
+    writeFileSync(join(binDir, "kesha-textlang"), "x".repeat(16));
+    writeFileSync(join(binDir, "unrelated-tool"), "x".repeat(1000));
+    mkdirSync(join(prefix, "share", "big"), { recursive: true });
+    writeFileSync(join(prefix, "share", "big", "blob"), "x".repeat(4096));
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+
+    process.env.HOME = dir;
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
+    try {
+      const engineBytes = statSync(binPath).size + 16;
+      const doctor = (await collectDoctorReport()).cache;
+      const engineRow = doctor.components.find((c) => c.label === "Engine");
+
+      expect(engineRow).toMatchObject({ path: binPath, exists: true, sizeBytes: engineBytes });
+      expect(doctor.totalBytes).toBe(64 + engineBytes);
+      expect((await collectStatus({ disk: true })).disk!.totalBytes).toBe(doctor.totalBytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // Two commands reporting different FluidAudio totals is the #790 failure again, one root
   // further out — so both read the same resolver and the same helper (#688).
   posixEngineTest("both name the same FluidAudio roots and the same grand total", async () => {

@@ -1,8 +1,21 @@
-import { join, resolve, sep } from "path";
+import { existsSync, realpathSync, statSync } from "fs";
+import { dirname, join, resolve, sep } from "path";
+import { dirSizeBytes } from "./diagnostic-paths";
 
-export interface CachePathEntry {
+/** The sidecar executables the engine spawns from its own directory. */
+const SIDECAR_FILES = ["say-avspeech", "kesha-textlang"] as const;
+
+export interface CacheComponentSize {
   label: string;
   path: string;
+  exists: boolean;
+  sizeBytes: number;
+}
+
+interface EngineFootprint {
+  path: string;
+  members: string[];
+  sizeOf: (path: string) => number;
 }
 
 /**
@@ -19,6 +32,56 @@ export function isInsideDir(child: string, parent: string): boolean {
 }
 
 /**
+ * What the Engine row owns (#1313). A managed install owns all of `<cache>/engine`. An
+ * overridden binary (`KESHA_ENGINE_BIN`, a Nix store path) shares its directory with software
+ * Kesha does not own, so only the binary and the sidecars beside it are counted — its
+ * grandparent may be `/usr/local`.
+ */
+function engineFootprint(binPath: string, cacheRoot: string): EngineFootprint {
+  const managedRoot = join(cacheRoot, "engine");
+  if (resolve(dirname(binPath)) === resolve(managedRoot, "bin")) {
+    return { path: managedRoot, members: [managedRoot], sizeOf: dirSizeBytes };
+  }
+  const binDir = dirname(binPath);
+  return {
+    path: binPath,
+    members: [binPath, ...SIDECAR_FILES.map((f) => join(binDir, f))],
+    sizeOf: regularFileBytes,
+  };
+}
+
+/** A sidecar name that is (or links to) a directory is not ours to walk. */
+function regularFileBytes(path: string): number {
+  try {
+    const st = statSync(path);
+    return st.isFile() ? st.size : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function footprintBytes(engine: EngineFootprint, members: string[]): number {
+  return members.reduce((n, p) => n + engine.sizeOf(p), 0);
+}
+
+/** The cache plus whatever engine bytes live outside it, each counted once (#790). */
+export function cacheTotalBytes(cacheRoot: string, binPath: string): number {
+  const engine = engineFootprint(binPath, cacheRoot);
+  const realCache = existingPath(cacheRoot);
+  const outside = engine.members.filter((m) => !isInsideDir(existingPath(m), realCache));
+  return dirSizeBytes(cacheRoot) + footprintBytes(engine, outside);
+}
+
+/** Compared by target, so an outside symlink into the cache is not counted twice. */
+function existingPath(path: string): string {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
+/**
  * The Kesha-managed directories both `kesha status --disk` and `kesha doctor` report, in one
  * place so a new model dir cannot be added to only one of them. The two ASR rows are mutually
  * exclusive: a CoreML engine never populates the ONNX dir, and instead roots FluidAudio's own
@@ -26,13 +89,19 @@ export function isInsideDir(child: string, parent: string): boolean {
  * Whatever stayed in FluidAudio's own trees is outside this cache and is reported separately
  * by `fluidExternalRoots`.
  */
-export function cacheComponentPaths(
+export function cacheComponents(
   cacheRoot: string,
-  engineDir: string,
+  binPath: string,
   coreml: boolean,
-): CachePathEntry[] {
-  return [
-    { label: "Engine", path: engineDir },
+): CacheComponentSize[] {
+  const engine = engineFootprint(binPath, cacheRoot);
+  const engineRow = {
+    label: "Engine",
+    path: engine.path,
+    exists: existsSync(engine.path),
+    sizeBytes: footprintBytes(engine, engine.members),
+  };
+  const modelRows = [
     ...(coreml
       ? [{ label: "FluidAudio (in cache)", path: join(cacheRoot, "fluidaudio") }]
       : [{ label: "ASR (Parakeet)", path: join(cacheRoot, "models/parakeet-tdt-v3") }]),
@@ -40,5 +109,6 @@ export function cacheComponentPaths(
     { label: "VAD (Silero)", path: join(cacheRoot, "models/silero-vad") },
     { label: "TTS (Kokoro)", path: join(cacheRoot, "models/kokoro-82m") },
     { label: "TTS (Vosk)", path: join(cacheRoot, "models/vosk-ru") },
-  ];
+  ].map((row) => ({ ...row, exists: existsSync(row.path), sizeBytes: dirSizeBytes(row.path) }));
+  return [engineRow, ...modelRows];
 }

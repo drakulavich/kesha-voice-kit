@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
 import { dirname, join, sep } from "path";
 import { tmpdir } from "os";
 import {
@@ -715,6 +715,76 @@ describe("collectStatus disk accounting (#647)", () => {
     try {
       const disk = (await collectStatus({ disk: true })).disk!;
       expect(disk.totalBytes).toBe(64 + statSync(binPath).size);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an overridden engine counts itself and its sidecars, never its prefix (#1313)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-prefix-"));
+    const cache = join(dir, ".cache", "kesha");
+    const prefix = join(dir, "usr", "local");
+    const binPath = writeFakeEngine(join(prefix, "bin"));
+    writeFileSync(join(prefix, "bin", "say-avspeech"), "x".repeat(16));
+    writeFileSync(join(prefix, "bin", "unrelated-tool"), "x".repeat(1000));
+    mkdirSync(join(prefix, "share", "big"), { recursive: true });
+    writeFileSync(join(prefix, "share", "big", "blob"), "x".repeat(4096));
+    mkdirSync(join(cache, "models", "kokoro-82m"), { recursive: true });
+    writeFileSync(join(cache, "models", "kokoro-82m", "voice.bin"), "x".repeat(64));
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      const engineBytes = statSync(binPath).size + 16;
+
+      expect(disk.components.find((c) => c.label === "Engine")?.sizeBytes).toBe(engineBytes);
+      expect(disk.totalBytes).toBe(64 + engineBytes);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an overridden engine never walks a directory behind a sidecar name (#1313)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-sidecar-dir-"));
+    const cache = join(dir, ".cache", "kesha");
+    const prefix = join(dir, "usr", "local");
+    const binPath = writeFakeEngine(join(prefix, "bin"));
+    mkdirSync(join(prefix, "share"), { recursive: true });
+    writeFileSync(join(prefix, "share", "blob"), "x".repeat(4096));
+    symlinkSync(join(prefix, "share"), join(prefix, "bin", "say-avspeech"));
+    mkdirSync(join(prefix, "bin", "kesha-textlang"));
+    writeFileSync(join(prefix, "bin", "kesha-textlang", "blob"), "x".repeat(2048));
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      expect(disk.components.find((c) => c.label === "Engine")?.sizeBytes).toBe(statSync(binPath).size);
+      expect(disk.totalBytes).toBe(statSync(binPath).size);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an outside engine symlink into the cache is counted once (#1313)", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-disk-engine-link-"));
+    const cache = join(dir, ".cache", "kesha");
+    const binPath = join(dir, "override", "kesha-engine");
+    mkdirSync(dirname(binPath), { recursive: true });
+    const cachedEngine = writeFakeEngine(join(cache, "owned-engine"));
+    symlinkSync(cachedEngine, binPath);
+
+    process.env.KESHA_ENGINE_BIN = binPath;
+    process.env.KESHA_CACHE_DIR = cache;
+    process.env.HOME = dir;
+    try {
+      const disk = (await collectStatus({ disk: true })).disk!;
+      const engineBytes = statSync(cachedEngine).size;
+      expect(disk.components.find((c) => c.label === "Engine")?.sizeBytes).toBe(engineBytes);
+      expect(disk.totalBytes).toBe(engineBytes);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

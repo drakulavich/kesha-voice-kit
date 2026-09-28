@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { cacheComponentPaths, isInsideDir } from "./cache-layout";
+import { cacheComponents, cacheTotalBytes } from "./cache-layout";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
 import { dirname, join } from "path";
@@ -270,14 +270,8 @@ function collectCache(
 ): DoctorReport["cache"] {
   const cache = keshaCacheDir();
   const binPath = getEngineBinPath();
-  const engineDir = dirname(dirname(binPath));
-  const components: CacheComponent[] = cacheComponentPaths(
-    cache,
-    engineDir,
-    isCoremlBackend(backend),
-  ).map((component) => ({ label: component.label, ...pathSummary(component.path) }));
-  const engineOutsideCache = isInsideDir(engineDir, cache) ? 0 : dirSizeBytes(engineDir);
-  const totalBytes = dirSizeBytes(cache) + engineOutsideCache;
+  const components: CacheComponent[] = cacheComponents(cache, binPath, isCoremlBackend(backend));
+  const totalBytes = cacheTotalBytes(cache, binPath);
   const externalRoots = fluidExternalRoots({ homeDir, cacheRoot: cache });
   const externalTotalBytes = fluidExternalTotalBytes(externalRoots);
 
