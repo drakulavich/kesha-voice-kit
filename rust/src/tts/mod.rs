@@ -85,13 +85,15 @@ pub(crate) fn open_session(
         .map_err(|e| anyhow::anyhow!("ONNX Runtime could not create a session for {model}: {e}"))?;
     match builder.commit_from_file(path) {
         Ok(session) => Ok(session),
-        Err(_) if !path.exists() => Err(anyhow::Error::new(crate::errors::CodedError {
-            code: crate::errors::ErrorCode::ModelMissing,
-            message: format!(
-                "{model} model {} does not exist; install it: kesha install --tts",
-                path.display()
-            ),
-        })),
+        Err(_) if matches!(path.try_exists(), Ok(false)) => {
+            Err(anyhow::Error::new(crate::errors::CodedError {
+                code: crate::errors::ErrorCode::ModelMissing,
+                message: format!(
+                    "{model} model {} does not exist; install it: kesha install --tts",
+                    path.display()
+                ),
+            }))
+        }
         Err(e) => Err(model_load_failed(model, path, e)),
     }
 }

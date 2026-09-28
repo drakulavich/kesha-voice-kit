@@ -61,13 +61,16 @@ pub(crate) fn check_charsiu_files(dir: &std::path::Path) -> Result<()> {
         "decoder_with_past_model.onnx",
     ];
     for file in &required {
-        if !dir.join(file).exists() {
-            crate::coded_bail!(
+        let path = dir.join(file);
+        match path.try_exists() {
+            Ok(true) => {}
+            Ok(false) => crate::coded_bail!(
                 crate::errors::ErrorCode::ModelMissing,
                 "G2P model for es/fr/it/pt voices not installed at {}. \
-                 Run `kesha install --tts es` (or fr, it, pt) to download it.",
+                     Run `kesha install --tts es` (or fr, it, pt) to download it.",
                 dir.display()
-            );
+            ),
+            Err(err) => return Err(crate::tts::model_load_failed("CharsiuG2P", &path, err)),
         }
     }
     Ok(())

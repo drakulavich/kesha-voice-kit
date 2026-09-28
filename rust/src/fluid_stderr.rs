@@ -126,10 +126,37 @@ fn relayed_line(line: &str) -> Option<String> {
     if line.is_empty() {
         return None;
     }
-    if line.starts_with("{\"kind\":") {
+    if is_event_line(line) {
         return Some(line.to_string());
     }
     Some(events::Event::warn(events::W_GENERIC, truncated(line)).render())
+}
+
+fn is_event_line(line: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else {
+        return false;
+    };
+    let Some(object) = value.as_object() else {
+        return false;
+    };
+    let is_string = |key: &str| object.get(key).is_some_and(serde_json::Value::is_string);
+    let optional_string = |key: &str| object.get(key).is_none_or(serde_json::Value::is_string);
+    match object.get("kind").and_then(serde_json::Value::as_str) {
+        Some("progress") => {
+            is_string("message")
+                && optional_string("phase")
+                && object
+                    .get("pct")
+                    .is_none_or(|pct| pct.as_u64().is_some_and(|pct| pct <= 100))
+        }
+        Some("warn" | "error") => is_string("code") && is_string("message"),
+        Some("debug") => {
+            object.get("t_ms").is_some_and(serde_json::Value::is_number)
+                && is_string("message")
+                && optional_string("event")
+        }
+        _ => false,
+    }
 }
 
 fn truncated(line: &str) -> String {
@@ -150,7 +177,7 @@ pub(crate) fn relay_captured(captured: &str) {
 /// Put back only our own events: the library's lines ride in the coded error instead.
 pub(crate) fn relay_events_only(captured: &str) {
     for line in captured.lines().map(str::trim_end) {
-        if line.starts_with("{\"kind\":") {
+        if is_event_line(line) {
             events::emit_rendered(line);
         }
     }
@@ -181,7 +208,7 @@ pub(crate) fn failure_detail(captured: &str) -> String {
     captured
         .lines()
         .map(str::trim_end)
-        .rfind(|l| !l.is_empty() && !l.starts_with("{\"kind\":"))
+        .rfind(|l| !l.is_empty() && !is_event_line(l))
         .map(|l| format!(" ({})", truncated(l)))
         .unwrap_or_default()
 }
@@ -338,6 +365,17 @@ mod tests {
             "{\"kind\":\"debug\",\"t_ms\":1,\"message\":\"ours\"}",
             "a failed call keeps the library line out of stderr"
         );
+    }
+
+    #[test]
+    fn a_library_line_that_only_looks_like_an_event_is_wrapped() {
+        for input in ["{\"kind\":not-json", "{\"kind\":\"progress\"}"] {
+            let out = relayed(|| relay_captured(input));
+            let line = out.trim();
+            let event: serde_json::Value = serde_json::from_str(line).expect("one protocol event");
+            assert_eq!(event["kind"], "warn");
+            assert_eq!(event["message"], input);
+        }
     }
 
     /// #1301: a download retry FluidAudio recovered from reached the CLI as raw fd 2 prose and failed `kesha install`.
