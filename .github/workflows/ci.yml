@@ -524,8 +524,7 @@ jobs:
     # `describe.skipIf(!engineInstalled)` when no engine is present, so this
     # lane exercises only the fake/stub-based contract suites
     # (`cli-contracts`, `say`). No `kesha install`, no cache, no
-    # download — so it's safe on every PR including release/* branches
-    # (no published-engine 404 risk without an install step). Real-engine
+    # download. Real-engine
     # coverage lives in `integration-tests-full` below, gated to engine/model
     # changes + nightly.
     #
@@ -580,9 +579,8 @@ jobs:
     # model-dependent e2e suites (which self-skip in the fast lane). Gated to
     # engine/model changes, narrow TS engine adapters, push-to-main of those
     # paths, and the nightly cron. Nightly run on main also seeds the
-    # default-branch-scoped model cache. Keep the release/* + chore(release)
-    # guards: this lane downloads the PUBLISHED engine, which doesn't exist yet
-    # during the release version-bump window.
+    # default-branch-scoped model cache. It installs the newest published stable
+    # engine, so no branch can ask it for an unpublished one (#1309).
     needs: [changes, unit-tests]
     # `always()` so a SKIPPED `unit-tests` (rust-only PRs have `code == 'false'`)
     # doesn't skip-propagate and drop the heavy lane — `real_engine_e2e` includes
@@ -598,7 +596,6 @@ jobs:
         github.event_name == 'schedule' ||
         (
           needs.changes.outputs.real_engine_e2e == 'true' &&
-          !startsWith(github.head_ref, 'release/') &&
           !startsWith(github.event.head_commit.message, 'chore(release):')
         )
       )
@@ -677,7 +674,6 @@ jobs:
         github.event_name == 'schedule' ||
         (
           needs.changes.outputs.real_engine_e2e == 'true' &&
-          !startsWith(github.head_ref, 'release/') &&
           !startsWith(github.event.head_commit.message, 'chore(release):')
         )
       )
@@ -729,7 +725,6 @@ jobs:
         github.event_name == 'schedule' ||
         (
           needs.changes.outputs.real_engine_e2e == 'true' &&
-          !startsWith(github.head_ref, 'release/') &&
           !startsWith(github.event.head_commit.message, 'chore(release):')
         )
       )
@@ -777,13 +772,12 @@ jobs:
         run: bash .github/scripts/assert-coreml-rejected.sh
 
   release-branch-engine-smoke:
-    # P1.11: a release branch cannot download its own engine — the tag does not exist until
-    # un-drafting — so build it locally and smoke that instead (#216, #464).
+    # P1.11: on a chore(release) push to main this replaces the published-engine lanes with a
+    # from-source smoke (#216, #464); whether that swap is still wanted is open in #1309.
     needs: [changes, unit-tests]
     if: |
       needs.changes.outputs.integration == 'true' &&
       (
-        startsWith(github.head_ref, 'release/') ||
         startsWith(github.event.head_commit.message, 'chore(release):')
       ) &&
       needs.unit-tests.result == 'success'
@@ -863,7 +857,6 @@ jobs:
         github.event_name == 'schedule' ||
         (
           needs.changes.outputs.tts_e2e == 'true' &&
-          !startsWith(github.head_ref, 'release/') &&
           !startsWith(github.event.head_commit.message, 'chore(release):')
         )
       )

@@ -257,7 +257,8 @@ Handy loops:
 - `ci.yml` — runs on PRs: `changes` filter → unit-tests (3 OSes) +
   `integration-tests` (macos-latest, no engine install) + path-filtered
   `integration-tests-full`, `tts-e2e`, and `raycast-lint`. The full
-  integration and TTS jobs skip `release/*`; `integration-tests` does not.
+  integration and TTS jobs skip a `chore(release):` push to `main`;
+  `integration-tests` does not.
 - `ci.yml`'s Rust lanes (`🧪 Rust Tests`) — run on PRs touching `rust/**`: nextest plus fmt/clippy,
   and macos-14 also runs the CoreML `cargo check --all-targets` and
   `just verify-darwin-full` feature set.
