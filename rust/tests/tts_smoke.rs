@@ -240,27 +240,71 @@ fn list_voices_shows_installed() {
     );
 }
 
+fn say_with_models(args: &[&str], cache: &std::path::Path) -> std::process::Output {
+    Command::new(common::engine_bin())
+        .arg("say")
+        .args(args)
+        .env("KESHA_CACHE_DIR", cache)
+        .output()
+        .expect("run")
+}
+
+fn zero_voice_file() -> tempfile::NamedTempFile {
+    let voice = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(voice.path(), vec![0u8; 510 * 256 * 4]).unwrap();
+    voice
+}
+
+/// #1262: a model that is not there is the user's to install, not an engine bug (was E_INTERNAL, exit 4).
 #[test]
-fn synthesis_failure_exits_4() {
-    // Missing model file at runtime -> SynthesisFailed -> exit 4
-    let voice_tmp = tempfile::NamedTempFile::new().unwrap();
-    std::fs::write(voice_tmp.path(), vec![0u8; 510 * 256 * 4]).unwrap();
-    let out = Command::new(common::engine_bin())
-        .args([
-            "say",
+fn a_missing_model_path_is_model_missing_with_an_install_hint() {
+    let cache = tempfile::tempdir().unwrap();
+    let voice = zero_voice_file();
+    let out = say_with_models(
+        &[
             "Hi",
             "--model",
             "/nonexistent-model",
             "--voice-file",
-            voice_tmp.path().to_str().unwrap(),
-        ])
-        .output()
-        .expect("run");
-    assert_eq!(
-        out.status.code(),
-        Some(4),
-        "expected exit 4 for synthesis failure\nstderr: {}",
-        String::from_utf8_lossy(&out.stderr)
+            voice.path().to_str().unwrap(),
+        ],
+        cache.path(),
+    );
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_MODEL_MISSING", "{v}");
+    let message = v["message"].as_str().unwrap();
+    assert!(message.contains("/nonexistent-model"), "{v}");
+    assert!(message.contains("kesha install --tts"), "{v}");
+}
+
+/// #1262: es/fr/it/pt need the CharsiuG2P pack, which only `kesha install --tts <lang>` fetches.
+#[test]
+fn a_missing_g2p_model_is_model_missing_with_an_install_hint() {
+    let cache = tempfile::tempdir().unwrap();
+    let voice = zero_voice_file();
+    let model = tempfile::NamedTempFile::new().unwrap();
+    let out = say_with_models(
+        &[
+            "hola",
+            "--lang",
+            "es",
+            "--model",
+            model.path().to_str().unwrap(),
+            "--voice-file",
+            voice.path().to_str().unwrap(),
+        ],
+        cache.path(),
+    );
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_MODEL_MISSING", "{v}");
+    assert!(
+        v["message"]
+            .as_str()
+            .unwrap()
+            .contains("kesha install --tts es"),
+        "{v}"
     );
 }
 

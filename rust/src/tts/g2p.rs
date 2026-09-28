@@ -53,8 +53,7 @@ pub fn text_to_ipa_cached(
     Ok(ipa)
 }
 
-/// Check that the three required Charsiu ONNX files exist in `dir`.
-/// Returns a user-facing error pointing at `kesha install --tts` if any are missing.
+/// Check that the three required Charsiu ONNX files exist in `dir`; bare `--tts` installs English only, so the hint names a language.
 pub(crate) fn check_charsiu_files(dir: &std::path::Path) -> Result<()> {
     let required = [
         "encoder_model.onnx",
@@ -62,8 +61,21 @@ pub(crate) fn check_charsiu_files(dir: &std::path::Path) -> Result<()> {
         "decoder_with_past_model.onnx",
     ];
     for file in &required {
-        if !dir.join(file).exists() {
-            anyhow::bail!("G2P model not installed. Run `kesha install --tts` to download.");
+        let path = dir.join(file);
+        match path.try_exists() {
+            Ok(true) => {}
+            Ok(false) => crate::coded_bail!(
+                crate::errors::ErrorCode::ModelMissing,
+                "G2P model for es/fr/it/pt voices not installed at {}. \
+                 Run `kesha install --tts es` (or fr, it, pt) to download it.",
+                dir.display()
+            ),
+            Err(err) => crate::coded_bail!(
+                crate::errors::ErrorCode::ModelLoad,
+                "G2P model {} could not be read ({err}); check its permissions, \
+                 or reinstall it: kesha install --tts es (or fr, it, pt)",
+                path.display()
+            ),
         }
     }
     Ok(())

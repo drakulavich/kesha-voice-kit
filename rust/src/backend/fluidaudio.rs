@@ -1,4 +1,3 @@
-use std::os::fd::OwnedFd;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -22,7 +21,9 @@ pub struct FluidAudioBackend {
     audio: FluidAudio,
     /// Pre-opened sink reused across `transcribe_samples` calls to skip the open
     /// syscall on the per-segment hot path (~10K saved on a 1 h meeting).
-    sink: Option<OwnedFd>,
+    sink: crate::fluid_stdout::Sink,
+    /// Last, so it outlives the FluidAudio instance: a transcribe call can log to fd 2 too (#1316).
+    _stderr: crate::fluid_stderr::StderrRelay,
 }
 
 impl FluidAudioBackend {
@@ -40,6 +41,7 @@ impl FluidAudioBackend {
         Ok(Self {
             audio,
             sink: crate::fluid_stdout::oneshot_sink(),
+            _stderr: crate::fluid_stderr::StderrRelay::start(),
         })
     }
 }
@@ -48,9 +50,10 @@ impl TranscribeBackend for FluidAudioBackend {
     /// stdout stays silenced: a file FluidAudio rejects prints there, and the fallback
     /// below can still return a transcript, whose `--json` that chatter would corrupt.
     fn transcribe(&mut self, audio_path: &Path) -> Result<TranscriptionChunk> {
-        let attempt = with_silenced_stdout(self.sink.as_ref(), || {
+        let attempt = with_silenced_stdout(self.sink.fd(), || {
             self.audio.transcribe_file_with_words(audio_path)
         });
+        self.sink.settle();
         match attempt {
             Ok((result, words)) => Ok(chunk_from(result.text, words)),
             // FluidAudio refuses a file below ~0.25 s; the padding path serves it, and load_audio names a real fault better (#995).
@@ -66,10 +69,11 @@ impl TranscribeBackend for FluidAudioBackend {
     /// would corrupt `--json` output (#259).
     fn transcribe_samples(&mut self, samples: &[f32]) -> Result<TranscriptionChunk> {
         let padded = pad_to_min(samples, MIN_SAMPLES);
-        let (result, words) = with_silenced_stdout(self.sink.as_ref(), || {
+        let result = with_silenced_stdout(self.sink.fd(), || {
             self.audio.transcribe_samples_with_words(&padded)
-        })
-        .context("FluidAudio sample transcription failed")?;
+        });
+        self.sink.settle();
+        let (result, words) = result.context("FluidAudio sample transcription failed")?;
         Ok(chunk_from(result.text, words))
     }
 }

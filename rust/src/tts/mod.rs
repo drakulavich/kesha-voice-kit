@@ -85,8 +85,15 @@ pub(crate) fn open_session(
         .map_err(|e| anyhow::anyhow!("ONNX Runtime could not create a session for {model}: {e}"))?;
     match builder.commit_from_file(path) {
         Ok(session) => Ok(session),
-        // An absent `--model` path is not a load failure; tts_smoke pins its exit 4.
-        Err(e) if !path.exists() => Err(e.into()),
+        Err(_) if matches!(path.try_exists(), Ok(false)) => {
+            Err(anyhow::Error::new(crate::errors::CodedError {
+                code: crate::errors::ErrorCode::ModelMissing,
+                message: format!(
+                    "{model} model {} does not exist; check the path, or run `kesha install --tts` to install the default models",
+                    path.display()
+                ),
+            }))
+        }
         Err(e) => Err(model_load_failed(model, path, e)),
     }
 }

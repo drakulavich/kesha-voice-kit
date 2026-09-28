@@ -142,7 +142,11 @@ pub(crate) fn run(
         model_path: model_path.to_path_buf(),
         units,
     };
-    let spans: Vec<DiarizeSpan> = run_supervised(job, total_deadline, load_budget, audio_secs)?;
+    // FluidAudio can log mid-run; a capture read afterwards would hold back the phase progress below (#1316).
+    let spans: Vec<DiarizeSpan> = {
+        let _stderr = crate::fluid_stderr::StderrRelay::start();
+        run_supervised(job, total_deadline, load_budget, audio_secs)?
+    };
 
     if let Some(secs) = below_diarizer_floor(&spans, asr_segments, audio_path, duration) {
         events::progress(
