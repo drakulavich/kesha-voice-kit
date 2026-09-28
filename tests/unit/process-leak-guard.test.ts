@@ -1,13 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
+import { readdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   pidIsAlive,
   reapLeakedProcesses,
   stubbornShell,
   trackPid,
   waitForPidExit,
+  waitForPidFile,
 } from "../helpers/process";
 import { readRepoFile, repoPath } from "../helpers/repo";
+import { tempDir } from "../helpers/temp-dir";
 
 const posix = process.platform === "win32" ? test.skip : test;
 
@@ -114,6 +117,17 @@ describe("process leak guard", () => {
     const pid = spawnStubborn("kesha-engine-leak-guard-fixture", 2);
 
     expect(await waitForPidExit(pid)).toBe(true);
+  });
+});
+
+describe("pid files", () => {
+  /** #1274: `Bun.write` creates the file before it writes the pid, and read in between, `Number("")` was pid 0, which `kill(0, 0)` always finds alive. */
+  test("a pid file read before its pid lands waits for the pid", async () => {
+    const path = join(tempDir("kesha-pid-file-"), "engine.pid");
+    writeFileSync(path, "");
+    setTimeout(() => writeFileSync(path, String(process.pid)), 200);
+
+    expect(await waitForPidFile(path)).toBe(process.pid);
   });
 });
 

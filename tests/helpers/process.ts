@@ -11,10 +11,11 @@ export async function waitForPidFile(
   attempts: number = PID_FILE_POLL_ATTEMPTS,
 ): Promise<number> {
   for (let i = 0; i < attempts; i++) {
-    if (existsSync(path)) return trackPid(Number(readFileSync(path, "utf8")));
+    const pid = existsSync(path) ? Number.parseInt(readFileSync(path, "utf8"), 10) : NaN;
+    if (pid > 0) return trackPid(pid);
     await Bun.sleep(PID_FILE_POLL_INTERVAL_MS);
   }
-  throw new Error(`timed out waiting for pid file: ${path}`);
+  throw new Error(`timed out waiting for a pid in ${path}`);
 }
 
 export function pidIsAlive(pid: number): boolean {
@@ -34,6 +35,8 @@ function isZombie(pid: number): boolean {
 }
 
 export async function waitForPidExit(pid: number): Promise<boolean> {
+  // `kill(0, 0)` signals our own process group and always succeeds, so a bad pid would read as a survivor (#1274).
+  if (!Number.isInteger(pid) || pid <= 0) throw new Error(`waitForPidExit needs a real pid, got ${pid}`);
   for (let i = 0; i < PID_EXIT_POLL_ATTEMPTS; i++) {
     if (!pidIsAlive(pid)) return true;
     await Bun.sleep(PID_FILE_POLL_INTERVAL_MS);
