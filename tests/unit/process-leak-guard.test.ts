@@ -122,12 +122,18 @@ describe("process leak guard", () => {
 
 describe("pid files", () => {
   /** #1274: `Bun.write` creates the file before it writes the pid, and read in between, `Number("")` was pid 0, which `kill(0, 0)` always finds alive. */
-  test("a pid file read before its pid lands waits for the pid", async () => {
+  posix("a pid file read before its pid lands waits for the pid", async () => {
+    const fixture = Bun.spawn(["sleep", "300"], { stdout: "ignore", stderr: "ignore" });
     const path = join(tempDir("kesha-pid-file-"), "engine.pid");
     writeFileSync(path, "");
-    setTimeout(() => writeFileSync(path, String(process.pid)), 200);
+    setTimeout(() => writeFileSync(path, String(fixture.pid)), 200);
 
-    expect(await waitForPidFile(path)).toBe(process.pid);
+    try {
+      expect(await waitForPidFile(path)).toBe(fixture.pid);
+    } finally {
+      fixture.kill("SIGKILL");
+      await fixture.exited;
+    }
   });
 });
 
