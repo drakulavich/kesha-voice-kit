@@ -137,10 +137,18 @@ function safeKillDirect(proc: KillableProcess, signal: ManagedSignal): void {
   }
 }
 
-function scheduleForceKill(proc: ActiveProcess, opts: { ref?: boolean } = {}): Timer {
+function scheduleForceKill(proc: ActiveProcess): Timer {
   const timer = setTimeout(() => proc.kill("SIGKILL"), FORCE_KILL_GRACE_MS);
-  if (opts.ref !== true) timer.unref?.();
+  timer.unref?.();
   return timer;
+}
+
+/** The CLI's own signal: SIGKILL after the grace, then give up on a tree that outlives even that, so the exit stays bounded. */
+function scheduleSignalForceKill(proc: ActiveProcess): void {
+  setTimeout(() => {
+    proc.kill("SIGKILL");
+    setTimeout(() => pendingSignalCleanup?.settle(), FORCE_KILL_GRACE_MS);
+  }, FORCE_KILL_GRACE_MS);
 }
 
 function ensureSignalHandlers(): void {
@@ -157,7 +165,7 @@ function terminateActiveProcessTrees(signal: ReceivedSignal, forward: ManagedSig
 
   for (const proc of processes) {
     proc.kill(forward);
-    scheduleForceKill(proc, { ref: true });
+    scheduleSignalForceKill(proc);
   }
 
   // The first signal names the run's outcome; a repeat only re-signals what is still running.
@@ -166,18 +174,12 @@ function terminateActiveProcessTrees(signal: ReceivedSignal, forward: ManagedSig
   }
   process.exitCode = exitCode;
 
-  const delayMs = processes.length > 0
-    ? FORCE_KILL_GRACE_MS + SIGNAL_EXIT_BUFFER_MS
-    : SIGNAL_EXIT_BUFFER_MS;
   let settle!: () => void;
   const done = new Promise<void>((resolve) => {
     settle = resolve;
   });
   pendingSignalCleanup = { signal, exitCode, done, settle };
-  // The backstop for a command that never awaits the cleanup; one that does exits as soon as the tree drains.
-  setTimeout(() => {
-    settle();
-    process.exit(exitCode);
-  }, delayMs);
+  // Armed from the drain, not the signal: a fixed deadline raced the force kill under load and exited before the report (#1305).
+  void done.then(() => setTimeout(() => process.exit(exitCode), SIGNAL_EXIT_BUFFER_MS));
   if (processes.length === 0) settle();
 }

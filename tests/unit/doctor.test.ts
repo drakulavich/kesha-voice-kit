@@ -8,7 +8,7 @@ import {
   statSync,
   writeFileSync,
 } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { tmpdir } from "os";
 import { gunzipSync } from "node:zlib";
 import {
@@ -1182,7 +1182,9 @@ describe("doctor on an unspawnable KESHA_ENGINE_BIN", () => {
   posixEngineTest("names the override as the thing to fix, once, without a nested error line", async () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-doctor-bad-override-"));
     try {
-      const binPath = join(dir, "kesha-engine");
+      // Doctor sizes the binary's grandparent, which directly under tmpdir is the whole shared tmpdir (#1295).
+      const binPath = join(dir, "bin", "kesha-engine");
+      mkdirSync(dirname(binPath));
       writeFileSync(binPath, "not an executable");
       chmodSync(binPath, 0o644);
       process.env.HOME = dir;
