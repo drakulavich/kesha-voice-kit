@@ -53,6 +53,7 @@ impl TranscribeBackend for FluidAudioBackend {
         let attempt = with_silenced_stdout(self.sink.fd(), || {
             self.audio.transcribe_file_with_words(audio_path)
         });
+        self.sink.settle();
         match attempt {
             Ok((result, words)) => Ok(chunk_from(result.text, words)),
             // FluidAudio refuses a file below ~0.25 s; the padding path serves it, and load_audio names a real fault better (#995).
@@ -68,10 +69,11 @@ impl TranscribeBackend for FluidAudioBackend {
     /// would corrupt `--json` output (#259).
     fn transcribe_samples(&mut self, samples: &[f32]) -> Result<TranscriptionChunk> {
         let padded = pad_to_min(samples, MIN_SAMPLES);
-        let (result, words) = with_silenced_stdout(self.sink.fd(), || {
+        let result = with_silenced_stdout(self.sink.fd(), || {
             self.audio.transcribe_samples_with_words(&padded)
-        })
-        .context("FluidAudio sample transcription failed")?;
+        });
+        self.sink.settle();
+        let (result, words) = result.context("FluidAudio sample transcription failed")?;
         Ok(chunk_from(result.text, words))
     }
 }

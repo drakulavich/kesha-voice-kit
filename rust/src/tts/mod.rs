@@ -89,7 +89,7 @@ pub(crate) fn open_session(
             Err(anyhow::Error::new(crate::errors::CodedError {
                 code: crate::errors::ErrorCode::ModelMissing,
                 message: format!(
-                    "{model} model {} does not exist; install it: kesha install --tts",
+                    "{model} model {} does not exist; check the path, or run `kesha install --tts` to install the default models",
                     path.display()
                 ),
             }))

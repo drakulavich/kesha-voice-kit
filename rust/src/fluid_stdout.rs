@@ -169,7 +169,11 @@ pub(crate) fn with_silenced_stdout<R>(devnull: Option<&OwnedFd>, f: impl FnOnce(
 pub(crate) struct Sink {
     fd: Option<OwnedFd>,
     relay_done: Option<std::sync::mpsc::Receiver<()>>,
+    settled: Option<std::sync::mpsc::Receiver<()>>,
 }
+
+/// Written behind a call's output; the relay acknowledges it once every line before it is out.
+const SETTLE_MARK: &[u8] = b"\0kesha-sink-settle\n";
 
 #[cfg(any(
     feature = "coreml",
@@ -179,6 +183,18 @@ pub(crate) struct Sink {
 impl Sink {
     pub(crate) fn fd(&self) -> Option<&OwnedFd> {
         self.fd.as_ref()
+    }
+
+    /// For a sink reused across calls: the debug lines a call printed are out before its caller reports on it.
+    pub(crate) fn settle(&self) {
+        use std::io::Write;
+        let (Some(fd), Some(settled)) = (self.fd.as_ref(), self.settled.as_ref()) else {
+            return;
+        };
+        let Ok(dup) = fd.try_clone() else { return };
+        if std::fs::File::from(dup).write_all(SETTLE_MARK).is_ok() {
+            let _ = settled.recv_timeout(std::time::Duration::from_secs(2));
+        }
     }
 }
 
@@ -206,12 +222,17 @@ fn debug_sink() -> Option<Sink> {
     use std::io::BufRead;
     let (reader, writer) = std::io::pipe().ok()?;
     let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
+    let (settled_tx, settled_rx) = std::sync::mpsc::channel::<()>();
     std::thread::Builder::new()
         .name("fluid-stdout-debug".into())
         .spawn(move || {
             let _done = done_tx;
             for line in std::io::BufReader::new(reader).split(b'\n') {
                 let Ok(line) = line else { break };
+                if line == SETTLE_MARK[..SETTLE_MARK.len() - 1] {
+                    let _ = settled_tx.send(());
+                    continue;
+                }
                 let line = String::from_utf8_lossy(&line);
                 let line = line.trim_end();
                 if !line.is_empty() {
@@ -223,6 +244,7 @@ fn debug_sink() -> Option<Sink> {
     Some(Sink {
         fd: Some(OwnedFd::from(writer)),
         relay_done: Some(done_rx),
+        settled: Some(settled_rx),
     })
 }
 
@@ -244,6 +266,7 @@ pub(crate) fn oneshot_sink() -> Sink {
             .ok()
             .map(OwnedFd::from),
         relay_done: None,
+        settled: None,
     }
 }
 
@@ -474,6 +497,33 @@ mod tests {
             serde_json::from_str(lines[0]).expect("the chatter is wrapped in an event");
         assert_eq!(v["kind"], "debug", "{v}");
         assert_eq!(v["message"], "Transcribe samples error: simulated", "{v}");
+    }
+
+    /// Greptile on #1320: the ASR backend reuses its sink, so a failed segment's warning must not overtake the chatter explaining it.
+    #[cfg(any(
+        feature = "coreml",
+        feature = "system_kokoro",
+        feature = "system_diarize"
+    ))]
+    #[test]
+    fn a_reused_debug_sink_has_relayed_a_call_s_chatter_once_settled() {
+        std::env::set_var("KESHA_DEBUG", "1");
+        let capture = tempfile::NamedTempFile::new().expect("capture file");
+        let restore = redirect(libc::STDERR_FILENO, capture.as_file());
+
+        let sink = oneshot_sink();
+        with_silenced_stdout(sink.fd(), || {
+            c_print(c"Transcribe samples error: first segment\n");
+        });
+        sink.settle();
+        let seen = std::fs::read_to_string(capture.path()).expect("read capture");
+        drop(sink);
+        drop(restore);
+
+        assert!(
+            seen.contains("Transcribe samples error: first segment"),
+            "settle returned before the chatter was relayed: {seen:?}"
+        );
     }
 
     /// #543: a C-stdio write buffered inside the guarded scope (a Swift

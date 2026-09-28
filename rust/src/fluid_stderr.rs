@@ -273,14 +273,24 @@ fn install_relay() -> std::io::Result<Installed> {
     Ok(Installed { saved, drained })
 }
 
+/// Bytes of one line the relay holds; the rest is drained unread, since only [`MAX_LINE_CHARS`] of it is re-emitted.
+const MAX_RELAY_LINE_BYTES: u64 = 4096;
+
 /// A failed write keeps reading, so a library blocked on a full pipe is never stranded.
-fn relay_stream(mut reader: impl std::io::BufRead, out: &mut std::fs::File) {
+fn relay_stream(mut reader: impl std::io::BufRead, out: &mut impl std::io::Write) {
+    use std::io::{BufRead, Read};
     let mut chunk = Vec::new();
     loop {
         chunk.clear();
-        match reader.read_until(b'\n', &mut chunk) {
+        match (&mut reader)
+            .take(MAX_RELAY_LINE_BYTES)
+            .read_until(b'\n', &mut chunk)
+        {
             Ok(0) | Err(_) => return,
             Ok(_) => {}
+        }
+        if chunk.last() != Some(&b'\n') && chunk.len() as u64 == MAX_RELAY_LINE_BYTES {
+            let _ = reader.skip_until(b'\n');
         }
         for rendered in String::from_utf8_lossy(&chunk)
             .lines()
@@ -514,5 +524,24 @@ mod tests {
         assert_eq!(lines.len(), 1, "{out:?}");
         let v: serde_json::Value = serde_json::from_str(lines[0]).expect("an event");
         assert_eq!(v["kind"], "warn");
+    }
+
+    #[test]
+    fn a_line_longer_than_the_relay_holds_is_capped_and_the_next_line_still_relays() {
+        let mut input = "x".repeat(1 << 20);
+        input.push_str("\n[WARN] [FluidAudio.Sortformer] next\n");
+        let mut out = Vec::new();
+        relay_stream(std::io::Cursor::new(input), &mut out);
+        let out = String::from_utf8(out).expect("utf-8");
+        let lines: Vec<serde_json::Value> = out
+            .lines()
+            .map(|l| serde_json::from_str(l).expect("an event"))
+            .collect();
+        assert_eq!(lines.len(), 2, "{out:?}");
+        assert_eq!(
+            lines[0]["message"].as_str().map(|m| m.chars().count()),
+            Some(MAX_LINE_CHARS + 1)
+        );
+        assert_eq!(lines[1]["message"], "[WARN] [FluidAudio.Sortformer] next");
     }
 }

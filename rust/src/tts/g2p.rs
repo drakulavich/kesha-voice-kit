@@ -67,10 +67,15 @@ pub(crate) fn check_charsiu_files(dir: &std::path::Path) -> Result<()> {
             Ok(false) => crate::coded_bail!(
                 crate::errors::ErrorCode::ModelMissing,
                 "G2P model for es/fr/it/pt voices not installed at {}. \
-                     Run `kesha install --tts es` (or fr, it, pt) to download it.",
+                 Run `kesha install --tts es` (or fr, it, pt) to download it.",
                 dir.display()
             ),
-            Err(err) => return Err(crate::tts::model_load_failed("CharsiuG2P", &path, err)),
+            Err(err) => crate::coded_bail!(
+                crate::errors::ErrorCode::ModelLoad,
+                "G2P model {} could not be read ({err}); check its permissions, \
+                 or reinstall it: kesha install --tts es (or fr, it, pt)",
+                path.display()
+            ),
         }
     }
     Ok(())
