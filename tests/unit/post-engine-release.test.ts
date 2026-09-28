@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { buildPostEngineReleaseFollowup } from "../../.github/scripts/post-engine-release";
-import { decideFollowup, ownsTag, refuseConcurrentFollowup } from "../../.github/scripts/post-release-guard";
-import { parseRepoYaml, readRepoFile } from "../helpers/repo";
+import { decideExisting, decideFollowup, ownsTag, refuseConcurrentFollowup } from "../../.github/scripts/post-release-guard";
+import { parseRepoYaml, readRepoFile, REPO_ROOT } from "../helpers/repo";
 
 /** A step's own `run:` text plus the body of any `.github/scripts/*.sh` it hands off to. */
 function runText(step: { run?: string }): string {
@@ -207,5 +207,67 @@ describe("the post-release job", () => {
     expect(mutating.length).toBeGreaterThan(0);
     // A skipped step has no output, and "" != 'true' would otherwise let these run anyway.
     for (const step of mutating) expect(step.if).toContain("steps.shape.outputs.skip != 'true'");
+  });
+});
+
+describe("an existing pull request on the follow-up branch", () => {
+  const tag = "v1.24.12";
+  const branch = "automation/post-release-v1.24.12";
+  const ours = {
+    title: "chore(release): record v1.24.12 assets and lead main to v1.24.13",
+    body: "Published engine tag: `v1.24.12`\n\nmore text",
+  };
+
+  test("none means the follow-up proceeds", () => {
+    expect(decideExisting([], tag, branch)).toEqual({ skip: false });
+  });
+
+  test("one carrying this tag's title and body is left untouched", () => {
+    expect(decideExisting([ours], tag, branch)).toEqual({ skip: true });
+  });
+
+  test("one that misses either half of the predicate is refused as unrelated", () => {
+    const unrelated = { refuse: `An unrelated PR already uses ${branch}; refusing to touch it.` };
+    expect(decideExisting([{ ...ours, title: "chore(release): record v1.24.1 assets and lead main to v1.24.2" }], tag, branch)).toEqual(unrelated);
+    expect(decideExisting([{ ...ours, body: "Published engine tag: `v1.24.1`" }], tag, branch)).toEqual(unrelated);
+    expect(decideExisting([{ ...ours, title: `fix: ${ours.title}` }], tag, branch)).toEqual(unrelated);
+  });
+
+  test("more than one is refused as ambiguous, even when one of them matches", () => {
+    expect(decideExisting([ours, ours], tag, branch)).toEqual({
+      refuse: `More than one open PR uses ${branch}; refusing an ambiguous follow-up.`,
+    });
+  });
+
+  async function runGuard(prs: unknown) {
+    const proc = Bun.spawn(["bun", `${REPO_ROOT}/.github/scripts/post-release-guard.ts`, "existing"], {
+      env: { ...process.env, TAG_NAME: tag, BRANCH: branch },
+      stdin: Buffer.from(JSON.stringify(prs)),
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { stdout, stderr, exitCode };
+  }
+
+  // stdout is appended to $GITHUB_OUTPUT, so it may carry nothing but the key=value line.
+  test("the script mode prints only the output line on stdout and refuses with exit 1", async () => {
+    expect(await runGuard([])).toMatchObject({ exitCode: 0, stdout: "skip=false\n" });
+    const kept = await runGuard([ours]);
+    expect(kept).toMatchObject({ exitCode: 0, stdout: "skip=true\n" });
+    expect(kept.stderr).toContain("A matching follow-up PR for v1.24.12 is already open; leaving it untouched.");
+    const refused = await runGuard([ours, ours]);
+    expect(refused).toMatchObject({ exitCode: 1, stdout: "" });
+    expect(refused.stderr).toContain("::error::More than one open PR uses");
+  });
+
+  test("the workflow step hands the listing to the guard instead of deciding in jq", () => {
+    const script = readRepoFile(".github/scripts/refuse-existing-followup.sh");
+    expect(script).toContain("post-release-guard.ts existing");
+    expect(script).not.toContain("jq");
   });
 });

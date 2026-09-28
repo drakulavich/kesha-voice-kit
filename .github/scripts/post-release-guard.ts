@@ -44,16 +44,39 @@ export function decideFollowup(env: GuardEnv): GuardDecision {
   return refusal ? { refuse: refusal } : { skip: false };
 }
 
-if (import.meta.main) {
-  const decision = decideFollowup({
-    TAG_NAME: process.env.TAG_NAME,
-    BRANCH: process.env.BRANCH,
-    OPEN_HEADS: process.env.OPEN_HEADS,
-    REMOTE_HEADS: process.env.REMOTE_HEADS,
-  });
+export type FollowupPr = { title: string; body: string };
+
+/// Whether the pull requests already on the follow-up branch (any state) are this tag's own follow-up.
+export function decideExisting(prs: FollowupPr[], tag: string, branch: string): GuardDecision {
+  if (prs.length > 1) return { refuse: `More than one open PR uses ${branch}; refusing an ambiguous follow-up.` };
+  const [pr] = prs;
+  if (!pr) return { skip: false };
+  const ours =
+    pr.title.startsWith(`chore(release): record ${tag} assets and lead main to v`) &&
+    pr.body.includes("Published engine tag: `" + tag + "`");
+  return ours ? { skip: true } : { refuse: `An unrelated PR already uses ${branch}; refusing to touch it.` };
+}
+
+function report(decision: GuardDecision): void {
   if ("refuse" in decision) {
     console.error(`::error::${decision.refuse}`);
     process.exit(1);
   }
   console.log(`skip=${decision.skip}`);
+}
+
+if (import.meta.main && process.argv[2] === "existing") {
+  const tag = process.env.TAG_NAME ?? "";
+  const decision = decideExisting(JSON.parse(await Bun.stdin.text()), tag, process.env.BRANCH ?? "");
+  if ("skip" in decision && decision.skip) {
+    console.error(`A matching follow-up PR for ${tag} is already open; leaving it untouched.`);
+  }
+  report(decision);
+} else if (import.meta.main) {
+  report(decideFollowup({
+    TAG_NAME: process.env.TAG_NAME,
+    BRANCH: process.env.BRANCH,
+    OPEN_HEADS: process.env.OPEN_HEADS,
+    REMOTE_HEADS: process.env.REMOTE_HEADS,
+  }));
 }
