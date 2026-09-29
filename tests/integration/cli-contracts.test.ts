@@ -1550,9 +1550,9 @@ process.exit(99);
     const run = await runCli(["install", "--vad"], { env });
     expectContract(run, {
       exitCode: 0,
-      stdoutContains: ["Engine binary already installed", "Backend installed successfully"],
+      stdoutContains: ["Backend installed successfully"],
       stdoutNotContains: [dir],
-      stderrContains: ["Installing models..."],
+      stderrContains: ["Installing models...", "Engine binary already installed"],
     });
     expect(JSON.parse(readFileSync(installArgsPath, "utf8"))).toEqual(["--vad"]);
 
@@ -1590,9 +1590,15 @@ process.exit(99);
     const install = await runCli(["install", "--vad"], { env });
     expectContract(install, {
       exitCode: 0,
-      stdoutContains: ["Backend installed successfully"],
-      stdoutNotContains: ["Installing models..."],
-      stderrContains: ["Installing models..."],
+      stderrContains: ["Installing models...", "Engine binary already installed", "consider starring the repo"],
+    });
+    expect(install.stdout).toBe(`Backend installed successfully (engine v${engineVersion}).`);
+
+    const failed = await runCli(["install", "--vad"], { env: { ...env, KESHA_FAKE_INSTALL_ERROR: "boom" } });
+    expectContract(failed, {
+      exitCode: 42,
+      stdoutEmpty: true,
+      stderrContains: ["Engine binary already installed", "error [E_INTERNAL]: "],
     });
 
     // `--plan` *is* a deliverable and stays on stdout.
@@ -1684,12 +1690,12 @@ process.exit(99);
     const { events } = readDiagnosticLog(env.KESHA_LOG_DIR);
     expect(events[1]).toMatchObject({ command: "install", status: "failed", errorKind: "validation_failed" });
 
-    // init --plan is the declared mirror of that guard (#684): the same refusal, rendered the same way; init's intro on stdout is its own deliverable.
+    // init --plan is the declared mirror of that guard (#684): the same refusal, rendered the same way.
     for (const command of ["install", "init"]) {
       const plan = await runCli([command, "--plan", `--${other}`], { env });
       expectContract(plan, {
         exitCode: 2,
-        stdoutNotContains: ["Kesha install plan"],
+        stdoutEmpty: true,
         stderrContains: ["error [E_INVALID_ARG]: ", `Requested backend "${other}" is not available on this platform`],
       });
     }
@@ -1710,8 +1716,8 @@ process.exit(99);
     const run = await runCli(["install", "--vad"], { env });
     expectContract(run, {
       exitCode: 42,
-      stdoutContains: ["Engine binary already installed"],
-      stderrContains: ["error [E_INTERNAL]: ", "not a protocol event"],
+      stdoutEmpty: true,
+      stderrContains: ["Engine binary already installed", "error [E_INTERNAL]: ", "not a protocol event"],
     });
 
     const { raw: diagnosticLog, events } = readDiagnosticLog(env.KESHA_LOG_DIR);

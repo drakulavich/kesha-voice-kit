@@ -289,7 +289,7 @@ export function createProgressBar(label: string, totalBytes: number): {
     return {
       update() {},
       finish() {
-        log.success(`Downloaded ${label} ✓`);
+        log.progress(`Downloaded ${label} ✓`);
       },
     };
   }
