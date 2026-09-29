@@ -31,6 +31,8 @@ import {
   forbidReusableWorkflows,
   requireRestoreOnlyCachesHaveAWriter,
   requireDarwinSmokeCoversBothEngines,
+  requireOfflineBeforeOnlineSpeech,
+  requireSynthesisSourcesInOfflineFilter,
   requireDepsBeforeBunTest,
   requireFlakeNixInWorkflowsFilter,
   requireManifestSourcesInCodeFilter,
@@ -169,6 +171,71 @@ describe("requireDarwinSmokeCoversBothEngines", () => {
   test("fails when the lane is gone", () => {
     const errors = requireDarwinSmokeCoversBothEngines(PATH, { jobs: { build: {} } });
     expect(errors[0]).toContain(`expected a \`${DARWIN}\` job`);
+  });
+});
+
+describe("requireOfflineBeforeOnlineSpeech", () => {
+  const LINUX = "published-engine-smoke";
+  const OFFLINE = { name: "offline", run: "bash .github/scripts/offline.sh bun .github/scripts/smoke-synthesis.ts off" };
+  const ONLINE = { name: "online", run: "bun .github/scripts/smoke-synthesis.ts on" };
+  const lanes = (linux: unknown[], darwin: unknown[] = [OFFLINE]) => ({
+    jobs: { [LINUX]: { steps: linux }, "integration-tests-full": { steps: darwin } },
+  });
+
+  test("passes on the real ci.yml", () => {
+    expect(requireOfflineBeforeOnlineSpeech(CI, parseRepoYaml(CI))).toEqual([]);
+  });
+
+  test("ignores every other workflow", () => {
+    expect(requireOfflineBeforeOnlineSpeech(PATH, lanes([ONLINE, OFFLINE]))).toEqual([]);
+  });
+
+  test("passes when the offline run comes first", () => {
+    expect(requireOfflineBeforeOnlineSpeech(CI, lanes([{ run: "kesha status" }, OFFLINE, ONLINE]))).toEqual([]);
+  });
+
+  test("fails when an online run can warm the cache first", () => {
+    const errors = requireOfflineBeforeOnlineSpeech(CI, lanes([ONLINE, OFFLINE]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain(LINUX);
+  });
+
+  test("fails when an online transcribe or integration suite runs first", () => {
+    const transcribe = { run: "kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > out.json" };
+    const suite = { run: "bun run test:integration" };
+    expect(requireOfflineBeforeOnlineSpeech(CI, lanes([transcribe, OFFLINE], [suite, OFFLINE]))).toHaveLength(2);
+  });
+
+  test("fails when the offline run has its own condition, so it can skip on pull requests", () => {
+    const conditional = { ...OFFLINE, if: "github.event_name == 'schedule'" };
+    const errors = requireOfflineBeforeOnlineSpeech(CI, lanes([conditional, ONLINE]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("if:");
+  });
+
+  test("fails when the offline run is gone", () => {
+    const errors = requireOfflineBeforeOnlineSpeech(CI, lanes([ONLINE]));
+    expect(errors[0]).toContain("offline.sh");
+  });
+});
+
+describe("requireSynthesisSourcesInOfflineFilter", () => {
+  const filters = (tts: string[], realEngine: string[]) => ({
+    jobs: { changes: { steps: [{ with: { filters: JSON.stringify({ tts_e2e: tts, real_engine_e2e: realEngine }) } }] } },
+  });
+
+  test("passes on the real ci.yml", () => {
+    expect(requireSynthesisSourcesInOfflineFilter(CI, parseRepoYaml(CI))).toEqual([]);
+  });
+
+  test("fails when a synthesis source skips the offline lane", () => {
+    const errors = requireSynthesisSourcesInOfflineFilter(CI, filters(["src/synth.ts", "rust/**"], ["rust/**"]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("src/synth.ts");
+  });
+
+  test("ignores tts_e2e entries outside src/", () => {
+    expect(requireSynthesisSourcesInOfflineFilter(CI, filters(["tests/integration/say-e2e.test.ts"], []))).toEqual([]);
   });
 });
 

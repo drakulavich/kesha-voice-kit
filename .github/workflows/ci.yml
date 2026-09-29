@@ -149,6 +149,9 @@ jobs:
               - 'src/progress.ts'
               - 'src/cli/install.ts'
               - 'src/transcribe.ts'
+              - 'src/synth.ts'
+              - 'src/voice-routing.ts'
+              - 'src/cli/say.ts'
               - 'src/cli/dispatch.ts'
               - 'src/cli/main.ts'
               - 'src/cli/mcp.ts'
@@ -162,6 +165,7 @@ jobs:
               - '.github/scripts/assert-transcript.ts'
               - '.github/scripts/assert-install-warmup.ts'
               - '.github/scripts/assert-coreml-rejected.sh'
+              - '.github/scripts/offline.sh'
             tts_e2e:
               - 'rust/**'
               - 'package.json'
@@ -629,6 +633,10 @@ jobs:
           # also runs nightly on main, so it seeds itself and needs no seed job.
           cache-write: ${{ github.event_name != 'pull_request' }}
           cache-restore-keys: ${{ runner.os }}-kesha-engine-
+      - name: 📵 Transcribe offline
+        run: |
+          bash .github/scripts/offline.sh kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > offline-transcript.json
+          bun .github/scripts/assert-transcript.ts offline-transcript.json
       - name: 🧪 Integration tests (real engine)
         run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration-full.xml
         timeout-minutes: 12
@@ -687,6 +695,10 @@ jobs:
           engine-dir: .kesha-ci-cache/engine
           install-log: kesha-install.log
           cache-write: "false"
+
+      - name: 📵 Say and transcribe offline
+        shell: bash
+        run: bash .github/scripts/offline.sh bun .github/scripts/smoke-synthesis.ts /tmp/kesha-linux-offline
 
       - name: 🚬 Smoke published Linux engine
         shell: bash
