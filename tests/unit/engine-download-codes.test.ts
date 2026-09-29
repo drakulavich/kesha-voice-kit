@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { join } from "path";
 import { writeFileSync } from "fs";
 import { install, KeshaError } from "../../src/lib";
-import { installEngine } from "../../src/engine-install";
+import { engineChecksums, installEngine } from "../../src/engine-install";
 import { expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 
@@ -115,6 +115,61 @@ describe("kesha install reports an engine download failure by its code", () => {
       expect(stderr).toContain(`error [${c.code}]: `);
       expect(stderr).toMatch(/\n\s+hint: /);
       expect(stderr.slice(stderr.indexOf("hint: "))).toContain(c.hint);
+      expect(exitCode).toBe(1);
+    }, 30_000);
+  }
+});
+
+const SUMS_CASES = [
+  { name: "HTTP 503", respond: `new Response("Service Unavailable", { status: 503 })` },
+  { name: "HTTP 404", respond: `new Response("Not Found", { status: 404 })` },
+  { name: "HTTP 200 with an empty body", respond: `new Response("", { status: 200 })` },
+];
+const SUMS_HINT = "--engine-version";
+
+function sumsFetch(respond: string): string {
+  return `async (input) => String(input instanceof Request ? input.url : input).endsWith("/SHA256SUMS") ? ${respond} : new Response(${JSON.stringify(ENGINE)}, { status: 200 })`;
+}
+
+describe("a SHA256SUMS the installer cannot use is E_MODEL_DOWNLOAD with the release hint", () => {
+  for (const c of SUMS_CASES) {
+    for (const [surface, run] of [
+      ["installEngine", () => installEngine()],
+      ["Core API install()", () => install()],
+    ] as const) {
+      test(`${surface}: SHA256SUMS ${c.name}`, async () => {
+        engineChecksums.pins = undefined;
+        globalThis.fetch = (0, eval)(`(${sumsFetch(c.respond)})`) as typeof fetch;
+
+        const err = await rejectionOf(run());
+
+        expect(err.code).toBe("E_MODEL_DOWNLOAD");
+        expect(err.hint).toContain(SUMS_HINT);
+        expect(err.hint).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
+      }, 30_000);
+    }
+
+    test(`kesha install: SHA256SUMS ${c.name} is error [E_MODEL_DOWNLOAD] with a hint, exit 1`, async () => {
+      const dir = tempDir("kesha-download-code-sums-");
+      const script = join(dir, "install.ts");
+      const src = (p: string) => JSON.stringify(join(import.meta.dir, "../../src", p));
+      writeFileSync(
+        script,
+        `import { performInstall } from ${src("cli/install.ts")};\n` +
+          `import { engineChecksums } from ${src("engine-install.ts")};\n` +
+          `engineChecksums.pins = undefined;\n` +
+          `globalThis.fetch = (${sumsFetch(c.respond)}) as typeof fetch;\n` +
+          `await performInstall({ noCache: false, ttsLangs: [] });\n`,
+      );
+      const proc = Bun.spawn([process.execPath, script], {
+        env: { ...process.env, KESHA_ENGINE_BIN: join(dir, "bin", "kesha-engine") },
+        stdout: "ignore",
+        stderr: "pipe",
+      });
+      const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+
+      expect(stderr).toMatch(/^error \[E_MODEL_DOWNLOAD\]: /m);
+      expect(stderr.slice(stderr.indexOf("hint: "))).toContain(SUMS_HINT);
       expect(exitCode).toBe(1);
     }, 30_000);
   }
