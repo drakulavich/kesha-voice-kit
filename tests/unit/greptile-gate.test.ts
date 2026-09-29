@@ -51,6 +51,10 @@ describe("blockingFindings", () => {
     ]);
   });
 
+  test("a reply from a login that merely contains greptile answers the finding", () => {
+    expect(ids(blockingFindings([byId(UNANSWERED_P1), replyTo(UNANSWERED_P1, "notgreptile")]))).toEqual([]);
+  });
+
   test("a reply to another thread does not answer this one", () => {
     expect(ids(blockingFindings([byId(UNANSWERED_P1), replyTo(UNANSWERED_P2, "drakulavich")]))).toEqual([
       UNANSWERED_P1,

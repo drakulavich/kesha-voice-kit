@@ -9,7 +9,9 @@ export type ReviewComment = {
 
 const BLOCKING_BADGE = /<img\b[^>]*\balt="(P[12])"/;
 
-const isGreptile = (comment: ReviewComment) => /greptile/i.test(comment.user?.login ?? "");
+const GREPTILE_LOGIN = "greptile-apps[bot]";
+
+const isGreptile = (comment: ReviewComment) => comment.user?.login === GREPTILE_LOGIN;
 
 export function blockingFindings(
   comments: ReviewComment[],
