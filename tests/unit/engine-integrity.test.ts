@@ -205,7 +205,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     expect(stderr).toContain(
       `kesha-engine binary ${getEngineBinaryName()} from release v${PINNED} does not match its pinned SHA-256`,
     );
-    expect(stderr).toContain("Fix: re-run `kesha install`");
+    expect(stderr).toContain("hint: re-run `kesha install`");
     expect(existsSync(binPath)).toBe(false);
   }, 30_000);
 });

@@ -180,9 +180,12 @@ describe("capability pact — recordings", () => {
     }
     expect(raised.size).toBeGreaterThan(8);
     const cliOnly = ["E_ENGINE_PROTOCOL", "E_ENGINE_SPAWN", "E_INSTALL_RACE", "E_INTERRUPTED"];
-    const shared = [...raised].filter((c) => !cliOnly.includes(c)).sort();
+    const awaitingRerecord = ["E_CACHE_CORRUPT", "E_MODEL_DOWNLOAD"];
+    expect(awaitingRerecord.filter((c) => !raised.has(c))).toEqual([]);
+    const shared = [...raised].filter((c) => !cliOnly.includes(c) && !awaitingRerecord.includes(c)).sort();
     for (const t of TARGETS) {
       const byOrigin = (origin: string) => t.pact.errors.filter((e) => e.origin === origin).map((e) => e.code).sort();
+      expect(awaitingRerecord.filter((c) => !byOrigin("engine").includes(c))).toEqual([]);
       expect(byOrigin("cli")).toEqual(cliOnly);
       expect(byOrigin("both")).toEqual(shared);
       expect(byOrigin("cli").length + byOrigin("both").length + byOrigin("engine").length).toBe(t.pact.errors.length);

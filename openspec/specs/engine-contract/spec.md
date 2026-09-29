@@ -95,8 +95,8 @@ A platform pre-check that runs before anything is downloaded SHALL report `E_UNS
 > | `E_BAD_AUDIO` | input | no | engine | Unreadable or unsupported audio |
 > | `E_INVALID_ARG` | input | no | both | Invalid command-line argument |
 > | `E_MODEL_MISSING` | model | no | both | Model or voice not installed |
-> | `E_MODEL_DOWNLOAD` | model | **yes** | engine | Model download failed |
-> | `E_CACHE_CORRUPT` | model | no | engine | Cached model failed verification |
+> | `E_MODEL_DOWNLOAD` | model | **yes** | both | Model download failed |
+> | `E_CACHE_CORRUPT` | model | no | both | Cached model failed verification |
 > | `E_MODEL_LOAD` | model | no | engine | Model failed to load |
 > | `E_UNSUPPORTED_PLATFORM` | platform | no | both | Feature unsupported on this platform |
 > | `E_SIDECAR_MISSING` | platform | no | engine | Helper sidecar missing or failed |
@@ -287,7 +287,7 @@ Before spawning the Engine the CLI SHALL validate the full argv against the `com
 
 The CLI SHALL report failures that happen before or around the Engine with the same Error code vocabulary the Engine publishes in its describe document: `E_INPUT_NOT_FOUND`, `E_ENGINE_SPAWN`, `E_INVALID_ARG`, `E_ENGINE_PROTOCOL`, `E_INSTALL_RACE` and `E_INTERNAL` SHALL appear in `errors`, and every failure the Core API throws SHALL be a `KeshaError` carrying `code`, `hint` when known, and `exitCode` and `stderr` whenever an Engine subprocess ran.
 
-Each entry's `origin` SHALL be `engine`, `cli` or `both`: `E_INPUT_NOT_FOUND`, `E_INVALID_ARG`, `E_UNSUPPORTED_PLATFORM` and `E_INTERNAL` are `both` because either side raises them (the CLI raises `E_UNSUPPORTED_PLATFORM` from its platform pre-check before any Engine exists), while `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE` are `cli` because only the CLI can observe them. `E_MODEL_MISSING`, `E_TEXT_EMPTY` and `E_TEXT_TOO_LONG` are also `both`: the CLI raises them before spawning an Engine — `E_MODEL_MISSING` when `--speakers` needs a diarization or VAD model that `kesha install --diarize` / `--vad` has not placed, and `E_TEXT_EMPTY` / `E_TEXT_TOO_LONG` from `kesha say`'s own text validation — while the Engine raises the same codes when it validates the same conditions directly.
+Each entry's `origin` SHALL be `engine`, `cli` or `both`: `E_INPUT_NOT_FOUND`, `E_INVALID_ARG`, `E_UNSUPPORTED_PLATFORM` and `E_INTERNAL` are `both` because either side raises them (the CLI raises `E_UNSUPPORTED_PLATFORM` from its platform pre-check before any Engine exists), while `E_ENGINE_SPAWN`, `E_ENGINE_PROTOCOL` and `E_INSTALL_RACE` are `cli` because only the CLI can observe them. `E_MODEL_MISSING`, `E_TEXT_EMPTY` and `E_TEXT_TOO_LONG` are also `both`: the CLI raises them before spawning an Engine — `E_MODEL_MISSING` when `--speakers` needs a diarization or VAD model that `kesha install --diarize` / `--vad` has not placed, and `E_TEXT_EMPTY` / `E_TEXT_TOO_LONG` from `kesha say`'s own text validation — while the Engine raises the same codes when it validates the same conditions directly. `E_MODEL_DOWNLOAD` and `E_CACHE_CORRUPT` are `both` too: `kesha install` raises `E_MODEL_DOWNLOAD` when the Engine binary fails to download (a network error, an HTTP error status or an empty body) and `E_CACHE_CORRUPT` when the downloaded binary fails its SHA-256 check, the same two codes the Engine raises for a model download.
 
 These codes SHALL appear in structured error records (`TranscribeErrorRecord.code`).
 
