@@ -1,0 +1,74 @@
+[
+  {
+    "id": 4111330661,
+    "in_reply_to_id": null,
+    "user": {
+      "login": "greptile-apps[bot]"
+    },
+    "html_url": "https://github.com/drakulavich/kesha-voice-kit/pull/1256#discussion_r4111330661",
+    "body": "<a href=\"#\"><img alt=\"P2\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p2.svg?v=9\" align=\"top\"></a> **Warmup timeout lacks coverage** The new timeout path terminates the process tree and schedules a force-kill, but no test exercises it. A focused test with a warmup child that ignores SIGTERM would help catch a regression that leaves `install` waiting for the child to exit or close stderr after the deadline.\n\nNote: If this suggestion doesn't match your team's coding style, reply to this and let me know. I'll remember it for next time!"
+  },
+  {
+    "id": 4111349883,
+    "in_reply_to_id": null,
+    "user": {
+      "login": "greptile-apps[bot]"
+    },
+    "html_url": "https://github.com/drakulavich/kesha-voice-kit/pull/1256#discussion_r4111349883",
+    "body": "<a href=\"#\"><img alt=\"P2\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p2.svg?v=9\" align=\"top\"></a> **Test misses same-size replacements** The replacement script is a different size, so this test passes even if the probe stops checking ctime. A same-size rewrite with restored mtime would then have no test coverage, making it easier to miss a regression that skips probing a repaired engine.\n\nNote: If this suggestion doesn't match your team's coding style, reply to this and let me know. I'll remember it for next time!"
+  },
+  {
+    "id": 4111360408,
+    "in_reply_to_id": 4111330661,
+    "user": {
+      "login": "drakulavich"
+    },
+    "html_url": "https://github.com/drakulavich/kesha-voice-kit/pull/1256#discussion_r4111360408",
+    "body": "Fixed in 53c53d271fb4306beec05bbdffdb26d798561393: `warmDarwinKokoro` takes its timeout as an internal parameter (install keeps 180 s), and `a Kokoro warmup that outlives its timeout > is force-killed with its tree, and the install goes on with one warning` (tests/unit/engine-install-decisions.test.ts) drives it with a 200 ms timeout against a `say` child that ignores SIGTERM. It asserts that the call returns, the child is gone, and exactly one timeout warning is printed. `just mutate` is PINNED both for reverting to `proc.kill()` and for dropping `tree.forceKillAfterGrace()`. The test is darwin-arm64 only because the warmup returns immediately on every other platform."
+  },
+  {
+    "id": 4111366786,
+    "in_reply_to_id": null,
+    "user": {
+      "login": "greptile-apps[bot]"
+    },
+    "html_url": "https://github.com/drakulavich/kesha-voice-kit/pull/1256#discussion_r4111366786",
+    "body": "<a href=\"#\"><img alt=\"P2\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p2.svg?v=9\" align=\"top\"></a> **Warmup test checks no PID** The fixture writes a literal `$` to `say.pid` instead of the shell PID (`$$`). The helper reads that as `NaN`, so its process-exit check succeeds immediately. This means the new test can pass even if the timed-out warmup process is still running, leaving that regression untested."
+  },
+  {
+    "id": 4111408454,
+    "in_reply_to_id": 4111366786,
+    "user": {
+      "login": "drakulavich"
+    },
+    "html_url": "https://github.com/drakulavich/kesha-voice-kit/pull/1256#discussion_r4111408454",
+    "body": "Fixed in 2d982e1549f15d5ee65c5b148ca1b69c2b385690: the fixture writes `$$` (the shell pid), so `waitForPidExit` now checks the real warmup child. Re-proved: dropping `tree.forceKillAfterGrace()` → `just mutate` PINNED."
+  },
+  {
+    "id": 4131549953,
+    "in_reply_to_id": null,
+    "user": {
+      "login": "greptile-apps[bot]"
+    },
+    "html_url": "https://github.com/drakulavich/kesha-voice-kit/pull/1335#discussion_r4131549953",
+    "body": "<a href=\"#\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg?v=9\" align=\"top\"></a> **Unreadable assets produce uncoded errors**\n\nIf an existing sidecar in a read-only engine directory cannot be read, this new hash check lets the file-read error escape. `kesha install` then stops without the `E_CACHE_CORRUPT` code or a repair hint. The new read-only engine-binary check has the same problem; unlike these paths, the writable sidecar path catches read errors. Please give users an actionable, coded refusal when a read-only asset cannot be verified."
+  },
+  {
+    "id": 4131728609,
+    "in_reply_to_id": 4131549953,
+    "user": {
+      "login": "drakulavich"
+    },
+    "html_url": "https://github.com/drakulavich/kesha-voice-kit/pull/1335#discussion_r4131728609",
+    "body": "Fixed in d1e490f9a768f66330754aa2e27b147fbf5125f6. The read error is now classified inside `cachedAssetMatchesPin` when `canRepair` is false, so it covers both the engine binary and the sidecars in a read-only dir. A path errno (EACCES, EPERM, ENOTDIR, ELOOP, ENAMETOOLONG) becomes `E_INVALID_ARG` (exit 2), naming the file and the errno, with the engine-dir hint from `ensureEngineDirCreatable`. Other errors propagate unchanged, and the asset never passes unverified. Subprocess tests for an unreadable sidecar (123a9bc9) and an unreadable engine binary (0cb57270ace927ffd18bbcbfa18533668d8c144d) were red on 2a5a9dfa with a raw EACCES and are green now."
+  },
+  {
+    "id": 4055136594,
+    "in_reply_to_id": null,
+    "user": {
+      "login": "greptile-apps[bot]"
+    },
+    "html_url": "https://github.com/drakulavich/kesha-voice-kit/pull/1241#discussion_r4055136594",
+    "body": "<a href=\"#\"><img alt=\"P1\" src=\"https://greptile-static-assets.s3.amazonaws.com/badges/p1.svg?v=9\" align=\"top\"></a> **Launch failures use wrong exit**\n\nWhen the baseline command does not exist or cannot be executed, `Bun.spawn` throws before `runCommand` can return an exit code. The top-level catch then reports a generic refusal with exit 2 instead of the documented `NOT A VALID RUN` exit 3, so the exact command-start failure this baseline is meant to classify receives the wrong result. Catch launch failures in `runCommand` and classify them as invalid runs.\n\n**Knowledge Base Used:** [Automated validation and release safeguards](https://app.greptile.com/laputa/-/custom-context/knowledge-base/drakulavich/kesha-voice-kit/-/docs/automated-validation-and-release-safeguards.md)"
+  }
+]
