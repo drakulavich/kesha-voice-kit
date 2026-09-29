@@ -897,19 +897,21 @@ function ensureEngineDirCreatable(binPath: string): void {
 function engineWriteFailure(binPath: string, e: unknown): KeshaError | null {
   const engineDir = dirname(binPath);
   const errno = (e as NodeJS.ErrnoException).code ?? "";
+  const setting = configuredEngineDirSetting();
+  const into = setting ? `${engineDir} (from ${setting.name}="${setting.value}")` : engineDir;
   const why = ENGINE_DIR_PATH_ERRNOS[errno];
   if (why) {
-    return new KeshaError("E_INVALID_ARG", `Cannot write the engine binary into ${engineDir}: ${why}`, {
-      hint: engineDirFix(configuredEngineDirSetting()?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir),
+    return new KeshaError("E_INVALID_ARG", `Cannot write the engine binary into ${into}: ${why}`, {
+      hint: engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir),
     });
   }
   if (!errno) return null;
   if (errno === "ENOSPC") {
-    return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${engineDir}: no space left on its disk (ENOSPC)`, {
+    return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${into}: no space left on its disk (ENOSPC)`, {
       hint: `the disk is full: free space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
     });
   }
-  return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${engineDir}: ${errorMessage(e)}`, {
+  return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${into}: ${errorMessage(e)}`, {
     hint: `resolve that filesystem error on ${engineDir} and re-run \`kesha install\`; if it persists, file a bug with \`kesha support-bundle\`.`,
   });
 }

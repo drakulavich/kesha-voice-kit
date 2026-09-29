@@ -232,9 +232,11 @@ describe("a disk failure while the engine is written is not reported as a downlo
         const fault = failStagingWrites(getEngineBinPath(), w.errno);
         restoreWrites = fault.restore;
 
-        const err = await rejectionOf(run());
+        const outcome = await run().then(() => null, (e: unknown) => e);
 
         expect(fault.hits()).toBeGreaterThan(0);
+        expect(outcome).toBeInstanceOf(KeshaError);
+        const err = outcome as KeshaError;
         expect(err.code).toBe(w.code);
         expect(err.message).toMatch(w.why);
         expect(`${err.message}\n${err.hint ?? ""}`).toContain(dirname(getEngineBinPath()));
