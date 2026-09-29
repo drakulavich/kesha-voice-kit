@@ -17,8 +17,8 @@ code never needs sanitizing.
 | `E_INPUT_NOT_FOUND` | input | no | The input audio path doesn't exist (or no stdin was piped). | Check the path; pass a readable file. |
 | `E_BAD_AUDIO` | input | no | The audio container/codec couldn't be decoded (or the file couldn't be opened for a reason other than "missing"), including a header no decoder can represent, such as a WAV declaring a sample rate of 0. A directory passed where an audio file is expected is `E_INVALID_ARG`, not this — the CLI rejects it as a bad argument before the engine ever opens it. | Re-export to wav/ogg/mp3; verify the file isn't truncated; check permissions. |
 | `E_MODEL_MISSING` | model | no | A required model or voice isn't installed. | `kesha install` / `kesha install --tts`. |
-| `E_MODEL_DOWNLOAD` | model | yes | A model download failed (network or mirror error). | Retry; check connectivity and `KESHA_MODEL_MIRROR`. |
-| `E_CACHE_CORRUPT` | model | no | A cached model file failed SHA-256 verification. | `kesha install --no-cache` to re-fetch. |
+| `E_MODEL_DOWNLOAD` | model | yes | A model download failed (network or mirror error), or `kesha install` could not download the engine binary: a network error, an HTTP error status, or an empty response. | Retry; check connectivity and `KESHA_MODEL_MIRROR`. For the engine binary, check that the release exists (`--engine-version`). |
+| `E_CACHE_CORRUPT` | model | no | A cached model file failed SHA-256 verification, or a freshly downloaded engine binary did not match its pinned SHA-256 (it is deleted, never installed). | `kesha install --no-cache` to re-fetch; for the engine binary, re-run `kesha install`, and report it if the mismatch persists. |
 | `E_MODEL_LOAD` | model | no | A model file exists but failed to load. | Reinstall the model; check disk space. |
 | `E_UNSUPPORTED_PLATFORM` | platform | no | The feature isn't supported on this OS/arch (e.g. microphone recording off macOS), or `kesha install` found no published engine for it. | Use a supported platform (see the [platform matrix](product-positioning.md#platform-matrix)). |
 | `E_SIDECAR_MISSING` | platform | no | A helper sidecar is missing or exited nonzero (e.g. `say-avspeech`). | Reinstall; ensure the sidecar sits beside the engine (macOS). |
@@ -60,6 +60,10 @@ code never needs sanitizing.
   engine's transcription JSON cannot be read or the engine exits non-zero without reporting an
   error event; all render exactly like the engine's own. `describe` publishes `E_MODEL_MISSING`,
   `E_TEXT_EMPTY` and `E_TEXT_TOO_LONG` as `both` from engine v1.26.0 on (#1202).
+- `kesha install` and the Core API `install()` raise `E_MODEL_DOWNLOAD` when the engine binary
+  cannot be downloaded (a network error, an HTTP error status, an empty response) and
+  `E_CACHE_CORRUPT` when it does not match its SHA-256; both exit `1`. `describe` publishes the
+  two codes as `both` from the engine release after v2.0.0 on (#1261).
 - **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
   engine and the TypeScript CLI: the CLI validates arguments, checks input
   existence up front and refuses a cache path it cannot write the engine into,

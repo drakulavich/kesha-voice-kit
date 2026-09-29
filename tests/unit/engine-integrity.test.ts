@@ -10,6 +10,7 @@ import {
   readInstalledEngineVersion,
   SIDECARS,
 } from "../../src/engine-install";
+import type { KeshaError } from "../../src/engine/events";
 import { log } from "../../src/log";
 import { getEngineBinPath } from "../../src/engine";
 import { downloadedAssetNames, isDarwinArm64 } from "../../src/engine-targets";
@@ -205,7 +206,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     expect(stderr).toContain(
       `kesha-engine binary ${getEngineBinaryName()} from release v${PINNED} does not match its pinned SHA-256`,
     );
-    expect(stderr).toContain("Fix: re-run `kesha install`");
+    expect(stderr).toContain("hint: re-run `kesha install`");
     expect(existsSync(binPath)).toBe(false);
   }, 30_000);
 });
@@ -333,12 +334,12 @@ describe("without an injected pin, the Engine is held to its release's own SHA25
 
     const err = await installEngine().then(
       () => null,
-      (e: unknown) => e as Error,
+      (e: unknown) => e as KeshaError,
     );
 
-    expect(err?.message).toContain("kesha install --engine-version <version>");
-    expect(err?.message).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
-    expect(err?.message).not.toContain("report it");
+    expect(err?.hint).toContain("kesha install --engine-version <version>");
+    expect(err?.hint).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
+    expect(err?.hint).not.toContain("report it");
   }, 30_000);
 
   posixTest("a SHA256SUMS that omits the engine points to a published release instead of asking for a bug report", async () => {
@@ -347,12 +348,12 @@ describe("without an injected pin, the Engine is held to its release's own SHA25
 
     const err = await installEngine().then(
       () => null,
-      (e: unknown) => e as Error,
+      (e: unknown) => e as KeshaError,
     );
 
     expect(err?.message).toContain(`the SHA256SUMS of release v${engineVersion} does not list it`);
-    expect(err?.message).toContain("kesha install --engine-version <version>");
-    expect(err?.message).not.toContain("report it");
+    expect(err?.hint).toContain("kesha install --engine-version <version>");
+    expect(err?.hint).not.toContain("report it");
   }, 30_000);
 
   posixTest("an overridden release without SHA256SUMS asks for another published release, not the checkout's own", async () => {
@@ -361,12 +362,12 @@ describe("without an injected pin, the Engine is held to its release's own SHA25
 
     const err = await installEngine({ version: OVERRIDE }).then(
       () => null,
-      (e: unknown) => e as Error,
+      (e: unknown) => e as KeshaError,
     );
 
     expect(err?.message).toContain(`release v${OVERRIDE} publishes no SHA256SUMS`);
-    expect(err?.message).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
-    expect(err?.message).not.toContain("this source checkout installs its own version");
-    expect(err?.message).not.toContain("without --engine-version");
+    expect(err?.hint).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
+    expect(err?.hint).not.toContain("this source checkout installs its own version");
+    expect(err?.hint).not.toContain("without --engine-version");
   }, 30_000);
 });

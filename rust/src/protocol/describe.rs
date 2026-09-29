@@ -267,6 +267,8 @@ fn origin_of(code: ErrorCode) -> Origin {
         | ErrorCode::UnsupportedPlatform
         | ErrorCode::Internal
         | ErrorCode::ModelMissing
+        | ErrorCode::ModelDownload
+        | ErrorCode::CacheCorrupt
         | ErrorCode::TextEmpty
         | ErrorCode::TextTooLong => Origin::Both,
         _ => Origin::Engine,
@@ -446,9 +448,11 @@ mod tests {
         assert_eq!(
             both,
             vec![
+                "E_CACHE_CORRUPT",
                 "E_INPUT_NOT_FOUND",
                 "E_INTERNAL",
                 "E_INVALID_ARG",
+                "E_MODEL_DOWNLOAD",
                 "E_MODEL_MISSING",
                 "E_TEXT_EMPTY",
                 "E_TEXT_TOO_LONG",
@@ -521,5 +525,7 @@ mod tests {
         assert_eq!(origin_of_json("E_MODEL_MISSING"), "both");
         assert_eq!(origin_of_json("E_TEXT_EMPTY"), "both");
         assert_eq!(origin_of_json("E_TEXT_TOO_LONG"), "both");
+        assert_eq!(origin_of_json("E_MODEL_DOWNLOAD"), "both");
+        assert_eq!(origin_of_json("E_CACHE_CORRUPT"), "both");
     }
 }
