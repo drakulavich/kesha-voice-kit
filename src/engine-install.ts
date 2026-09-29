@@ -903,9 +903,14 @@ function engineWriteFailure(binPath: string, e: unknown): KeshaError | null {
       hint: engineDirFix(configuredEngineDirSetting()?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir),
     });
   }
-  if (errno !== "ENOSPC") return null;
-  return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${engineDir}: no space left on its disk (ENOSPC)`, {
-    hint: `free disk space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
+  if (!errno) return null;
+  if (errno === "ENOSPC") {
+    return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${engineDir}: no space left on its disk (ENOSPC)`, {
+      hint: `the disk is full: free space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
+    });
+  }
+  return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${engineDir}: ${errorMessage(e)}`, {
+    hint: `resolve that filesystem error on ${engineDir} and re-run \`kesha install\`; if it persists, file a bug with \`kesha support-bundle\`.`,
   });
 }
 
