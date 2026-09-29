@@ -464,7 +464,7 @@ jobs:
   github-release:
     name: GitHub release
     needs: [classify, plan, assemble]
-    if: needs.plan.outputs.publish == 'true' && needs.assemble.result == 'success'
+    if: ${{ !cancelled() && needs.plan.outputs.publish == 'true' && needs.assemble.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -548,7 +548,7 @@ jobs:
   npm-smoke:
     name: Smoke the published npm install
     needs: [plan, npm-publish]
-    if: needs.npm-publish.result == 'success'
+    if: ${{ !cancelled() && needs.npm-publish.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
