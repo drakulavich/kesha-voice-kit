@@ -84,7 +84,15 @@ async function fetchSha256Sums(version: string, pins: AssetPins | undefined): Pr
       { hint: unverifiableFix(version, pins) },
     );
   }
-  return parseSha256Sums(await res.text());
+  let body: string;
+  try {
+    body = await res.text();
+  } catch (e) {
+    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to read SHA256SUMS for release v${version}: ${errorMessage(e)}`, {
+      hint: NETWORK_HINT,
+    });
+  }
+  return parseSha256Sums(body);
 }
 
 /**
@@ -647,7 +655,12 @@ async function fetchEngineBinary(
     });
   }
 
-  await streamResponseToFile(res, binPath, "kesha-engine binary");
+  try {
+    await streamResponseToFile(res, binPath, "kesha-engine binary");
+  } catch (e) {
+    muteSidecarRejections();
+    throw e instanceof KeshaError ? e : (engineWriteFailure(binPath, e) ?? e);
+  }
   const refusal = await rejectMismatchedDownload(binPath, `kesha-engine binary ${binaryName}`, version, expected);
   if (refusal) {
     muteSidecarRejections();
@@ -918,6 +931,28 @@ function ensureEngineDirCreatable(binPath: string): void {
     const fix = engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir);
     throw new KeshaError("E_INVALID_ARG", `${what}.\n  Fix: ${fix}`);
   }
+}
+
+function engineWriteFailure(binPath: string, e: unknown): KeshaError | null {
+  const engineDir = dirname(binPath);
+  const errno = (e as NodeJS.ErrnoException).code ?? "";
+  const setting = engineDirSetting();
+  const into = setting ? `${engineDir} (from ${setting.name}="${setting.value}")` : engineDir;
+  const why = ENGINE_DIR_PATH_ERRNOS[errno];
+  if (why) {
+    return new KeshaError("E_INVALID_ARG", `Cannot write the engine binary into ${into}: ${why}`, {
+      hint: engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir),
+    });
+  }
+  if (!errno) return null;
+  if (errno === "ENOSPC") {
+    return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${into}: no space left on its disk (ENOSPC)`, {
+      hint: `the disk is full: free space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
+    });
+  }
+  return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${into}: ${errorMessage(e)}`, {
+    hint: `resolve that filesystem error on ${engineDir} and re-run \`kesha install\`; if it persists, file a bug with \`kesha support-bundle\`.`,
+  });
 }
 
 export interface EngineInstallRequest extends InstallOptions {
