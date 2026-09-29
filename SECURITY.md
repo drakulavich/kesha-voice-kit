@@ -6,7 +6,8 @@ Only the latest `@drakulavich/kesha-voice-kit` release line receives
 security fixes. Since v2.0.0 one version names both the CLI and the engine,
 and one `vX.Y.Z` tag releases both, so a fix in either ships as the next
 2.x release. To upgrade, run
-`bun add -g @drakulavich/kesha-voice-kit@latest`.
+`bun add -g @drakulavich/kesha-voice-kit@latest`, then `kesha install` to
+replace the cached engine with the one the new CLI pins.
 
 | Version       | Supported          |
 | ------------- | ------------------ |
