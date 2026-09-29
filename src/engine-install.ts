@@ -155,18 +155,38 @@ async function rejectMismatchedDownload(
 
 /**
  * Whether a cached asset of the pinned release still hashes to its pin; one that does not is
- * deleted so the verified download replaces it. `--engine-version` caches are not re-hashed.
+ * deleted so the verified download replaces it, or refused when its directory is read-only.
+ * `--engine-version` caches are not re-hashed.
  */
-async function cachedAssetMatchesPin(path: string, assetName: string, what: string, version: string): Promise<boolean> {
+async function cachedAssetMatchesPin(
+  path: string,
+  assetName: string,
+  what: string,
+  version: string,
+  canRepair: boolean,
+): Promise<boolean> {
   // KESHA_ENGINE_BIN names the user's own build, which no release pin describes.
   if (version !== engineChecksums.pins?.version || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
   const expected = await engineChecksums.forRelease(version)(assetName);
-  const actual = await sha256OfFile(path);
+  let actual: string;
+  try {
+    actual = await sha256OfFile(path);
+  } catch (e) {
+    throw canRepair ? e : unreadableInReadOnlyDir(path, e);
+  }
   if (actual === expected.sha256) return true;
-  log.warn(
-    `Installed ${what} ${assetName} does not match ${expected.source} (expected sha256 ${expected.sha256}, ` +
-      `got ${actual}); deleting it and downloading a verified copy.`,
-  );
+  const mismatch =
+    `Installed ${what} ${assetName} at ${path} does not match ${expected.source} ` +
+    `(expected sha256 ${expected.sha256}, got ${actual})`;
+  if (!canRepair) {
+    const dir = dirname(path);
+    throw new KeshaError("E_CACHE_CORRUPT", `${mismatch}; ${dir} is read-only, so it cannot be replaced.`, {
+      hint:
+        `make ${dir} writable and re-run \`kesha install\` to replace it with a verified copy, ` +
+        "or point KESHA_CACHE_DIR at a writable directory and re-run `kesha install`.",
+    });
+  }
+  log.warn(`${mismatch}; deleting it and downloading a verified copy.`);
   rmSync(path, { force: true });
   return false;
 }
@@ -476,8 +496,7 @@ async function refreshCachedEngine(
   if (canWriteEngineDir && existsSync(binPath)) {
     darwinTrustBinary(binPath, "kesha-engine binary");
   }
-  // Top up missing or broken sidecars (pre-#141/#199 cached binaries never had them);
-  // skip on read-only fs (Nix-store) to avoid confusing "install failed" warnings.
+  // Top up missing or broken sidecars (pre-#141/#199 cached binaries never had them).
   if (canWriteEngineDir) {
     const checksums = engineChecksums.forRelease(version);
     await Promise.all(
@@ -487,7 +506,7 @@ async function refreshCachedEngine(
         // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
         let pinned = false;
         try {
-          pinned = existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version));
+          pinned = existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version, true));
         } catch (e) {
           log.warn(`Could not read ${spec.displayName} at ${path} (${errorMessage(e)}); removing it and downloading it again.`);
           rmSync(path, { force: true });
@@ -498,6 +517,10 @@ async function refreshCachedEngine(
         }
       }),
     );
+  } else {
+    for (const spec of SIDECARS) {
+      await cachedAssetMatchesPin(join(engineDir, spec.fileBasename), spec.assetName, spec.displayName, version, false);
+    }
   }
 }
 
@@ -841,6 +864,29 @@ const ENGINE_DIR_PATH_ERRNOS: Record<string, string> = {
   ENAMETOOLONG: "the path is too long",
 };
 
+function engineDirSetting(): { name: string; value: string } | null {
+  if (process.env.KESHA_ENGINE_BIN) return { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN };
+  if (process.env.KESHA_CACHE_DIR) return { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR };
+  if (process.env.KESHA_HOME) return { name: "KESHA_HOME", value: process.env.KESHA_HOME };
+  return null;
+}
+
+function unreadableInReadOnlyDir(path: string, e: unknown): unknown {
+  const errno = (e as NodeJS.ErrnoException).code ?? "";
+  const why = ENGINE_DIR_PATH_ERRNOS[errno];
+  if (!why) return e;
+  const dir = dirname(path);
+  return new KeshaError(
+    "E_INVALID_ARG",
+    `Cannot verify ${path} against its pinned SHA-256: ${why} (${errno}), and ${dir} is read-only, so it cannot be replaced.`,
+    {
+      hint:
+        `make ${path} readable and ${dir} writable, then re-run \`kesha install\`. Or ` +
+        engineDirFix(engineDirSetting()?.name, false, dir),
+    },
+  );
+}
+
 /** `KESHA_ENGINE_BIN` names the binary file, so "point it at a writable directory" breaks the next install. */
 function engineDirFix(setting: string | undefined, notADir: boolean, engineDir: string): string {
   if (setting === "KESHA_ENGINE_BIN") {
@@ -858,13 +904,6 @@ function engineDirFix(setting: string | undefined, notADir: boolean, engineDir: 
     : `point KESHA_CACHE_DIR at a writable directory, or fix the permissions on ${keshaCacheDir()}.`;
 }
 
-function configuredEngineDirSetting(): { name: string; value: string } | null {
-  if (process.env.KESHA_ENGINE_BIN) return { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN };
-  if (process.env.KESHA_CACHE_DIR) return { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR };
-  if (process.env.KESHA_HOME) return { name: "KESHA_HOME", value: process.env.KESHA_HOME };
-  return null;
-}
-
 /**
  * Creates the engine directory up front, so a cache path the user configured fails with a code
  * and the name of the setting that supplied it instead of a raw errno from the first write
@@ -876,7 +915,7 @@ function ensureEngineDirCreatable(binPath: string): void {
   try {
     mkdirSync(engineDir, { recursive: true });
   } catch (e) {
-    const setting = configuredEngineDirSetting();
+    const setting = engineDirSetting();
     const errno = (e as NodeJS.ErrnoException).code ?? "";
     const why = ENGINE_DIR_PATH_ERRNOS[errno];
     const what = setting
@@ -897,7 +936,7 @@ function ensureEngineDirCreatable(binPath: string): void {
 function engineWriteFailure(binPath: string, e: unknown): KeshaError | null {
   const engineDir = dirname(binPath);
   const errno = (e as NodeJS.ErrnoException).code ?? "";
-  const setting = configuredEngineDirSetting();
+  const setting = engineDirSetting();
   const into = setting ? `${engineDir} (from ${setting.name}="${setting.value}")` : engineDir;
   const why = ENGINE_DIR_PATH_ERRNOS[errno];
   if (why) {
@@ -968,15 +1007,14 @@ async function installLockedEngine(
   const canWriteEngineDir = checkEngineWritable(engineDir);
 
   const markerMatches = existsSync(binPath) && installedVersion === version;
-  // The marker vouches for a file, not for a working binary. Skipped on a read-only engine
-  // dir: nothing there can be repaired, so a failed probe would only turn a usable Nix
+  // The marker vouches for a file, not for a working binary. The probe is skipped on a read-only
+  // engine dir: nothing there can be repaired, so a failed probe would only turn a usable Nix
   // install into a hard error.
   // Hashed before the health probe, so an altered binary is never run.
   const versionMatches =
     markerMatches &&
-    (!canWriteEngineDir ||
-      ((await cachedAssetMatchesPin(binPath, getEngineBinaryName(), "kesha-engine binary", version)) &&
-        (await engineWorks(binPath))));
+    (await cachedAssetMatchesPin(binPath, getEngineBinaryName(), "kesha-engine binary", version, canWriteEngineDir)) &&
+    (!canWriteEngineDir || (await engineWorks(binPath)));
   // On read-only fs, --no-cache can't re-download; treat as cache-valid and forward flag to model install.
   const cacheValid = versionMatches && (!noCache || !canWriteEngineDir);
 
