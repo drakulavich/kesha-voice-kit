@@ -80,6 +80,11 @@ function createFakeEngine(dir: string): string {
     `#!${process.execPath}
 const args = Bun.argv.slice(2);
 
+if (process.env.KESHA_FAKE_FAIL_COMMAND === args[0]) {
+  console.error(JSON.stringify({ kind: "error", code: "E_INTERNAL", message: "fake " + args[0] + " failed" }));
+  process.exit(1);
+}
+
 if (args[0] === "describe") {
   console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["transcribe.segments", "transcribe.diarize", "tts"] }))});
   process.exit(0);
@@ -132,6 +137,12 @@ if (args[0] === "transcribe") {
 
 if (args[0] === "say") {
   await Bun.write(Bun.stdout, new Uint8Array(Number(process.env.KESHA_FAKE_SAY_BYTES || "4096")));
+  process.exit(0);
+}
+
+if (args[0] === "record") {
+  console.error(JSON.stringify({ kind: "progress", message: "Listening (16000 Hz)... stop with Ctrl-C." }));
+  console.error(JSON.stringify({ kind: "progress", message: "Recorded " + args[args.indexOf("--out") + 1] }));
   process.exit(0);
 }
 
@@ -2718,4 +2729,255 @@ exit 0
       });
     });
   });
+});
+
+type SweepStdout = "empty" | "json" | { exact: string };
+
+interface SweepCase {
+  name: string;
+  args: (dir: string) => string[];
+  env?: (dir: string) => Record<string, string>;
+  exitCode: number;
+  stderr?: string;
+  stdout?: SweepStdout;
+}
+
+interface SweepEntry {
+  errors: SweepCase[];
+  progress: SweepCase[];
+}
+
+function sweepEngineEnv(dir: string, extra: Record<string, string> = {}): Record<string, string> {
+  const enginePath = createFakeEngine(dir);
+  markFakeEngineInstalled(enginePath);
+  return { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath, ...extra };
+}
+
+const FOREIGN_BACKEND = (() => {
+  const host = engineTarget(process.platform, process.arch)?.backend;
+  return host === undefined ? undefined : host === "coreml" ? "onnx" : "coreml";
+})();
+
+const INSTALLED = `Backend installed successfully (engine v${engineVersion}).`;
+
+const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
+  completions: {
+    errors: [{ name: "missing shell", args: () => ["completions"], exitCode: 2, stderr: "error [E_INVALID_ARG]: missing shell" }],
+    progress: [
+      {
+        name: "bash",
+        args: () => ["completions", "bash"],
+        exitCode: 0,
+        stdout: { exact: readFileSync(join(DEFAULT_CWD, "completions", "kesha.bash"), "utf8").trim() },
+      },
+    ],
+  },
+  doctor: {
+    errors: [],
+    progress: [
+      {
+        name: "--json without an engine",
+        args: () => ["doctor", "--json"],
+        env: (dir) => ({ ...isolatedEnv(dir), KESHA_ENGINE_BIN: join(dir, "absent-kesha-engine") }),
+        exitCode: 0,
+        stdout: "json",
+      },
+    ],
+  },
+  init: {
+    errors: [
+      { name: "both backends", args: () => ["init", "--plan", "--coreml", "--onnx"], exitCode: 1, stderr: "Choose only one backend" },
+      ...(FOREIGN_BACKEND === undefined
+        ? []
+        : [{
+          name: "--plan for a backend this platform lacks",
+          args: () => ["init", "--plan", `--${FOREIGN_BACKEND}`],
+          env: (dir: string) => ({ ...isolatedEnv(dir), KESHA_ENGINE_BIN: "" }),
+          exitCode: 2,
+          stderr: `Requested backend "${FOREIGN_BACKEND}" is not available on this platform`,
+        }]),
+      {
+        name: "--yes when the engine's model install fails",
+        args: () => ["init", "--yes"],
+        env: (dir) => sweepEngineEnv(dir, { KESHA_FAKE_FAIL_COMMAND: "install" }),
+        exitCode: 1,
+        stderr: "fake install failed",
+      },
+    ],
+    progress: [
+      {
+        name: "--yes",
+        args: () => ["init", "--yes"],
+        env: (dir) => sweepEngineEnv(dir),
+        exitCode: 0,
+        stderr: "Installing models...",
+        stdout: { exact: INSTALLED },
+      },
+    ],
+  },
+  install: {
+    errors: [
+      { name: "both backends", args: () => ["install", "--coreml", "--onnx"], exitCode: 1, stderr: "Choose only one backend" },
+      { name: "an unknown TTS language", args: () => ["install", "--tts", "xx"], exitCode: 2, stderr: "Unsupported TTS language(s): xx" },
+      {
+        name: "the engine's model install fails",
+        args: () => ["install", "--vad"],
+        env: (dir) => sweepEngineEnv(dir, { KESHA_FAKE_FAIL_COMMAND: "install" }),
+        exitCode: 1,
+        stderr: "fake install failed",
+      },
+    ],
+    progress: [
+      {
+        name: "a cached engine installing models",
+        args: () => ["install", "--vad"],
+        env: (dir) => sweepEngineEnv(dir),
+        exitCode: 0,
+        stderr: "Installing models...",
+        stdout: { exact: INSTALLED },
+      },
+    ],
+  },
+  logs: {
+    errors: [
+      { name: "an unknown action", args: () => ["logs", "frobnicate"], exitCode: 2, stderr: "unknown logs action 'frobnicate'" },
+      { name: "--json on a non-status action", args: () => ["logs", "enable", "--json"], exitCode: 2, stderr: "usage: kesha logs status --json" },
+    ],
+    progress: [{ name: "status --json", args: () => ["logs", "status", "--json"], exitCode: 0, stdout: "json" }],
+  },
+  manpage: {
+    errors: [],
+    progress: [
+      {
+        name: "the page",
+        args: () => ["manpage"],
+        exitCode: 0,
+        stdout: { exact: readFileSync(join(DEFAULT_CWD, "man", "kesha.1"), "utf8").trim() },
+      },
+    ],
+  },
+  mcp: {
+    errors: [],
+    progress: [],
+  },
+  record: {
+    errors: [
+      { name: "no target", args: () => ["record"], exitCode: 2, stderr: "error [E_INVALID_ARG]: " },
+      {
+        name: "the engine fails",
+        args: (dir) => ["record", "--out", join(dir, "note.wav")],
+        env: (dir) => sweepEngineEnv(dir, { KESHA_FAKE_FAIL_COMMAND: "record" }),
+        exitCode: 1,
+        stderr: "fake record failed",
+      },
+    ],
+    progress: [
+      {
+        name: "--out",
+        args: (dir) => ["record", "--out", join(dir, "note.wav")],
+        env: (dir) => sweepEngineEnv(dir),
+        exitCode: 0,
+        stderr: "Recorded ",
+        stdout: "empty",
+      },
+    ],
+  },
+  say: {
+    errors: [
+      { name: "no text", args: () => ["say"], exitCode: 2, stderr: "error [E_TEXT_EMPTY]: text is empty" },
+      {
+        name: "the engine fails",
+        args: (dir) => ["say", "--voice", "en-am_michael", "--out", join(dir, "hello.wav"), "hello"],
+        env: (dir) => sweepEngineEnv(dir, { KESHA_FAKE_FAIL_COMMAND: "say" }),
+        exitCode: 1,
+        stderr: "fake say failed",
+      },
+    ],
+    progress: [
+      {
+        name: "--out",
+        args: (dir) => ["say", "--voice", "en-am_michael", "--out", join(dir, "hello.wav"), "hello"],
+        env: (dir) => sweepEngineEnv(dir),
+        exitCode: 0,
+        stderr: "Synthesizing en-am_michael -> ",
+        stdout: "empty",
+      },
+    ],
+  },
+  stats: {
+    errors: [
+      { name: "export without a format", args: () => ["stats", "export"], exitCode: 2, stderr: "usage: kesha stats export --format json|csv" },
+      { name: "an unknown action", args: () => ["stats", "frobnicate"], exitCode: 2, stderr: "frobnicate" },
+    ],
+    progress: [{ name: "export --format json", args: () => ["stats", "export", "--format", "json"], exitCode: 0, stdout: "json" }],
+  },
+  status: {
+    errors: [],
+    progress: [
+      {
+        name: "--json against a failing engine",
+        args: () => ["status", "--json"],
+        env: (dir) => sweepEngineEnv(dir, { KESHA_FAKE_FAIL_COMMAND: "describe" }),
+        exitCode: 0,
+        stdout: "json",
+      },
+    ],
+  },
+  "support-bundle": {
+    errors: [
+      {
+        name: "an unwritable output",
+        args: (dir) => ["support-bundle", "--output", join(dir, "missing", "deeper", "bundle.tar.gz")],
+        env: (dir) => {
+          writeFileSync(join(dir, "missing"), "a file where a directory should be");
+          return isolatedEnv(dir);
+        },
+        exitCode: 1,
+        stderr: "ENOTDIR",
+      },
+    ],
+    progress: [
+      {
+        name: "--output",
+        args: (dir) => ["support-bundle", "--output", join(dir, "bundle.tar.gz")],
+        exitCode: 0,
+        stderr: "Created support bundle: ",
+        stdout: "empty",
+      },
+    ],
+  },
+};
+
+async function runSweepCase(entry: SweepCase): Promise<void> {
+  const dir = makeTempDir("kesha-cli-contract-stdout-sweep-");
+  const env = entry.env ? entry.env(dir) : isolatedEnv(dir);
+  const run = await runCli(entry.args(dir), { env, timeoutMs: DEFAULT_TIMEOUT_MS + 10_000 });
+  const label = `${run.command} [${entry.name}]\nstdout=${run.stdout}\nstderr=${run.stderr}`;
+  expect(run.exitCode, label).toBe(entry.exitCode);
+  if (entry.stderr !== undefined) expect(run.stderr, label).toContain(entry.stderr);
+  const stdout = entry.exitCode === 0 ? entry.stdout ?? "empty" : "empty";
+  if (stdout === "empty") expect(run.stdout, label).toBe("");
+  else if (stdout === "json") expect(() => JSON.parse(run.stdout), label).not.toThrow();
+  else expect(run.stdout, label).toBe(stdout.exact);
+}
+
+describe("stdout purity sweep (#1282)", () => {
+  test("the registry names subcommands to sweep, and every one of them has an entry", () => {
+    expect(SUBCOMMAND_NAMES.length).toBeGreaterThan(0);
+    expect(Object.keys(STDOUT_PURITY_SWEEP).sort()).toEqual([...SUBCOMMAND_NAMES].sort());
+  });
+
+  for (const name of SUBCOMMAND_NAMES) {
+    test(`kesha ${name}: errors leave stdout empty, progress stays on stderr`, async () => {
+      const entry = STDOUT_PURITY_SWEEP[name];
+      if (!entry) throw new Error(`add kesha ${name} to STDOUT_PURITY_SWEEP with its error and progress paths`);
+      const unknownOption: SweepCase = {
+        name: "an unknown option",
+        args: () => [name, "--stdout-purity-bogus"],
+        exitCode: 2,
+        stderr: "error [E_INVALID_ARG]: unknown option --stdout-purity-bogus",
+      };
+      await Promise.all([unknownOption, ...entry.errors, ...entry.progress].map(runSweepCase));
+    });
+  }
 });
