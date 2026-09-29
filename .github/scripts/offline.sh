@@ -8,7 +8,7 @@ case "$(uname -s)" in
       block=(unshare -rn)
     else
       # Ubuntu 24.04's AppArmor can refuse unprivileged user namespaces; root makes the netns, setpriv drops back.
-      block=(sudo env "PATH=$PATH" "HOME=$HOME" unshare --net
+      block=(sudo --preserve-env env "PATH=$PATH" "HOME=$HOME" unshare --net
         setpriv "--reuid=$(id -u)" "--regid=$(id -g)" --init-groups --)
     fi
     ;;
