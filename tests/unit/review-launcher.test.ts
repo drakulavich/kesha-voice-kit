@@ -1,0 +1,71 @@
+import { describe, expect, test } from "bun:test";
+import { buildPrompt, claimFrom, commentBody, reviewerCommand } from "../../scripts/review";
+
+const head = "0123456789abcdef0123456789abcdef01234567";
+const target = { pr: 1280, head, base: "main", branch: "check/review-launcher-1280" };
+
+describe("claimFrom", () => {
+  test("refuses a missing or blank claim", () => {
+    expect(() => claimFrom([])).toThrow("needs a claim");
+    expect(() => claimFrom(["  ", "\n"])).toThrow("needs a claim");
+  });
+
+  test("joins unquoted words into one claim", () => {
+    expect(claimFrom(["  the", "guard fires  "])).toBe("the guard fires");
+  });
+});
+
+describe("buildPrompt", () => {
+  const prompt = buildPrompt({ ...target, claim: "an empty claim exits 2" });
+
+  test("names the claim to prove or refute", () => {
+    expect(prompt).toContain("Prove or refute this claim, and say which assertion fires if it is wrong:\nan empty claim exits 2");
+  });
+
+  test("scopes the review to the full head SHA against the base", () => {
+    expect(prompt).toContain(`pull request #1280 at head ${head}`);
+    expect(prompt).toContain(`git diff origin/main...${head}`);
+  });
+
+  test("carries the rubric and ends on a verdict", () => {
+    for (const axis of ["correctness", "readability", "architecture", "security", "performance"]) expect(prompt).toContain(axis);
+    expect(prompt).toContain("Critical, Required, Optional, Nit or FYI");
+    expect(prompt).toContain("`Verdict: Approve` or `Verdict: Request changes`");
+  });
+
+  test("refuses a head that is not a full SHA", () => {
+    expect(() => buildPrompt({ ...target, head: head.slice(0, 8), claim: "x" })).toThrow("full 40-hex");
+  });
+});
+
+describe("commentBody", () => {
+  test("heads the review with the full head SHA and the claim", () => {
+    const body = commentBody({ pr: 1280, head, claim: "x holds", reviewer: "codex", review: "Verdict: Approve\n" });
+    expect(body.split("\n")[0]).toBe(`### Adversarial review of #1280 at ${head}`);
+    expect(body).toContain("Claim: x holds");
+    expect(body).toContain("Reviewer: `codex`");
+    expect(body.trimEnd().endsWith("Verdict: Approve")).toBe(true);
+  });
+
+  test("refuses a head that is not a full SHA", () => {
+    expect(() => commentBody({ pr: 1, head: "abc", claim: "x", reviewer: "r", review: "r" })).toThrow("full 40-hex");
+  });
+});
+
+describe("reviewerCommand", () => {
+  test("defaults to a read-only Codex run reading the prompt from stdin", () => {
+    const { argv, binary } = reviewerCommand({});
+    expect(binary).toBe("codex");
+    expect(argv.join(" ")).toContain("--sandbox read-only");
+    expect(argv.join(" ")).toContain("--model gpt-6-luna");
+    expect(argv.at(-1)).toBe("-");
+  });
+
+  test("runs KESHA_REVIEWER through the shell", () => {
+    expect(reviewerCommand({ KESHA_REVIEWER: " ./stub.sh --canned " })).toEqual({
+      label: "./stub.sh --canned",
+      argv: ["sh", "-c", "./stub.sh --canned"],
+      binary: "./stub.sh",
+    });
+  });
+});
