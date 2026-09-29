@@ -53,10 +53,10 @@ export interface AssetPins {
 /** Without `--engine-version` nothing but the maintainer can make an unverifiable pinned release verifiable. */
 function unverifiableFix(version: string, pins: AssetPins | undefined): string {
   if (!pins) {
-    return (
-      `this source checkout installs its own version v${engineVersion}, which may not be released yet: run ` +
-      `\`kesha install --engine-version <version>\` with a published release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases).`
-    );
+    return version === engineVersion
+      ? `this source checkout installs its own version v${engineVersion}, which may not be released yet: run ` +
+          `\`kesha install --engine-version <version>\` with a published release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases).`
+      : `pass --engine-version a published release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases).`;
   }
   return version === engineVersion
     ? `report it at https://github.com/${GITHUB_REPO}/issues: the pinned engine release v${version} must publish its checksums.`
