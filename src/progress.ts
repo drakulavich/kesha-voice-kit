@@ -226,32 +226,44 @@ export async function streamResponseToFile(
   destPath: string,
   label: string,
 ): Promise<number> {
-  if (!res.body) {
-    throw new KeshaError("E_MODEL_DOWNLOAD", `Download failed: empty response for ${label}`, {
+  const emptyResponse = () =>
+    new KeshaError("E_MODEL_DOWNLOAD", `Download failed: empty response for ${label}`, {
       hint: "try again; the server may be temporarily unavailable.",
     });
-  }
+  if (!res.body) throw emptyResponse();
 
   const totalBytes = Number(res.headers.get("content-length") || 0);
   const progress = createProgressBar(label, totalBytes);
 
   sweepStagingFiles(destPath);
   const stagingPath = `${destPath}.part.${process.pid}.${stagingSeq++}`;
-  const writer = Bun.file(stagingPath).writer();
+  const reader = res.body.getReader();
   let bytes = 0;
   try {
+    const writer = Bun.file(stagingPath).writer();
     try {
-      for await (const chunk of res.body) {
-        await applyBackpressure(writer, writer.write(chunk));
-        bytes += chunk.length;
-        progress.update(chunk.length);
+      for (;;) {
+        let next: Awaited<ReturnType<typeof reader.read>>;
+        try {
+          next = await reader.read();
+        } catch (err) {
+          throw new KeshaError("E_MODEL_DOWNLOAD", `Download of ${label} broke off after ${bytes} bytes: ${errorMessage(err)}`, {
+            hint: "check your network connection and try again.",
+          });
+        }
+        if (next.done) break;
+        await applyBackpressure(writer, writer.write(next.value));
+        bytes += next.value.length;
+        progress.update(next.value.length);
       }
     } finally {
       // Must await: an open write handle makes the freshly-downloaded engine unspawnable — EBUSY on Windows, ETXTBSY on Linux.
       await writer.end();
     }
+    if (bytes === 0) throw emptyResponse();
     publishStaging(stagingPath, destPath);
   } catch (err) {
+    reader.cancel().catch(() => {});
     rmSync(stagingPath, { force: true });
     throw err;
   }

@@ -84,7 +84,15 @@ async function fetchSha256Sums(version: string, pins: AssetPins | undefined): Pr
       { hint: unverifiableFix(version, pins) },
     );
   }
-  return parseSha256Sums(await res.text());
+  let body: string;
+  try {
+    body = await res.text();
+  } catch (e) {
+    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to read SHA256SUMS for release v${version}: ${errorMessage(e)}`, {
+      hint: NETWORK_HINT,
+    });
+  }
+  return parseSha256Sums(body);
 }
 
 /**
@@ -624,7 +632,12 @@ async function fetchEngineBinary(
     });
   }
 
-  await streamResponseToFile(res, binPath, "kesha-engine binary");
+  try {
+    await streamResponseToFile(res, binPath, "kesha-engine binary");
+  } catch (e) {
+    muteSidecarRejections();
+    throw e instanceof KeshaError ? e : (engineWriteFailure(binPath, e) ?? e);
+  }
   const refusal = await rejectMismatchedDownload(binPath, `kesha-engine binary ${binaryName}`, version, expected);
   if (refusal) {
     muteSidecarRejections();
@@ -845,6 +858,13 @@ function engineDirFix(setting: string | undefined, notADir: boolean, engineDir: 
     : `point KESHA_CACHE_DIR at a writable directory, or fix the permissions on ${keshaCacheDir()}.`;
 }
 
+function configuredEngineDirSetting(): { name: string; value: string } | null {
+  if (process.env.KESHA_ENGINE_BIN) return { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN };
+  if (process.env.KESHA_CACHE_DIR) return { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR };
+  if (process.env.KESHA_HOME) return { name: "KESHA_HOME", value: process.env.KESHA_HOME };
+  return null;
+}
+
 /**
  * Creates the engine directory up front, so a cache path the user configured fails with a code
  * and the name of the setting that supplied it instead of a raw errno from the first write
@@ -856,13 +876,7 @@ function ensureEngineDirCreatable(binPath: string): void {
   try {
     mkdirSync(engineDir, { recursive: true });
   } catch (e) {
-    const setting = process.env.KESHA_ENGINE_BIN
-      ? { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN }
-      : process.env.KESHA_CACHE_DIR
-        ? { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR }
-        : process.env.KESHA_HOME
-          ? { name: "KESHA_HOME", value: process.env.KESHA_HOME }
-          : null;
+    const setting = configuredEngineDirSetting();
     const errno = (e as NodeJS.ErrnoException).code ?? "";
     const why = ENGINE_DIR_PATH_ERRNOS[errno];
     const what = setting
@@ -878,6 +892,21 @@ function ensureEngineDirCreatable(binPath: string): void {
     const fix = engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir);
     throw new KeshaError("E_INVALID_ARG", `${what}.\n  Fix: ${fix}`);
   }
+}
+
+function engineWriteFailure(binPath: string, e: unknown): KeshaError | null {
+  const engineDir = dirname(binPath);
+  const errno = (e as NodeJS.ErrnoException).code ?? "";
+  const why = ENGINE_DIR_PATH_ERRNOS[errno];
+  if (why) {
+    return new KeshaError("E_INVALID_ARG", `Cannot write the engine binary into ${engineDir}: ${why}`, {
+      hint: engineDirFix(configuredEngineDirSetting()?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir),
+    });
+  }
+  if (errno !== "ENOSPC") return null;
+  return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${engineDir}: no space left on its disk (ENOSPC)`, {
+    hint: `free disk space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
+  });
 }
 
 export interface EngineInstallRequest extends InstallOptions {
