@@ -114,16 +114,26 @@ function fileInTheWay(dir: string): string | null {
   for (let d = dir; ; d = dirname(d)) {
     try {
       return statSync(d).isDirectory() ? null : d;
-    } catch {
-      if (existsAsLink(d)) return d;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT" && existsAsLink(d)) return d;
       if (dirname(d) === d) return null;
     }
   }
 }
 
+function mkdirReason(dir: string, errno: string): string {
+  if (errno !== "EEXIST") return errno;
+  try {
+    statSync(dir);
+    return errno;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code ?? errno;
+  }
+}
+
 function bundleWriteFailure(outputPath: string, e: unknown): unknown {
   const dir = dirname(outputPath);
-  const errno = (e as NodeJS.ErrnoException).code ?? "";
+  const errno = mkdirReason(dir, (e as NodeJS.ErrnoException).code ?? "");
   const blocker = fileInTheWay(dir);
   if (blocker) {
     return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: ${blocker} exists and is not a directory`, {

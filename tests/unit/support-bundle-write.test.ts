@@ -96,6 +96,27 @@ describe("support-bundle --output a disk refuses (#1345)", () => {
     expect((error as KeshaError).hint).toContain(`remove or rename the file blocking ${link}`);
   });
 
+  (process.platform === "win32" || process.getuid?.() === 0 ? test.skip : test)("a symlink to a directory this user cannot reach reports the permission, not a blocker", async () => {
+    const locked = join(process.env.HOME!, "locked");
+    fs.mkdirSync(join(locked, "target"), { recursive: true });
+    const link = join(process.env.HOME!, "link");
+    fs.symlinkSync(join(locked, "target"), link);
+    fs.chmodSync(locked, 0o000);
+    try {
+      const error = await createSupportBundle({ output: join(link, "bundle.tar.gz") }).then(
+        () => { throw new Error("expected the bundle write to fail"); },
+        (e: unknown) => e,
+      );
+
+      expect(error).toBeInstanceOf(KeshaError);
+      expect((error as KeshaError).code).toBe("E_INVALID_ARG");
+      expect((error as KeshaError).message).toContain("permission denied");
+      expect((error as KeshaError).hint).not.toContain("remove or rename");
+    } finally {
+      fs.chmodSync(locked, 0o755);
+    }
+  });
+
   test("any other disk errno is E_INTERNAL naming the path", async () => {
     const { error, output } = await failWriting("EIO");
     expect(error.code).toBe("E_INTERNAL");
