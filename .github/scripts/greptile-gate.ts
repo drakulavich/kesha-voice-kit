@@ -7,7 +7,9 @@ export type ReviewComment = {
   body: string;
 };
 
-const BLOCKING_BADGE = /<img\b[^>]*\balt="(P[12])"/;
+const PRIORITY_BADGE = /<img\b[^>]*\balt="(P[123])"/;
+
+const priorityOf = (comment: ReviewComment) => comment.body.match(PRIORITY_BADGE)?.[1];
 
 const GREPTILE_LOGIN = "greptile-apps[bot]";
 
@@ -24,7 +26,7 @@ export function blockingFindings(
     (c) =>
       c.in_reply_to_id == null &&
       isGreptile(c) &&
-      BLOCKING_BADGE.test(c.body) &&
+      priorityOf(c) !== "P3" &&
       !answered.has(c.id) &&
       !resolvedRootIds.has(c.id),
   );
@@ -32,12 +34,12 @@ export function blockingFindings(
 
 export function failureReport(findings: ReviewComment[]): string {
   const lines = findings.map((f) => {
-    const priority = f.body.match(BLOCKING_BADGE)?.[1];
+    const priority = priorityOf(f) ?? "unrecognised priority";
     const title = f.body.match(/\*\*(.+?)\*\*/)?.[1] ?? "(untitled)";
     return `  ${priority} ${title}\n    ${f.html_url}`;
   });
   return [
-    `${findings.length} Greptile P1/P2 finding(s) have no reply and no resolved thread:`,
+    `${findings.length} Greptile finding(s) marked P1/P2, or with a priority badge this check does not recognise, have no reply and no resolved thread:`,
     ...lines,
     "Reply to each thread with the fix commit or why it does not apply. A resolved thread also passes, but resolving does not re-run this check: re-run it by hand.",
   ].join("\n");

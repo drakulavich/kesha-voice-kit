@@ -47,6 +47,21 @@ describe("blockingFindings", () => {
     expect(ids(blockingFindings([p3]))).toEqual([]);
   });
 
+  test("an unanswered finding whose priority markup is unrecognised blocks", () => {
+    const p2 = byId(UNANSWERED_P2);
+    const restyled = { ...p2, body: p2.body.replace(/<a href="#"><img [^>]*><\/a>/, '<span data-priority="P2"></span>') };
+
+    expect(ids(blockingFindings([restyled]))).toEqual([UNANSWERED_P2]);
+    expect(failureReport([restyled])).toContain("unrecognised priority Test misses same-size replacements");
+  });
+
+  test("an answered finding with unrecognised priority markup passes", () => {
+    const p1 = byId(ANSWERED_P1);
+    const restyled = { ...p1, body: p1.body.replace(/<a href="#"><img [^>]*><\/a>/, "") };
+
+    expect(ids(blockingFindings([restyled, ...COMMENTS.filter((c) => c.in_reply_to_id === ANSWERED_P1)]))).toEqual([]);
+  });
+
   test("Greptile answering its own finding does not count as a reply", () => {
     expect(ids(blockingFindings([byId(UNANSWERED_P1), replyTo(UNANSWERED_P1, "greptile-apps[bot]")]))).toEqual([
       UNANSWERED_P1,
