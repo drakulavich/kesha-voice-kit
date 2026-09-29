@@ -2,7 +2,7 @@
 
 Raycast-ecosystem directory: the repo-wide bun rules do NOT apply here. These instructions override any conflicting root CLAUDE.md defaults for files in this directory.
 
-- **npm, not bun**: `npm ci`, `npm test` (vitest), `npm run lint` (`ray lint`, includes `tsc --noEmit`). CI runs these in the `raycast-lint` job on Node 26, except lint goes through `.github/scripts/raycast-lint.sh`, which feeds `ray lint` the vendored `.github/raycast/extension-schema.json` instead of a live fetch (#1292). User-facing text about installing the kesha CLI itself still says bun.
+- **npm, not bun**: `npm ci`, `npm test` (vitest), `npm run lint` (`ray lint`, includes `tsc --noEmit`). CI runs these in the `raycast-lint` job on Node 26, except lint goes through `.github/scripts/raycast-lint.sh`, which feeds `ray lint` the vendored `.github/raycast/extension-schema.json` instead of a live fetch (#1292), and stubs the author lookup through `RAY_APIURL` so the lane never calls raycast.com (#1311). A preload fails the lane on any live `www.raycast.com` request. User-facing text about installing the kesha CLI itself still says bun.
 - **Upstream mirror**: this extension is synced with `raycast/extensions` (merged as raycast/extensions#29681). Every diff here enlarges the next sync — keep changes focused, no drive-by refactors.
 - **Testability convention**: modules take an optional trailing `deps` object for side effects (`spawn`, `kill`, timers, fs); `DictationControllerDeps` carries side effects only — pure helpers are imported directly, never injected. `tests/helpers/fake-process.ts` fakes child processes.
 - **UI stays thin**: `dictate-to-clipboard.tsx` only renders `DictationState`; logic lives in `src/lib/` where vitest can reach it without `@raycast/api`.
