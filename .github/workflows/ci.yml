@@ -149,6 +149,9 @@ jobs:
               - 'src/progress.ts'
               - 'src/cli/install.ts'
               - 'src/transcribe.ts'
+              - 'src/synth.ts'
+              - 'src/voice-routing.ts'
+              - 'src/cli/say.ts'
               - 'src/cli/dispatch.ts'
               - 'src/cli/main.ts'
               - 'src/cli/mcp.ts'
@@ -630,13 +633,13 @@ jobs:
           # also runs nightly on main, so it seeds itself and needs no seed job.
           cache-write: ${{ github.event_name != 'pull_request' }}
           cache-restore-keys: ${{ runner.os }}-kesha-engine-
-      - name: 🧪 Integration tests (real engine)
-        run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration-full.xml
-        timeout-minutes: 12
       - name: 📵 Transcribe offline
         run: |
           bash .github/scripts/offline.sh kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > offline-transcript.json
           bun .github/scripts/assert-transcript.ts offline-transcript.json
+      - name: 🧪 Integration tests (real engine)
+        run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration-full.xml
+        timeout-minutes: 12
       - name: 📊 Test summary
         if: always()
         run: bun .github/scripts/junit-to-markdown.ts "Integration Tests — full (macos)" test-results/integration-full.xml >> "$GITHUB_STEP_SUMMARY"
@@ -693,6 +696,10 @@ jobs:
           install-log: kesha-install.log
           cache-write: "false"
 
+      - name: 📵 Say and transcribe offline
+        shell: bash
+        run: bash .github/scripts/offline.sh bun .github/scripts/smoke-synthesis.ts /tmp/kesha-linux-offline
+
       - name: 🚬 Smoke published Linux engine
         shell: bash
         run: |
@@ -704,10 +711,6 @@ jobs:
       - name: 🗣️ Synthesis round-trip
         shell: bash
         run: bun .github/scripts/smoke-synthesis.ts /tmp/kesha-linux-synth
-
-      - name: 📵 Say and transcribe offline
-        shell: bash
-        run: bash .github/scripts/offline.sh bun .github/scripts/smoke-synthesis.ts /tmp/kesha-linux-offline
 
   windows-engine-smoke:
     # Cold `kesha install` on purpose: pre-seeding the engine skips `fetchEngineBinary`, where the #216 refusal lived.

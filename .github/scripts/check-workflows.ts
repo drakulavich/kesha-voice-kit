@@ -193,6 +193,32 @@ export function requireDarwinSmokeCoversBothEngines(path: string, document: unkn
   return errors;
 }
 
+const OFFLINE_LANES = ["published-engine-smoke", "integration-tests-full"];
+
+export function requireOfflineBeforeOnlineSpeech(path: string, document: unknown): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+  return OFFLINE_LANES.flatMap((job) => {
+    const steps = jobSteps(document, job) ?? [];
+    const offline = runsMatching(steps, /^\s*bash\s+\S*offline\.sh\b/m)[0];
+    if (offline === undefined) return [`${path}: \`${job}\` must run say or transcribe through offline.sh (#1277)`];
+    const online = runsMatching(steps, /smoke-synthesis\.ts|test:integration|^\s*kesha\s+(?!status\b)/m)[0];
+    return online !== undefined && online < offline
+      ? [`${path}: \`${job}\` runs say or transcribe online before offline.sh, so a first-run download would be cached already; move the offline step first (#1277)`]
+      : [];
+  });
+}
+
+export function requireSynthesisSourcesInOfflineFilter(path: string, document: unknown): string[] {
+  if (!path.endsWith("ci.yml")) return [];
+  const tts = namedFilterOf(path, document, "tts_e2e");
+  const realEngine = namedFilterOf(path, document, "real_engine_e2e");
+  if ("errors" in tts) return tts.errors;
+  if ("errors" in realEngine) return realEngine.errors;
+  return tts.entries
+    .filter((entry) => entry.startsWith("src/") && !realEngine.entries.includes(entry))
+    .map((entry) => `${path}: \`${entry}\` triggers tts_e2e but not real_engine_e2e, so a change to it skips the offline say in published-engine-smoke (#1277)`);
+}
+
 const usesAction = (steps: Step[], action: string) =>
   steps.some((step) => typeof step?.uses === "string" && step.uses === action);
 
@@ -1203,6 +1229,8 @@ export function checkFile(
       ...requirePinnedActions(path, contents),
       ...requirePreUploadSynthesisSmoke(path, document),
       ...requireDarwinSmokeCoversBothEngines(path, document),
+      ...requireOfflineBeforeOnlineSpeech(path, document),
+      ...requireSynthesisSourcesInOfflineFilter(path, document),
       ...forbidFindPipedToHead(path, contents),
       ...forbidLongInlineRun(path, document),
       ...forbidExpressionsInRun(path, document),
