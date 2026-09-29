@@ -13,8 +13,8 @@ const PROBES: Record<string, string> = {
   "https.request with options": `require("node:https").request({ hostname: "www.raycast.com", path: "/api/v1/users/x" }).destroy();`,
 };
 
-async function probe(call: string) {
-  const script = `const u = ${JSON.stringify(URL_)}; (async () => { try { ${call} console.log("not blocked"); } catch (e) { console.log(e.message); } })();`;
+async function probe(call: string, url = URL_) {
+  const script = `const u = ${JSON.stringify(url)}; (async () => { try { ${call} console.log("not blocked"); } catch (e) { console.log(e.message); } })();`;
   const proc = Bun.spawn(["node", "--require", GUARD, "-e", script], { stdout: "pipe", stderr: "pipe" });
   const out = await new Response(proc.stdout).text();
   await proc.exited;
@@ -28,7 +28,15 @@ describe("raycast-no-live-fetch.cjs", () => {
     });
   }
 
-  test("lets other hosts through", async () => {
-    expect(await probe(`require("node:https").request("https://example.invalid/").destroy();`)).toBe("not blocked");
-  });
+  for (const host of ["raycast.com.", "www.raycast.com."]) {
+    test(`blocks the fully qualified ${host}`, async () => {
+      expect(await probe(PROBES["https.request"], `https://${host}/api/v1/users/x`)).toContain("blocked live fetch of http");
+    });
+  }
+
+  for (const host of ["example.invalid", "raycast.com.evil.com", "notraycast.com"]) {
+    test(`lets ${host} through`, async () => {
+      expect(await probe(PROBES["https.request"], `https://${host}/`)).toBe("not blocked");
+    });
+  }
 });
