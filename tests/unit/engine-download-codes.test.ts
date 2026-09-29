@@ -209,7 +209,8 @@ describe("a SHA256SUMS the installer cannot use is E_MODEL_DOWNLOAD with a hint"
 });
 
 const WRITE_FAILURES = [
-  { errno: "ENOSPC", code: "E_INTERNAL", exit: 4, why: /no space left/i, hint: /free disk space/i },
+  { errno: "ENOSPC", code: "E_INTERNAL", exit: 4, why: /no space left/i, hint: /the disk is full: free space/ },
+  { errno: "EIO", code: "E_INTERNAL", exit: 4, why: /input\/output error/i, hint: /resolve that filesystem error/ },
   { errno: "EACCES", code: "E_INVALID_ARG", exit: 2, why: /permission denied/i, hint: /KESHA_ENGINE_BIN|KESHA_CACHE_DIR/ },
   { errno: "EROFS", code: "E_INVALID_ARG", exit: 2, why: /read-only/i, hint: /KESHA_ENGINE_BIN|KESHA_CACHE_DIR/ },
 ] as const;
