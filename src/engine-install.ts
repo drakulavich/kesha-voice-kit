@@ -160,7 +160,12 @@ async function cachedAssetMatchesPin(
   // KESHA_ENGINE_BIN names the user's own build, which no release pin describes.
   if (version !== engineChecksums.pins?.version || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
   const expected = await engineChecksums.forRelease(version)(assetName);
-  const actual = await sha256OfFile(path);
+  let actual: string;
+  try {
+    actual = await sha256OfFile(path);
+  } catch (e) {
+    throw canRepair ? e : unreadableInReadOnlyDir(path, e);
+  }
   if (actual === expected.sha256) return true;
   const mismatch =
     `Installed ${what} ${assetName} at ${path} does not match ${expected.source} ` +
@@ -846,6 +851,29 @@ const ENGINE_DIR_PATH_ERRNOS: Record<string, string> = {
   ENAMETOOLONG: "the path is too long",
 };
 
+function engineDirSetting(): { name: string; value: string } | null {
+  if (process.env.KESHA_ENGINE_BIN) return { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN };
+  if (process.env.KESHA_CACHE_DIR) return { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR };
+  if (process.env.KESHA_HOME) return { name: "KESHA_HOME", value: process.env.KESHA_HOME };
+  return null;
+}
+
+function unreadableInReadOnlyDir(path: string, e: unknown): unknown {
+  const errno = (e as NodeJS.ErrnoException).code ?? "";
+  const why = ENGINE_DIR_PATH_ERRNOS[errno];
+  if (!why) return e;
+  const dir = dirname(path);
+  return new KeshaError(
+    "E_INVALID_ARG",
+    `Cannot verify ${path} against its pinned SHA-256: ${why} (${errno}), and ${dir} is read-only, so it cannot be replaced.`,
+    {
+      hint:
+        `make ${path} readable and ${dir} writable, then re-run \`kesha install\`. Or ` +
+        engineDirFix(engineDirSetting()?.name, false, dir),
+    },
+  );
+}
+
 /** `KESHA_ENGINE_BIN` names the binary file, so "point it at a writable directory" breaks the next install. */
 function engineDirFix(setting: string | undefined, notADir: boolean, engineDir: string): string {
   if (setting === "KESHA_ENGINE_BIN") {
@@ -874,13 +902,7 @@ function ensureEngineDirCreatable(binPath: string): void {
   try {
     mkdirSync(engineDir, { recursive: true });
   } catch (e) {
-    const setting = process.env.KESHA_ENGINE_BIN
-      ? { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN }
-      : process.env.KESHA_CACHE_DIR
-        ? { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR }
-        : process.env.KESHA_HOME
-          ? { name: "KESHA_HOME", value: process.env.KESHA_HOME }
-          : null;
+    const setting = engineDirSetting();
     const errno = (e as NodeJS.ErrnoException).code ?? "";
     const why = ENGINE_DIR_PATH_ERRNOS[errno];
     const what = setting
