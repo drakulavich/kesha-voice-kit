@@ -51,6 +51,13 @@ describe("staleRootNotice", () => {
     expect(staleRootNotice({ branch: "main", behind: 0, ahead: 2 }, ROOT)).toBeNull();
   });
 
+  test("warns that freshness is unknown when main could not be compared with origin/main", () => {
+    expect(staleRootNotice({ branch: "main", behind: null, ahead: null }, ROOT)?.systemMessage).toBe(
+      `The root checkout ${ROOT} could not be compared with origin/main, so its CLAUDE.md may be stale. ` +
+        `Check it: cd '${ROOT}' && git fetch origin && git merge --ff-only origin/main`,
+    );
+  });
+
   test("calls a detached HEAD out as not being on main", () => {
     expect(staleRootNotice({ branch: null, behind: 0, ahead: 0 }, ROOT)?.systemMessage).toContain("is on a detached HEAD rather than main");
   });
@@ -108,6 +115,14 @@ describe("stale-root hook", () => {
         `Fast-forward it: cd '${root}' && git fetch origin && git merge --ff-only origin/main`,
     );
     expect(out.hookSpecificOutput).toEqual({ hookEventName: "SessionStart", additionalContext: out.systemMessage });
+  });
+
+  test("warns when HEAD names main but the main ref is missing", async () => {
+    const { root, worktree } = await rootWithWorktree();
+    await git(root, "update-ref", "-d", "refs/heads/main");
+    expect(await git(root, "symbolic-ref", "--short", "HEAD")).toBe("main");
+    const { systemMessage } = JSON.parse(await run(worktree));
+    expect(systemMessage).toContain("could not be compared with origin/main");
   });
 
   test("counts main, not the other branch the root checkout sits on", async () => {

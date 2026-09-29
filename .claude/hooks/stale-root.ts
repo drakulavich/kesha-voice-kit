@@ -6,7 +6,7 @@ export type SessionStartNotice = {
   hookSpecificOutput: { hookEventName: "SessionStart"; additionalContext: string };
 };
 
-export type RootState = { branch: string | null; behind: number; ahead: number };
+export type RootState = { branch: string | null; behind: number | null; ahead: number | null };
 
 const commits = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
 const shellQuote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
@@ -14,13 +14,19 @@ const shellQuote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 function rootMessage({ branch, behind, ahead }: RootState, root: string): string | null {
   if (branch !== "main") {
     const where = `The root checkout ${root} is on ${branch ?? "a detached HEAD"} rather than main`;
-    if (behind > 0 && ahead === 0) {
+    if (behind !== null && behind > 0 && ahead === 0) {
       return (
         `${where}, and main is ${commits(behind)} behind origin/main, so its CLAUDE.md may be stale. ` +
         `Switch back and fast-forward: cd ${shellQuote(root)} && git switch main && git merge --ff-only origin/main`
       );
     }
     return `${where}, so its CLAUDE.md may not match main. Switch it back: cd ${shellQuote(root)} && git switch main`;
+  }
+  if (behind === null || ahead === null) {
+    return (
+      `The root checkout ${root} could not be compared with origin/main, so its CLAUDE.md may be stale. ` +
+      `Check it: cd ${shellQuote(root)} && git fetch origin && git merge --ff-only origin/main`
+    );
   }
   if (ahead > 0 && behind > 0) {
     return (
@@ -65,8 +71,7 @@ async function main(): Promise<void> {
   const counts = await git(root, ["rev-list", "--left-right", "--count", "origin/main...main"], 2000);
   const [behind, ahead] = (counts ?? "").split(/\s+/).map(Number);
   const counted = Number.isFinite(behind) && Number.isFinite(ahead);
-  if (branch === "main" && !counted) return;
-  const notice = staleRootNotice({ branch, behind: counted ? behind! : 0, ahead: counted ? ahead! : 0 }, root);
+  const notice = staleRootNotice({ branch, behind: counted ? behind! : null, ahead: counted ? ahead! : null }, root);
   if (notice) console.log(JSON.stringify(notice));
 }
 
