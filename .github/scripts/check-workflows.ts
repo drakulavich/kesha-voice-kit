@@ -566,9 +566,9 @@ export function requireStatusFunctionWithNeedsResult(path: string, document: unk
   for (const [name, job] of Object.entries(jobs)) {
     const condition = String((job as { if?: unknown })?.if ?? "");
     if (!/needs\.[\w-]+\.result/.test(condition)) continue;
-    if (/\b(always|cancelled)\(\)/.test(condition.replace(/'[^']*'/g, "''"))) continue;
+    if (/\b(always|cancelled|failure)\(\)/.test(condition.replace(/'[^']*'/g, "''"))) continue;
     errors.push(
-      `${path}: \`${name}\` reads a \`needs.*.result\` in its \`if\` without \`!cancelled()\` or \`always()\`; the implicit success() skips it whenever any ancestor was skipped`,
+      `${path}: \`${name}\` reads a \`needs.*.result\` in its \`if\` without \`!cancelled()\`, \`always()\` or \`failure()\`; the implicit success() skips it whenever any ancestor was skipped`,
     );
   }
   return errors;
