@@ -26,6 +26,7 @@ export function diffRange(baseSha: string, head: string): string {
 export function claimFrom(args: string[]): string {
   const claim = args.join(" ").trim();
   if (claim === "") throw new Error('review needs a claim to prove or refute: just review "<claim>"');
+  if (hasVerdict(claim)) throw new Error("the claim contains a verdict line, which a reviewer echoing the prompt would pass off as its own; drop the `Verdict:` line");
   return claim;
 }
 
