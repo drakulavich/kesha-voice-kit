@@ -173,11 +173,15 @@ export async function applyBackpressure(
  */
 const STALE_STAGING_MS = 24 * 60 * 60 * 1000;
 
+export function stagingPrefix(destPath: string): string {
+  return `${destPath}.part.`;
+}
+
 /** A Ctrl-C kills the process before any cleanup runs, so last run's staging file is swept by the next one (#770). */
 function sweepStagingFiles(destPath: string): void {
   if (process.platform === "win32") return;
   const dir = dirname(destPath);
-  const prefix = `${basename(destPath)}.part.`;
+  const prefix = basename(stagingPrefix(destPath));
   const cutoffMs = Date.now() - STALE_STAGING_MS;
 
   let names: string[];
@@ -236,7 +240,7 @@ export async function streamResponseToFile(
   const progress = createProgressBar(label, totalBytes);
 
   sweepStagingFiles(destPath);
-  const stagingPath = `${destPath}.part.${process.pid}.${stagingSeq++}`;
+  const stagingPath = `${stagingPrefix(destPath)}${process.pid}.${stagingSeq++}`;
   const reader = res.body.getReader();
   let bytes = 0;
   try {

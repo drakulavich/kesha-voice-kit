@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { dirname, join } from "path";
+import { basename, dirname, join } from "path";
 import { existsSync, readdirSync, writeFileSync } from "fs";
 import { install, KeshaError } from "../../src/lib";
 import { getEngineBinPath } from "../../src/engine";
 import { engineChecksums, installEngine } from "../../src/engine-install";
 import { expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
-import { failEngineStagingWrites } from "../helpers/failing-writes";
+import { FAULT_MARKER, failStagingWrites } from "../helpers/failing-writes";
+import { stagingPrefix } from "../../src/progress";
 import { tempDir } from "../helpers/temp-dir";
 
 const ENGINE = "#!/bin/sh\nexit 0\n";
@@ -78,7 +79,8 @@ function expectNoEngineLeftBehind(): void {
   const binPath = getEngineBinPath();
   expect(existsSync(binPath)).toBe(false);
   const dir = dirname(binPath);
-  const staged = existsSync(dir) ? readdirSync(dir).filter((n) => n.startsWith("kesha-engine.part.")) : [];
+  const prefix = basename(stagingPrefix(binPath));
+  const staged = existsSync(dir) ? readdirSync(dir).filter((n) => n.startsWith(prefix)) : [];
   expect(staged).toEqual([]);
 }
 
@@ -227,14 +229,17 @@ describe("a disk failure while the engine is written is not reported as a downlo
       test(`${surface}: ${w.errno} writing the engine is ${w.code}, naming the path`, async () => {
         expectServedBody(() => ENGINE);
         globalThis.fetch = (async () => new Response(ENGINE, { status: 200 })) as unknown as typeof fetch;
-        restoreWrites = failEngineStagingWrites(w.errno);
+        const fault = failStagingWrites(getEngineBinPath(), w.errno);
+        restoreWrites = fault.restore;
 
         const err = await rejectionOf(run());
 
+        expect(fault.hits()).toBeGreaterThan(0);
         expect(err.code).toBe(w.code);
         expect(err.message).toMatch(w.why);
         expect(`${err.message}\n${err.hint ?? ""}`).toContain(dirname(getEngineBinPath()));
         expect(`${err.message}\n${err.hint ?? ""}`).toMatch(w.hint);
+        expect(`${err.message}\n${err.hint ?? ""}`).toContain(`KESHA_CACHE_DIR="${process.env.KESHA_CACHE_DIR}"`);
         expectNoEngineLeftBehind();
       }, 30_000);
     }
@@ -248,28 +253,32 @@ describe("a disk failure while the engine is written is not reported as a downlo
         `import { createHash } from "crypto";\n` +
           `import { performInstall } from ${src("cli/install.ts")};\n` +
           `import { engineChecksums } from ${src("engine-install.ts")};\n` +
-          `import { failEngineStagingWrites } from ${JSON.stringify(join(import.meta.dir, "../helpers/failing-writes.ts"))};\n` +
+          `import { failStagingWrites } from ${JSON.stringify(join(import.meta.dir, "../helpers/failing-writes.ts"))};\n` +
+          `import { getEngineBinPath } from ${src("engine.ts")};\n` +
           `const sha256 = createHash("sha256").update(${JSON.stringify(ENGINE)}).digest("hex");\n` +
           `engineChecksums.forRelease = () => async () => ({ sha256, source: "the test's pin" });\n` +
           `globalThis.fetch = (async () => new Response(${JSON.stringify(ENGINE)}, { status: 200 })) as typeof fetch;\n` +
-          `failEngineStagingWrites(${JSON.stringify(w.errno)});\n` +
+          `failStagingWrites(getEngineBinPath(), ${JSON.stringify(w.errno)});\n` +
           `await performInstall({ noCache: false, ttsLangs: [] });\n`,
       );
       const engineDir = join(dir, "bin");
+      const binPath = join(engineDir, process.platform === "win32" ? "kesha-engine.exe" : "kesha-engine");
       const proc = Bun.spawn([process.execPath, script], {
-        env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", KESHA_ENGINE_BIN: join(engineDir, "kesha-engine") },
+        env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", KESHA_ENGINE_BIN: binPath },
         stdout: "ignore",
         stderr: "pipe",
       });
       const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
 
+      expect(stderr).toContain(`${FAULT_MARKER} ${w.errno}`);
       expect(stderr).toContain(`error [${w.code}]: `);
       expect(stderr).not.toContain("E_MODEL_DOWNLOAD");
+      expect(stderr).toContain(`KESHA_ENGINE_BIN="${binPath}"`);
       expect(stderr).toMatch(w.why);
       expect(stderr).toContain(engineDir);
       expect(exitCode).toBe(w.exit);
-      expect(existsSync(join(engineDir, "kesha-engine"))).toBe(false);
-      expect(readdirSync(engineDir).filter((n) => n.startsWith("kesha-engine.part."))).toEqual([]);
+      expect(existsSync(binPath)).toBe(false);
+      expect(readdirSync(engineDir).filter((n) => n.startsWith(basename(stagingPrefix(binPath))))).toEqual([]);
     }, 30_000);
   }
 });
