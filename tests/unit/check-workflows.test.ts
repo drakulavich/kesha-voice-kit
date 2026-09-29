@@ -1219,15 +1219,25 @@ describe("requireStatusFunctionWithNeedsResult", () => {
   test("fails when an if reads a needs result without a status function", () => {
     const doc = { jobs: { "npm-smoke": { needs: ["npm-publish"], if: "needs.npm-publish.result == 'success'" } } };
     expect(requireStatusFunctionWithNeedsResult(PATH, doc)).toEqual([
-      `${PATH}: \`npm-smoke\` reads a \`needs.*.result\` in its \`if\` without \`!cancelled()\`, \`always()\` or \`failure()\`; the implicit success() skips it whenever any ancestor was skipped`,
+      `${PATH}: \`npm-smoke\` reads a \`needs.*.result\` in its \`if\` without \`!cancelled()\` or \`always()\`; the implicit success() skips it whenever any ancestor was skipped`,
     ]);
   });
 
   test("passes when the if carries a status function", () => {
-    for (const guard of ["!cancelled()", "always()", "failure()"]) {
+    for (const guard of ["!cancelled()", "always()"]) {
       const doc = { jobs: { smoke: { if: `\${{ ${guard} && needs.publish.result == 'success' }}` } } };
       expect(requireStatusFunctionWithNeedsResult(PATH, doc)).toEqual([]);
     }
+  });
+
+  test("rejects failure(), which runs the job after a failed ancestor", () => {
+    const doc = { jobs: { smoke: { if: "failure() && needs.publish.result == 'success'" } } };
+    expect(requireStatusFunctionWithNeedsResult(PATH, doc)).toHaveLength(1);
+  });
+
+  test("does not count a status function inside a quoted string", () => {
+    const doc = { jobs: { smoke: { if: "needs.publish.result == 'success' && contains(github.event.head_commit.message, 'always()')" } } };
+    expect(requireStatusFunctionWithNeedsResult(PATH, doc)).toHaveLength(1);
   });
 
   test("ignores an if that reads only needs outputs", () => {
