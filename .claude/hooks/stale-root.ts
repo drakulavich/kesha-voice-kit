@@ -6,11 +6,36 @@ export type SessionStartNotice = {
   hookSpecificOutput: { hookEventName: "SessionStart"; additionalContext: string };
 };
 
-export function staleRootNotice(behind: number, root: string): SessionStartNotice | null {
-  if (!(behind > 0)) return null;
-  const message =
-    `The root checkout ${root} is ${behind} commit${behind === 1 ? "" : "s"} behind origin/main, so its CLAUDE.md may be stale. ` +
-    `Fast-forward it: cd ${root} && git fetch origin && git merge --ff-only origin/main`;
+export type RootState = { branch: string | null; behind: number; ahead: number };
+
+const commits = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
+const shellQuote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
+
+function rootMessage({ branch, behind, ahead }: RootState, root: string): string | null {
+  if (branch !== "main") {
+    return (
+      `The root checkout ${root} is on ${branch ?? "a detached HEAD"} rather than main, so its CLAUDE.md may not match main. ` +
+      `Switch it back: cd ${shellQuote(root)} && git switch main`
+    );
+  }
+  if (ahead > 0) {
+    return (
+      `The root checkout ${root} has diverged from origin/main (${commits(ahead)} ahead, ${commits(behind)} behind), so its CLAUDE.md may be stale ` +
+      `and git merge --ff-only will fail. Reconcile main with origin/main by hand.`
+    );
+  }
+  if (behind > 0) {
+    return (
+      `The root checkout ${root} is ${commits(behind)} behind origin/main, so its CLAUDE.md may be stale. ` +
+      `Fast-forward it: cd ${shellQuote(root)} && git fetch origin && git merge --ff-only origin/main`
+    );
+  }
+  return null;
+}
+
+export function staleRootNotice(state: RootState, root: string): SessionStartNotice | null {
+  const message = rootMessage(state, root);
+  if (message === null) return null;
   return { systemMessage: message, hookSpecificOutput: { hookEventName: "SessionStart", additionalContext: message } };
 }
 
@@ -31,9 +56,12 @@ async function main(): Promise<void> {
   const commonDir = await git(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), ["rev-parse", "--path-format=absolute", "--git-common-dir"], 2000);
   if (!commonDir || basename(commonDir) !== ".git") return;
   const root = dirname(commonDir);
+  const branch = await git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"], 2000);
   await git(root, ["fetch", "--quiet", "origin", "main"], 5000);
-  const behind = await git(root, ["rev-list", "--count", "HEAD..origin/main"], 2000);
-  const notice = staleRootNotice(Number(behind), root);
+  const counts = await git(root, ["rev-list", "--left-right", "--count", "origin/main...HEAD"], 2000);
+  const [behind, ahead] = (counts ?? "").split(/\s+/).map(Number);
+  if (branch === "main" && !(Number.isFinite(behind) && Number.isFinite(ahead))) return;
+  const notice = staleRootNotice({ branch, behind: behind ?? 0, ahead: ahead ?? 0 }, root);
   if (notice) console.log(JSON.stringify(notice));
 }
 
