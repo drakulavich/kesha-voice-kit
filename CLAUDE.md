@@ -27,5 +27,5 @@ If something in this project surprises or confuses you, say so in your reply and
 ## Code
 
 - Errors say what failed, why, and what to do. Never exit 0 on failure (#997, #1163).
-- stdout carries results only; progress, hints and errors go to stderr (#945, #1168; check: #1282).
+- stdout carries results only; progress, hints and errors go to stderr (#945, #1168). The cli-contracts sweep covers every subcommand; the transcription form, interactive `init` and `mcp` stay outside it.
 - Before a plan commits to an upstream model or library artifact, run a throwaway spike that downloads and runs it end to end (#125, #129: the planned static espeak-ng link and Silero ONNX export did not exist).
