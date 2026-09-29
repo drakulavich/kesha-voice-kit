@@ -17,7 +17,7 @@ function rootMessage({ branch, behind, ahead }: RootState, root: string): string
     if (behind !== null && behind > 0 && ahead === 0) {
       return (
         `${where}, and main is ${commits(behind)} behind origin/main, so its CLAUDE.md may be stale. ` +
-        `Switch back and fast-forward: cd ${shellQuote(root)} && git switch main && git merge --ff-only origin/main`
+        `Switch back and fast-forward: cd ${shellQuote(root)} && git switch main && git fetch origin && git merge --ff-only origin/main`
       );
     }
     return `${where}, so its CLAUDE.md may not match main. Switch it back: cd ${shellQuote(root)} && git switch main`;

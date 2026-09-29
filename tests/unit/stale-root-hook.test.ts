@@ -39,7 +39,7 @@ describe("staleRootNotice", () => {
     const message = staleRootNotice({ branch: "feat/x", behind: 3, ahead: 0 }, ROOT)?.systemMessage;
     expect(message).toBe(
       `The root checkout ${ROOT} is on feat/x rather than main, and main is 3 commits behind origin/main, so its CLAUDE.md may be stale. ` +
-        `Switch back and fast-forward: cd '${ROOT}' && git switch main && git merge --ff-only origin/main`,
+        `Switch back and fast-forward: cd '${ROOT}' && git switch main && git fetch origin && git merge --ff-only origin/main`,
     );
   });
 
@@ -134,6 +134,6 @@ describe("stale-root hook", () => {
     await git(upstream, "push", "-q", "origin", "main");
     const { systemMessage } = JSON.parse(await run(worktree));
     expect(systemMessage).toContain("is on feat/x rather than main, and main is 2 commits behind origin/main");
-    expect(systemMessage).toEndWith("git switch main && git merge --ff-only origin/main");
+    expect(systemMessage).toEndWith("git switch main && git fetch origin && git merge --ff-only origin/main");
   });
 });
