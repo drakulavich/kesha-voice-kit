@@ -387,6 +387,43 @@ describe("a cached install of the pinned engine in a read-only engine dir is sti
     expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
   }, 30_000);
 
+  readOnlySidecarTest("kesha install refuses a pinned sidecar it cannot read as E_INVALID_ARG, exits 2 and deletes nothing", async () => {
+    const binPath = getEngineBinPath();
+    const engineDir = dirname(binPath);
+    stageAlteredInstall(binPath);
+    writeFileSync(binPath, ENGINE);
+    const [unreadable, ...rest] = SIDECARS;
+    const unreadablePath = join(engineDir, unreadable!.fileBasename);
+    for (const spec of rest) rmSync(join(engineDir, spec.fileBasename));
+    chmodSync(unreadablePath, 0o000);
+    makeReadOnly(engineDir);
+    const pins = { ...PINS, sha256: { ...PINS.sha256, [getEngineBinaryName()]: sha256(ENGINE) } };
+    const dir = tempDir("kesha-integrity-unreadable-cli-");
+    const script = join(dir, "install.ts");
+    writeFileSync(
+      script,
+      `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
+        `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
+        `engineChecksums.pins = ${JSON.stringify(pins)};\n` +
+        `globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as typeof fetch;\n` +
+        `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
+    );
+    const proc = Bun.spawn([process.execPath, script], {
+      env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
+      stdout: "ignore",
+      stderr: "pipe",
+    });
+    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+
+    expect(stderr).toMatch(/^error \[E_INVALID_ARG\]: /m);
+    expect(stderr.slice(0, stderr.indexOf("hint: "))).toContain(unreadablePath);
+    expect(stderr.slice(stderr.indexOf("hint: "))).toContain("readable");
+    expect(stderr.slice(stderr.indexOf("hint: "))).toContain("kesha install");
+    expect(exitCode).toBe(2);
+    expect(existsSync(unreadablePath)).toBe(true);
+    expect(readFileSync(binPath, "utf8")).toBe(ENGINE);
+  }, 30_000);
+
   readOnlyTest("a Nix-style from-source engine, which no pin describes, still installs from a read-only dir", async () => {
     engineChecksums.pins = undefined;
     const binPath = stageEngineDir();
