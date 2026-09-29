@@ -2,18 +2,21 @@
 
 ## Supported versions
 
-Only the latest published `@drakulavich/kesha-voice-kit` minor receives
-security updates. CLI and engine are versioned independently — both must be
-on the supported line for fixes to apply.
+Only the latest `@drakulavich/kesha-voice-kit` release line receives
+security fixes. Since v2.0.0 one version names both the CLI and the engine,
+and one `vX.Y.Z` tag releases both, so a fix in either ships as the next
+2.x release. To upgrade, run
+`bun add -g @drakulavich/kesha-voice-kit@latest`, then `kesha install` to
+replace the cached engine with the one the new CLI pins.
 
 | Version       | Supported          |
 | ------------- | ------------------ |
-| `1.11.x`      | :white_check_mark: |
-| `< 1.11`      | :x:                |
+| `2.x`         | :white_check_mark: |
+| `< 2.0`       | :x:                |
 
-Since v2.0.0 one `vX.Y.Z` release publishes the CLI and the engine together,
-so a security fix in either ships as the next patch. Earlier releases tagged
-`vX.Y.Z-cli` were CLI-only markers that reused a previously released engine.
+Before v2.0.0 the CLI and the engine were versioned separately, and releases
+tagged `vX.Y.Z-cli` were CLI-only markers that reused an earlier engine. None
+of those releases receive fixes.
 
 ## Reporting a vulnerability
 
