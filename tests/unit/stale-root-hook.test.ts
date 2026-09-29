@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { realpathSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { staleRootNotice } from "../../.claude/hooks/stale-root";
 import { cleanupGitRepos, cloneFrom, commit, git, gitRepoWithRemote } from "../helpers/git-repo";
 import { repoPath } from "../helpers/repo";
@@ -28,12 +27,28 @@ describe("staleRootNotice", () => {
     expect(staleRootNotice({ ...onMain, behind: 1 }, ROOT)?.systemMessage).toContain("is 1 commit behind origin/main");
   });
 
-  test("tells a root on another branch to switch back to main instead of fast-forwarding", () => {
-    const message = staleRootNotice({ branch: "feat/x", behind: 3, ahead: 1 }, ROOT)?.systemMessage;
+  test("tells a root on another branch to switch back to main when main is current", () => {
+    const message = staleRootNotice({ branch: "feat/x", behind: 0, ahead: 0 }, ROOT)?.systemMessage;
     expect(message).toBe(
       `The root checkout ${ROOT} is on feat/x rather than main, so its CLAUDE.md may not match main. ` +
         `Switch it back: cd '${ROOT}' && git switch main`,
     );
+  });
+
+  test("tells a root on another branch whose main is behind to switch and fast-forward", () => {
+    const message = staleRootNotice({ branch: "feat/x", behind: 3, ahead: 0 }, ROOT)?.systemMessage;
+    expect(message).toBe(
+      `The root checkout ${ROOT} is on feat/x rather than main, and main is 3 commits behind origin/main, so its CLAUDE.md may be stale. ` +
+        `Switch back and fast-forward: cd '${ROOT}' && git switch main && git merge --ff-only origin/main`,
+    );
+  });
+
+  test("offers no fast-forward to a root off main whose main has diverged", () => {
+    expect(staleRootNotice({ branch: "feat/x", behind: 3, ahead: 1 }, ROOT)?.systemMessage).toEndWith(`Switch it back: cd '${ROOT}' && git switch main`);
+  });
+
+  test("says nothing when main is only ahead of origin/main, since its CLAUDE.md is not stale", () => {
+    expect(staleRootNotice({ branch: "main", behind: 0, ahead: 2 }, ROOT)).toBeNull();
   });
 
   test("calls a detached HEAD out as not being on main", () => {
@@ -82,16 +97,28 @@ describe("stale-root hook", () => {
   });
 
   test("warns from a worktree when origin/main has moved 2 commits past the root checkout", async () => {
-    const { root, worktree, upstream } = await rootWithWorktree();
+    const { worktree, upstream } = await rootWithWorktree();
     await commit(upstream, "two");
     await commit(upstream, "three");
     await git(upstream, "push", "-q", "origin", "main");
     const out = JSON.parse(await run(worktree));
-    const realRoot = realpathSync(root);
+    const root = dirname(await git(worktree, "rev-parse", "--path-format=absolute", "--git-common-dir"));
     expect(out.systemMessage).toBe(
-      `The root checkout ${realRoot} is 2 commits behind origin/main, so its CLAUDE.md may be stale. ` +
-        `Fast-forward it: cd '${realRoot}' && git fetch origin && git merge --ff-only origin/main`,
+      `The root checkout ${root} is 2 commits behind origin/main, so its CLAUDE.md may be stale. ` +
+        `Fast-forward it: cd '${root}' && git fetch origin && git merge --ff-only origin/main`,
     );
     expect(out.hookSpecificOutput).toEqual({ hookEventName: "SessionStart", additionalContext: out.systemMessage });
+  });
+
+  test("counts main, not the other branch the root checkout sits on", async () => {
+    const { root, worktree, upstream } = await rootWithWorktree();
+    await git(root, "switch", "-q", "-c", "feat/x");
+    await commit(root, "local");
+    await commit(upstream, "two");
+    await commit(upstream, "three");
+    await git(upstream, "push", "-q", "origin", "main");
+    const { systemMessage } = JSON.parse(await run(worktree));
+    expect(systemMessage).toContain("is on feat/x rather than main, and main is 2 commits behind origin/main");
+    expect(systemMessage).toEndWith("git switch main && git merge --ff-only origin/main");
   });
 });

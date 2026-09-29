@@ -13,12 +13,16 @@ const shellQuote = (s: string) => `'${s.replaceAll("'", "'\\''")}'`;
 
 function rootMessage({ branch, behind, ahead }: RootState, root: string): string | null {
   if (branch !== "main") {
-    return (
-      `The root checkout ${root} is on ${branch ?? "a detached HEAD"} rather than main, so its CLAUDE.md may not match main. ` +
-      `Switch it back: cd ${shellQuote(root)} && git switch main`
-    );
+    const where = `The root checkout ${root} is on ${branch ?? "a detached HEAD"} rather than main`;
+    if (behind > 0 && ahead === 0) {
+      return (
+        `${where}, and main is ${commits(behind)} behind origin/main, so its CLAUDE.md may be stale. ` +
+        `Switch back and fast-forward: cd ${shellQuote(root)} && git switch main && git merge --ff-only origin/main`
+      );
+    }
+    return `${where}, so its CLAUDE.md may not match main. Switch it back: cd ${shellQuote(root)} && git switch main`;
   }
-  if (ahead > 0) {
+  if (ahead > 0 && behind > 0) {
     return (
       `The root checkout ${root} has diverged from origin/main (${commits(ahead)} ahead, ${commits(behind)} behind), so its CLAUDE.md may be stale ` +
       `and git merge --ff-only will fail. Reconcile main with origin/main by hand.`
@@ -58,10 +62,11 @@ async function main(): Promise<void> {
   const root = dirname(commonDir);
   const branch = await git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"], 2000);
   await git(root, ["fetch", "--quiet", "origin", "main"], 5000);
-  const counts = await git(root, ["rev-list", "--left-right", "--count", "origin/main...HEAD"], 2000);
+  const counts = await git(root, ["rev-list", "--left-right", "--count", "origin/main...main"], 2000);
   const [behind, ahead] = (counts ?? "").split(/\s+/).map(Number);
-  if (branch === "main" && !(Number.isFinite(behind) && Number.isFinite(ahead))) return;
-  const notice = staleRootNotice({ branch, behind: behind ?? 0, ahead: ahead ?? 0 }, root);
+  const counted = Number.isFinite(behind) && Number.isFinite(ahead);
+  if (branch === "main" && !counted) return;
+  const notice = staleRootNotice({ branch, behind: counted ? behind! : 0, ahead: counted ? ahead! : 0 }, root);
   if (notice) console.log(JSON.stringify(notice));
 }
 
