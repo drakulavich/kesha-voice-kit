@@ -248,7 +248,7 @@ export function cleanupRetiredSidecars(engineDir: string): string[] {
   }
 
   if (removed.length > 0) {
-    log.success(`Removed retired sidecars: ${removed.join(", ")}.`);
+    log.progress(`Removed retired sidecars: ${removed.join(", ")}.`);
   }
 
   return removed;
@@ -364,7 +364,7 @@ async function downloadSidecar(
     }
     chmodSync(sidecarPath, 0o755);
     darwinTrustBinary(sidecarPath, spec.displayName);
-    log.success(`${spec.displayName} installed (${spec.availableHint}).`);
+    log.progress(`${spec.displayName} installed (${spec.availableHint}).`);
   } catch (e) {
     log.warn(
       `${spec.displayName} install failed (${errorMessage(e)}); ${spec.unavailableHint}.`,
@@ -415,7 +415,7 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
       return;
     }
 
-    log.success(
+    log.progress(
       `FluidAudio Kokoro warmed (${Math.round(performance.now() - startedAt)}ms).`,
     );
   } catch (e) {
@@ -485,11 +485,11 @@ async function refreshCachedEngine(
 ): Promise<void> {
   const engineDir = dirname(binPath);
   if (noCache && !canWriteEngineDir) {
-    log.info(
+    log.warn(
       `Engine binary at v${version} is on a read-only filesystem; --no-cache skipped for engine (still forwarded to model installs).`,
     );
   } else {
-    log.success(`Engine binary already installed (v${version}).`);
+    log.progress(`Engine binary already installed (v${version}).`);
   }
   // Re-trust on cache hit: a user who upgraded to Sequoia after install would still have
   // com.apple.provenance attached; idempotent (~10ms no-op if already correct).
@@ -672,7 +672,7 @@ async function fetchEngineBinary(
   // Marker last: writing it first sends the retry down the cacheValid branch, which never waits.
   await waitUntilSpawnable(binPath);
   writeInstalledEngineVersion(binPath, version);
-  log.success(`Engine binary downloaded (v${version}).`);
+  log.progress(`Engine binary downloaded (v${version}).`);
   await Promise.all(sidecarPromises);
 }
 
@@ -997,7 +997,7 @@ async function installLockedEngine(
   const engineDir = dirname(binPath);
 
   if (version !== engineVersion) {
-    log.info(
+    log.warn(
       `Installing engine v${version} instead of the pinned v${engineVersion}; ` +
         "a later `kesha install` without --engine-version restores the pin.",
     );
