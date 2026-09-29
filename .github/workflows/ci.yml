@@ -870,6 +870,9 @@ jobs:
       - name: 🔍 Lint still rejects a schema-invalid manifest
         run: ../.github/scripts/raycast-lint-rejects-bad-manifest.sh
 
+      - name: 🔍 Lint still rejects a type error
+        run: ../.github/scripts/raycast-lint-rejects-type-error.sh
+
       - name: 🧪 Test
         run: npm test
 
