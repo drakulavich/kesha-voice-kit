@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { join } from "node:path";
 import { buildPrompt, claimFrom, commentBody, diffRange, hasVerdict, logPath, reviewerCommand, reviewText } from "../../scripts/review";
 
 const head = "0123456789abcdef0123456789abcdef01234567";
@@ -114,6 +115,6 @@ describe("hasVerdict", () => {
 describe("logPath", () => {
   test("gives two runs on the same head their own files", () => {
     expect(logPath(7, head, "1-100")).not.toBe(logPath(7, head, "1-101"));
-    expect(logPath(7, head, "1-100")).toBe(`.reviews/review-7-${head}-1-100.md`);
+    expect(logPath(7, head, "1-100")).toBe(join(".reviews", `review-7-${head}-1-100.md`));
   });
 });
