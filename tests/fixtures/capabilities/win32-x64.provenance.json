@@ -1,6 +1,6 @@
 {
-  "engineVersion": "1.26.0",
+  "engineVersion": "2.0.0",
   "assetName": "kesha-engine-windows-x64.exe",
-  "sha256": "1b0c9b8d3d2d284115ad9f1ba0571a1e52495413445b140ac5cc539db6a8c998",
-  "recordedFrom": "kesha-engine-windows-x64.exe from release v1.26.0"
+  "sha256": "de86f350bfd3d076cf339d99d892605b1a37a99085e8ff4c8ef87057618193f3",
+  "recordedFrom": "kesha-engine-windows-x64.exe from release v2.0.0"
 }
