@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { buildPrompt, claimFrom, commentBody, reviewerCommand, reviewText } from "../../scripts/review";
+import { buildPrompt, claimFrom, commentBody, diffRange, reviewerCommand, reviewText } from "../../scripts/review";
 
 const head = "0123456789abcdef0123456789abcdef01234567";
-const target = { pr: 1280, head, base: "main", branch: "check/review-launcher-1280" };
+const baseSha = "fedcba9876543210fedcba9876543210fedcba98";
+const target = { pr: 1280, head, base: "main", baseSha, branch: "check/review-launcher-1280" };
 
 describe("claimFrom", () => {
   test("refuses a missing or blank claim", () => {
@@ -22,9 +23,10 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Prove or refute this claim, and say which assertion fires if it is wrong:\nan empty claim exits 2");
   });
 
-  test("scopes the review to the full head SHA against the base", () => {
+  test("scopes the review to the full head SHA against the PR's base commit", () => {
     expect(prompt).toContain(`pull request #1280 at head ${head}`);
-    expect(prompt).toContain(`git diff origin/main...${head}`);
+    expect(prompt).toContain(`git diff ${baseSha}...${head}`);
+    expect(prompt).not.toContain("origin/");
   });
 
   test("carries the rubric and ends on a verdict", () => {
@@ -35,6 +37,16 @@ describe("buildPrompt", () => {
 
   test("refuses a head that is not a full SHA", () => {
     expect(() => buildPrompt({ ...target, head: head.slice(0, 8), claim: "x" })).toThrow("full 40-hex");
+  });
+});
+
+describe("diffRange", () => {
+  test("spans the PR's base commit to its head", () => {
+    expect(diffRange(baseSha, head)).toBe(`${baseSha}...${head}`);
+  });
+
+  test("refuses a base that is not a full SHA, such as a branch name", () => {
+    expect(() => diffRange("origin/main", head)).toThrow("full 40-hex");
   });
 });
 

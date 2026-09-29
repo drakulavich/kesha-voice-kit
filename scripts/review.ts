@@ -10,11 +10,17 @@ const EXIT_FAILED = 1;
 const EXIT_REFUSED = 2;
 const DEFAULT_REVIEWER = ["codex", "exec", "--model", "gpt-6-luna", "--sandbox", "read-only"];
 
-export type Target = { pr: number; head: string; base: string; branch: string };
+export type Target = { pr: number; head: string; base: string; baseSha: string; branch: string };
 export type Reviewer = { label: string; argv: string[]; binary: string; reviewFile?: string };
 
-function requireFullSha(head: string): void {
-  if (!FULL_SHA.test(head)) throw new Error(`the head must be a full 40-hex SHA, got '${head}'`);
+function requireFullSha(sha: string, name = "head"): void {
+  if (!FULL_SHA.test(sha)) throw new Error(`the ${name} must be a full 40-hex SHA, got '${sha}'`);
+}
+
+export function diffRange(baseSha: string, head: string): string {
+  requireFullSha(baseSha, "base");
+  requireFullSha(head);
+  return `${baseSha}...${head}`;
 }
 
 export function claimFrom(args: string[]): string {
@@ -23,14 +29,14 @@ export function claimFrom(args: string[]): string {
   return claim;
 }
 
-export function buildPrompt({ pr, head, base, branch, claim }: Target & { claim: string }): string {
-  requireFullSha(head);
-  return `Adversarial review of pull request #${pr} at head ${head} (branch ${branch} against ${base}).
+export function buildPrompt({ pr, head, base, baseSha, branch, claim }: Target & { claim: string }): string {
+  const range = diffRange(baseSha, head);
+  return `Adversarial review of pull request #${pr} at head ${head} (branch ${branch} against ${base} at ${baseSha}).
 
 Prove or refute this claim, and say which assertion fires if it is wrong:
 ${claim}
 
-Scope: the changes in \`git diff origin/${base}...${head}\`. Read the surrounding code where the diff depends on it.
+Scope: the changes in \`git diff ${range}\`. Read the surrounding code where the diff depends on it.
 
 Where running something settles a question, run it rather than settling it by reading. If you still agree
 with the claim after examining it, say so plainly. If the diff touches tests, say whether any existing
@@ -86,14 +92,14 @@ function run(argv: string[]): { code: number; stdout: string; stderr: string } {
 }
 
 function resolveTarget(): Target {
-  const view = run(["gh", "pr", "view", "--json", "number,headRefOid,baseRefName,headRefName"]);
+  const view = run(["gh", "pr", "view", "--json", "number,headRefOid,baseRefName,baseRefOid,headRefName"]);
   if (view.code !== 0) refuse(`no pull request for this branch (${view.stderr.trim()}); open it first with gh pr create`);
-  const pr = JSON.parse(view.stdout) as { number: number; headRefOid: string; baseRefName: string; headRefName: string };
+  const pr = JSON.parse(view.stdout) as { number: number; headRefOid: string; baseRefName: string; baseRefOid: string; headRefName: string };
   const local = run(["git", "rev-parse", "HEAD"]).stdout.trim();
   if (local !== pr.headRefOid) {
     refuse(`local HEAD ${local} is not the PR head ${pr.headRefOid}; push or pull so the reviewer reads what the PR shows`);
   }
-  return { pr: pr.number, head: pr.headRefOid, base: pr.baseRefName, branch: pr.headRefName };
+  return { pr: pr.number, head: pr.headRefOid, base: pr.baseRefName, baseSha: pr.baseRefOid, branch: pr.headRefName };
 }
 
 async function main(): Promise<void> {
@@ -115,12 +121,12 @@ async function main(): Promise<void> {
     );
   }
   const target = resolveTarget();
-  const fetched = run(["git", "fetch", "--quiet", "origin", target.base]);
-  if (fetched.code !== 0) {
-    if (run(["git", "rev-parse", "--verify", "--quiet", `origin/${target.base}`]).code !== 0) {
-      fail(`git fetch origin ${target.base}: ${fetched.stderr.trim()}`);
+  const hasBase = () => run(["git", "cat-file", "-e", `${target.baseSha}^{commit}`]).code === 0;
+  if (!hasBase()) {
+    const fetched = run(["git", "fetch", "--quiet", "origin", target.base]);
+    if (!hasBase()) {
+      fail(`the PR's base commit ${target.baseSha} is not in this clone and git fetch origin ${target.base} did not bring it (${fetched.stderr.trim() || "fetch succeeded"}); fetch it by hand and rerun`);
     }
-    console.error(`warning: git fetch origin ${target.base} failed, reviewing against the local origin/${target.base}: ${fetched.stderr.trim()}`);
   }
 
   console.error(`==> reviewing #${target.pr} at ${target.head} with ${reviewer.label}`);
