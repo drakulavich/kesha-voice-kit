@@ -99,7 +99,12 @@ async function main(): Promise<void> {
   }
   const target = resolveTarget();
   const fetched = run(["git", "fetch", "--quiet", "origin", target.base]);
-  if (fetched.code !== 0) fail(`git fetch origin ${target.base}: ${fetched.stderr.trim()}`);
+  if (fetched.code !== 0) {
+    if (run(["git", "rev-parse", "--verify", "--quiet", `origin/${target.base}`]).code !== 0) {
+      fail(`git fetch origin ${target.base}: ${fetched.stderr.trim()}`);
+    }
+    console.error(`warning: git fetch origin ${target.base} failed, reviewing against the local origin/${target.base}: ${fetched.stderr.trim()}`);
+  }
 
   console.error(`==> reviewing #${target.pr} at ${target.head} with ${reviewer.label}`);
   const proc = Bun.spawn(reviewer.argv, { stdin: new Blob([buildPrompt({ ...target, claim })]), stdout: "pipe", stderr: "inherit" });
