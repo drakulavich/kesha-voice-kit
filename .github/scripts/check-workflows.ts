@@ -201,6 +201,7 @@ export function requireOfflineBeforeOnlineSpeech(path: string, document: unknown
     const steps = jobSteps(document, job) ?? [];
     const offline = runsMatching(steps, /^\s*bash\s+\S*offline\.sh\b/m)[0];
     if (offline === undefined) return [`${path}: \`${job}\` must run say or transcribe through offline.sh (#1277)`];
+    if (steps[offline]?.if !== undefined) return [`${path}: \`${job}\`'s offline.sh step has its own \`if:\`, so it can skip while the lane runs; drop it (#1277)`];
     const online = runsMatching(steps, /smoke-synthesis\.ts|test:integration|^\s*kesha\s+(?!status\b)/m)[0];
     return online !== undefined && online < offline
       ? [`${path}: \`${job}\` runs say or transcribe online before offline.sh, so a first-run download would be cached already; move the offline step first (#1277)`]

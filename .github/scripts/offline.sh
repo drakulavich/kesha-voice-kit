@@ -2,6 +2,11 @@
 # Usage: offline.sh <command…> — run a command with the network blocked by the OS, so any runtime download fails (#1277).
 set -euo pipefail
 
+if [ $# -eq 0 ]; then
+  echo "usage: offline.sh <command…>" >&2
+  exit 2
+fi
+
 case "$(uname -s)" in
   Linux)
     if unshare -rn true 2>/dev/null; then

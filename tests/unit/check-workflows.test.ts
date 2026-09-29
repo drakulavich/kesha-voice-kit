@@ -206,6 +206,13 @@ describe("requireOfflineBeforeOnlineSpeech", () => {
     expect(requireOfflineBeforeOnlineSpeech(CI, lanes([transcribe, OFFLINE], [suite, OFFLINE]))).toHaveLength(2);
   });
 
+  test("fails when the offline run has its own condition, so it can skip on pull requests", () => {
+    const conditional = { ...OFFLINE, if: "github.event_name == 'schedule'" };
+    const errors = requireOfflineBeforeOnlineSpeech(CI, lanes([conditional, ONLINE]));
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain("if:");
+  });
+
   test("fails when the offline run is gone", () => {
     const errors = requireOfflineBeforeOnlineSpeech(CI, lanes([ONLINE]));
     expect(errors[0]).toContain("offline.sh");
