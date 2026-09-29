@@ -864,11 +864,14 @@ jobs:
       - name: 📦 Install
         run: npm ci
 
-      - name: 🔍 Lint (ray lint includes tsc --noEmit)
+      - name: 🔍 Lint (ray lint, then tsc --noEmit)
         run: ../.github/scripts/raycast-lint.sh
 
       - name: 🔍 Lint still rejects a schema-invalid manifest
         run: ../.github/scripts/raycast-lint-rejects-bad-manifest.sh
+
+      - name: 🔍 Lint still rejects a type error
+        run: ../.github/scripts/raycast-lint-rejects-type-error.sh
 
       - name: 🧪 Test
         run: npm test
