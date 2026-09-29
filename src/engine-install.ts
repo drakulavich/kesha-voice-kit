@@ -77,9 +77,11 @@ async function fetchSha256Sums(version: string, pins: AssetPins | undefined): Pr
     });
   }
   if (!res.ok) {
-    throw new Error(
+    throw new KeshaError(
+      "E_MODEL_DOWNLOAD",
       `Cannot verify engine v${version}: release v${version} publishes no SHA256SUMS (HTTP ${res.status}), ` +
-        `so its binaries cannot be checked before they are installed.\n  Fix: ${unverifiableFix(version, pins)}`,
+        "so its binaries cannot be checked before they are installed.",
+      { hint: unverifiableFix(version, pins) },
     );
   }
   return parseSha256Sums(await res.text());
@@ -103,9 +105,11 @@ export function releaseChecksums(
     sums ??= fetchSha256Sums(version, pins);
     const sha256 = (await sums).get(assetName);
     if (!sha256) {
-      throw new Error(
+      throw new KeshaError(
+        "E_MODEL_DOWNLOAD",
         `Cannot verify ${assetName}: the SHA256SUMS of release v${version} does not list it, ` +
-          `so it cannot be checked before it is installed.\n  Fix: ${unverifiableFix(version, pins)}`,
+          "so it cannot be checked before it is installed.",
+        { hint: unverifiableFix(version, pins) },
       );
     }
     return { sha256, source: `the SHA-256 in the SHA256SUMS of release v${version}` };
