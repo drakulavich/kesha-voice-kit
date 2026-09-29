@@ -8,4 +8,5 @@ cd "$root/raycast"
 # The author lookup appends /api/v1/users/<name> to RAY_APIURL; base64 decoding stops at "=", so every user resolves to {} offline (#1311).
 RAY_APIURL="data:application/json;base64,e30=" \
 NODE_OPTIONS="--require \"$root/.github/scripts/raycast-no-live-fetch.cjs\"" \
-  exec npx --no-install ray lint --schema "data:application/json;base64,$schema"
+  npx --no-install ray lint --schema "data:application/json;base64,$schema"
+exec npx --no-install tsc --noEmit
