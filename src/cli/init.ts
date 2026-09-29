@@ -254,7 +254,7 @@ export const initCommand = defineCommand({
     const noCache = resolveNoCacheFlag(args, rawArgs);
     const selection = resolveInitSelection(args, backend, noCache);
 
-    const backendError = args.yes ? null : unavailableBackendRefusal(backend);
+    const backendError = args.yes && !args.plan ? null : unavailableBackendRefusal(backend);
     if (backendError) {
       log.error(errorMessage(backendError));
       process.exitCode = exitCodeFor(backendError);

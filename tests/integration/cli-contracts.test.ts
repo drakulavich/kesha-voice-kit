@@ -1612,6 +1612,13 @@ process.exit(99);
       stderrContains: ["Engine binary already installed", "error [E_INTERNAL]: "],
     });
 
+    const quietDir = makeTempDir("kesha-cli-contract-install-quiet-");
+    const quietEngine = createFakeEngine(quietDir);
+    markFakeEngineInstalled(quietEngine);
+    const quiet = await runCli(["install", "--quiet", "--vad"], { env: { ...isolatedEnv(quietDir), KESHA_ENGINE_BIN: quietEngine } });
+    expectContract(quiet, { exitCode: 0, stderrNotContains: ["starring", "kesha-voice-kit"] });
+    expect(quiet.stdout).toBe(`Backend installed successfully (engine v${engineVersion}).`);
+
     // `--plan` *is* a deliverable and stays on stdout.
     const plan = await runCli(["install", "--plan", "--tts"], { env });
     expectContract(plan, {
@@ -2789,13 +2796,13 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
       { name: "both backends", args: () => ["init", "--plan", "--coreml", "--onnx"], exitCode: 1, stderr: "Choose only one backend" },
       ...(FOREIGN_BACKEND === undefined
         ? []
-        : [{
-          name: "--plan for a backend this platform lacks",
-          args: () => ["init", "--plan", `--${FOREIGN_BACKEND}`],
+        : [["--plan"], ["--plan", "--yes"]].map((flags) => ({
+          name: `${flags.join(" ")} for a backend this platform lacks`,
+          args: () => ["init", ...flags, `--${FOREIGN_BACKEND}`],
           env: (dir: string) => ({ ...isolatedEnv(dir), KESHA_ENGINE_BIN: "" }),
           exitCode: 2,
           stderr: `Requested backend "${FOREIGN_BACKEND}" is not available on this platform`,
-        }]),
+        }))),
       {
         name: "--yes when the engine's model install fails",
         args: () => ["init", "--yes"],
