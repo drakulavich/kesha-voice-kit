@@ -267,6 +267,8 @@ fn origin_of(code: ErrorCode) -> Origin {
         | ErrorCode::UnsupportedPlatform
         | ErrorCode::Internal
         | ErrorCode::ModelMissing
+        | ErrorCode::ModelDownload
+        | ErrorCode::CacheCorrupt
         | ErrorCode::TextEmpty
         | ErrorCode::TextTooLong => Origin::Both,
         _ => Origin::Engine,

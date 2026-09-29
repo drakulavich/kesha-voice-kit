@@ -37,6 +37,8 @@ export {
 } from "./engine-version-marker";
 
 const GITHUB_REPO = "drakulavich/kesha-voice-kit";
+const NETWORK_HINT = "check your network connection and try again.";
+const MISMATCH_HINT = `re-run \`kesha install\`; if the mismatch persists, report it at https://github.com/${GITHUB_REPO}/issues.`;
 
 interface ExpectedSha256 {
   sha256: string;
@@ -70,9 +72,9 @@ async function fetchSha256Sums(version: string, pins: AssetPins | undefined): Pr
   try {
     res = await fetch(url, { redirect: "follow" });
   } catch (e) {
-    throw new Error(
-      `Failed to fetch SHA256SUMS for release v${version}: ${errorMessage(e)}\n  Fix: Check your network connection and try again`,
-    );
+    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to fetch SHA256SUMS for release v${version}: ${errorMessage(e)}`, {
+      hint: NETWORK_HINT,
+    });
   }
   if (!res.ok) {
     throw new Error(
@@ -135,8 +137,7 @@ async function rejectMismatchedDownload(
   return (
     `${what} from release v${version} does not match ${expected.source}: ` +
     `expected sha256 ${expected.sha256}, got ${actual}. The download was corrupted or altered, ` +
-    "so it was deleted instead of installed.\n" +
-    `  Fix: re-run \`kesha install\`; if the mismatch persists, report it at https://github.com/${GITHUB_REPO}/issues.`
+    "so it was deleted instead of installed."
   );
 }
 
@@ -326,7 +327,7 @@ async function downloadSidecar(
     await streamResponseToFile(res, sidecarPath, spec.displayName);
     const refusal = await rejectMismatchedDownload(sidecarPath, `${spec.displayName} ${spec.assetName}`, version, expected);
     if (refusal) {
-      log.warn(`${refusal}\n  ${spec.displayName} not installed; ${spec.unavailableHint}.`);
+      log.warn(`${refusal}\n  Fix: ${MISMATCH_HINT}\n  ${spec.displayName} not installed; ${spec.unavailableHint}.`);
       return;
     }
     chmodSync(sidecarPath, 0o755);
@@ -608,17 +609,15 @@ async function fetchEngineBinary(
     res = await fetch(url, { redirect: "follow" });
   } catch (e) {
     muteSidecarRejections();
-    throw new Error(
-      `Failed to fetch engine binary: ${errorMessage(e)}\n  Fix: Check your network connection and try again`,
-    );
+    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to fetch engine binary: ${errorMessage(e)}`, { hint: NETWORK_HINT });
   }
 
   if (!res.ok) {
     muteSidecarRejections();
     // Names the tag: nothing falls back to the pin, so the caller must see which release 404ed.
-    throw new Error(
-      `Failed to download engine binary from release v${version} (HTTP ${res.status})\n  Fix: Check https://github.com/${GITHUB_REPO}/releases for available versions`,
-    );
+    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to download engine binary from release v${version} (HTTP ${res.status})`, {
+      hint: `check https://github.com/${GITHUB_REPO}/releases for available versions.`,
+    });
   }
 
   await streamResponseToFile(res, binPath, "kesha-engine binary");
@@ -626,7 +625,7 @@ async function fetchEngineBinary(
   if (refusal) {
     muteSidecarRejections();
     rmSync(getVersionMarkerPath(binPath), { force: true });
-    throw new Error(refusal);
+    throw new KeshaError("E_CACHE_CORRUPT", refusal, { hint: MISMATCH_HINT });
   }
   chmodSync(binPath, 0o755);
   darwinTrustBinary(binPath, "kesha-engine binary");

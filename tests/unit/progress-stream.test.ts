@@ -323,7 +323,7 @@ describe("a download with nothing to stream fails with a fix", () => {
       const dest = join(dir, "kesha-engine");
       const promise = streamResponseToFile(new Response(null), dest, "kesha-engine binary");
       await expect(promise).rejects.toThrow("empty response for kesha-engine binary");
-      await expect(promise).rejects.toThrow("Try again");
+      await expect(promise).rejects.toMatchObject({ code: "E_MODEL_DOWNLOAD", hint: expect.stringContaining("try again") });
       expect(readdirSync(dir)).toEqual([]);
     } finally {
       rmSync(dir, { recursive: true, force: true });

@@ -1,6 +1,7 @@
 import { copyFileSync, readdirSync, renameSync, rmSync, statSync } from "fs";
 import { basename, dirname, join } from "path";
 import { errorMessage } from "./error-utils";
+import { KeshaError } from "./engine/events";
 import { log } from "./log";
 
 const BAR_WIDTH = 20;
@@ -226,9 +227,9 @@ export async function streamResponseToFile(
   label: string,
 ): Promise<number> {
   if (!res.body) {
-    throw new Error(
-      `Download failed: empty response for ${label}\n  Fix: Try again — the server may be temporarily unavailable`,
-    );
+    throw new KeshaError("E_MODEL_DOWNLOAD", `Download failed: empty response for ${label}`, {
+      hint: "try again; the server may be temporarily unavailable.",
+    });
   }
 
   const totalBytes = Number(res.headers.get("content-length") || 0);
