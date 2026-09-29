@@ -1,5 +1,6 @@
 import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
+import { exitCodeFor, KeshaError } from "../engine/events";
 import { createSupportBundle } from "../support-bundle";
 import { log } from "../log";
 
@@ -35,7 +36,7 @@ export const supportBundleCommand = defineCommand({
       log.status(`Size: ${bundle.sizeBytes} bytes`);
     } catch (err) {
       log.error(errorMessage(err));
-      process.exit(1);
+      process.exit(err instanceof KeshaError ? exitCodeFor(err) : 1);
     }
   },
 });

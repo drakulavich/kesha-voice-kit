@@ -19,6 +19,7 @@ import { runEngineProcess } from "./engine/spawn";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
 import { engineVersion, injectedEnginePins } from "./package-info";
+import { PATH_ERRNOS } from "./path-errnos";
 import { keshaCacheDir } from "./paths";
 import { createLiveStatus, streamResponseToFile } from "./progress";
 import { interruptedRun } from "./process-tree";
@@ -852,18 +853,6 @@ async function assertRequestedVersionLanded(binPath: string, version: string): P
   );
 }
 
-/** mkdir errnos that mean the configured path is itself wrong; anything else is not a bad argument. */
-const ENGINE_DIR_PATH_ERRNOS: Record<string, string> = {
-  EACCES: "permission denied",
-  EPERM: "permission denied",
-  ENOTDIR: "a component of it is a file, not a directory",
-  // mkdir(recursive) raises this, not ENOTDIR, when the engine directory itself is an existing file.
-  EEXIST: "it already exists as a file, not a directory",
-  EROFS: "the filesystem is read-only",
-  ELOOP: "the path loops through symlinks",
-  ENAMETOOLONG: "the path is too long",
-};
-
 function engineDirSetting(): { name: string; value: string } | null {
   if (process.env.KESHA_ENGINE_BIN) return { name: "KESHA_ENGINE_BIN", value: process.env.KESHA_ENGINE_BIN };
   if (process.env.KESHA_CACHE_DIR) return { name: "KESHA_CACHE_DIR", value: process.env.KESHA_CACHE_DIR };
@@ -873,7 +862,7 @@ function engineDirSetting(): { name: string; value: string } | null {
 
 function unreadableInReadOnlyDir(path: string, e: unknown): unknown {
   const errno = (e as NodeJS.ErrnoException).code ?? "";
-  const why = ENGINE_DIR_PATH_ERRNOS[errno];
+  const why = PATH_ERRNOS[errno];
   if (!why) return e;
   const dir = dirname(path);
   return new KeshaError(
@@ -917,7 +906,7 @@ function ensureEngineDirCreatable(binPath: string): void {
   } catch (e) {
     const setting = engineDirSetting();
     const errno = (e as NodeJS.ErrnoException).code ?? "";
-    const why = ENGINE_DIR_PATH_ERRNOS[errno];
+    const why = PATH_ERRNOS[errno];
     const what = setting
       ? `${setting.name}="${setting.value}" cannot hold the engine directory ${engineDir}: ${why ?? errorMessage(e)}`
       : `cannot create the engine directory ${engineDir}: ${why ?? errorMessage(e)}`;
@@ -938,7 +927,7 @@ function engineWriteFailure(binPath: string, e: unknown): KeshaError | null {
   const errno = (e as NodeJS.ErrnoException).code ?? "";
   const setting = engineDirSetting();
   const into = setting ? `${engineDir} (from ${setting.name}="${setting.value}")` : engineDir;
-  const why = ENGINE_DIR_PATH_ERRNOS[errno];
+  const why = PATH_ERRNOS[errno];
   if (why) {
     return new KeshaError("E_INVALID_ARG", `Cannot write the engine binary into ${into}: ${why}`, {
       hint: engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir),

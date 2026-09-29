@@ -1,8 +1,11 @@
-import { existsSync, mkdirSync, statSync, writeFileSync } from "fs";
-import { basename, dirname, resolve } from "path";
+import { lstatSync, mkdirSync, statSync, writeFileSync } from "fs";
+import { basename, dirname, join, resolve } from "path";
 import { gzipSync } from "node:zlib";
 import { collectDoctorReport, formatDoctorReport } from "./doctor";
 import { readDiagnosticLogTail } from "./diagnostic-log";
+import { KeshaError } from "./engine/events";
+import { errorMessage } from "./error-utils";
+import { PATH_ERRNOS } from "./path-errnos";
 
 interface SupportBundleOptions {
   output?: string;
@@ -99,6 +102,66 @@ function createTarArchive(entries: TarEntry[]): Uint8Array {
   return archive;
 }
 
+function existsAsLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
+function fileInTheWay(dir: string): string | null {
+  for (let d = dir; ; d = dirname(d)) {
+    try {
+      return statSync(d).isDirectory() ? null : d;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === "ENOENT" && existsAsLink(d)) return d;
+      if (dirname(d) === d) return null;
+    }
+  }
+}
+
+function mkdirReason(dir: string, errno: string): string {
+  if (errno !== "EEXIST") return errno;
+  try {
+    statSync(dir);
+    return errno;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code ?? errno;
+  }
+}
+
+function bundleWriteFailure(outputPath: string, e: unknown): unknown {
+  const dir = dirname(outputPath);
+  const errno = mkdirReason(dir, (e as NodeJS.ErrnoException).code ?? "");
+  const blocker = fileInTheWay(dir);
+  if (blocker) {
+    return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: ${blocker} exists and is not a directory`, {
+      hint: `remove or rename the file blocking ${blocker}, or pass --output a path under a directory.`,
+    });
+  }
+  if (errno === "EISDIR") {
+    return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: it is a directory (EISDIR)`, {
+      hint: `pass --output a .tar.gz file path, for example ${join(outputPath, "kesha-support-bundle.tar.gz")}.`,
+    });
+  }
+  const why = PATH_ERRNOS[errno];
+  if (why) {
+    return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: ${why} (${errno})`, {
+      hint: `pass --output a path in a directory you can write to.`,
+    });
+  }
+  if (!errno) return e;
+  if (errno === "ENOSPC") {
+    return new KeshaError("E_INTERNAL", `Cannot write the support bundle to ${outputPath}: no space left on its disk (ENOSPC)`, {
+      hint: `the disk is full: free space on the volume that holds ${dir}, or pass --output a path on another disk.`,
+    });
+  }
+  return new KeshaError("E_INTERNAL", `Cannot write the support bundle to ${outputPath}: ${errorMessage(e)}`, {
+    hint: `resolve that filesystem error on ${dir}, or pass --output a path elsewhere.`,
+  });
+}
+
 export async function createSupportBundle(
   options: SupportBundleOptions = {},
 ): Promise<SupportBundleResult> {
@@ -180,16 +243,17 @@ export async function createSupportBundle(
     );
   }
 
-  mkdirSync(dirname(outputPath), { recursive: true });
-  writeFileSync(outputPath, gzipSync(createTarArchive(files)));
-
-  if (!existsSync(outputPath)) {
-    throw new Error(`failed to create support bundle: ${outputPath}`);
+  const archive = gzipSync(createTarArchive(files));
+  try {
+    mkdirSync(dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, archive);
+  } catch (e) {
+    throw bundleWriteFailure(outputPath, e);
   }
 
   return {
     path: outputPath,
-    sizeBytes: statSync(outputPath).size,
+    sizeBytes: archive.byteLength,
     entries: files.map((file) => file.name),
   };
 }

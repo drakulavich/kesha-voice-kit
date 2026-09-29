@@ -2267,6 +2267,39 @@ exit 2
     expect(bundle.artifacts[0]?.sizeBytes).toBeGreaterThan(0);
   }, 30_000);
 
+  test("support-bundle --output under a file is a coded bad argument naming the path and a fix (#1345)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-bundle-notdir-");
+    const blocker = join(dir, "file");
+    writeFileSync(blocker, "a file where a directory should be");
+    const bundlePath = join(blocker, "x.tar.gz");
+
+    const bundle = await runCli(["support-bundle", "--output", bundlePath], {
+      env: isolatedEnv(dir),
+      timeoutMs: 15_000,
+    });
+
+    expectContract(bundle, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]", bundlePath, `hint: remove or rename the file blocking ${blocker}`, "--output"],
+    });
+    expect(existsSync(bundlePath)).toBe(false);
+  }, 30_000);
+
+  test("support-bundle --output naming a directory is a coded bad argument asking for a file path (#1345)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-bundle-isdir-");
+    const target = join(dir, "adir");
+    mkdirSync(target);
+
+    const bundle = await runCli(["support-bundle", "--output", target], { env: isolatedEnv(dir), timeoutMs: 15_000 });
+
+    expectContract(bundle, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]", target, "hint:", "--output"],
+    });
+  }, 30_000);
+
   test("read-only planning and stats commands keep user data on stdout", async () => {
     const dir = makeTempDir("kesha-cli-contract-readonly-");
     const enginePath = createFailingEngine(dir);
@@ -2944,8 +2977,8 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
           writeFileSync(join(dir, "missing"), "a file where a directory should be");
           return isolatedEnv(dir);
         },
-        exitCode: 1,
-        stderr: "ENOTDIR",
+        exitCode: 2,
+        stderr: "error [E_INVALID_ARG]",
       },
     ],
     progress: [
