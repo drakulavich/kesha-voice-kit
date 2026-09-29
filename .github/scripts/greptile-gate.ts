@@ -43,8 +43,12 @@ export function failureReport(findings: ReviewComment[]): string {
   ].join("\n");
 }
 
-async function reviewComments(repo: string, pr: string): Promise<ReviewComment[]> {
-  const pages = (await Bun.$`gh api --paginate --slurp repos/${repo}/pulls/${pr}/comments`.json()) as ReviewComment[][];
+export type GhApi = (args: string[]) => Promise<unknown>;
+
+const ghApi: GhApi = (args) => Bun.$`gh api ${args}`.json();
+
+async function reviewComments(gh: GhApi, repo: string, pr: string): Promise<ReviewComment[]> {
+  const pages = (await gh(["--paginate", "--slurp", `repos/${repo}/pulls/${pr}/comments`])) as ReviewComment[][];
   return pages.flat();
 }
 
@@ -72,13 +76,13 @@ type ThreadsPage = {
   };
 };
 
-async function resolvedRootIds(repo: string, pr: string): Promise<Set<number>> {
+async function resolvedRootIds(gh: GhApi, repo: string, pr: string): Promise<Set<number>> {
   const [owner, name] = repo.split("/");
   const resolved = new Set<number>();
   let after: string | null = null;
   do {
     const cursor = after === null ? [] : ["-f", `after=${after}`];
-    const page = (await Bun.$`gh api graphql -f query=${THREADS_QUERY} -f owner=${owner} -f name=${name} -F pr=${pr} ${cursor}`.json()) as ThreadsPage;
+    const page = (await gh(["graphql", "-f", `query=${THREADS_QUERY}`, "-f", `owner=${owner}`, "-f", `name=${name}`, "-F", `pr=${pr}`, ...cursor])) as ThreadsPage;
     const threads = page.data.repository.pullRequest.reviewThreads;
     for (const thread of threads.nodes) {
       const root = thread.comments.nodes[0]?.databaseId;
@@ -89,6 +93,15 @@ async function resolvedRootIds(repo: string, pr: string): Promise<Set<number>> {
   return resolved;
 }
 
+export async function fetchReviewState(
+  gh: GhApi,
+  repo: string,
+  pr: string,
+): Promise<{ comments: ReviewComment[]; resolved: Set<number> }> {
+  const [comments, resolved] = await Promise.all([reviewComments(gh, repo, pr), resolvedRootIds(gh, repo, pr)]);
+  return { comments, resolved };
+}
+
 if (import.meta.main) {
   const repo = process.env.REPO;
   const pr = process.env.PR_NUMBER;
@@ -96,7 +109,7 @@ if (import.meta.main) {
     console.error("usage: REPO=<owner/name> PR_NUMBER=<n> bun .github/scripts/greptile-gate.ts");
     process.exit(2);
   }
-  const [comments, resolved] = await Promise.all([reviewComments(repo, pr), resolvedRootIds(repo, pr)]);
+  const { comments, resolved } = await fetchReviewState(ghApi, repo, pr);
   const findings = blockingFindings(comments, resolved);
   if (findings.length > 0) {
     console.error(failureReport(findings));

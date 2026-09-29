@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import {
   blockingFindings,
   failureReport,
+  fetchReviewState,
+  type GhApi,
   type ReviewComment,
 } from "../../.github/scripts/greptile-gate";
 import recorded from "../fixtures/greptile/review-comments.json";
@@ -75,5 +77,27 @@ describe("failureReport", () => {
     expect(report).toContain(`P2 Test misses same-size replacement`);
     expect(report).toContain(byId(UNANSWERED_P2).html_url);
     expect(report).toContain(byId(UNANSWERED_P1).html_url);
+  });
+});
+
+describe("fetchReviewState", () => {
+  const thread = (root: number, isResolved: boolean) => ({ isResolved, comments: { nodes: [{ databaseId: root }] } });
+  const threadsPage = (nodes: unknown[], endCursor: string | null) => ({
+    data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: endCursor !== null, endCursor }, nodes } } } },
+  });
+  let graphqlCalls = 0;
+  const fakeGh: GhApi = async (args) => {
+    if (args[0] !== "graphql") return [COMMENTS.slice(0, 4), COMMENTS.slice(4)];
+    if (++graphqlCalls > 2) throw new Error("asked for a third GraphQL page of two");
+    return args.includes("after=page-2")
+      ? threadsPage([thread(UNANSWERED_P2, true)], null)
+      : threadsPage([thread(UNANSWERED_P1, false)], "page-2");
+  };
+
+  test("reads every REST page and a resolved thread from the second GraphQL page", async () => {
+    const { comments, resolved } = await fetchReviewState(fakeGh, "drakulavich/kesha-voice-kit", "1");
+
+    expect(comments).toHaveLength(COMMENTS.length);
+    expect(ids(blockingFindings(comments, resolved))).toEqual([UNANSWERED_P1]);
   });
 });
