@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildPrompt, claimFrom, commentBody, diffRange, reviewerCommand, reviewText } from "../../scripts/review";
+import { buildPrompt, claimFrom, commentBody, diffRange, hasVerdict, logPath, reviewerCommand, reviewText } from "../../scripts/review";
 
 const head = "0123456789abcdef0123456789abcdef01234567";
 const baseSha = "fedcba9876543210fedcba9876543210fedcba98";
@@ -74,11 +74,10 @@ describe("reviewerCommand", () => {
     expect(argv.at(-1)).toBe("-");
   });
 
-  test("runs KESHA_REVIEWER through the shell", () => {
-    expect(reviewerCommand({ KESHA_REVIEWER: " ./stub.sh --canned " }, "/tmp/last.md")).toEqual({
-      label: "./stub.sh --canned",
-      argv: ["sh", "-c", "./stub.sh --canned"],
-      binary: "./stub.sh",
+  test("runs KESHA_REVIEWER through the shell under a label that hides the command", () => {
+    expect(reviewerCommand({ KESHA_REVIEWER: " TOKEN=s3cret ./stub.sh " }, "/tmp/last.md")).toEqual({
+      label: "KESHA_REVIEWER",
+      argv: ["sh", "-c", "TOKEN=s3cret ./stub.sh"],
     });
   });
 });
@@ -96,5 +95,25 @@ describe("reviewText", () => {
 
   test("treats a missing last-message file as an empty review", () => {
     expect(reviewText(reviewerCommand({}, "/tmp/absent.md"), "progress noise\n", () => { throw new Error("ENOENT"); })).toBe("");
+  });
+});
+
+describe("hasVerdict", () => {
+  test("accepts either verdict on a line of its own", () => {
+    expect(hasVerdict("Fine.\n\nVerdict: Approve\n")).toBe(true);
+    expect(hasVerdict("Broken.\nVerdict: Request changes")).toBe(true);
+  });
+
+  test("rejects a review without one", () => {
+    expect(hasVerdict("still thinking\n")).toBe(false);
+    expect(hasVerdict("Verdict: maybe\n")).toBe(false);
+    expect(hasVerdict("The Verdict: Approve line is missing\n")).toBe(false);
+  });
+});
+
+describe("logPath", () => {
+  test("gives two runs on the same head their own files", () => {
+    expect(logPath(7, head, "1-100")).not.toBe(logPath(7, head, "1-101"));
+    expect(logPath(7, head, "1-100")).toBe(`.reviews/review-7-${head}-1-100.md`);
   });
 });

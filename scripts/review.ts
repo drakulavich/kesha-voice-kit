@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // KESHA_REVIEWER reads the prompt on stdin and prints only the review on stdout: stdout is what gets posted.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -11,7 +11,7 @@ const EXIT_REFUSED = 2;
 const DEFAULT_REVIEWER = ["codex", "exec", "--model", "gpt-6-luna", "--sandbox", "read-only"];
 
 export type Target = { pr: number; head: string; base: string; baseSha: string; branch: string };
-export type Reviewer = { label: string; argv: string[]; binary: string; reviewFile?: string };
+export type Reviewer = { label: string; argv: string[]; binary?: string; reviewFile?: string };
 
 function requireFullSha(sha: string, name = "head"): void {
   if (!FULL_SHA.test(sha)) throw new Error(`the ${name} must be a full 40-hex SHA, got '${sha}'`);
@@ -58,13 +58,21 @@ export function commentBody({ pr, head, claim, reviewer, review }: { pr: number;
 
 export function reviewerCommand(env: Record<string, string | undefined>, lastMessageFile: string): Reviewer {
   const custom = env.KESHA_REVIEWER?.trim();
-  if (custom) return { label: custom, argv: ["sh", "-c", custom], binary: custom.split(/\s+/)[0]! };
+  if (custom) return { label: "KESHA_REVIEWER", argv: ["sh", "-c", custom] };
   return {
     label: DEFAULT_REVIEWER.join(" "),
     argv: [...DEFAULT_REVIEWER, "--color", "never", "-o", lastMessageFile, "-"],
     binary: "codex",
     reviewFile: lastMessageFile,
   };
+}
+
+export function hasVerdict(review: string): boolean {
+  return /^Verdict: (Approve|Request changes)\s*$/m.test(review);
+}
+
+export function logPath(pr: number, head: string, runId: string): string {
+  return join(LOG_DIR, `review-${pr}-${head}-${runId}.md`);
 }
 
 export function reviewText(reviewer: Reviewer, stdout: string, read: (path: string) => string): string {
@@ -112,13 +120,8 @@ async function main(): Promise<void> {
   const scratch = mkdtempSync(join(tmpdir(), "kesha-review-"));
   process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
   const reviewer = reviewerCommand(process.env, join(scratch, "last-message.md"));
-  const found = reviewer.binary.includes("/") ? existsSync(reviewer.binary) : Bun.which(reviewer.binary) !== null;
-  if (!found) {
-    refuse(
-      reviewer.binary === "codex"
-        ? "the Codex CLI is not on PATH; install it with `bun add -g @openai/codex` or set KESHA_REVIEWER to a command that reads the prompt on stdin"
-        : `KESHA_REVIEWER names '${reviewer.binary}', which is not found`,
-    );
+  if (reviewer.binary !== undefined && Bun.which(reviewer.binary) === null) {
+    refuse("the Codex CLI is not on PATH; install it with `bun add -g @openai/codex` or set KESHA_REVIEWER to a command that reads the prompt on stdin");
   }
   const target = resolveTarget();
   const hasBase = () => run(["git", "cat-file", "-e", `${target.baseSha}^{commit}`]).code === 0;
@@ -136,11 +139,12 @@ async function main(): Promise<void> {
   const review = reviewText(reviewer, stdout, (path) => readFileSync(path, "utf8"));
 
   mkdirSync(LOG_DIR, { recursive: true });
-  const log = join(LOG_DIR, `review-${target.pr}-${target.head}.md`);
+  const log = logPath(target.pr, target.head, `${Date.now()}-${process.pid}`);
   const body = commentBody({ pr: target.pr, head: target.head, claim, reviewer: reviewer.label, review });
   writeFileSync(log, body);
   if (code !== 0) fail(`the reviewer exited ${code}; its output is in ${log}, nothing was posted`);
   if (review.trim() === "") fail("the reviewer printed nothing; nothing was posted");
+  if (!hasVerdict(review)) fail(`the review has no \`Verdict: Approve\` or \`Verdict: Request changes\` line; it is in ${log}, nothing was posted`);
 
   const posted = run(["gh", "pr", "comment", String(target.pr), "--body-file", log]);
   if (posted.code !== 0) fail(`gh pr comment: ${posted.stderr.trim()}; the review is in ${log}, post it by hand`);
