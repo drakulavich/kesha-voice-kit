@@ -4,14 +4,14 @@ import { join } from "node:path";
 const GUARD = join(import.meta.dir, "../../.github/scripts/raycast-no-live-fetch.cjs");
 const URL_ = "https://www.raycast.com/api/v1/users/x";
 
-const PROBES: Record<string, string> = {
+const PROBES = {
   fetch: `const c = new AbortController(); const p = fetch(u, { signal: c.signal }); c.abort(); await p;`,
   "http.request": `require("node:http").request(u.replace("https:", "http:")).destroy();`,
   "http.get": `require("node:http").get(u.replace("https:", "http:")).destroy();`,
   "https.request": `require("node:https").request(u).destroy();`,
   "https.get": `require("node:https").get(new URL(u)).destroy();`,
   "https.request with options": `require("node:https").request({ hostname: "www.raycast.com", path: "/api/v1/users/x" }).destroy();`,
-};
+} satisfies Record<string, string>;
 
 async function probe(call: string, url = URL_) {
   const script = `const u = ${JSON.stringify(url)}; (async () => { try { ${call} console.log("not blocked"); } catch (e) { console.log(e.message); } })();`;
