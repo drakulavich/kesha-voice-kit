@@ -1,5 +1,5 @@
-import { mkdirSync, statSync, writeFileSync } from "fs";
-import { basename, dirname, resolve } from "path";
+import { lstatSync, mkdirSync, statSync, writeFileSync } from "fs";
+import { basename, dirname, join, resolve } from "path";
 import { gzipSync } from "node:zlib";
 import { collectDoctorReport, formatDoctorReport } from "./doctor";
 import { readDiagnosticLogTail } from "./diagnostic-log";
@@ -102,11 +102,20 @@ function createTarArchive(entries: TarEntry[]): Uint8Array {
   return archive;
 }
 
+function existsAsLink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
+}
+
 function fileInTheWay(dir: string): string | null {
   for (let d = dir; ; d = dirname(d)) {
     try {
       return statSync(d).isDirectory() ? null : d;
     } catch {
+      if (existsAsLink(d)) return d;
       if (dirname(d) === d) return null;
     }
   }
@@ -117,8 +126,13 @@ function bundleWriteFailure(outputPath: string, e: unknown): unknown {
   const errno = (e as NodeJS.ErrnoException).code ?? "";
   const blocker = fileInTheWay(dir);
   if (blocker) {
-    return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: ${blocker} is a file, not a directory`, {
+    return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: ${blocker} exists and is not a directory`, {
       hint: `remove or rename the file blocking ${blocker}, or pass --output a path under a directory.`,
+    });
+  }
+  if (errno === "EISDIR") {
+    return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: it is a directory (EISDIR)`, {
+      hint: `pass --output a .tar.gz file path, for example ${join(outputPath, "kesha-support-bundle.tar.gz")}.`,
     });
   }
   const why = PATH_ERRNOS[errno];

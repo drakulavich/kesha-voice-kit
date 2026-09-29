@@ -2286,6 +2286,20 @@ exit 2
     expect(existsSync(bundlePath)).toBe(false);
   }, 30_000);
 
+  test("support-bundle --output naming a directory is a coded bad argument asking for a file path (#1345)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-bundle-isdir-");
+    const target = join(dir, "adir");
+    mkdirSync(target);
+
+    const bundle = await runCli(["support-bundle", "--output", target], { env: isolatedEnv(dir), timeoutMs: 15_000 });
+
+    expectContract(bundle, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]", target, "hint:", "--output"],
+    });
+  }, 30_000);
+
   test("read-only planning and stats commands keep user data on stdout", async () => {
     const dir = makeTempDir("kesha-cli-contract-readonly-");
     const enginePath = createFailingEngine(dir);
