@@ -106,7 +106,7 @@ describe("kesha install reports an engine download failure by its code", () => {
           `await performInstall({ noCache: false, ttsLangs: [] });\n`,
       );
       const proc = Bun.spawn([process.execPath, script], {
-        env: { ...process.env, KESHA_ENGINE_BIN: join(dir, "bin", "kesha-engine") },
+        env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", KESHA_ENGINE_BIN: join(dir, "bin", "kesha-engine") },
         stdout: "ignore",
         stderr: "pipe",
       });
@@ -162,7 +162,7 @@ describe("a SHA256SUMS the installer cannot use is E_MODEL_DOWNLOAD with the rel
           `await performInstall({ noCache: false, ttsLangs: [] });\n`,
       );
       const proc = Bun.spawn([process.execPath, script], {
-        env: { ...process.env, KESHA_ENGINE_BIN: join(dir, "bin", "kesha-engine") },
+        env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0", KESHA_ENGINE_BIN: join(dir, "bin", "kesha-engine") },
         stdout: "ignore",
         stderr: "pipe",
       });
