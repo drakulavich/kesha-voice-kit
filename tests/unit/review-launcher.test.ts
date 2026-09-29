@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildPrompt, claimFrom, commentBody, reviewerCommand } from "../../scripts/review";
+import { buildPrompt, claimFrom, commentBody, reviewerCommand, reviewText } from "../../scripts/review";
 
 const head = "0123456789abcdef0123456789abcdef01234567";
 const target = { pr: 1280, head, base: "main", branch: "check/review-launcher-1280" };
@@ -54,18 +54,35 @@ describe("commentBody", () => {
 
 describe("reviewerCommand", () => {
   test("defaults to a read-only Codex run reading the prompt from stdin", () => {
-    const { argv, binary } = reviewerCommand({});
+    const { argv, binary } = reviewerCommand({}, "/tmp/last.md");
     expect(binary).toBe("codex");
     expect(argv.join(" ")).toContain("--sandbox read-only");
     expect(argv.join(" ")).toContain("--model gpt-6-luna");
+    expect(argv.join(" ")).toContain("-o /tmp/last.md");
     expect(argv.at(-1)).toBe("-");
   });
 
   test("runs KESHA_REVIEWER through the shell", () => {
-    expect(reviewerCommand({ KESHA_REVIEWER: " ./stub.sh --canned " })).toEqual({
+    expect(reviewerCommand({ KESHA_REVIEWER: " ./stub.sh --canned " }, "/tmp/last.md")).toEqual({
       label: "./stub.sh --canned",
       argv: ["sh", "-c", "./stub.sh --canned"],
       binary: "./stub.sh",
     });
+  });
+});
+
+describe("reviewText", () => {
+  const read = (path: string) => (path === "/tmp/last.md" ? "Verdict: Approve\n" : "");
+
+  test("takes Codex's review from its last-message file, not its stdout", () => {
+    expect(reviewText(reviewerCommand({}, "/tmp/last.md"), "progress noise\n", read)).toBe("Verdict: Approve\n");
+  });
+
+  test("takes KESHA_REVIEWER's review from its stdout", () => {
+    expect(reviewText(reviewerCommand({ KESHA_REVIEWER: "cat" }, "/tmp/last.md"), "Verdict: Approve\n", read)).toBe("Verdict: Approve\n");
+  });
+
+  test("treats a missing last-message file as an empty review", () => {
+    expect(reviewText(reviewerCommand({}, "/tmp/absent.md"), "progress noise\n", () => { throw new Error("ENOENT"); })).toBe("");
   });
 });

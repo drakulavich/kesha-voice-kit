@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
-// A reviewer, KESHA_REVIEWER included, reads the prompt on stdin and prints only the review on stdout: stdout is what gets posted.
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+// KESHA_REVIEWER reads the prompt on stdin and prints only the review on stdout: stdout is what gets posted.
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const FULL_SHA = /^[0-9a-f]{40}$/;
@@ -10,7 +11,7 @@ const EXIT_REFUSED = 2;
 const DEFAULT_REVIEWER = ["codex", "exec", "--model", "gpt-6-luna", "--sandbox", "read-only"];
 
 export type Target = { pr: number; head: string; base: string; branch: string };
-export type Reviewer = { label: string; argv: string[]; binary: string };
+export type Reviewer = { label: string; argv: string[]; binary: string; reviewFile?: string };
 
 function requireFullSha(head: string): void {
   if (!FULL_SHA.test(head)) throw new Error(`the head must be a full 40-hex SHA, got '${head}'`);
@@ -49,10 +50,24 @@ export function commentBody({ pr, head, claim, reviewer, review }: { pr: number;
   return `### Adversarial review of #${pr} at ${head}\n\nClaim: ${claim}\nReviewer: \`${reviewer}\`\n\n${review.trim()}\n`;
 }
 
-export function reviewerCommand(env: Record<string, string | undefined>): Reviewer {
+export function reviewerCommand(env: Record<string, string | undefined>, lastMessageFile: string): Reviewer {
   const custom = env.KESHA_REVIEWER?.trim();
   if (custom) return { label: custom, argv: ["sh", "-c", custom], binary: custom.split(/\s+/)[0]! };
-  return { label: DEFAULT_REVIEWER.join(" "), argv: [...DEFAULT_REVIEWER, "--color", "never", "-"], binary: "codex" };
+  return {
+    label: DEFAULT_REVIEWER.join(" "),
+    argv: [...DEFAULT_REVIEWER, "--color", "never", "-o", lastMessageFile, "-"],
+    binary: "codex",
+    reviewFile: lastMessageFile,
+  };
+}
+
+export function reviewText(reviewer: Reviewer, stdout: string, read: (path: string) => string): string {
+  if (reviewer.reviewFile === undefined) return stdout;
+  try {
+    return read(reviewer.reviewFile);
+  } catch {
+    return "";
+  }
 }
 
 function refuse(message: string): never {
@@ -88,7 +103,9 @@ async function main(): Promise<void> {
   } catch (error) {
     refuse((error as Error).message);
   }
-  const reviewer = reviewerCommand(process.env);
+  const scratch = mkdtempSync(join(tmpdir(), "kesha-review-"));
+  process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
+  const reviewer = reviewerCommand(process.env, join(scratch, "last-message.md"));
   const found = reviewer.binary.includes("/") ? existsSync(reviewer.binary) : Bun.which(reviewer.binary) !== null;
   if (!found) {
     refuse(
@@ -108,8 +125,9 @@ async function main(): Promise<void> {
 
   console.error(`==> reviewing #${target.pr} at ${target.head} with ${reviewer.label}`);
   const proc = Bun.spawn(reviewer.argv, { stdin: new Blob([buildPrompt({ ...target, claim })]), stdout: "pipe", stderr: "inherit" });
-  const review = await new Response(proc.stdout).text();
+  const stdout = await new Response(proc.stdout).text();
   const code = await proc.exited;
+  const review = reviewText(reviewer, stdout, (path) => readFileSync(path, "utf8"));
 
   mkdirSync(LOG_DIR, { recursive: true });
   const log = join(LOG_DIR, `review-${target.pr}-${target.head}.md`);
