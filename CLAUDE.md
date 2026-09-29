@@ -13,9 +13,9 @@ If something in this project surprises or confuses you, say so in your reply and
 
 ## Workflow
 
-- Edit only in a worktree off fresh `origin/main`: `just worktree <slug>`, then `just worktree-rm <slug>` from the root to clean up. The root checkout stays on `main`, because every session reads CLAUDE.md from it: after every merge, fast-forward it with `git fetch origin && git merge --ff-only origin/main` (#1070: an agent read a 14-commit-stale CLAUDE.md for nine hours; it recurred on 2026-09-28, when agents followed a preflight recipe that no longer existed; check: #1279).
-- Every PR gets an adversarial review aimed at a claim ("prove or refute X"), posted as one comment that carries the full head SHA (#1065: 43% of merged PRs were never reviewed; check: #1280).
-- Greptile P1/P2 findings block the merge. Its confidence score doesn't clear one (#1065: 9 of 30 PRs scored `5/5` while carrying Greptile's own P1/P2; check: #1281).
+- Edit only in a worktree off fresh `origin/main`: `just worktree <slug>`, then `just worktree-rm <slug>` from the root to clean up. The root checkout stays on `main`, because every session reads CLAUDE.md from it: after every merge, fast-forward it with `git fetch origin && git merge --ff-only origin/main` (#1070: an agent read a 14-commit-stale CLAUDE.md for nine hours; it recurred on 2026-09-28, when agents followed a preflight recipe that no longer existed).
+- Every PR gets an adversarial review aimed at a claim ("prove or refute X"), posted as one comment that carries the full head SHA: `just review "<claim>"` launches it and posts it (#1065: 43% of merged PRs were never reviewed).
+- Greptile P1/P2 findings block the merge. Its confidence score doesn't clear one (#1065: 9 of 30 PRs scored `5/5` while carrying Greptile's own P1/P2).
 - Give each closed issue its own `Closes #N` in the PR body or commit message. For partial work, use `Refs #N` and close the issue by hand once it is done (#136 stayed open through the two PRs that finished it).
 
 ## Tests
@@ -27,5 +27,5 @@ If something in this project surprises or confuses you, say so in your reply and
 ## Code
 
 - Errors say what failed, why, and what to do. Never exit 0 on failure (#997, #1163).
-- stdout carries results only; progress, hints and errors go to stderr (#945, #1168; check: #1282).
+- stdout carries results only; progress, hints and errors go to stderr (#945, #1168). The cli-contracts sweep covers every subcommand; the transcription form, interactive `init` and `mcp` stay outside it.
 - Before a plan commits to an upstream model or library artifact, run a throwaway spike that downloads and runs it end to end (#125, #129: the planned static espeak-ng link and Silero ONNX export did not exist).

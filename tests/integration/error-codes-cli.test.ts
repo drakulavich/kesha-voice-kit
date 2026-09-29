@@ -213,9 +213,8 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
           `Cannot install engine v${UNRELEASED}`,
           `${engineDir} is not writable`,
           "Fix: point KESHA_ENGINE_BIN at a writable path",
+          `Installing engine v${UNRELEASED} instead of the pinned`,
         ],
-        // The pin-override notice is a `kesha install` result line, printed before the failure.
-        stdoutContains: [`Installing engine v${UNRELEASED} instead of the pinned`],
       };
     },
   },
