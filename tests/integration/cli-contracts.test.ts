@@ -1615,9 +1615,12 @@ process.exit(99);
     const quietDir = makeTempDir("kesha-cli-contract-install-quiet-");
     const quietEngine = createFakeEngine(quietDir);
     markFakeEngineInstalled(quietEngine);
-    const quiet = await runCli(["install", "--quiet", "--vad"], { env: { ...isolatedEnv(quietDir), KESHA_ENGINE_BIN: quietEngine } });
+    const quietEnv = { ...isolatedEnv(quietDir), KESHA_ENGINE_BIN: quietEngine };
+    const quiet = await runCli(["install", "--quiet", "--vad"], { env: quietEnv });
     expectContract(quiet, { exitCode: 0, stderrNotContains: ["starring", "kesha-voice-kit"] });
     expect(quiet.stdout).toBe(`Backend installed successfully (engine v${engineVersion}).`);
+    const afterQuiet = await runCli(["install", "--vad"], { env: quietEnv });
+    expectContract(afterQuiet, { exitCode: 0, stderrContains: ["consider starring the repo"] });
 
     // `--plan` *is* a deliverable and stays on stdout.
     const plan = await runCli(["install", "--plan", "--tts"], { env });
@@ -2752,6 +2755,7 @@ interface SweepCase {
 interface SweepEntry {
   errors: SweepCase[];
   progress: SweepCase[];
+  unswept?: string;
 }
 
 function sweepEngineEnv(dir: string, extra: Record<string, string> = {}): Record<string, string> {
@@ -2866,6 +2870,7 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
   mcp: {
     errors: [],
     progress: [],
+    unswept: "stdout is the JSON-RPC stream, covered by the mcp suites",
   },
   record: {
     errors: [
@@ -2972,6 +2977,10 @@ describe("stdout purity sweep (#1282)", () => {
   test("the registry names subcommands to sweep, and every one of them has an entry", () => {
     expect(SUBCOMMAND_NAMES.length).toBeGreaterThan(0);
     expect(Object.keys(STDOUT_PURITY_SWEEP).sort()).toEqual([...SUBCOMMAND_NAMES].sort());
+    const caseless = Object.entries(STDOUT_PURITY_SWEEP)
+      .filter(([, entry]) => entry.errors.length + entry.progress.length === 0 && !entry.unswept)
+      .map(([name]) => name);
+    expect(caseless, "give each an error or progress case, or an unswept reason").toEqual([]);
   });
 
   for (const name of SUBCOMMAND_NAMES) {

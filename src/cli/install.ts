@@ -246,7 +246,7 @@ export async function performInstall(options: PerformInstallOptions) {
       throw backendError;
     }
     await installEngine({ noCache, backend, ttsLangs, vad, diarize, version: engineVersion });
-    await maybeAskForStar(getEngineBinPath(), packageVersion, { info: log.progress, warn: log.warn });
+    if (!log.quietEnabled) await maybeAskForStar(getEngineBinPath(), packageVersion, { info: log.progress, warn: log.warn });
     finishInstallDiagnostic(diagnosticLog, startedAt, "success");
   } catch (err: unknown) {
     const signalExitCode = getPendingSignalExitCode();
