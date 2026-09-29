@@ -15,7 +15,7 @@ If something in this project surprises or confuses you, say so in your reply and
 
 - Edit only in a worktree off fresh `origin/main`: `just worktree <slug>`, then `just worktree-rm <slug>` from the root to clean up. The root checkout stays on `main`, because every session reads CLAUDE.md from it: after every merge, fast-forward it with `git fetch origin && git merge --ff-only origin/main` (#1070: an agent read a 14-commit-stale CLAUDE.md for nine hours; it recurred on 2026-09-28, when agents followed a preflight recipe that no longer existed; check: #1279).
 - Every PR gets an adversarial review aimed at a claim ("prove or refute X"), posted as one comment that carries the full head SHA (#1065: 43% of merged PRs were never reviewed; check: #1280).
-- Greptile P1/P2 findings block the merge. Its confidence score doesn't clear one (#1065: 9 of 30 PRs scored `5/5` while carrying Greptile's own P1/P2; check: #1281).
+- Greptile P1/P2 findings block the merge. Its confidence score doesn't clear one (#1065: 9 of 30 PRs scored `5/5` while carrying Greptile's own P1/P2).
 - Give each closed issue its own `Closes #N` in the PR body or commit message. For partial work, use `Refs #N` and close the issue by hand once it is done (#136 stayed open through the two PRs that finished it).
 
 ## Tests
