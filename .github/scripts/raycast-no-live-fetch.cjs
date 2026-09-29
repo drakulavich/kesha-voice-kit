@@ -9,7 +9,8 @@ function refuse(target, scheme) {
       : target && typeof target.url === "string"
         ? new URL(target.url)
         : new URL(`${scheme}//${target?.hostname ?? target?.host ?? "localhost"}${target?.path ?? "/"}`);
-  if (url.hostname === "raycast.com" || url.hostname.endsWith(".raycast.com")) {
+  const host = url.hostname.replace(/\.$/, "");
+  if (host === "raycast.com" || host.endsWith(".raycast.com")) {
     return new Error(`blocked live fetch of ${url.href}; raycast-lint.sh must pass the vendored schema and the stubbed RAY_APIURL`);
   }
 }
