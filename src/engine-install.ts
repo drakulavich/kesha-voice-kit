@@ -51,14 +51,20 @@ export interface AssetPins {
 }
 
 /** Without `--engine-version` nothing but the maintainer can make an unverifiable pinned release verifiable. */
-function unverifiableFix(version: string): string {
+function unverifiableFix(version: string, pins: AssetPins | undefined): string {
+  if (!pins) {
+    return version === engineVersion
+      ? `this source checkout installs its own version v${engineVersion}, which may not be released yet: run ` +
+          `\`kesha install --engine-version <version>\` with a published release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases).`
+      : `pass --engine-version a published release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases).`;
+  }
   return version === engineVersion
     ? `report it at https://github.com/${GITHUB_REPO}/issues: the pinned engine release v${version} must publish its checksums.`
     : `pick a release that ships SHA256SUMS (https://github.com/${GITHUB_REPO}/releases), or run ` +
         `\`kesha install\` without --engine-version to install the pinned v${engineVersion}.`;
 }
 
-async function fetchSha256Sums(version: string): Promise<Map<string, string>> {
+async function fetchSha256Sums(version: string, pins: AssetPins | undefined): Promise<Map<string, string>> {
   const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/SHA256SUMS`;
   let res: Response;
   try {
@@ -71,7 +77,7 @@ async function fetchSha256Sums(version: string): Promise<Map<string, string>> {
   if (!res.ok) {
     throw new Error(
       `Cannot verify engine v${version}: release v${version} publishes no SHA256SUMS (HTTP ${res.status}), ` +
-        `so its binaries cannot be checked before they are installed.\n  Fix: ${unverifiableFix(version)}`,
+        `so its binaries cannot be checked before they are installed.\n  Fix: ${unverifiableFix(version, pins)}`,
     );
   }
   return parseSha256Sums(await res.text());
@@ -92,12 +98,12 @@ export function releaseChecksums(
       if (!pinned) throw new Error(`No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete.\n  Fix: report it at https://github.com/${GITHUB_REPO}/issues.`);
       return { sha256: pinned, source: "its pinned SHA-256" };
     }
-    sums ??= fetchSha256Sums(version);
+    sums ??= fetchSha256Sums(version, pins);
     const sha256 = (await sums).get(assetName);
     if (!sha256) {
       throw new Error(
         `Cannot verify ${assetName}: the SHA256SUMS of release v${version} does not list it, ` +
-          `so it cannot be checked before it is installed.\n  Fix: ${unverifiableFix(version)}`,
+          `so it cannot be checked before it is installed.\n  Fix: ${unverifiableFix(version, pins)}`,
       );
     }
     return { sha256, source: `the SHA-256 in the SHA256SUMS of release v${version}` };

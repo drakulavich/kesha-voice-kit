@@ -326,4 +326,47 @@ describe("without an injected pin, the Engine is held to its release's own SHA25
     await expect(installEngine()).rejects.toThrow(`release v${engineVersion} publishes no SHA256SUMS`);
     expect(existsSync(binPath)).toBe(false);
   }, 30_000);
+
+  posixTest("a missing SHA256SUMS points to a published release instead of asking for a bug report", async () => {
+    stageEngineDir();
+    stubRelease(null);
+
+    const err = await installEngine().then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+
+    expect(err?.message).toContain("kesha install --engine-version <version>");
+    expect(err?.message).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
+    expect(err?.message).not.toContain("report it");
+  }, 30_000);
+
+  posixTest("a SHA256SUMS that omits the engine points to a published release instead of asking for a bug report", async () => {
+    stageEngineDir();
+    stubRelease(`${sha256("other")}  ./some-other-asset\n`);
+
+    const err = await installEngine().then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+
+    expect(err?.message).toContain(`the SHA256SUMS of release v${engineVersion} does not list it`);
+    expect(err?.message).toContain("kesha install --engine-version <version>");
+    expect(err?.message).not.toContain("report it");
+  }, 30_000);
+
+  posixTest("an overridden release without SHA256SUMS asks for another published release, not the checkout's own", async () => {
+    stageEngineDir();
+    stubRelease(null);
+
+    const err = await installEngine({ version: OVERRIDE }).then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+
+    expect(err?.message).toContain(`release v${OVERRIDE} publishes no SHA256SUMS`);
+    expect(err?.message).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
+    expect(err?.message).not.toContain("this source checkout installs its own version");
+    expect(err?.message).not.toContain("without --engine-version");
+  }, 30_000);
 });
