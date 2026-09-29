@@ -19,6 +19,7 @@ import {
   forbidNixBuildInCiAggregator,
   requireEveryJobInCiAggregator,
   requireJobTimeouts,
+  requireStatusFunctionWithNeedsResult,
   requireBashOnWindowsRunSteps,
   requireConcurrencyOnPullRequestWorkflows,
   requireBuildScriptInCoremlFilter,
@@ -1203,6 +1204,35 @@ describe("Rust toolchain pin", () => {
     expect(requirePinnedRustToolchain(path, document, PIN)).toEqual([
       `${path}: \`runs\` must install Rust 1.94.1, not \`1.90.0\``,
     ]);
+  });
+});
+
+describe("requireStatusFunctionWithNeedsResult", () => {
+  test("passes on every workflow in the repo", () => {
+    for (const file of readdirSync(repoPath(".github/workflows"))) {
+      const path = `.github/workflows/${file}`;
+      expect([path, requireStatusFunctionWithNeedsResult(path, parseRepoYaml(path))]).toEqual([path, []]);
+    }
+  });
+
+  // The v2.0.0 release: reserve-tag is always skipped on stable, so the implicit success() skipped npm-smoke and post-release.
+  test("fails when an if reads a needs result without a status function", () => {
+    const doc = { jobs: { "npm-smoke": { needs: ["npm-publish"], if: "needs.npm-publish.result == 'success'" } } };
+    expect(requireStatusFunctionWithNeedsResult(PATH, doc)).toEqual([
+      `${PATH}: \`npm-smoke\` reads a \`needs.*.result\` in its \`if\` without \`!cancelled()\`, \`always()\` or \`failure()\`; the implicit success() skips it whenever any ancestor was skipped`,
+    ]);
+  });
+
+  test("passes when the if carries a status function", () => {
+    for (const guard of ["!cancelled()", "always()", "failure()"]) {
+      const doc = { jobs: { smoke: { if: `\${{ ${guard} && needs.publish.result == 'success' }}` } } };
+      expect(requireStatusFunctionWithNeedsResult(PATH, doc)).toEqual([]);
+    }
+  });
+
+  test("ignores an if that reads only needs outputs", () => {
+    const doc = { jobs: { smoke: { if: "needs.plan.outputs.publish == 'true'" } } };
+    expect(requireStatusFunctionWithNeedsResult(PATH, doc)).toEqual([]);
   });
 });
 
