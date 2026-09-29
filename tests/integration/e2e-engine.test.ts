@@ -2,6 +2,7 @@ import { describe, test, expect, beforeAll } from "bun:test";
 import { engineGate } from "../helpers/model-gate";
 import { getEngineBinPath, TRANSCRIBE_DIARIZE_FEATURE } from "../../src/engine";
 import { parseDescribe } from "../../src/engine/describe";
+import { parseEventLine } from "../../src/engine/events";
 import { describeDocument } from "../helpers/fake-engine";
 import type { WordTiming } from "../../src/engine";
 
@@ -204,18 +205,23 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     // Every phase boundary the supervisor bounds must be visible, in order.
     const phases = stderr
       .split("\n")
-      .filter((line) => line.startsWith("diarize: "))
-      .join("\n");
-    if (phases === "") {
-      // A released engine older than #721 diarizes in silence; nothing to assert on it.
-      console.warn("engine predates diarize phase reporting (#721); skipping progress e2e");
-      return;
-    }
-    expect(phases).toMatch(/^diarize: loading the CoreML model on \w[\w-]*$/m);
-    expect(phases).toMatch(/^diarize: model ready in [\d.]+s; reading the audio$/m);
-    expect(phases).toMatch(/^diarize: done in [\d.]+s \(\d+ spans\)$/m);
-    expect(phases.indexOf("model ready")).toBeGreaterThan(phases.indexOf("loading the CoreML"));
-    expect(phases.indexOf("done in")).toBeGreaterThan(phases.indexOf("model ready"));
+      .map(parseEventLine)
+      .flatMap((parsed) =>
+        parsed.ok && parsed.event.kind === "progress" && parsed.event.phase === "diarize" ? [parsed.event.message] : [],
+      );
+    const loadingPattern = /^loading the CoreML model on \w[\w-]*$/;
+    const readyPattern = /^model ready in [\d.]+s; reading the audio$/;
+    const donePattern = /^done in [\d.]+s \(\d+ spans\)$/;
+    expect(phases).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(loadingPattern),
+        expect.stringMatching(readyPattern),
+        expect.stringMatching(donePattern),
+      ]),
+    );
+    const at = (pattern: RegExp) => phases.findIndex((message) => pattern.test(message));
+    expect(at(readyPattern)).toBeGreaterThan(at(loadingPattern));
+    expect(at(donePattern)).toBeGreaterThan(at(readyPattern));
 
     // Progress goes to stderr precisely so stdout stays a pipeable JSON document.
     const parsed = JSON.parse(stdout);
