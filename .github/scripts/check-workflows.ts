@@ -554,6 +554,27 @@ function timeoutCandidates(job: Job): string[] {
 }
 
 /**
+ * Fails when a job's `if` reads `needs.<job>.result` without a status function. GitHub then adds
+ * an implicit success(), which also demands that every ancestor succeeded, so one skipped ancestor
+ * skips the job: v2.0.0's npm-smoke and post-release never ran because reserve-tag is skipped on stable.
+ */
+export function requireStatusFunctionWithNeedsResult(path: string, document: unknown): string[] {
+  const jobs = (document as { jobs?: Record<string, Job> })?.jobs;
+  if (!jobs || typeof jobs !== "object") return [];
+
+  const errors: string[] = [];
+  for (const [name, job] of Object.entries(jobs)) {
+    const condition = String((job as { if?: unknown })?.if ?? "");
+    if (!/needs\.[\w-]+\.result/.test(condition)) continue;
+    if (/\b(always|cancelled|failure)\(\)/.test(condition.replace(/'[^']*'/g, "''"))) continue;
+    errors.push(
+      `${path}: \`${name}\` reads a \`needs.*.result\` in its \`if\` without \`!cancelled()\`, \`always()\` or \`failure()\`; the implicit success() skips it whenever any ancestor was skipped`,
+    );
+  }
+  return errors;
+}
+
+/**
  * Fails when a job with its own steps has no `timeout-minutes`, or resolves to a value ≥360.
  * Generalises the apt-get-only, then rust-test.yml-only rule #1090 added — the risk was never
  * apt-specific, and a macOS hang costs 10.3x an Ubuntu one (#1105).
@@ -1198,6 +1219,7 @@ export function checkFile(
       ...forbidNixBuildInCiAggregator(path, document),
       ...requireEveryJobInCiAggregator(path, document),
       ...requireJobTimeouts(path, document),
+      ...requireStatusFunctionWithNeedsResult(path, document),
       ...requireDepsBeforeBunTest(path, document),
       ...requireRestoreOnlyCachesHaveAWriter(path, document, cacheWriters),
       ...requireTestedScriptsInCodeFilter(path, document, testedScripts),

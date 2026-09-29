@@ -483,7 +483,7 @@ jobs:
 
   ts-coverage:
     needs: [changes, unit-tests]
-    if: needs.changes.outputs.code == 'true' && needs.unit-tests.result == 'success'
+    if: ${{ !cancelled() && needs.changes.outputs.code == 'true' && needs.unit-tests.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -534,6 +534,7 @@ jobs:
     # standard `result == 'success'` gate is enough.
     needs: [changes, unit-tests]
     if: |
+      !cancelled() &&
       needs.changes.outputs.integration == 'true' &&
       needs.unit-tests.result == 'success'
     runs-on: macos-latest
