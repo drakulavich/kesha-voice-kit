@@ -67,6 +67,21 @@ describe("support-bundle --output a disk refuses (#1345)", () => {
     expect(error.hint).toContain("the disk is full");
   });
 
+  test("a written archive is reported from what was written, so a failing stat afterwards cannot fail the run", async () => {
+    const output = join(process.env.HOME!, "bundle.tar.gz");
+    const realStat = fs.statSync;
+    const spy = spyOn(fs, "statSync").mockImplementation(((path: fs.PathLike, opts?: fs.StatSyncOptions) => {
+      if (String(path) === output) throw Object.assign(new Error(`EIO: input/output error, stat '${output}'`), { code: "EIO" });
+      return realStat(path, opts);
+    }) as typeof fs.statSync);
+    restoreWrite = () => spy.mockRestore();
+
+    const bundle = await createSupportBundle({ output });
+
+    expect(bundle.path).toBe(output);
+    expect(bundle.sizeBytes).toBe(fs.readFileSync(output).byteLength);
+  });
+
   test("any other disk errno is E_INTERNAL naming the path", async () => {
     const { error, output } = await failWriting("EIO");
     expect(error.code).toBe("E_INTERNAL");

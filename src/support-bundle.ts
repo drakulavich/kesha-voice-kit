@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, statSync, writeFileSync } from "fs";
+import { mkdirSync, statSync, writeFileSync } from "fs";
 import { basename, dirname, resolve } from "path";
 import { gzipSync } from "node:zlib";
 import { collectDoctorReport, formatDoctorReport } from "./doctor";
@@ -219,20 +219,17 @@ export async function createSupportBundle(
     );
   }
 
+  const archive = gzipSync(createTarArchive(files));
   try {
     mkdirSync(dirname(outputPath), { recursive: true });
-    writeFileSync(outputPath, gzipSync(createTarArchive(files)));
+    writeFileSync(outputPath, archive);
   } catch (e) {
     throw bundleWriteFailure(outputPath, e);
   }
 
-  if (!existsSync(outputPath)) {
-    throw new Error(`failed to create support bundle: ${outputPath}`);
-  }
-
   return {
     path: outputPath,
-    sizeBytes: statSync(outputPath).size,
+    sizeBytes: archive.byteLength,
     entries: files.map((file) => file.name),
   };
 }
