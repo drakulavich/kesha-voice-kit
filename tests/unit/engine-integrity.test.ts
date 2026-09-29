@@ -326,4 +326,18 @@ describe("without an injected pin, the Engine is held to its release's own SHA25
     await expect(installEngine()).rejects.toThrow(`release v${engineVersion} publishes no SHA256SUMS`);
     expect(existsSync(binPath)).toBe(false);
   }, 30_000);
+
+  posixTest("a missing SHA256SUMS points to a published release instead of asking for a bug report", async () => {
+    stageEngineDir();
+    stubRelease(null);
+
+    const err = await installEngine().then(
+      () => null,
+      (e: unknown) => e as Error,
+    );
+
+    expect(err?.message).toContain("kesha install --engine-version <version>");
+    expect(err?.message).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
+    expect(err?.message).not.toContain("report it");
+  }, 30_000);
 });
