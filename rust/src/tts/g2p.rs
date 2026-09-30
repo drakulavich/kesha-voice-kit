@@ -111,15 +111,52 @@ fn misaki_g2p(lang: misaki_rs::Language) -> &'static misaki_rs::G2P {
 /// indistinguishable from an empty utterance.
 fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
     let g2p = misaki_g2p(lang);
-    let (ipa, _) = g2p
+    let (_, tokens) = g2p
         .g2p(text)
         .map_err(|e| anyhow::anyhow!("misaki-rs g2p failed: {e:?}"))?;
+    let mut ipa = String::new();
+    let mut cursor = 0;
+    for tk in &tokens {
+        let at = text[cursor..].find(&tk.text).map(|i| cursor + i);
+        if let Some(at) = at {
+            cursor = at + tk.text.len();
+            if tk.text == "." && is_abbreviation_period(text, at) {
+                continue;
+            }
+        }
+        ipa.push_str(tk.phonemes.as_deref().unwrap_or(&g2p.unk));
+        ipa.push_str(&tk.whitespace);
+    }
     Ok(ipa
         .chars()
         .filter(|c| *c != '\u{200d}')
         .collect::<String>()
         .trim()
         .to_string())
+}
+
+/// misaki-rs 0.6 turns every `.` into a sentence pause, including `Mr.` and `p.m.` (#1276).
+fn is_abbreviation_period(text: &str, at: usize) -> bool {
+    const TITLES: &[&str] = &[
+        "mr", "mrs", "ms", "dr", "prof", "st", "mt", "rev", "gen", "capt",
+    ];
+    const SHORT_FORMS: &[&str] = &["etc", "vs", "approx", "inc", "ltd", "co", "corp", "no"];
+    let after = &text[at + 1..];
+    if after.starts_with(|c: char| c.is_alphabetic()) {
+        return true;
+    }
+    let Some(next) = after.trim_start().chars().next() else {
+        return false;
+    };
+    let before = &text[..at];
+    let word_start = before.trim_end_matches(char::is_alphabetic).len();
+    let word = before[word_start..].to_ascii_lowercase();
+    if TITLES.contains(&word.as_str()) {
+        return true;
+    }
+    let in_initialism = word.chars().count() == 1 && before[..word_start].ends_with('.');
+    (in_initialism || SHORT_FORMS.contains(&word.as_str()))
+        && (next.is_lowercase() || next.is_ascii_digit())
 }
 
 #[cfg(test)]
@@ -220,10 +257,35 @@ mod tests {
     }
 
     #[test]
+    fn english_abbreviation_periods_do_not_pause_mid_sentence() {
+        for (text, want) in [
+            (
+                "Mr. Smith arrives at 5 p.m. on Monday.",
+                "mˈɪstəɹ smˈɪθ ɚɹˈaɪvz æɾ fˈaɪv  pˈiː ˈɛm ˌɔn mˈʌndˌA .",
+            ),
+            (
+                "Dr. Jones met Mrs. Lee in May, and they talked for hours.",
+                "dˈɑktəɹ dʒˈoʊnz mˈɛt mˈɪsɪz lˈiː ɪn mˈA , ænd ðeɪ tˈɔːkt fɔːɹ ˈaʊɚz .",
+            ),
+            (
+                "Hello there. How are you today? I'm fine, thanks.",
+                "həlˈoʊ ðɛɹ . hˌaʊ ɑːɹ juː tədˈeɪ ? ˌIm fˈaɪn , θˈæŋks .",
+            ),
+            ("He arrives at 5 p.m.", "hˌiː ɚɹˈaɪvz æɾ fˈaɪv  pˈiː ˈɛm ."),
+            (
+                "We left at 5 p.m. Then it rained.",
+                "wˌiː lˈɛft æɾ fˈaɪv  pˈiː ˈɛm . ðˈɛn ɪɾ ɹˈeɪnd .",
+            ),
+        ] {
+            assert_eq!(text_to_ipa(text, "en-us").unwrap(), want, "{text}");
+        }
+    }
+
+    #[test]
     fn english_ipa_is_stable_across_repeated_and_interleaved_dialects() {
         let text = "I say tomato. The schedule for Tuesday is ready.";
-        let us = "ˌI sˈeɪ təmˈeɪɾoʊ   ðə skˈɛdʒuːl fɔːɹ tˈuzdˌA ɪz ɹˈɛdi";
-        let gb = "ˌI sˈeɪ təmˈɑːtəʊ   ðə ʃˈɛdjuːl fɔː tjˈuːzdA ɪz ɹˈɛdi";
+        let us = "ˌI sˈeɪ təmˈeɪɾoʊ . ðə skˈɛdʒuːl fɔːɹ tˈuzdˌA ɪz ɹˈɛdi .";
+        let gb = "ˌI sˈeɪ təmˈɑːtəʊ . ðə ʃˈɛdjuːl fɔː tjˈuːzdA ɪz ɹˈɛdi .";
         for (lang, want) in [("en-us", us), ("en-gb", gb), ("en", us), ("en-uk", gb)] {
             assert_eq!(text_to_ipa(text, lang).unwrap(), want, "{lang}");
         }
