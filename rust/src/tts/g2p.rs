@@ -114,13 +114,14 @@ fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
     let (_, tokens) = g2p
         .g2p(text)
         .map_err(|e| anyhow::anyhow!("misaki-rs g2p failed: {e:?}"))?;
+    let (source, _) = g2p.preprocess_links(text);
     let mut ipa = String::new();
     let mut cursor = 0;
     for tk in &tokens {
-        let at = text[cursor..].find(&tk.text).map(|i| cursor + i);
+        let at = source[cursor..].find(&tk.text).map(|i| cursor + i);
         if let Some(at) = at {
             cursor = at + tk.text.len();
-            if tk.text == "." && is_abbreviation_period(text, at) {
+            if tk.text == "." && is_abbreviation_period(&source, at) {
                 continue;
             }
         }
@@ -276,6 +277,8 @@ mod tests {
                 "We left at 5 p.m. Then it rained.",
                 "wˌiː lˈɛft æɾ fˈaɪv  pˈiː ˈɛm . ðˈɛn ɪɾ ɹˈeɪnd .",
             ),
+            ("She met Dr.", "ʃˌiː mˈɛt dˈɑktəɹ ."),
+            ("[Hi](/hə.t/). Go.", "hə.t . ɡˌoʊ ."),
         ] {
             assert_eq!(text_to_ipa(text, "en-us").unwrap(), want, "{text}");
         }
