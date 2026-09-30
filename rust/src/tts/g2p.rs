@@ -111,6 +111,7 @@ fn misaki_g2p(lang: misaki_rs::Language) -> &'static misaki_rs::G2P {
 /// indistinguishable from an empty utterance.
 fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
     let g2p = misaki_g2p(lang);
+    let text = &spell_decimals(text);
     let (_, tokens) = g2p
         .g2p(text)
         .map_err(|e| anyhow::anyhow!("misaki-rs g2p failed: {e:?}"))?;
@@ -135,6 +136,60 @@ fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
         .collect::<String>()
         .trim()
         .to_string())
+}
+
+fn spell_decimals(text: &str) -> String {
+    const DIGITS: [&str; 10] = [
+        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine",
+    ];
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut emitted = 0;
+    for dot in 0..chars.len() {
+        if chars[dot] != '.' || !chars.get(dot + 1).is_some_and(char::is_ascii_digit) {
+            continue;
+        }
+        let end = (dot + 1..chars.len())
+            .find(|&k| !chars[k].is_ascii_digit())
+            .unwrap_or(chars.len());
+        if chars.get(end) == Some(&'.') && chars.get(end + 1).is_some_and(char::is_ascii_digit) {
+            continue;
+        }
+        let start = (0..dot)
+            .rev()
+            .find(|&k| !(chars[k].is_ascii_digit() || chars[k] == ','))
+            .map_or(0, |k| k + 1);
+        let start = (start..dot).find(|&k| chars[k] != ',').unwrap_or(dot);
+        if start < emitted {
+            continue;
+        }
+        let integer: String = chars[start..dot].iter().collect();
+        let mut groups = integer.split(',');
+        let grouped = groups.next().is_some_and(|g| g.len() <= 3) && groups.all(|g| g.len() == 3);
+        if integer.contains(',') && !grouped {
+            continue;
+        }
+        let before = start.checked_sub(1).map(|k| chars[k]);
+        if before.is_some_and(|c| c.is_alphanumeric() || c == '.' || c == ',' || c == '_') {
+            continue;
+        }
+        out.extend(&chars[emitted..start]);
+        if !integer.is_empty() {
+            out.push_str(&integer);
+            out.push(' ');
+        }
+        out.push_str("point");
+        for d in &chars[dot + 1..end] {
+            out.push(' ');
+            out.push_str(DIGITS[(*d as u8 - b'0') as usize]);
+        }
+        if chars.get(end).is_some_and(|c| c.is_alphanumeric()) {
+            out.push(' ');
+        }
+        emitted = end;
+    }
+    out.extend(&chars[emitted..]);
+    out
 }
 
 fn is_abbreviation_period(text: &str, at: usize, next_is_name: bool) -> bool {
@@ -290,6 +345,25 @@ mod tests {
                 "wˌiː tʃˈoʊz plˈæn bˈi . ðˈɛn wiː lˈɛft .",
             ),
             ("[Hi](/hə.t/). Go.", "hə.t . ɡˌoʊ ."),
+        ] {
+            assert_eq!(text_to_ipa(text, "en-us").unwrap(), want, "{text}");
+        }
+    }
+
+    #[test]
+    fn english_decimals_read_point_and_fraction_digits() {
+        for (text, want) in [
+            ("5.5", "fˈaɪv  pˈɔɪnt fˈaɪv"),
+            ("3.14", "θɹˈiː  pˈɔɪnt wˈʌn fˈɔːɹ"),
+            ("12.5", "twˈɛlv  pˈɔɪnt fˈaɪv"),
+            ("0.05", "zˈiəɹoʊ  pˈɔɪnt zˈiəɹoʊ fˈaɪv"),
+            ("1,000.5", "wˈʌn θˈaʊzənd  pˈɔɪnt fˈaɪv"),
+            ("5.5x", "fˈaɪv  pˈɔɪnt fˈaɪv ˈɛks"),
+            ("It was .5 of it.", "ˌɪɾ wʌz pˈɔɪnt fˈaɪv ʌv ɪɾ ."),
+            ("It rose 5.5.", "ˌɪɾ ɹˈoʊz fˈaɪv  pˈɔɪnt fˈaɪv ."),
+            ("I have 5.", "ˌI hæv fˈaɪv  ."),
+            ("1.2.3", "wˈʌn   .  tˈuː   .  θɹˈiː"),
+            ("at 10:30 today", "æɾ tˈɛn  : θˈɜːɾi  tədˈeɪ"),
         ] {
             assert_eq!(text_to_ipa(text, "en-us").unwrap(), want, "{text}");
         }
