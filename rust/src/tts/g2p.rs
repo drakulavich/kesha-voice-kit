@@ -117,11 +117,12 @@ fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
     let (source, _) = g2p.preprocess_links(text);
     let mut ipa = String::new();
     let mut cursor = 0;
-    for tk in &tokens {
+    for (i, tk) in tokens.iter().enumerate() {
         let at = source[cursor..].find(&tk.text).map(|i| cursor + i);
         if let Some(at) = at {
             cursor = at + tk.text.len();
-            if tk.text == "." && is_abbreviation_period(&source, at) {
+            let next_is_name = tokens.get(i + 1).is_some_and(|t| t.tag.starts_with("NNP"));
+            if tk.text == "." && is_abbreviation_period(&source, at, next_is_name) {
                 continue;
             }
         }
@@ -137,7 +138,7 @@ fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
 }
 
 /// misaki-rs 0.6 turns every `.` into a sentence pause, including `Mr.` and `p.m.` (#1276).
-fn is_abbreviation_period(text: &str, at: usize) -> bool {
+fn is_abbreviation_period(text: &str, at: usize, next_is_name: bool) -> bool {
     const TITLES: &[&str] = &[
         "mr", "mrs", "ms", "dr", "prof", "st", "mt", "rev", "gen", "capt",
     ];
@@ -151,11 +152,16 @@ fn is_abbreviation_period(text: &str, at: usize) -> bool {
     };
     let before = &text[..at];
     let word_start = before.trim_end_matches(char::is_alphabetic).len();
-    let word = before[word_start..].to_ascii_lowercase();
+    let original = &before[word_start..];
+    let word = original.to_ascii_lowercase();
     if TITLES.contains(&word.as_str()) {
         return true;
     }
-    let in_initialism = word.chars().count() == 1 && before[..word_start].ends_with('.');
+    let single = word.chars().count() == 1;
+    if single && next_is_name && original.chars().all(char::is_uppercase) {
+        return true;
+    }
+    let in_initialism = single && before[..word_start].ends_with('.');
     (in_initialism || SHORT_FORMS.contains(&word.as_str()))
         && (next.is_lowercase() || next.is_ascii_digit())
 }
@@ -278,6 +284,12 @@ mod tests {
                 "wˌiː lˈɛft æɾ fˈaɪv  pˈiː ˈɛm . ðˈɛn ɪɾ ɹˈeɪnd .",
             ),
             ("She met Dr.", "ʃˌiː mˈɛt dˈɑktəɹ ."),
+            ("The U.S. Army came.", "ði jˈu ˈɛs ˈɑːɹmi kˈeɪm ."),
+            ("J. Smith left.", "ʤˈA smˈɪθ lˈɛft ."),
+            (
+                "We chose Plan B. Then we left.",
+                "wˌiː tʃˈoʊz plˈæn bˈi . ðˈɛn wiː lˈɛft .",
+            ),
             ("[Hi](/hə.t/). Go.", "hə.t . ɡˌoʊ ."),
         ] {
             assert_eq!(text_to_ipa(text, "en-us").unwrap(), want, "{text}");
