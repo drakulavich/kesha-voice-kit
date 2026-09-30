@@ -101,13 +101,14 @@ fn digits_spelled(digits: &str) -> String {
 struct Amount {
     whole: u64,
     fraction: Option<String>,
+    grouped: bool,
     /// Bytes consumed from the start of the number.
     len: usize,
 }
 
 /// Read an integer with optional `,` grouping and an optional `.dd` tail.
 /// Malformed grouping claims nothing: `1,23` is likelier a list than a number.
-fn read_amount(s: &str, require_comma: bool) -> Option<Amount> {
+fn read_amount(s: &str) -> Option<Amount> {
     let b = s.as_bytes();
     let mut i = 0;
     while i < b.len() && b[i].is_ascii_digit() {
@@ -134,9 +135,6 @@ fn read_amount(s: &str, require_comma: bool) -> Option<Amount> {
     if i < b.len() && b[i] == b',' && i + 1 < b.len() && b[i + 1].is_ascii_digit() {
         return None;
     }
-    if require_comma && !grouped {
-        return None;
-    }
     let whole: u64 = digits.parse().ok()?;
     if whole > MAX_CARDINAL {
         return None;
@@ -154,6 +152,7 @@ fn read_amount(s: &str, require_comma: bool) -> Option<Amount> {
     Some(Amount {
         whole,
         fraction,
+        grouped,
         len: i,
     })
 }
@@ -197,7 +196,12 @@ fn plain_words(amount: &Amount) -> String {
     }
 }
 
-/// Rewrite currency amounts and comma-grouped numbers in `text` to words.
+fn continues_dotted(s: &str) -> bool {
+    s.strip_prefix('.')
+        .is_some_and(|t| t.starts_with(|c: char| c.is_ascii_digit()))
+}
+
+/// Rewrite currency amounts, comma-grouped numbers and decimals in `text` to words.
 pub fn verbalize(text: &str) -> Cow<'_, str> {
     if !text.bytes().any(|b| b.is_ascii_digit()) {
         return Cow::Borrowed(text);
@@ -209,16 +213,28 @@ pub fn verbalize(text: &str) -> Cow<'_, str> {
     while let Some(c) = rest.chars().next() {
         let mut claimed = None;
         if let Some((_, m1, mn, n1, nn)) = CURRENCIES.iter().find(|(sign, ..)| *sign == c) {
-            if let Some(a) = read_amount(&rest[c.len_utf8()..], false) {
+            if let Some(a) = read_amount(&rest[c.len_utf8()..]) {
                 claimed = Some((money_words(&a, (m1, mn, n1, nn)), c.len_utf8() + a.len));
             }
         }
-        // Only at a number's first digit, or a rejected `9,999,999,999,999,999,999` would be re-entered at its next group.
+        let glued = matches!(prev, Some(p) if p.is_alphanumeric() || p == '_' || p == '.');
+        if claimed.is_none() && c == '.' && !glued {
+            let tail = &rest[1..];
+            let n = tail
+                .find(|ch: char| !ch.is_ascii_digit())
+                .unwrap_or(tail.len());
+            if n > 0 && !continues_dotted(&tail[n..]) {
+                claimed = Some((format!("point {}", digits_spelled(&tail[..n])), 1 + n));
+            }
+        }
         let at_number_start = claimed.is_none()
             && c.is_ascii_digit()
-            && !matches!(prev, Some(p) if p.is_ascii_digit() || p == ',' || p == '.');
+            && !matches!(prev, Some(p) if p.is_ascii_digit() || p == '.');
         if at_number_start {
-            match read_amount(rest, true) {
+            let read = read_amount(rest).filter(|a| {
+                a.grouped || (a.fraction.is_some() && !glued && !continues_dotted(&rest[a.len..]))
+            });
+            match read {
                 Some(a) => claimed = Some((plain_words(&a), a.len)),
                 None => {
                     let len = rest
@@ -234,6 +250,9 @@ pub fn verbalize(text: &str) -> Cow<'_, str> {
         match claimed {
             Some((words, len)) => {
                 out.push_str(&words);
+                if rest[len..].starts_with(char::is_alphanumeric) {
+                    out.push(' ');
+                }
                 prev = rest[..len].chars().last();
                 rest = &rest[len..];
                 matched = true;
@@ -285,6 +304,38 @@ mod tests {
             verbalize("1,234.5"),
             "one thousand two hundred thirty four point five"
         );
+    }
+
+    #[test]
+    fn a_plain_decimal_reads_point_and_single_fraction_digits() {
+        for (text, want) in [
+            ("5.5", "five point five"),
+            ("3.14", "three point one four"),
+            ("12.5", "twelve point five"),
+            ("0.05", "zero point zero five"),
+            (".5", "point five"),
+            ("It was .5 of it.", "It was point five of it."),
+            ("It rose 5.5.", "It rose five point five."),
+            ("a 5.5x zoom", "a five point five x zoom"),
+            ("1.5,2.5", "one point five,two point five"),
+        ] {
+            assert_eq!(verbalize(text), want, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn dotted_chains_and_glued_decimals_are_left_alone() {
+        for text in [
+            "I have 5.",
+            "1.2.3",
+            "192.168.1.1",
+            "v1.5",
+            "file_2.5",
+            "a.5",
+            "10:30",
+        ] {
+            assert_eq!(verbalize(text), text, "{text:?} must be left alone");
+        }
     }
 
     #[test]

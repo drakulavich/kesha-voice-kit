@@ -44,7 +44,7 @@ pub fn normalize_segments(segs: Vec<Segment>, auto_expand: bool) -> Vec<Segment>
                     );
                 }
                 let stripped = crate::tts::strip_emphasis_markers(content);
-                vec![Segment::Text(stripped)]
+                vec![Segment::Text(numbers::verbalize(&stripped).into_owned())]
             }
             Segment::Text(t) => acronym::expand_to_segments(&numbers::verbalize(&t), auto_expand),
             Segment::ProsodyRate { rate, content } => vec![Segment::ProsodyRate {
@@ -126,6 +126,23 @@ mod tests {
             false,
         );
         assert_eq!(out, vec![Segment::Text("regular text".to_string())]);
+    }
+
+    #[test]
+    fn emphasis_content_verbalizes_decimals_and_amounts() {
+        let out = normalize_segments(
+            vec![Segment::Emphasis {
+                content: "5.5 or $3".to_string(),
+                suppress: true,
+            }],
+            false,
+        );
+        assert_eq!(
+            out,
+            vec![Segment::Text(
+                "five point five or three dollars".to_string()
+            )]
+        );
     }
 
     #[test]

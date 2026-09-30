@@ -296,6 +296,25 @@ mod tests {
     }
 
     #[test]
+    fn english_decimals_read_point_through_the_synthesis_chain() {
+        use crate::tts::ssml::Segment;
+        let text = "The price rose 5.5 percent, and pi is about 3.14.";
+        let segments =
+            crate::tts::en::normalize_segments(vec![Segment::Text(text.to_string())], true);
+        let ipa: Vec<String> = segments
+            .iter()
+            .map(|s| match s {
+                Segment::Text(t) => text_to_ipa(t, "en-us").unwrap(),
+                other => panic!("expected text segments, got {other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            ipa.join(" "),
+            "ðə pɹˈaɪs ɹˈoʊz fˈaɪv pˈɔɪnt fˈaɪv pɚsˈɛnt , ænd pˈaɪ ɪz ɐbˌaʊt θɹˈiː pˈɔɪnt wˈʌn fˈɔːɹ ."
+        );
+    }
+
+    #[test]
     fn english_ipa_is_stable_across_repeated_and_interleaved_dialects() {
         let text = "I say tomato. The schedule for Tuesday is ready.";
         let us = "ˌI sˈeɪ təmˈeɪɾoʊ . ðə skˈɛdʒuːl fɔːɹ tˈuzdˌA ɪz ɹˈɛdi .";
