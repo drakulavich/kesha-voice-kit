@@ -137,7 +137,6 @@ fn misaki_to_ipa(text: &str, lang: misaki_rs::Language) -> Result<String> {
         .to_string())
 }
 
-/// misaki-rs 0.6 turns every `.` into a sentence pause, including `Mr.` and `p.m.` (#1276).
 fn is_abbreviation_period(text: &str, at: usize, next_is_name: bool) -> bool {
     const TITLES: &[&str] = &[
         "mr", "mrs", "ms", "dr", "prof", "st", "mt", "rev", "gen", "capt",
