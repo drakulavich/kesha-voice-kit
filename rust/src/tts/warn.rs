@@ -22,21 +22,27 @@
 //!
 //! Lock poisoning is treated as fatal — at that point another thread panicked
 //! while holding the lock and the process is in an unrecoverable state.
-//!
-//! **Test isolation:** `cargo nextest run` spawns a fresh process per test
-//! and gets the empty-scope baseline automatically. For `cargo test --lib`
-//! (single-process runner) test authors who need a clean scope inside one
-//! test can call [`reset()`] in the test's setup; the function is
-//! `pub(crate)` for this purpose.
 
 use std::collections::HashSet;
-use std::sync::{Mutex, OnceLock};
+use std::sync::Mutex;
+#[cfg(not(test))]
+use std::sync::OnceLock;
 
 use crate::protocol::events;
 
+#[cfg(not(test))]
 fn warned() -> &'static Mutex<HashSet<String>> {
     static W: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
     W.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+// Per test thread so `cargo test` in one process doesn't share warnings across tests; a warning from another thread is invisible here (#1349).
+#[cfg(test)]
+fn warned() -> &'static Mutex<HashSet<String>> {
+    thread_local! {
+        static W: &'static Mutex<HashSet<String>> = Box::leak(Box::default());
+    }
+    W.with(|w| *w)
 }
 
 pub fn warn_once(key: &str, msg: &str) {
