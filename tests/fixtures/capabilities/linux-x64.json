@@ -194,14 +194,14 @@
       "title": "Model download failed",
       "category": "model",
       "retryable": true,
-      "origin": "engine"
+      "origin": "both"
     },
     {
       "code": "E_CACHE_CORRUPT",
       "title": "Cached model failed verification",
       "category": "model",
       "retryable": false,
-      "origin": "engine"
+      "origin": "both"
     },
     {
       "code": "E_MODEL_LOAD",

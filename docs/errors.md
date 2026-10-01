@@ -66,7 +66,7 @@ code never needs sanitizing.
   exit `1`. A disk that refuses the binary is not a download failure: permission denied or a
   read-only filesystem is `E_INVALID_ARG` (exit `2`), a full disk or another disk error `E_INTERNAL` (exit `4`),
   and neither leaves a partial binary behind. `describe` publishes the
-  two codes as `both` from the engine release after v2.0.0 on (#1261).
+  two codes as `both` from engine v2.1.0 on (#1261).
 - **`E_INVALID_ARG`** and **`E_INPUT_NOT_FOUND`** are emitted by *both* the
   engine and the TypeScript CLI: the CLI validates arguments, checks input
   existence up front and refuses a cache path it cannot write the engine into,
