@@ -49,12 +49,19 @@ describe("waiting for a fresh publish to reach the registry (#1356)", () => {
 
   test("a version that 404s for a while and then appears passes the gate", async () => {
     const answers = [notYet, notYet, { stdout: published(), exitCode: 0 }];
-    const view = await viewWhenPublished(() => answers.shift() ?? notYet, 5, 0);
+    const view = await viewWhenPublished(() => answers.shift() ?? notYet, PACKAGE, "1.30.0", 5, 0);
     expect(assertNpmReleaseMetadata(view.stdout, PACKAGE, "1.30.0", view.exitCode)).toEqual({ version: "1.30.0", provenance: "https://slsa.dev/provenance/v1" });
   });
 
+  test("a version served before its provenance is attached is waited for, not failed (Greptile P1)", async () => {
+    const unattested = { stdout: published({ dist: { integrity: "sha512-abc" } }), exitCode: 0 };
+    const answers = [unattested, { stdout: published(), exitCode: 0 }];
+    const view = await viewWhenPublished(() => answers.shift() ?? unattested, PACKAGE, "1.30.0", 5, 0);
+    expect(assertNpmReleaseMetadata(view.stdout, PACKAGE, "1.30.0", view.exitCode).provenance).toBe("https://slsa.dev/provenance/v1");
+  });
+
   test("a version that never appears still fails the gate", async () => {
-    const view = await viewWhenPublished(() => notYet, 3, 0);
+    const view = await viewWhenPublished(() => notYet, PACKAGE, "1.30.0", 3, 0);
     expect(() => assertNpmReleaseMetadata(view.stdout, PACKAGE, "1.30.0", view.exitCode)).toThrow(/npm view exited 1/);
   });
 });

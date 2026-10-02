@@ -36,9 +36,23 @@ export function assertNpmReleaseMetadata(raw: string, pkg: string, version: stri
 
 export type ViewResult = { stdout: string; exitCode: number };
 
-export async function viewWhenPublished(view: () => ViewResult, attempts: number, waitMs: number): Promise<ViewResult> {
+export async function viewWhenPublished(
+  view: () => ViewResult,
+  pkg: string,
+  version: string,
+  attempts: number,
+  waitMs: number,
+): Promise<ViewResult> {
+  const passes = (r: ViewResult) => {
+    try {
+      assertNpmReleaseMetadata(r.stdout, pkg, version, r.exitCode);
+      return true;
+    } catch {
+      return false;
+    }
+  };
   let result = view();
-  for (let i = 1; i < attempts && result.exitCode !== 0; i++) {
+  for (let i = 1; i < attempts && !passes(result); i++) {
     await Bun.sleep(waitMs);
     result = view();
   }
@@ -57,6 +71,8 @@ if (import.meta.main) {
       const run = Bun.spawnSync(["npm", "view", `${pkg}@${version}`, "--json", "--prefer-online"], { stdout: "pipe", stderr: "inherit" });
       return { stdout: run.stdout.toString(), exitCode: run.exitCode ?? 1 };
     },
+    pkg,
+    version,
     20,
     30_000,
   );
