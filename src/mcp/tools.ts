@@ -1,5 +1,6 @@
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { errorMessage } from "../error-utils";
+import { KeshaError } from "../engine/events";
 import { installHint } from "../install-hint";
 import { z } from "zod";
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
@@ -126,7 +127,8 @@ export function registerTools(server: McpServer): void {
         const hint = isAbsolute(path)
           ? ""
           : ` (relative paths resolve against the MCP server's working directory, ${process.cwd()} — pass an absolute path instead)`;
-        return { isError: true, content: [{ type: "text" as const, text: `File not found: ${path}${hint}` }] };
+        const err = new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${path}${hint}`);
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(err) }] };
       }
       try {
         assertAudioFileArgument(path);

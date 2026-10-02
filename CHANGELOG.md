@@ -15,6 +15,7 @@ were CLI-only releases that reused the previous engine binary.
 
 ### Fixed
 - **`--version` and `-v` after a subcommand print the version.** `kesha say --version`, `kesha status --version` and `kesha logs -v` print the CLI version on stdout and exit 0, as `kesha --version` does. Before, they printed the subcommand's help on stdout and an uncoded `No version specified` on stderr, and exited 1 ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
+- **MCP `transcribe_audio` on a missing file returns a coded error.** The text starts with `error [E_INPUT_NOT_FOUND]: File not found: <path>`, like the tool's other errors; it used to start with `File not found:` and carry no code ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
 
 ## [2.1.0] — 2026-10-01
 
