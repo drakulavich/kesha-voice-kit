@@ -1757,6 +1757,21 @@ process.exit(99);
     }
   });
 
+  test("init without a terminal refuses with E_INVALID_ARG, exit 2, naming --yes and --plan, and downloads nothing (#1373)", async () => {
+    const env = isolatedEnv();
+    const run = await runCli(["init", "--tts", "--vad"], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: [
+        "error [E_INVALID_ARG]: kesha init is interactive and needs a terminal",
+        "kesha init --yes",
+        "kesha init --plan",
+      ],
+    });
+    expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
+  });
+
   test("diagnostic logs record failed install events without content, and a coded engine failure exits with the engine's status (#1186)", async () => {
     const dir = makeTempDir("kesha-cli-contract-install-diagnostic-failure-");
     const enginePath = createFakeEngine(dir);

@@ -3,7 +3,7 @@ import { confirm, multiselect, isCancel, cancel } from "@clack/prompts";
 import { installCommandTokens, renderInstallPlan } from "../install-plan";
 import { log } from "../log";
 import { errorMessage } from "../error-utils";
-import { exitCodeFor } from "../engine/events";
+import { exitCodeFor, KeshaError } from "../engine/events";
 import { getEngineCapabilities } from "../engine";
 import {
   installableTtsLangs,
@@ -98,30 +98,6 @@ export function initInstallArgs(selection: InitSelection): string[] {
   return installCommandTokens(selection, selection.ttsLangs);
 }
 
-export function initSuggestionCommands(
-  selection: InitSelection,
-  canDiarize = canInstallDiarizeOnPlatform(),
-): string[][] {
-  const variants: InitSelection[] = [
-    selection,
-    { ...selection, ttsLangs: [], vad: true, diarize: false },
-    { ...selection, ttsLangs: ["en"], vad: true, diarize: false },
-  ];
-
-  // #768: --diarize installs VAD on its own, so no explicit --vad here.
-  if (canDiarize) {
-    variants.push({ ...selection, ttsLangs: [], vad: false, diarize: true });
-  }
-
-  const seen = new Set<string>();
-  return variants.map(initInstallArgs).filter((command) => {
-    const key = command.join("\0");
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 export function omitUnsupportedDiarize(
   selection: InitSelection,
   canDiarize = canInstallDiarizeOnPlatform(),
@@ -186,20 +162,6 @@ async function printPlan(selection: InitSelection): Promise<void> {
       diarize: selection.diarize,
     }),
   );
-}
-
-async function runNonInteractive(selection: InitSelection): Promise<void> {
-  const canDiarize = canInstallDiarizeOnPlatform();
-  const printableSelection = omitUnsupportedDiarize(selection, canDiarize);
-  if (selection.diarize && !canDiarize) {
-    log.warn("--diarize is currently darwin-arm64 only; omitting it from non-interactive examples.");
-  }
-  log.info(renderInitOverview(canDiarize));
-  await printPlan(printableSelection);
-  log.info("Run one of these commands from an interactive terminal:");
-  for (const command of initSuggestionCommands(printableSelection, canDiarize)) {
-    log.info(`  ${command.join(" ")}`);
-  }
 }
 
 export const initCommand = defineCommand({
@@ -279,7 +241,11 @@ export const initCommand = defineCommand({
     const stdinIsTty = process.stdin.isTTY === true;
     const stdoutIsTty = process.stdout.isTTY === true;
     if (!stdinIsTty || !stdoutIsTty) {
-      await runNonInteractive(selection);
+      const noTerminal = new KeshaError("E_INVALID_ARG", "kesha init is interactive and needs a terminal", {
+        hint: "run `kesha init --yes` to install the defaults, or `kesha init --plan` to show the plan",
+      });
+      log.error(errorMessage(noTerminal));
+      process.exitCode = exitCodeFor(noTerminal);
       return;
     }
 

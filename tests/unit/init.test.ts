@@ -5,7 +5,6 @@ import { tempDir } from "../helpers/temp-dir";
 import {
   canInstallDiarizeOnPlatform,
   initInstallArgs,
-  initSuggestionCommands,
   omitUnsupportedDiarize,
   promptInitSelection,
   renderInitOverview,
@@ -148,19 +147,6 @@ describe("init onboarding", () => {
 
     expect(imported).toContain("@clack/prompts");
     expect(imported.filter((m) => m.startsWith("node:readline"))).toEqual([]);
-  });
-
-  test("non-interactive suggestions preserve backend and cache flags", () => {
-    const commands = initSuggestionCommands(
-      { noCache: true, backend: "coreml", ttsLangs: [], vad: false, diarize: false },
-      true,
-    ).map((command) => command.join(" "));
-
-    expect(commands).toContain("kesha install --no-cache --coreml");
-    expect(commands).toContain("kesha install --no-cache --coreml --vad");
-    expect(commands).toContain("kesha install --no-cache --coreml --tts en --vad");
-    // #768: --diarize installs VAD itself, so the suggestion no longer repeats --vad.
-    expect(commands).toContain("kesha install --no-cache --coreml --diarize");
   });
 
   test("--yes install selection drops unsupported diarize preselection", () => {
