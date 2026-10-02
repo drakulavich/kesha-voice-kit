@@ -149,6 +149,28 @@ describe("runGate (#1361)", () => {
     expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(1);
     pr.comments = [...COMMENTS, replyTo(UNANSWERED_P1, "drakulavich", 1), replyTo(UNANSWERED_P2, "drakulavich", 2)];
     expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(0);
-    expect(statuses.map((s) => `${s.context} ${s.state}`)).toEqual(["unanswered-findings failure", "unanswered-findings success"]);
+    expect(statuses.map((s) => `${s.context} ${s.state}`)).toEqual([
+      "unanswered-findings pending",
+      "unanswered-findings failure",
+      "unanswered-findings pending",
+      "unanswered-findings success",
+    ]);
+  });
+});
+
+describe("runGate when the review state can't be read (#1361)", () => {
+  test("a run that fails before it decides leaves the status pending, never an earlier success", async () => {
+    const SHA = "0123456789abcdef0123456789abcdef01234567";
+    const statuses: string[] = [`unanswered-findings success`];
+    const gh: GhApi = async (args) => {
+      if (args[0] === `repos/drakulavich/kesha-voice-kit/statuses/${SHA}`) {
+        const field = (k: string) => args.find((a) => a.startsWith(`${k}=`))?.slice(k.length + 1);
+        statuses.push(`${field("context")} ${field("state")}`);
+        return {};
+      }
+      throw new Error("HTTP 502 from api.github.com");
+    };
+    await expect(runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).rejects.toThrow(/502/);
+    expect(statuses.at(-1)).toBe("unanswered-findings pending");
   });
 });
