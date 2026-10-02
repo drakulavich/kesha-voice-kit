@@ -147,7 +147,7 @@ describe("runGate (#1361)", () => {
   test("once every finding is answered, the next run turns the same status from failure to success", async () => {
     const { gh, statuses, pr } = fakeGh(COMMENTS);
     expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(1);
-    pr.comments = COMMENTS.filter((c) => c.id !== UNANSWERED_P1 && c.id !== UNANSWERED_P2);
+    pr.comments = [...COMMENTS, replyTo(UNANSWERED_P1, "drakulavich", 1), replyTo(UNANSWERED_P2, "drakulavich", 2)];
     expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(0);
     expect(statuses.map((s) => `${s.context} ${s.state}`)).toEqual(["unanswered-findings failure", "unanswered-findings success"]);
   });
