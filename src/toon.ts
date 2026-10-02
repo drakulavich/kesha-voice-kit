@@ -15,5 +15,6 @@ export function formatToonOutput<T extends object, E extends object>(
   results: T[],
   errors?: E[],
 ): string {
-  return encodeToon(errors === undefined ? results : { results, errors }) + "\n";
+  const payload = errors === undefined ? results : { results, errors };
+  return encodeToon(JSON.parse(JSON.stringify(payload))) + "\n";
 }

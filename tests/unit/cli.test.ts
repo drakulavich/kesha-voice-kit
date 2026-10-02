@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { parseArgs, renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
 import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, detectTextLanguageFallback, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
-import type { ResolvedOutputFormat } from "../../src/cli";
+import type { ResolvedOutputFormat, TranscribeResult } from "../../src/cli";
 import { MAIN_VAD_ARGS, normalizeMainCommandArgs } from "../../src/cli/main";
 
 function normalizeUsage(usage: string): string {
@@ -439,6 +439,31 @@ describe("TOON output (#138)", () => {
   test("keeps the envelope shape when there are no errors (#839)", () => {
     const results = [{ file: "a.ogg", text: "Hello", lang: "en" }];
     expect(decodeToon(formatToonOutput(results, []))).toEqual({ results, errors: [] });
+  });
+
+  test("decodes to the same data as --json for every mix of optional fields (#1366)", () => {
+    const audioLanguage = [{}, { audioLanguage: undefined }, { audioLanguage: { code: "ru", confidence: 0.99 } }];
+    const textLanguage = [
+      {},
+      { textLanguage: undefined },
+      { textLanguage: { code: "ru", confidence: 0.98, source: "engine" as const } },
+    ];
+    const segments = [{}, { segments: [] }, { segments: [{ start: 0, end: 1.2, text: "Привет", speaker: 0 }] }];
+    const rows: TranscribeResult[] = [];
+    for (const a of audioLanguage) {
+      for (const t of textLanguage) {
+        for (const s of segments) {
+          rows.push({ file: `${rows.length}.wav`, text: "", lang: "", ...a, ...t, sttTimeMs: 16, ...s });
+        }
+      }
+    }
+    const errors = [{ file: "missing.wav", code: "E_INPUT_NOT_FOUND", message: "File not found" }];
+    const batches = [...rows.map((r) => [r]), ...rows.flatMap((a) => rows.map((b) => [a, b])), rows, []];
+
+    for (const batch of batches) {
+      expect(decodeToon(formatToonOutput(batch))).toStrictEqual(JSON.parse(formatJsonOutput(batch)));
+      expect(decodeToon(formatToonOutput(batch, errors))).toStrictEqual(JSON.parse(formatJsonOutput(batch, errors)));
+    }
   });
 });
 
