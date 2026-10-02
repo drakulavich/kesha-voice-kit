@@ -189,8 +189,9 @@ describe("kesha say refuses an engine older than the CLI supports (#1365)", () =
 
   skipOnWin32("an engine recorded as 1.26.0 is not refused", async () => {
     engineRecordedAs("1.26.0");
-    const { stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
     expect(stderr).not.toContain("E_ENGINE_PROTOCOL");
+    expect(exitCode).toBe(0);
   });
 });
 
