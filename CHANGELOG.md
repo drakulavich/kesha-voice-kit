@@ -10,6 +10,9 @@ were CLI-only releases that reused the previous engine binary.
 
 ## [Unreleased]
 
+### Changed
+- **`--include-errors` puts only the message in `errors[].message`.** An engine failure used to carry the rendered stderr line there (`error [E_BAD_AUDIO]: …`, plus `\n  hint: …` for `E_ENGINE_SPAWN`), while a failure the CLI raised carried the bare message (`File not found`). Every record now carries the bare message; the code is in `code`, and stderr is unchanged. A script that parsed the code out of `message` should read `code` ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
+
 ### Fixed
 - **`--version` and `-v` after a subcommand print the version.** `kesha say --version`, `kesha status --version` and `kesha logs -v` print the CLI version on stdout and exit 0, as `kesha --version` does. Before, they printed the subcommand's help on stdout and an uncoded `No version specified` on stderr, and exited 1 ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
 

@@ -1432,7 +1432,7 @@ process.exit(99);
       {
         file: mediaPath,
         code: "E_TRANSCRIBE_FAILED",
-        message: `error [E_TRANSCRIBE_FAILED]: ${diarizeError}`,
+        message: diarizeError,
       },
     ]);
   });
@@ -1464,9 +1464,29 @@ process.exit(99);
       {
         file: mediaPath,
         code: "E_DIARIZE_TIMEOUT",
-        message: codedError,
+        message: "speaker diarization timed out after 30s for 4s of audio",
       },
     ]);
+  });
+
+  test("--json --include-errors carries a launch failure's bare message, its code in code", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-spawn-error-");
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(enginePath, "not executable");
+    chmodSync(enginePath, 0o644);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+
+    const run = await runCli(["--json", "--include-errors", mediaPath], {
+      env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+    });
+
+    expectContract(run, { exitCode: 1, stderrContains: [`${mediaPath}: error [E_ENGINE_SPAWN]: `, "hint: "] });
+    const [record] = JSON.parse(run.stdout).errors;
+    expect(record.code).toBe("E_ENGINE_SPAWN");
+    expect(record.message).toStartWith(`failed to launch kesha-engine at ${enginePath}`);
+    expect(record.message).not.toContain("hint:");
   });
 
   test("successful machine-readable output keeps progress off stdout", async () => {
