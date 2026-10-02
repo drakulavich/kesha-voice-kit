@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   renameSync,
   rmSync,
@@ -2335,6 +2336,24 @@ exit 2
     });
   }, 30_000);
 
+  for (const { name, args, stderr } of [
+    { name: "a positional path", args: ["mine.tar.gz"], stderr: "unexpected argument 'mine.tar.gz' (did you mean --output mine.tar.gz?)" },
+    { name: "a bare --output", args: ["--output"], stderr: "--output needs a file path" },
+    { name: "an empty --output", args: ["--output", ""], stderr: "--output needs a file path" },
+    { name: "--output -", args: ["--output", "-"], stderr: "--output /dev/stdout" },
+  ]) {
+    test(`support-bundle with ${name} is a coded bad argument that writes nothing (#1369)`, async () => {
+      const dir = makeTempDir("kesha-cli-contract-bundle-args-");
+      const cwd = join(dir, "cwd");
+      mkdirSync(cwd);
+
+      const bundle = await runCli(["support-bundle", ...args], { cwd, env: isolatedEnv(dir), timeoutMs: 15_000 });
+
+      expectContract(bundle, { exitCode: 2, stdoutEmpty: true, stderrContains: ["error [E_INVALID_ARG]: ", stderr] });
+      expect(readdirSync(cwd)).toEqual([]);
+    }, 30_000);
+  }
+
   test("read-only planning and stats commands keep user data on stdout", async () => {
     const dir = makeTempDir("kesha-cli-contract-readonly-");
     const enginePath = createFailingEngine(dir);
@@ -2839,9 +2858,16 @@ const FOREIGN_BACKEND = (() => {
 
 const INSTALLED = `Backend installed successfully (engine v${engineVersion}).`;
 
+function extraArgument(args: (dir: string) => string[]): SweepCase {
+  return { name: "an extra argument", args, exitCode: 2, stderr: "error [E_INVALID_ARG]: unexpected argument 'extra'" };
+}
+
 const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
   completions: {
-    errors: [{ name: "missing shell", args: () => ["completions"], exitCode: 2, stderr: "error [E_INVALID_ARG]: missing shell" }],
+    errors: [
+      { name: "missing shell", args: () => ["completions"], exitCode: 2, stderr: "error [E_INVALID_ARG]: missing shell" },
+      extraArgument(() => ["completions", "zsh", "extra"]),
+    ],
     progress: [
       {
         name: "bash",
@@ -2852,7 +2878,7 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
     ],
   },
   doctor: {
-    errors: [],
+    errors: [extraArgument(() => ["doctor", "extra"])],
     progress: [
       {
         name: "--json without an engine",
@@ -2865,6 +2891,7 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
   },
   init: {
     errors: [
+      extraArgument(() => ["init", "extra", "--plan"]),
       { name: "both backends", args: () => ["init", "--plan", "--coreml", "--onnx"], exitCode: 1, stderr: "Choose only one backend" },
       ...(FOREIGN_BACKEND === undefined
         ? []
@@ -2921,11 +2948,13 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
     errors: [
       { name: "an unknown action", args: () => ["logs", "frobnicate"], exitCode: 2, stderr: "unknown logs action 'frobnicate'" },
       { name: "--json on a non-status action", args: () => ["logs", "enable", "--json"], exitCode: 2, stderr: "usage: kesha logs status --json" },
+      extraArgument(() => ["logs", "path", "extra"]),
+      extraArgument(() => ["logs", "mode", "on", "extra"]),
     ],
     progress: [{ name: "status --json", args: () => ["logs", "status", "--json"], exitCode: 0, stdout: "json" }],
   },
   manpage: {
-    errors: [],
+    errors: [extraArgument(() => ["manpage", "extra"])],
     progress: [
       {
         name: "the page",
@@ -2936,13 +2965,14 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
     ],
   },
   mcp: {
-    errors: [],
+    errors: [extraArgument(() => ["mcp", "extra"])],
     progress: [],
     unswept: "stdout is the JSON-RPC stream, covered by the mcp suites",
   },
   record: {
     errors: [
       { name: "no target", args: () => ["record"], exitCode: 2, stderr: "error [E_INVALID_ARG]: " },
+      extraArgument((dir) => ["record", "extra", "--out", join(dir, "note.wav")]),
       {
         name: "the engine fails",
         args: (dir) => ["record", "--out", join(dir, "note.wav")],
@@ -2965,6 +2995,7 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
   say: {
     errors: [
       { name: "no text", args: () => ["say"], exitCode: 2, stderr: "error [E_TEXT_EMPTY]: text is empty" },
+      extraArgument((dir) => ["say", "--out", join(dir, "hello.wav"), "hello", "extra"]),
       {
         name: "the engine fails",
         args: (dir) => ["say", "--voice", "en-am_michael", "--out", join(dir, "hello.wav"), "hello"],
@@ -2988,11 +3019,13 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
     errors: [
       { name: "export without a format", args: () => ["stats", "export"], exitCode: 2, stderr: "usage: kesha stats export --format json|csv" },
       { name: "an unknown action", args: () => ["stats", "frobnicate"], exitCode: 2, stderr: "frobnicate" },
+      extraArgument(() => ["stats", "status", "extra"]),
+      extraArgument(() => ["stats", "retention", "30", "extra"]),
     ],
     progress: [{ name: "export --format json", args: () => ["stats", "export", "--format", "json"], exitCode: 0, stdout: "json" }],
   },
   status: {
-    errors: [],
+    errors: [extraArgument(() => ["status", "extra"])],
     progress: [
       {
         name: "--json against a failing engine",
@@ -3015,6 +3048,7 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
         exitCode: 2,
         stderr: "error [E_INVALID_ARG]",
       },
+      extraArgument((dir) => ["support-bundle", "--output", join(dir, "bundle.tar.gz"), "extra"]),
     ],
     progress: [
       {
