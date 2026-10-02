@@ -8,6 +8,7 @@ import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, interruptedRun } from "./process-tree";
 import { runEngineProcess, spawnHint } from "./engine/spawn";
 import { engineFailure, KeshaError, renderError, type ErrorEvent } from "./engine/events";
+import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
 import {
   describeToCapabilities,
   parseDescribe,
@@ -124,6 +125,16 @@ function failed(run: EngineRun): boolean {
   return reportedFailure(run) || run.invalid.length > 0;
 }
 
+function assertEngineSupported(binPath: string): void {
+  const installed = readInstalledEngineVersion(binPath);
+  if (installed === null || !predatesMinimumEngine(installed)) return;
+  throw new KeshaError(
+    "E_ENGINE_PROTOCOL",
+    `kesha-engine at ${binPath} is v${installed}; this CLI needs v${MIN_ENGINE_VERSION} or newer`,
+    { hint: "run `kesha install` to fetch the engine this CLI expects", versionMismatch: true },
+  );
+}
+
 let cachedDescribe: { identity: string; doc: DescribeDocument } | null = null;
 
 /** ctime is part of it because utimes cannot set it back after a replacement that restores mtime (#1256, #1258). */
@@ -142,6 +153,7 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
       hint: spawnHint(),
     });
   }
+  assertEngineSupported(binPath);
   if (cachedDescribe?.identity === identity) return cachedDescribe.doc;
   const run = await runEngine(["describe"], opts);
   let doc: DescribeDocument | null = null;
@@ -518,6 +530,7 @@ export async function detectTextLanguageEngine(
 ): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
+  assertEngineSupported(getEngineBinPath());
   const run = await runEngine(["detect-text-lang"], { ...opts, stdin: text });
   if (reportedFailure(run)) {
     const warning = textLangFailureWarning(run.stderr);

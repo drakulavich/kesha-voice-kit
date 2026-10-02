@@ -153,6 +153,48 @@ describe("kesha say relays an engine failure", () => {
   });
 });
 
+function engineRecordedAs(version: string): void {
+  const binPath = join(tempDir("kesha-say-old-engine-"), "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "detect-text-lang" ]; then\n  if [ -z "$2" ]; then\n    printf '%s\\n' 'Usage: kesha-engine detect-text-lang <TEXT>' >&2\n    exit 2\n  fi\n  printf '%s\\n' '{"code":"ru","confidence":0.9}'\n  exit 0\nfi\ncat > /dev/null\nexit 0\n`,
+  );
+  chmodSync(binPath, 0o755);
+  writeFileSync(`${binPath}.version`, `${version}\n`);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+}
+
+describe("kesha say refuses an engine older than the CLI supports (#1365)", () => {
+  skipOnWin32("an engine recorded as 1.25.0 is refused before detection or synthesis, naming both versions", async () => {
+    engineRecordedAs("1.25.0");
+    const { exitCode, stderr, stdout } = await runSay({ text: "Привет, как дела", rate: "1.0" });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(stderr).toContain("v1.25.0");
+    expect(stderr).toContain("v1.26.0");
+    expect(stderr).toContain("kesha install");
+    expect(stderr).not.toContain("Text language detection failed");
+    expect(stdout).toBe("");
+  });
+
+  skipOnWin32("with an explicit voice, an engine recorded as 1.25.0 is still refused before synthesis", async () => {
+    engineRecordedAs("1.25.0");
+    const { exitCode, stderr, stdout } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(stderr).toContain("v1.26.0 or newer");
+    expect(stdout).toBe("");
+  });
+
+  skipOnWin32("an engine recorded as 1.26.0 is not refused", async () => {
+    engineRecordedAs("1.26.0");
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+    expect(stderr).not.toContain("E_ENGINE_PROTOCOL");
+    expect(exitCode).toBe(0);
+  });
+});
+
 describe("kesha say with an explicitly empty positional (T1-2)", () => {
   skipOnWin32("is E_TEXT_EMPTY exit 2 and never reaches the engine", async () => {
     failingEngine(3, "E_VOICE_NOT_FOUND", "the engine must not have been asked");

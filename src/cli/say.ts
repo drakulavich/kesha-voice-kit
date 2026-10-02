@@ -380,17 +380,18 @@ export const sayCommand = defineCommand({
       log.error(renderInvalidArg("kesha say requires text or piped stdin. Usage: kesha say <text>"));
       process.exit(2);
     }
+    const explicitVoice = flags.voice;
+    const langHint = flags.lang;
     let text: string;
+    let voice: string | undefined;
     try {
       text = await resolveText(inlineText);
       validateSayText(text);
+      voice = await resolveSayVoice(explicitVoice, langHint, text);
     } catch (err) {
       log.error(errorMessage(err));
       process.exit(exitCodeFor(err));
     }
-    const explicitVoice = flags.voice;
-    const langHint = flags.lang;
-    const voice = await resolveSayVoice(explicitVoice, langHint, text);
 
     const opts: SayOpts = {
       text,
