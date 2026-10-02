@@ -22,7 +22,7 @@ defaults:
     shell: bash
 
 jobs:
-  unanswered-findings:
+  greptile-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
