@@ -1010,9 +1010,9 @@ describe("engine version drift (#738)", () => {
   }
 
   test("classifies the marker against the pin without conflating a missing one", () => {
-    expect(engineVersionState("1.24.7", "1.24.7")).toBe("matches-pin");
-    expect(engineVersionState("1.24.8-alpha.1", "1.24.7")).toBe("differs-from-pin");
-    expect(engineVersionState(null, "1.24.7")).toBe("unrecorded");
+    expect(engineVersionState("2.2.0", "2.2.0")).toBe("matches-pin");
+    expect(engineVersionState("2.2.1-alpha.1", "2.2.0")).toBe("differs-from-pin");
+    expect(engineVersionState(null, "2.2.0")).toBe("unrecorded");
   });
 
   posixEngineTest("names both versions when an override is installed", async () => {
@@ -1028,6 +1028,22 @@ describe("engine version drift (#738)", () => {
       expect(output).toContain(`Pinned version: ${engineVersion}`);
       expect(output).toContain("differs from the pinned");
       expect(output).not.toContain("Binary: " + report.engine.path + " (missing)");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("calls an engine older than the CLI supports unsupported (#1365)", async () => {
+    const dir = stageEngine("kesha-doctor-too-old-", "1.25.0");
+    try {
+      const report = await collectDoctorReport();
+      expect(report.engine.versionState).toBe("unsupported");
+
+      const output = formatDoctorReport(report);
+      expect(output).toContain(
+        "Version state: installed v1.25.0 is older than v1.26.0, the oldest engine this CLI supports; run `kesha install`",
+      );
+      expect(output).not.toContain("differs from the pinned");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

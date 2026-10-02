@@ -10,7 +10,7 @@ import {
   NOT_FUNCTIONAL_STATE,
   probeExecutable,
 } from "./engine-health";
-import { readInstalledEngineVersion } from "./engine-version-marker";
+import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { installedVoiceIds } from "./voice-inventory";
 import { engineVersion, packageName, packageVersion } from "./package-info";
@@ -85,13 +85,14 @@ type DoctorDiagnosticLogStatus = DiagnosticLogStatus & { error?: string };
  * is a supported state (`kesha install --engine-version`), not a fault — `unrecorded` is
  * separate so a missing marker is never reported as a difference.
  */
-export type EngineVersionState = "matches-pin" | "differs-from-pin" | "unrecorded";
+export type EngineVersionState = "matches-pin" | "differs-from-pin" | "unsupported" | "unrecorded";
 
 export function engineVersionState(
   versionMarker: string | null,
   pinnedVersion: string,
 ): EngineVersionState {
   if (versionMarker === null) return "unrecorded";
+  if (predatesMinimumEngine(versionMarker)) return "unsupported";
   return versionMarker === pinnedVersion ? "matches-pin" : "differs-from-pin";
 }
 
@@ -476,6 +477,11 @@ function formatVersionState(engine: DoctorReport["engine"]): string {
       return (
         `installed v${engine.versionMarker} differs from the pinned v${engine.pinnedVersion} — ` +
         "supported; `kesha install` without --engine-version restores the pin"
+      );
+    case "unsupported":
+      return (
+        `installed v${engine.versionMarker} is older than v${MIN_ENGINE_VERSION}, ` +
+        "the oldest engine this CLI supports; run `kesha install`"
       );
     case "unrecorded":
       return engine.installed

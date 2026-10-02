@@ -1,4 +1,12 @@
 import { readFileSync, writeFileSync } from "fs";
+import { cmp, parseSemver, tryParseSemver } from "./semver.mjs";
+
+export const MIN_ENGINE_VERSION = "1.26.0";
+
+export function predatesMinimumEngine(version: string): boolean {
+  const parsed = tryParseSemver(version);
+  return parsed !== null && cmp(parsed, parseSemver(MIN_ENGINE_VERSION, "MIN_ENGINE_VERSION")) < 0;
+}
 
 /**
  * Version-marker file written next to the engine binary on download (#151).
