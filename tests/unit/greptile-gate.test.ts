@@ -3,6 +3,7 @@ import {
   blockingFindings,
   failureReport,
   fetchReviewState,
+  runGate,
   type GhApi,
   type ReviewComment,
 } from "../../.github/scripts/greptile-gate";
@@ -114,5 +115,40 @@ describe("fetchReviewState", () => {
 
     expect(comments).toHaveLength(COMMENTS.length);
     expect(ids(blockingFindings(comments, resolved))).toEqual([UNANSWERED_P1]);
+  });
+});
+
+describe("runGate (#1361)", () => {
+  const SHA = "0123456789abcdef0123456789abcdef01234567";
+  const threadsPage = (nodes: unknown[]) => ({
+    data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } },
+  });
+  function fakeGh(initial: ReviewComment[]) {
+    const pr = { comments: initial };
+    const statuses: Record<string, string>[] = [];
+    const gh: GhApi = async (args) => {
+      if (args[0] === "graphql") return threadsPage([]);
+      if (args[0] === `repos/drakulavich/kesha-voice-kit/statuses/${SHA}`) {
+        const fields = Object.fromEntries(args.filter((a) => a.includes("=")).map((a) => a.split(/=(.*)/s).slice(0, 2)));
+        statuses.push(fields);
+        return {};
+      }
+      return [pr.comments];
+    };
+    return { gh, statuses, pr };
+  }
+
+  test("an unanswered finding sets the unanswered-findings status on the head commit to failure", async () => {
+    const { gh, statuses } = fakeGh(COMMENTS);
+    expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(1);
+    expect(statuses.at(-1)).toMatchObject({ context: "unanswered-findings", state: "failure" });
+  });
+
+  test("once every finding is answered, the next run turns the same status from failure to success", async () => {
+    const { gh, statuses, pr } = fakeGh(COMMENTS);
+    expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(1);
+    pr.comments = [...COMMENTS, replyTo(UNANSWERED_P1, "drakulavich", 1), replyTo(UNANSWERED_P2, "drakulavich", 2)];
+    expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(0);
+    expect(statuses.map((s) => `${s.context} ${s.state}`)).toEqual(["unanswered-findings failure", "unanswered-findings success"]);
   });
 });

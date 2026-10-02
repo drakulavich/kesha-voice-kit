@@ -104,18 +104,28 @@ export async function fetchReviewState(
   return { comments, resolved };
 }
 
+export async function runGate(gh: GhApi, repo: string, pr: string, sha: string): Promise<number> {
+  const { comments, resolved } = await fetchReviewState(gh, repo, pr);
+  const findings = blockingFindings(comments, resolved);
+  const state = findings.length > 0 ? "failure" : "success";
+  const description =
+    findings.length > 0 ? `${findings.length} Greptile P1/P2 finding(s) have no reply` : "Every Greptile P1/P2 finding has a reply or a resolved thread";
+  await gh([`repos/${repo}/statuses/${sha}`, "-f", `state=${state}`, "-f", "context=unanswered-findings", "-f", `description=${description}`]);
+  if (findings.length > 0) {
+    console.error(failureReport(findings));
+    return 1;
+  }
+  console.error(`No unanswered Greptile P1/P2 findings among ${comments.length} review comment(s) on #${pr}.`);
+  return 0;
+}
+
 if (import.meta.main) {
   const repo = process.env.REPO;
   const pr = process.env.PR_NUMBER;
-  if (!repo || !pr) {
-    console.error("usage: REPO=<owner/name> PR_NUMBER=<n> bun .github/scripts/greptile-gate.ts");
+  const sha = process.env.HEAD_SHA;
+  if (!repo || !pr || !sha) {
+    console.error("usage: REPO=<owner/name> PR_NUMBER=<n> HEAD_SHA=<sha> bun .github/scripts/greptile-gate.ts");
     process.exit(2);
   }
-  const { comments, resolved } = await fetchReviewState(ghApi, repo, pr);
-  const findings = blockingFindings(comments, resolved);
-  if (findings.length > 0) {
-    console.error(failureReport(findings));
-    process.exit(1);
-  }
-  console.error(`No unanswered Greptile P1/P2 findings among ${comments.length} review comment(s) on #${pr}.`);
+  process.exit(await runGate(ghApi, repo, pr, sha));
 }
