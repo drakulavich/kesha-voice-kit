@@ -1310,6 +1310,41 @@ process.exit(99);
     expect(decoded.errors).toEqual([]);
   });
 
+  test("--toon decodes to the --json data when language detection found nothing (#1366)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-toon-no-lang-");
+    const enginePath = createFakeEngine(dir);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+    const env: Record<string, string> = {
+      ...isolatedEnv(dir),
+      KESHA_ENGINE_BIN: enginePath,
+      KESHA_FAKE_DETECT_LANG_ERROR: "lang-id model missing",
+      KESHA_FAKE_TEXT_LANG_UNSUPPORTED: "1",
+    };
+    const withoutTiming = (rows: Array<Record<string, unknown>>) => rows.map(({ sttTimeMs: _, ...rest }) => rest);
+    const { decode: decodeToon } = await import("@toon-format/toon");
+
+    for (const flags of [[], ["--include-errors"]]) {
+      const args = [...flags, mediaPath, "missing.wav"];
+      const [jsonRun, toonRun] = await Promise.all([
+        runCli(["--json", ...args], { env }),
+        runCli(["--toon", ...args], { env }),
+      ]);
+      expectContract(jsonRun, { exitCode: 1 });
+      expectContract(toonRun, { exitCode: 1 });
+      const fromJson = JSON.parse(jsonRun.stdout);
+      const fromToon = decodeToon(toonRun.stdout) as typeof fromJson;
+      if (flags.length === 0) {
+        expect(withoutTiming(fromToon)).toStrictEqual(withoutTiming(fromJson));
+      } else {
+        expect({ ...fromToon, results: withoutTiming(fromToon.results) }).toStrictEqual({
+          ...fromJson,
+          results: withoutTiming(fromJson.results),
+        });
+      }
+    }
+  });
+
   test("a partial failure still prints the results array for the files that succeeded", async () => {
     const dir = makeTempDir("kesha-cli-contract-partial-plain-");
     const enginePath = createFakeEngine(dir);
