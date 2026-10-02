@@ -123,7 +123,8 @@ describe("runGate (#1361)", () => {
   const threadsPage = (nodes: unknown[]) => ({
     data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } },
   });
-  function fakeGh(comments: ReviewComment[]) {
+  function fakeGh(initial: ReviewComment[]) {
+    const pr = { comments: initial };
     const statuses: Record<string, string>[] = [];
     const gh: GhApi = async (args) => {
       if (args[0] === "graphql") return threadsPage([]);
@@ -132,9 +133,9 @@ describe("runGate (#1361)", () => {
         statuses.push(fields);
         return {};
       }
-      return [comments];
+      return [pr.comments];
     };
-    return { gh, statuses };
+    return { gh, statuses, pr };
   }
 
   test("an unanswered finding sets the unanswered-findings status on the head commit to failure", async () => {
@@ -143,9 +144,11 @@ describe("runGate (#1361)", () => {
     expect(statuses.at(-1)).toMatchObject({ context: "unanswered-findings", state: "failure" });
   });
 
-  test("with every finding answered the same status turns success, replacing an earlier failure", async () => {
-    const { gh, statuses } = fakeGh(COMMENTS.filter((c) => c.id !== UNANSWERED_P1 && c.id !== UNANSWERED_P2));
+  test("once every finding is answered, the next run turns the same status from failure to success", async () => {
+    const { gh, statuses, pr } = fakeGh(COMMENTS);
+    expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(1);
+    pr.comments = COMMENTS.filter((c) => c.id !== UNANSWERED_P1 && c.id !== UNANSWERED_P2);
     expect(await runGate(gh, "drakulavich/kesha-voice-kit", "1", SHA)).toBe(0);
-    expect(statuses.at(-1)).toMatchObject({ context: "unanswered-findings", state: "success" });
+    expect(statuses.map((s) => `${s.context} ${s.state}`)).toEqual(["unanswered-findings failure", "unanswered-findings success"]);
   });
 });
