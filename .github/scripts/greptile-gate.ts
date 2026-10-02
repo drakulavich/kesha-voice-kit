@@ -105,12 +105,13 @@ export async function fetchReviewState(
 }
 
 export async function runGate(gh: GhApi, repo: string, pr: string, sha: string): Promise<number> {
+  const setStatus = (state: string, description: string) =>
+    gh([`repos/${repo}/statuses/${sha}`, "-f", `state=${state}`, "-f", "context=unanswered-findings", "-f", `description=${description}`]);
+  await setStatus("pending", "Checking Greptile findings");
   const { comments, resolved } = await fetchReviewState(gh, repo, pr);
   const findings = blockingFindings(comments, resolved);
-  const state = findings.length > 0 ? "failure" : "success";
-  const description =
-    findings.length > 0 ? `${findings.length} Greptile P1/P2 finding(s) have no reply` : "Every Greptile P1/P2 finding has a reply or a resolved thread";
-  await gh([`repos/${repo}/statuses/${sha}`, "-f", `state=${state}`, "-f", "context=unanswered-findings", "-f", `description=${description}`]);
+  if (findings.length > 0) await setStatus("failure", `${findings.length} Greptile P1/P2 finding(s) have no reply`);
+  else await setStatus("success", "Every Greptile P1/P2 finding has a reply or a resolved thread");
   if (findings.length > 0) {
     console.error(failureReport(findings));
     return 1;
