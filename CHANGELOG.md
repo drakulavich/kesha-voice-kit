@@ -8,6 +8,11 @@ From 2.0.0 one version names the CLI and the engine, and one `vX.Y.Z` tag
 releases both. Before 2.0.0 they were versioned separately, and `-cli` tags
 were CLI-only releases that reused the previous engine binary.
 
+## [Unreleased]
+
+### Fixed
+- **`--version` and `-v` after a subcommand print the version.** `kesha say --version`, `kesha status --version` and `kesha logs -v` print the CLI version on stdout and exit 0, as `kesha --version` does. Before, they printed the subcommand's help on stdout and an uncoded `No version specified` on stderr, and exited 1 ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
+
 ## [2.1.0] — 2026-10-01
 
 ### Changed

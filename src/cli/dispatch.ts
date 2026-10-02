@@ -1,6 +1,7 @@
 import { runMain, type ArgsDef, type CommandDef } from "citty";
 import { existsSync } from "fs";
 import { log } from "../log";
+import { packageVersion } from "../package-info";
 import { guardStdoutWrites } from "../stdout-pipe";
 import { suggestCommand } from "../suggest-command";
 import { applyCliContext, resolveCliContext } from "./context";
@@ -121,6 +122,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   switch (classifyFirstArg(firstArg, subcommandKeys)) {
     case "subcommand": {
+      if (restArgs.length === 1 && (restArgs[0] === "--version" || restArgs[0] === "-v")) {
+        process.stdout.write(`${packageVersion}\n`);
+        return;
+      }
       const command = await SUBCOMMANDS[firstArg!]!();
       rejectUnknownOptions(restArgs, await resolveArgsDef(command));
       await runMain(command, { rawArgs: restArgs });

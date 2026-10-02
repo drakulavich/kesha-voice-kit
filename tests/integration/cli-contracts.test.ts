@@ -574,6 +574,11 @@ describe("CLI contracts", () => {
     const short = await runCli(["-v"]);
     expectContract(short, { exitCode: 0, stderrEmpty: true });
     expect(short.stdout).toBe(version.stdout);
+    for (const args of [["say", "--version"], ["status", "--version"], ["logs", "-v"], ["say", "-v"]]) {
+      const sub = await runCli(args);
+      expectContract(sub, { exitCode: 0, stderrEmpty: true });
+      expect(sub.stdout).toBe(version.stdout);
+    }
 
     // S1-1: a consumer that asked for JSON must never receive the usage prose on stdout.
     for (const args of [[], ["--json"]]) {
