@@ -34,6 +34,17 @@ export function assertNpmReleaseMetadata(raw: string, pkg: string, version: stri
   return { version, provenance };
 }
 
+export type ViewResult = { stdout: string; exitCode: number };
+
+export async function viewWhenPublished(view: () => ViewResult, attempts: number, waitMs: number): Promise<ViewResult> {
+  let result = view();
+  for (let i = 1; i < attempts && result.exitCode !== 0; i++) {
+    await Bun.sleep(waitMs);
+    result = view();
+  }
+  return result;
+}
+
 if (import.meta.main) {
   const [pkg, version] = process.argv.slice(2);
   if (!pkg || !version) {
@@ -41,9 +52,16 @@ if (import.meta.main) {
     process.exit(2);
   }
   // The whole document: a comma-joined field list makes npm print nothing at all (v1.29.1-cli, v1.30.0-cli lanes).
-  const view = Bun.spawnSync(["npm", "view", `${pkg}@${version}`, "--json"], { stdout: "pipe", stderr: "inherit" });
+  const view = await viewWhenPublished(
+    () => {
+      const run = Bun.spawnSync(["npm", "view", `${pkg}@${version}`, "--json", "--prefer-online"], { stdout: "pipe", stderr: "inherit" });
+      return { stdout: run.stdout.toString(), exitCode: run.exitCode ?? 1 };
+    },
+    20,
+    30_000,
+  );
   try {
-    const { provenance } = assertNpmReleaseMetadata(view.stdout.toString(), pkg, version, view.exitCode ?? 1);
+    const { provenance } = assertNpmReleaseMetadata(view.stdout, pkg, version, view.exitCode);
     console.log(`ok: ${pkg}@${version} on the registry with ${provenance}`);
   } catch (e) {
     console.error(`::error::FAIL: ${e instanceof Error ? e.message : String(e)}`);

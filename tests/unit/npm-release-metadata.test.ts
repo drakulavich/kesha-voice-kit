@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertNpmReleaseMetadata } from "../../.github/scripts/npm-release-metadata";
+import { assertNpmReleaseMetadata, viewWhenPublished } from "../../.github/scripts/npm-release-metadata";
 
 const PACKAGE = "@drakulavich/kesha-voice-kit";
 
@@ -41,5 +41,20 @@ describe("npm release metadata gate", () => {
   test("an integrity that is not sha512 is refused", () => {
     const weak = published({ dist: { integrity: "sha1-abc", attestations: { provenance: { predicateType: "https://slsa.dev/provenance/v1" } } } });
     expect(() => assertNpmReleaseMetadata(weak, PACKAGE, "1.30.0", 0)).toThrow(/integrity/);
+  });
+});
+
+describe("waiting for a fresh publish to reach the registry (#1356)", () => {
+  const notYet = { stdout: "", exitCode: 1 };
+
+  test("a version that 404s for a while and then appears passes the gate", async () => {
+    const answers = [notYet, notYet, { stdout: published(), exitCode: 0 }];
+    const view = await viewWhenPublished(() => answers.shift() ?? notYet, 5, 0);
+    expect(assertNpmReleaseMetadata(view.stdout, PACKAGE, "1.30.0", view.exitCode)).toEqual({ version: "1.30.0", provenance: "https://slsa.dev/provenance/v1" });
+  });
+
+  test("a version that never appears still fails the gate", async () => {
+    const view = await viewWhenPublished(() => notYet, 3, 0);
+    expect(() => assertNpmReleaseMetadata(view.stdout, PACKAGE, "1.30.0", view.exitCode)).toThrow(/npm view exited 1/);
   });
 });
