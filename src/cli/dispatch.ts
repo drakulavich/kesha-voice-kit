@@ -88,7 +88,7 @@ export function unknownCommandMessages(token: string, subcommandKeys: string[]):
   if (suggestCommand(token, ["transcribe"]) === "transcribe") {
     warnLines.push("To transcribe, pass the audio path directly: kesha ./recording.ogg");
   }
-  return { errorLine: `unknown command '${token}'`, warnLines };
+  return { errorLine: renderInvalidArg(`unknown command '${token}'`), warnLines };
 }
 
 async function resolveArgsDef(command: CommandDef<any>): Promise<ArgsDef> {
@@ -137,7 +137,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const { errorLine, warnLines } = unknownCommandMessages(firstArg!, subcommandKeys);
       log.error(errorLine);
       for (const line of warnLines) log.warn(line);
-      process.exit(1);
+      process.exit(2);
       break;
     }
 

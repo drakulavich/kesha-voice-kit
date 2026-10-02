@@ -11,6 +11,7 @@ were CLI-only releases that reused the previous engine binary.
 ## [Unreleased]
 
 ### Changed
+- **An unknown command is a usage error.** `kesha statuss` prints `error [E_INVALID_ARG]: unknown command 'statuss'`, keeps the `(Did you mean status?)` suggestion and the path hint, and exits 2. It used to print the line with no code and exit 1. A script that checked for exit 1 after a mistyped command should check for 2 ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
 - **`--include-errors` puts only the message in `errors[].message`.** An engine failure used to carry the rendered stderr line there (`error [E_BAD_AUDIO]: …`, plus `\n  hint: …` for `E_ENGINE_SPAWN`), while a failure the CLI raised carried the bare message (`File not found`). Every record now carries the bare message; the code is in `code`, and stderr is unchanged. A script that parsed the code out of `message` should read `code` ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
 
 ### Fixed

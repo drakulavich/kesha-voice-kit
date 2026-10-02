@@ -723,9 +723,9 @@ describe("CLI contracts", () => {
 
     const typo = await runCli(["instal"], { env });
     expectContract(typo, {
-      exitCode: 1,
+      exitCode: 2,
       stdoutEmpty: true,
-      stderrContains: ["unknown command 'instal'", "Did you mean install?"],
+      stderrContains: ["error [E_INVALID_ARG]: unknown command 'instal'", "Did you mean install?"],
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
@@ -739,10 +739,10 @@ describe("CLI contracts", () => {
 
     const transcribeTypo = await runCli(["transcrib"], { env });
     expectContract(transcribeTypo, {
-      exitCode: 1,
+      exitCode: 2,
       stdoutEmpty: true,
       stderrContains: [
-        "unknown command 'transcrib'",
+        "error [E_INVALID_ARG]: unknown command 'transcrib'",
         "If this is an audio file, pass a path like './transcrib'.",
         "To transcribe, pass the audio path directly: kesha ./recording.ogg",
       ],
