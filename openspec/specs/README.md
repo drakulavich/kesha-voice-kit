@@ -66,12 +66,12 @@ Specs reference these named personas instead of a generic "user":
 ## Validation
 
 ```bash
-openspec spec list                    # enumerate capabilities
+openspec list --specs                 # enumerate capabilities
 bun run check:specs                   # structural validation — must exit 0
 ```
 
-`check:specs` is the same `openspec validate --specs --strict` call, with the
-tool version pinned. CI runs it in the `openspec-validate` lane whenever
+`check:specs` is the same `openspec validate --specs --strict` call, run by the
+globally installed `openspec`; CI installs the version it pins. CI runs it in the `openspec-validate` lane whenever
 `openspec/**` changes. It is a *structural* gate — headings, one scenario per
 requirement, `SHALL`/`MUST` in the requirement text — and knows nothing about
 whether a spec still matches the code.

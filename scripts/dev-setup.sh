@@ -52,6 +52,12 @@ else
   missing_system=1
 fi
 
+if have openspec; then
+  ok "openspec ($(openspec --version))"
+else
+  todo "openspec missing — bun add --global @fission-ai/openspec@latest  (bun run check:specs)"
+fi
+
 # --- System libraries the Rust build needs (guide only) ---
 bold "System libraries (Rust build deps)"
 

@@ -900,6 +900,9 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
+      - name: 📦 Install OpenSpec
+        run: bun add --global @fission-ai/openspec@1.14.0
+
       - name: 📐 Validate spec corpus
         env:
           # OpenSpec already disables its PostHog telemetry when CI=true; the
