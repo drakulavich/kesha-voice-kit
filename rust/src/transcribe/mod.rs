@@ -84,6 +84,10 @@ const SEAM_WORDS_PER_SECOND: f32 = 3.0;
 /// a later phrase recurring — anchoring there deletes the real speech before it.
 const SEAM_MAX_ANCHOR_SKIP_WORDS: usize = 3;
 
+const VAD_WINDOW_MAX_SECONDS: f32 = 10.0;
+const VAD_WINDOW_MIN_PAUSE_SECONDS: f32 = 0.3;
+const VAD_WINDOW_EDGE_SILENCE_SECONDS: f32 = 0.5;
+
 /// Caller-requested VAD behaviour.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum VadMode {
@@ -340,9 +344,13 @@ pub fn transcribe_with_options(
 
     #[cfg_attr(not(system_diarize), allow(unused_mut))]
     let mut output = match decision {
-        VadDecision::Vad => {
-            transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default())
-        }
+        VadDecision::Vad => transcribe_via_vad(
+            audio_path,
+            &model_dir,
+            &vad_dir,
+            VadConfig::default(),
+            !speakers_required,
+        ),
         // Pass the already-probed duration through so `resolve_segment_duration`
         // doesn't re-open the file (#248). On `On`/`Off` modes we didn't probe,
         // so it's `None` and the helper does the work.
@@ -492,6 +500,7 @@ fn transcribe_via_vad(
     model_dir: &Path,
     vad_dir: &str,
     cfg: VadConfig,
+    pack_windows: bool,
 ) -> Result<TranscriptionOutput> {
     if !models::is_cached_in(models::ModelKind::Vad, std::path::Path::new(vad_dir)) {
         anyhow::bail!(
@@ -561,8 +570,13 @@ fn transcribe_via_vad(
         });
     }
 
+    let windows = if pack_windows {
+        pack_vad_windows(&spans, VAD_WINDOW_MAX_SECONDS, VAD_WINDOW_MIN_PAUSE_SECONDS)
+    } else {
+        spans
+    };
     let output_segments =
-        build_vad_output_segments(&spans, &samples, VAD_SAMPLE_RATE as f32, |slice| {
+        build_vad_output_segments(&windows, &samples, VAD_SAMPLE_RATE as f32, |slice| {
             be.transcribe_samples(slice)
         });
 
@@ -633,6 +647,50 @@ where
         }
     }
     out
+}
+
+fn pack_vad_windows(spans: &[(f32, f32)], max_window_s: f32, min_pause_s: f32) -> Vec<(f32, f32)> {
+    let lead = |k: usize| match k {
+        0 => spans[0].0,
+        _ => {
+            ((spans[k - 1].1 + spans[k].0) / 2.0).max(spans[k].0 - VAD_WINDOW_EDGE_SILENCE_SECONDS)
+        }
+    };
+    let trail = |k: usize| match spans.get(k + 1) {
+        None => spans[k].1,
+        Some(next) => {
+            ((spans[k].1 + next.0) / 2.0).min(spans[k].1 + VAD_WINDOW_EDGE_SILENCE_SECONDS)
+        }
+    };
+    let ends_at_pause = |k: usize| {
+        spans
+            .get(k + 1)
+            .is_none_or(|next| next.0 - spans[k].1 >= min_pause_s)
+    };
+
+    let mut windows = Vec::new();
+    let mut first = 0;
+    while first < spans.len() {
+        let start = lead(first);
+        let mut last = first;
+        let mut last_at_pause = None;
+        for k in first..spans.len() {
+            if trail(k) - start > max_window_s {
+                break;
+            }
+            last = k;
+            if ends_at_pause(k) {
+                last_at_pause = Some(k);
+            }
+        }
+        let last = last_at_pause.unwrap_or(last);
+        let (speech_start, speech_end) = (spans[first].0, spans[last].1);
+        let start = start.max(speech_end - max_window_s).min(speech_start);
+        let end = trail(last).min(start + max_window_s).max(speech_end);
+        windows.push((start, end));
+        first = last + 1;
+    }
+    windows
 }
 
 fn transcribe_chunked_samples<F>(
@@ -1426,6 +1484,152 @@ mod tests {
             Ok(String::from("ignore").into())
         });
         assert_eq!(segs.len(), 0);
+    }
+
+    fn assert_windows(actual: Vec<(f32, f32)>, expected: &[(f32, f32)]) {
+        assert_eq!(actual.len(), expected.len(), "{actual:?} vs {expected:?}");
+        for (a, e) in actual.iter().zip(expected) {
+            assert!(
+                (a.0 - e.0).abs() < 1e-4 && (a.1 - e.1).abs() < 1e-4,
+                "{actual:?} vs {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn vad_windows_pack_spans_greedily_up_to_the_last_pause_that_fits() {
+        let spans = [
+            (0.0, 3.0),
+            (3.1, 6.0),
+            (7.0, 9.0),
+            (9.6, 12.0),
+            (12.1, 15.0),
+        ];
+        assert_windows(
+            pack_vad_windows(&spans, 10.0, 0.3),
+            &[(0.0, 9.3), (9.3, 15.0)],
+        );
+    }
+
+    #[test]
+    fn vad_windows_keep_at_most_half_a_second_of_silence_at_each_edge() {
+        let spans = [(1.0, 4.0), (6.0, 8.0)];
+        assert_windows(
+            pack_vad_windows(&spans, 4.0, 0.3),
+            &[(1.0, 4.5), (5.5, 8.0)],
+        );
+    }
+
+    #[test]
+    fn vad_windows_cut_mid_gap_at_a_short_gap_when_no_pause_fits_the_limit() {
+        let spans = [(0.0, 4.0), (4.1, 8.0), (8.1, 12.0), (13.0, 14.0)];
+        assert_windows(
+            pack_vad_windows(&spans, 10.0, 0.3),
+            &[(0.0, 8.05), (8.05, 14.0)],
+        );
+    }
+
+    #[test]
+    fn vad_windows_keep_a_span_longer_than_the_limit_whole() {
+        let spans = [(0.0, 25.0), (26.0, 28.0)];
+        assert_windows(
+            pack_vad_windows(&spans, 10.0, 0.3),
+            &[(0.0, 25.0), (25.5, 28.0)],
+        );
+    }
+
+    #[test]
+    fn vad_windows_of_spans_within_the_limit_stay_within_it_with_edge_silence() {
+        for spans in [
+            vec![(0.0, 9.9), (11.0, 12.0)],
+            vec![(0.0, 1.0), (2.0, 11.9)],
+        ] {
+            let windows = pack_vad_windows(&spans, 10.0, 0.3);
+            for &(start, end) in &windows {
+                assert!(end - start <= 10.0 + 1e-4, "{windows:?} from {spans:?}");
+            }
+            for &(start, end) in &spans {
+                assert!(
+                    windows.iter().any(|w| w.0 <= start && end <= w.1),
+                    "{windows:?} drops {start}-{end}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn vad_windows_of_no_spans_are_empty() {
+        assert!(pack_vad_windows(&[], 10.0, 0.3).is_empty());
+    }
+
+    #[test]
+    fn vad_windows_default_rule_is_ten_seconds_cut_at_300_ms_pauses() {
+        let spans = [(0.0, 4.0), (4.5, 9.0), (9.25, 11.0)];
+        assert_windows(
+            pack_vad_windows(&spans, VAD_WINDOW_MAX_SECONDS, VAD_WINDOW_MIN_PAUSE_SECONDS),
+            &[(0.0, 4.25), (4.25, 11.0)],
+        );
+    }
+
+    #[test]
+    fn timestamped_itn_reads_a_number_split_across_packed_spans_as_one() {
+        let sr = 16_000.0;
+        let spans = [(0.5, 1.0), (1.1, 1.6)];
+        let mut samples = vec![0.0_f32; 32_000];
+        samples[8_000..16_000].fill(0.1);
+        samples[17_600..25_600].fill(0.2);
+        let windows =
+            pack_vad_windows(&spans, VAD_WINDOW_MAX_SECONDS, VAD_WINDOW_MIN_PAUSE_SECONDS);
+        let segments = build_vad_output_segments(&windows, &samples, sr, |slice| {
+            let words: Vec<WordTiming> = [(0.1, "twenty"), (0.2, "one")]
+                .iter()
+                .filter_map(|&(level, word)| {
+                    let first = slice.iter().position(|&s| s == level)?;
+                    let last = slice.iter().rposition(|&s| s == level)?;
+                    Some(WordTiming {
+                        word: word.to_string(),
+                        start: first as f32 / sr,
+                        end: (last + 1) as f32 / sr,
+                    })
+                })
+                .collect();
+            let text = words
+                .iter()
+                .map(|w| w.word.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            Ok(TranscriptionChunk {
+                text,
+                words: Some(words),
+            })
+        });
+
+        assert_eq!(segments.len(), 1, "{segments:?}");
+        let timings: Vec<(&str, f32, f32)> = segments[0]
+            .words
+            .iter()
+            .flatten()
+            .map(|w| (w.word.as_str(), w.start, w.end))
+            .collect();
+        let expected = [("twenty", 0.5, 1.0), ("one", 1.1, 1.6)];
+        assert_eq!(timings.len(), expected.len(), "{timings:?}");
+        for (got, want) in timings.iter().zip(expected) {
+            assert!(
+                got.0 == want.0 && (got.1 - want.1).abs() < 1e-4 && (got.2 - want.2).abs() < 1e-4,
+                "{timings:?} vs {expected:?}"
+            );
+        }
+
+        let output = finalize_output(
+            TranscriptionOutput {
+                text: join_segment_texts(&segments),
+                segments,
+            },
+            true,
+            true,
+        );
+        let texts: Vec<&str> = output.segments.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, ["21"]);
     }
 
     #[test]
