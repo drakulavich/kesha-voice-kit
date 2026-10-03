@@ -663,9 +663,10 @@ install.
 `--yes` accepts all current defaults non-interactively and runs the install
 immediately. `--plan` prints the overview and plan without prompting or downloading.
 
-When stdin or stdout is not a TTY, `kesha init` prints the overview, plan, and a set
-of suggested `kesha install` commands instead of prompting — it never hangs waiting
-for interactive input.
+When stdin or stdout is not a TTY and neither `--yes` nor `--plan` is given,
+`kesha init` SHALL refuse with `E_INVALID_ARG` (exit 2) and a hint naming
+`kesha init --yes` and `kesha init --plan`, print nothing on stdout, and download
+nothing — it never hangs waiting for interactive input.
 
 `--diarize` on a non-darwin-arm64 platform is silently dropped with a warning; the
 install proceeds without it.
@@ -688,9 +689,9 @@ downloaded on that path.
 
 - GIVEN stdin is not a TTY
 - WHEN Ira runs `kesha init`
-- THEN the CLI prints the overview, a representative install plan, and a list of
-  suggested `kesha install` commands
-- AND exits 0 without blocking on a prompt
+- THEN the CLI prints `error [E_INVALID_ARG]: kesha init is interactive and needs a terminal`
+  on stderr, with a hint naming `kesha init --yes` and `kesha init --plan`
+- AND exits 2 without blocking on a prompt, printing nothing on stdout or downloading anything
 
 #### Scenario: `--yes` for scripted install with defaults
 
@@ -714,8 +715,7 @@ downloaded on that path.
 - AND `kesha meeting.ogg` does not run
 
 > *Technical Note — sources: `src/cli/init.ts::initCommand`,
-> `src/cli/init.ts::promptInitSelection`, `src/cli/init.ts::runNonInteractive`,
-> `src/cli/init.ts::canInstallDiarizeOnPlatform`. The TTS language picker uses
+> `src/cli/init.ts::promptInitSelection`, `src/cli/init.ts::canInstallDiarizeOnPlatform`. The TTS language picker uses
 > `@clack/prompts::multiselect` with `required: false` (no-selection = skip TTS).
 > TTY check: `process.stdin.isTTY === true && process.stdout.isTTY === true`.
 > A cancelled clack prompt returns `isCancel`'s sentinel rather than throwing;

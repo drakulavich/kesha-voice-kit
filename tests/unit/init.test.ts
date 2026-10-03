@@ -1,11 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tempDir } from "../helpers/temp-dir";
 import {
   canInstallDiarizeOnPlatform,
+  initCommand,
   initInstallArgs,
-  initSuggestionCommands,
   omitUnsupportedDiarize,
   promptInitSelection,
   renderInitOverview,
@@ -150,19 +150,6 @@ describe("init onboarding", () => {
     expect(imported.filter((m) => m.startsWith("node:readline"))).toEqual([]);
   });
 
-  test("non-interactive suggestions preserve backend and cache flags", () => {
-    const commands = initSuggestionCommands(
-      { noCache: true, backend: "coreml", ttsLangs: [], vad: false, diarize: false },
-      true,
-    ).map((command) => command.join(" "));
-
-    expect(commands).toContain("kesha install --no-cache --coreml");
-    expect(commands).toContain("kesha install --no-cache --coreml --vad");
-    expect(commands).toContain("kesha install --no-cache --coreml --tts en --vad");
-    // #768: --diarize installs VAD itself, so the suggestion no longer repeats --vad.
-    expect(commands).toContain("kesha install --no-cache --coreml --diarize");
-  });
-
   test("--yes install selection drops unsupported diarize preselection", () => {
     const selection = {
       noCache: true,
@@ -241,4 +228,54 @@ describe("init cancelled at a prompt (Exploratory S4-F1)", () => {
       expect(exitCode).toBe(130);
     }, 20_000);
   }
+});
+
+describe("init with a terminal on stdin but stdout piped (#1373)", () => {
+  test("refuses with E_INVALID_ARG, exit 2, prints nothing on stdout and downloads nothing", async () => {
+    const cacheDir = join(tempDir("kesha-init-no-tty-"), "cache");
+    const saved = {
+      stdinIsTTY: process.stdin.isTTY,
+      stdoutIsTTY: process.stdout.isTTY,
+      exit: process.exit,
+      exitCode: process.exitCode,
+      stderrWrite: process.stderr.write,
+      consoleLog: console.log,
+      cacheDir: process.env.KESHA_CACHE_DIR,
+    };
+    let stderr = "";
+    let stdout = "";
+    let exitCode: number | string | undefined;
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    Object.defineProperty(process.stdout, "isTTY", { value: false, configurable: true });
+    process.stderr.write = ((chunk: unknown) => {
+      stderr += String(chunk);
+      return true;
+    }) as typeof process.stderr.write;
+    console.log = (...parts: unknown[]) => {
+      stdout += `${parts.join(" ")}\n`;
+    };
+    process.exit = ((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as typeof process.exit;
+    process.env.KESHA_CACHE_DIR = cacheDir;
+    process.exitCode = 0;
+    try {
+      await initCommand.run?.({ args: initArgs(), rawArgs: [] } as never);
+      exitCode = process.exitCode;
+    } finally {
+      Object.defineProperty(process.stdin, "isTTY", { value: saved.stdinIsTTY, configurable: true });
+      Object.defineProperty(process.stdout, "isTTY", { value: saved.stdoutIsTTY, configurable: true });
+      process.stderr.write = saved.stderrWrite;
+      console.log = saved.consoleLog;
+      process.exit = saved.exit;
+      process.exitCode = saved.exitCode ?? 0;
+      if (saved.cacheDir === undefined) delete process.env.KESHA_CACHE_DIR;
+      else process.env.KESHA_CACHE_DIR = saved.cacheDir;
+    }
+
+    expect(exitCode).toBe(2);
+    expect(stderr).toContain("error [E_INVALID_ARG]: kesha init is interactive and needs a terminal");
+    expect(stdout).toBe("");
+    expect(existsSync(cacheDir)).toBe(false);
+  });
 });
