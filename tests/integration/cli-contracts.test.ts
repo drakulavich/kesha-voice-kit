@@ -2618,7 +2618,7 @@ exit 2
     expect(transcript.exitCode).toBe(0);
   }, 30000);
 
-  test("a reader that stops reading ends say --list-voices quietly (#1368)", async () => {
+  test("say --list-voices delivers every id to a slow reader and ends quietly when the reader leaves (#1368)", async () => {
     if (process.platform === "win32") return;
     const dir = makeTempDir("kesha-cli-contract-stdout-epipe-more-");
     const enginePath = join(dir, "kesha-engine-listvoices");
@@ -2631,7 +2631,7 @@ if (args[0] === "describe") {
   process.exit(0);
 }
 if (args[0] === "say" && args[1] === "--list-voices") {
-  console.log("en-am_michael\\nru-vosk-m02");
+  await Bun.write(Bun.stdout, Array.from({ length: 100000 }, (_, i) => "voice-" + String(i).padStart(6, "0") + "\\n").join(""));
   process.exit(0);
 }
 process.exit(99);
@@ -2639,6 +2639,12 @@ process.exit(99);
     );
     chmodSync(enginePath, 0o755);
     const env: Record<string, string> = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+    const expected = Array.from({ length: 100000 }, (_, i) => `voice-${String(i).padStart(6, "0")}\n`).join("");
+
+    const slow = await runCliPipedTo(["say", "--list-voices"], "(sleep 1; cat)", { env, sinkPath: join(dir, "slow.txt") });
+    expect(slow.stderr).toBe("");
+    expect(slow.exitCode).toBe(0);
+    expect(readFileSync(join(dir, "slow.txt"), "utf8")).toBe(expected);
 
     const voices = await runCliPipedTo(["say", "--list-voices"], "true", { env, sinkPath: join(dir, "voices.txt") });
     expect(voices.stderr).toBe("");
