@@ -600,6 +600,26 @@ describe("CLI contracts", () => {
     }
   });
 
+  test("help colour follows the terminal and --no-color, not citty's own detection (#1367)", async () => {
+    const pipe = { NO_COLOR: "", FORCE_COLOR: "", CI: "", TEST: "", TERM: "xterm-256color" };
+    const forced = { ...pipe, FORCE_COLOR: "1" };
+    const help = (args: string[], env: Record<string, string>) => runCli(args, { env, stripAnsi: false });
+
+    const piped = await Promise.all([["--help"], ...SUBCOMMAND_NAMES.map((name) => [name, "--help"])].map((args) => help(args, pipe)));
+    for (const run of piped) {
+      expect(run.exitCode).toBe(0);
+      expect(run.stdout).toContain("USAGE");
+      expect(run.stdout).not.toContain("\u001b");
+    }
+
+    expect((await help(["--help"], forced)).stdout).toContain("\u001b");
+    for (const args of [["--help", "--no-color"], ["--no-color", "--help"], ["say", "--help", "--no-color"]]) {
+      const run = await help(args, forced);
+      expect(run.stdout).toContain("USAGE");
+      expect(run.stdout).not.toContain("\u001b");
+    }
+  });
+
   test("validation errors are stderr-only and exit with the documented codes", async () => {
     const cases: Array<{
       name: string;

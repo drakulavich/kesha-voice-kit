@@ -16,6 +16,10 @@ export function setColorEnabled(enabled: boolean): void {
   colors = enabled ? pc : pc.createColors(false);
 }
 
+export function isColorEnabled(): boolean {
+  return colors.isColorSupported;
+}
+
 /**
  * Debug mode (#148): when `KESHA_DEBUG` is truthy OR the caller has flipped
  * `log.debugEnabled = true` (via `--debug`), `log.debug()` writes structured
