@@ -124,7 +124,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const command = await SUBCOMMANDS[firstArg!]!();
       const argsDef = await resolveArgsDef(command);
       rejectUnknownOptions(restArgs, argsDef);
-      if (firstArg !== "install") rejectExtraPositionals(restArgs, argsDef);
+      if (firstArg !== "install" && firstArg !== "say") rejectExtraPositionals(restArgs, argsDef);
       await runMain(command, { rawArgs: restArgs });
       return;
     }

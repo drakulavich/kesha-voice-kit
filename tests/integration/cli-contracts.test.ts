@@ -3010,10 +3010,16 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
   say: {
     errors: [
       { name: "no text", args: () => ["say"], exitCode: 2, stderr: "error [E_TEXT_EMPTY]: text is empty" },
-      extraArgument((dir) => ["say", "--out", join(dir, "hello.wav"), "hello", "extra"]),
       {
         name: "the engine fails",
         args: (dir) => ["say", "--voice", "en-am_michael", "--out", join(dir, "hello.wav"), "hello"],
+        env: (dir) => sweepEngineEnv(dir, { KESHA_FAKE_FAIL_COMMAND: "say" }),
+        exitCode: 1,
+        stderr: "fake say failed",
+      },
+      {
+        name: "two words reach the engine (#1379)",
+        args: (dir) => ["say", "--voice", "en-am_michael", "--out", join(dir, "hello.wav"), "hello", "world"],
         env: (dir) => sweepEngineEnv(dir, { KESHA_FAKE_FAIL_COMMAND: "say" }),
         exitCode: 1,
         stderr: "fake say failed",
