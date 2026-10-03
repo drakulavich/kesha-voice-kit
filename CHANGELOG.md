@@ -8,16 +8,6 @@ From 2.0.0 one version names the CLI and the engine, and one `vX.Y.Z` tag
 releases both. Before 2.0.0 they were versioned separately, and `-cli` tags
 were CLI-only releases that reused the previous engine binary.
 
-## [Unreleased]
-
-### Changed
-- **An unknown command is a usage error.** `kesha statuss` prints `error [E_INVALID_ARG]: unknown command 'statuss'`, keeps the `(Did you mean status?)` suggestion and the path hint, and exits 2. It used to print the line with no code and exit 1. A script that checked for exit 1 after a mistyped command should check for 2 ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
-- **`--include-errors` puts only the message in `errors[].message`.** An engine failure used to carry the rendered stderr line there (`error [E_BAD_AUDIO]: …`, plus `\n  hint: …` for `E_ENGINE_SPAWN`), while a failure the CLI raised carried the bare message (`File not found`). Every record now carries the bare message; the code is in `code`, and stderr is unchanged. A script that parsed the code out of `message` should read `code` ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
-
-### Fixed
-- **`--version` and `-v` after a subcommand print the version.** `kesha say --version`, `kesha status --version` and `kesha logs -v` print the CLI version on stdout and exit 0, as `kesha --version` does. Before, they printed the subcommand's help on stdout and an uncoded `No version specified` on stderr, and exited 1 ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
-- **MCP `transcribe_audio` on a missing file returns a coded error.** The text starts with `error [E_INPUT_NOT_FOUND]: File not found: <path>`, like the tool's other errors; it used to start with `File not found:` and carry no code ([#1370](https://github.com/drakulavich/kesha-voice-kit/issues/1370)).
-
 ## [2.1.0] — 2026-10-01
 
 ### Changed
