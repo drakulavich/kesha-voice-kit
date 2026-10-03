@@ -1,6 +1,7 @@
-import { runMain, type ArgsDef, type CommandDef } from "citty";
+import { renderUsage, runMain, type ArgsDef, type CommandDef } from "citty";
 import { existsSync } from "fs";
-import { log } from "../log";
+import { stripVTControlCharacters } from "util";
+import { isColorEnabled, log } from "../log";
 import { guardStdoutWrites } from "../stdout-pipe";
 import { suggestCommand } from "../suggest-command";
 import { applyCliContext, resolveCliContext } from "./context";
@@ -90,6 +91,11 @@ export function unknownCommandMessages(token: string, subcommandKeys: string[]):
   return { errorLine: `unknown command '${token}'`, warnLines };
 }
 
+async function showUsage<T extends ArgsDef>(cmd: CommandDef<T>, parent?: CommandDef<T>): Promise<void> {
+  const usage = await renderUsage(cmd, parent);
+  console.log((isColorEnabled() ? usage : stripVTControlCharacters(usage)) + "\n");
+}
+
 async function resolveArgsDef(command: CommandDef<any>): Promise<ArgsDef> {
   const args = command.args;
   return (typeof args === "function" ? await args() : await args) ?? {};
@@ -123,7 +129,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
     case "subcommand": {
       const command = await SUBCOMMANDS[firstArg!]!();
       rejectUnknownOptions(restArgs, await resolveArgsDef(command));
-      await runMain(command, { rawArgs: restArgs });
+      await runMain(command, { rawArgs: restArgs, showUsage });
       return;
     }
 
@@ -145,7 +151,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const { createMainCommand } = await import("./main");
       const command = createMainCommand(context);
       rejectUnknownOptions(rawArgs, await resolveArgsDef(command));
-      await runMain(command, { rawArgs });
+      await runMain(command, { rawArgs, showUsage });
     }
   }
 }
