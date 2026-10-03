@@ -1550,6 +1550,56 @@ mod tests {
     }
 
     #[test]
+    fn timestamped_itn_reads_a_number_split_across_packed_spans_as_one() {
+        let sr = 16_000.0;
+        let spans = [(0.5, 1.0), (1.1, 1.6)];
+        let mut samples = vec![0.0_f32; 32_000];
+        samples[8_000..16_000].fill(0.1);
+        samples[17_600..25_600].fill(0.2);
+        let windows =
+            pack_vad_windows(&spans, VAD_WINDOW_MAX_SECONDS, VAD_WINDOW_MIN_PAUSE_SECONDS);
+        let segments = build_vad_output_segments(&windows, &samples, sr, |slice| {
+            let words: Vec<WordTiming> = [(0.1, "twenty"), (0.2, "one")]
+                .iter()
+                .filter_map(|&(level, word)| {
+                    let first = slice.iter().position(|&s| s == level)?;
+                    let last = slice.iter().rposition(|&s| s == level)?;
+                    Some(WordTiming {
+                        word: word.to_string(),
+                        start: first as f32 / sr,
+                        end: (last + 1) as f32 / sr,
+                    })
+                })
+                .collect();
+            let text = words
+                .iter()
+                .map(|w| w.word.as_str())
+                .collect::<Vec<_>>()
+                .join(" ");
+            Ok(TranscriptionChunk {
+                text,
+                words: Some(words),
+            })
+        });
+        let output = finalize_output(
+            TranscriptionOutput {
+                text: join_segment_texts(&segments),
+                segments,
+            },
+            true,
+            true,
+        );
+
+        let texts: Vec<&str> = output.segments.iter().map(|s| s.text.as_str()).collect();
+        assert_eq!(texts, ["21"]);
+        for s in &output.segments {
+            for w in s.words.iter().flatten() {
+                assert!(w.start >= s.start && w.end <= s.end, "{w:?} outside {s:?}");
+            }
+        }
+    }
+
+    #[test]
     fn from_flags_maps_cli_arguments_to_modes() {
         assert_eq!(VadMode::from_flags(true, false), VadMode::On);
         assert_eq!(VadMode::from_flags(false, true), VadMode::Off);
