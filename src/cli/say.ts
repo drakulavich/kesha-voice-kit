@@ -358,7 +358,7 @@ export const sayCommand = defineCommand({
         log.error(errorMessage(err));
         process.exit(exitCodeFor(err));
       }
-      await Bun.write(Bun.stdout, ids.map((id) => `${id}\n`).join(""));
+      process.stdout.write(ids.map((id) => `${id}\n`).join(""));
       process.exit(0);
     }
 

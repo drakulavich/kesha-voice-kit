@@ -132,6 +132,7 @@ function mkdirReason(dir: string, errno: string): string {
 }
 
 function bundleWriteFailure(outputPath: string, e: unknown): unknown {
+  if ((e as NodeJS.ErrnoException).code === "EPIPE") return e;
   const dir = dirname(outputPath);
   const errno = mkdirReason(dir, (e as NodeJS.ErrnoException).code ?? "");
   const blocker = fileInTheWay(dir);

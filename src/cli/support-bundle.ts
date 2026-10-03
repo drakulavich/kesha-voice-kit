@@ -35,6 +35,7 @@ export const supportBundleCommand = defineCommand({
       log.status(`Entries: ${bundle.entries.length}`);
       log.status(`Size: ${bundle.sizeBytes} bytes`);
     } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "EPIPE") return;
       log.error(errorMessage(err));
       process.exit(err instanceof KeshaError ? exitCodeFor(err) : 1);
     }

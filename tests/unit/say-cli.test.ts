@@ -93,20 +93,17 @@ function failingEngine(exitCode: number, code: string, message: string): string 
 async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number; stderr: string; stdout: string }> {
   const savedExit = process.exit;
   const savedWrite = process.stderr.write;
-  const savedBunWrite = Bun.write;
+  const savedStdoutWrite = process.stdout.write;
   let stderr = "";
   let stdout = "";
   process.stderr.write = ((chunk: unknown) => {
     stderr += String(chunk);
     return true;
   }) as typeof process.stderr.write;
-  Bun.write = (async (dest: unknown, data: unknown) => {
-    if (dest === Bun.stdout) {
-      stdout += String(data);
-      return String(data).length;
-    }
-    return savedBunWrite(dest as never, data as never);
-  }) as typeof Bun.write;
+  process.stdout.write = ((chunk: unknown) => {
+    stdout += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
   process.exit = ((code?: number) => {
     throw new ExitCalled(code ?? 0);
   }) as typeof process.exit;
@@ -119,7 +116,7 @@ async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number
   } finally {
     process.exit = savedExit;
     process.stderr.write = savedWrite;
-    Bun.write = savedBunWrite;
+    process.stdout.write = savedStdoutWrite;
   }
 }
 
