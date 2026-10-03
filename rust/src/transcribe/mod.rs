@@ -84,7 +84,6 @@ const SEAM_WORDS_PER_SECOND: f32 = 3.0;
 /// a later phrase recurring — anchoring there deletes the real speech before it.
 const SEAM_MAX_ANCHOR_SKIP_WORDS: usize = 3;
 
-/// Measured on Russian voice notes (#1384): shorter windows drift into Ukrainian, 15 s+ ones into Latin script.
 const VAD_WINDOW_MAX_SECONDS: f32 = 10.0;
 const VAD_WINDOW_MIN_PAUSE_SECONDS: f32 = 0.3;
 const VAD_WINDOW_EDGE_SILENCE_SECONDS: f32 = 0.5;
