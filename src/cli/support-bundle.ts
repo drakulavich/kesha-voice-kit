@@ -27,11 +27,19 @@ export const supportBundleCommand = defineCommand({
   },
   async run({ args }: { args: SupportBundleCommandArgs }) {
     try {
+      if (args.output === "") {
+        throw new KeshaError("E_INVALID_ARG", "--output needs a file path", { hint: "pass --output path.tar.gz." });
+      }
+      if (args.output === "-") {
+        throw new KeshaError("E_INVALID_ARG", "--output - is not a file path", {
+          hint: "to write the archive to stdout, pass --output /dev/stdout.",
+        });
+      }
       const bundle = await createSupportBundle({
         output: args.output,
         includeLogs: Boolean(args["include-logs"]),
       });
-      log.status(`Created support bundle: ${bundle.path}`);
+      log.notice(`Created support bundle: ${bundle.path}`);
       log.status(`Entries: ${bundle.entries.length}`);
       log.status(`Size: ${bundle.sizeBytes} bytes`);
     } catch (err) {

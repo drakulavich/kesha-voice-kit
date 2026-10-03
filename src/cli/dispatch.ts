@@ -6,7 +6,7 @@ import { packageVersion } from "../package-info";
 import { guardStdoutWrites } from "../stdout-pipe";
 import { suggestCommand } from "../suggest-command";
 import { applyCliContext, resolveCliContext } from "./context";
-import { rejectUnknownOptions, renderInvalidArg } from "./options";
+import { rejectExtraPositionals, rejectUnknownOptions, renderInvalidArg } from "./options";
 
 // Lazy loaders so a cold CLI spawn transpiles only the invoked command, not the whole graph (#568).
 // `CommandDef<any>`: citty's generic is invariant in the arg shape and each command has its own schema.
@@ -133,7 +133,9 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         return;
       }
       const command = await SUBCOMMANDS[firstArg!]!();
-      rejectUnknownOptions(restArgs, await resolveArgsDef(command));
+      const argsDef = await resolveArgsDef(command);
+      rejectUnknownOptions(restArgs, argsDef);
+      if (firstArg !== "install" && firstArg !== "say") rejectExtraPositionals(restArgs, argsDef);
       await runMain(command, { rawArgs: restArgs, showUsage });
       return;
     }
