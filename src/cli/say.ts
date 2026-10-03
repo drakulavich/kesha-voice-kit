@@ -358,10 +358,7 @@ export const sayCommand = defineCommand({
         log.error(errorMessage(err));
         process.exit(exitCodeFor(err));
       }
-      const written = await new Promise<boolean>((resolve) =>
-        process.stdout.write(ids.map((id) => `${id}\n`).join(""), (err) => resolve(!err)),
-      );
-      if (written) process.exit(0);
+      process.stdout.write(ids.map((id) => `${id}\n`).join(""));
       return;
     }
 

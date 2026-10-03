@@ -100,9 +100,8 @@ async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number
     stderr += String(chunk);
     return true;
   }) as typeof process.stderr.write;
-  process.stdout.write = ((chunk: unknown, done?: () => void) => {
+  process.stdout.write = ((chunk: unknown) => {
     stdout += String(chunk);
-    done?.();
     return true;
   }) as typeof process.stdout.write;
   process.exit = ((code?: number) => {
