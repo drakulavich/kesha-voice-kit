@@ -684,7 +684,10 @@ fn pack_vad_windows(spans: &[(f32, f32)], max_window_s: f32, min_pause_s: f32) -
             }
         }
         let last = last_at_pause.unwrap_or(last);
-        windows.push((start, trail(last)));
+        let (speech_start, speech_end) = (spans[first].0, spans[last].1);
+        let start = start.max(speech_end - max_window_s).min(speech_start);
+        let end = trail(last).min(start + max_window_s).max(speech_end);
+        windows.push((start, end));
         first = last + 1;
     }
     windows
@@ -1531,8 +1534,27 @@ mod tests {
         let spans = [(0.0, 25.0), (26.0, 28.0)];
         assert_windows(
             pack_vad_windows(&spans, 10.0, 0.3),
-            &[(0.0, 25.5), (25.5, 28.0)],
+            &[(0.0, 25.0), (25.5, 28.0)],
         );
+    }
+
+    #[test]
+    fn vad_windows_of_spans_within_the_limit_stay_within_it_with_edge_silence() {
+        for spans in [
+            vec![(0.0, 9.9), (11.0, 12.0)],
+            vec![(0.0, 1.0), (2.0, 11.9)],
+        ] {
+            let windows = pack_vad_windows(&spans, 10.0, 0.3);
+            for &(start, end) in &windows {
+                assert!(end - start <= 10.0 + 1e-4, "{windows:?} from {spans:?}");
+            }
+            for &(start, end) in &spans {
+                assert!(
+                    windows.iter().any(|w| w.0 <= start && end <= w.1),
+                    "{windows:?} drops {start}-{end}"
+                );
+            }
+        }
     }
 
     #[test]
