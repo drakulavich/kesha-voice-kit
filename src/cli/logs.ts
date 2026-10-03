@@ -23,6 +23,9 @@ export function runLogsAction(args: LogsCommandArgs): ActionResult {
   if (args.json && action !== "status") {
     return { ok: false, error: "usage: kesha logs status --json" };
   }
+  if (args.value !== undefined && action !== "mode" && SUPPORTED_ACTIONS.split(", ").includes(action)) {
+    return { ok: false, error: `unexpected argument '${args.value}' (kesha logs ${action} takes no value)` };
+  }
   switch (action) {
     case "enable": {
       const status = setDiagnosticLogMode("on");
