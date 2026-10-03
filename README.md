@@ -24,7 +24,7 @@
 
 ## Quick Start
 
-Runtime: **[Bun](https://bun.sh)** >= 1.3.0.
+Runtime: **[Bun](https://bun.sh)** >= 1.4.0.
 
 ```bash
 # 1. Install Bun (skip if you have it)
