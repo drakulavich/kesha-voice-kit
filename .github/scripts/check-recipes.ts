@@ -186,7 +186,7 @@ export function referencedRecipes(path: string, contents: string): Reference[] {
   return found;
 }
 
-/** Aliases are invocable names too, so `just release` must resolve through `release-preflight`. */
+/** Aliases are invocable names too. */
 export function knownRecipeNames(dump: JustDump): Set<string> {
   return new Set([...Object.keys(dump.recipes ?? {}), ...Object.keys(dump.aliases ?? {})]);
 }
