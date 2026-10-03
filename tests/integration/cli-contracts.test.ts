@@ -2336,6 +2336,21 @@ exit 2
     });
   }, 30_000);
 
+  test("support-bundle under -q still names the archive it wrote (#1369)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-bundle-quiet-");
+    const bundlePath = join(dir, "bundle.tar.gz");
+
+    const bundle = await runCli(["-q", "support-bundle", "--output", bundlePath], { env: isolatedEnv(dir), timeoutMs: 15_000 });
+
+    expectContract(bundle, {
+      exitCode: 0,
+      stdoutEmpty: true,
+      stderrContains: [`Created support bundle: ${bundlePath}`],
+      stderrNotContains: ["Entries:", "Size:"],
+    });
+    expect(existsSync(bundlePath)).toBe(true);
+  }, 30_000);
+
   for (const { name, args, stderr } of [
     { name: "a positional path", args: ["mine.tar.gz"], stderr: "unexpected argument 'mine.tar.gz' (did you mean --output mine.tar.gz?)" },
     { name: "a bare --output", args: ["--output"], stderr: "--output needs a file path" },
