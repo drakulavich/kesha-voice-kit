@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { spawn } from "bun";
 import { chmodSync, mkdirSync, readFileSync } from "fs";
 import { describeJson } from "../helpers/fake-engine";
+import { tempDir } from "../helpers/temp-dir";
 
 const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
 
@@ -71,7 +72,7 @@ await Bun.write(args[args.indexOf("--out") + 1], new Uint8Array([82, 73, 70, 70,
 }
 
 async function spokenText(sayArgs: (dir: string) => string[]): Promise<string> {
-  const dir = `/tmp/kesha-recording-engine-${Date.now()}-${Math.random()}`;
+  const dir = tempDir("kesha-recording-engine-");
   const enginePath = await createRecordingEngine(dir);
   const proc = spawn(["bun", CLI_PATH, "say", ...sayArgs(dir)], {
     env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
