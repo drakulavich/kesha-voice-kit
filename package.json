@@ -54,7 +54,7 @@
     "check": "bun run lint && bun run check:versions && bun run check:recipes && bun run test:cli-fast",
     "check:workflows": "bun .github/scripts/check-workflows.ts",
     "check:recipes": "bun .github/scripts/check-recipes.ts",
-    "check:specs": "bunx @fission-ai/openspec@1.4.1 validate --specs --strict",
+    "check:specs": "bunx @fission-ai/openspec@1.14.0 validate --specs --strict",
     "check:release-manifest": "bun .github/scripts/release-manifest.mjs --check",
     "check:versions": "bun .github/scripts/check-versions.ts",
     "check:engine-targets": "bun .github/scripts/check-engine-targets.ts",
