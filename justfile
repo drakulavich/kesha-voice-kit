@@ -53,11 +53,6 @@ worktree-rm slug: root-checkout-only
 mutate +args:
     bun scripts/mutate.ts "$@"
 
-# Review this branch's PR against a claim and post it as one comment carrying the full head SHA: just review "<claim>" (#1065, #1280)
-[positional-arguments]
-review *claim:
-    bun scripts/review.ts "$@"
-
 # Run all tests
 test:
     bun run test:unit
