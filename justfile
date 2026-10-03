@@ -65,16 +65,6 @@ check:
     bun run check:recipes
     {{ just_executable() }} test
 
-# Run Bun coverage and enforce TS coverage gates
-coverage-ts:
-    bun run coverage:ts
-    bun run coverage:check:ts
-
-# Run cargo llvm-cov and enforce Rust coverage gates
-coverage-rust:
-    bun run coverage:rust
-    bun run coverage:check:rust
-
 # "$@" rather than {{ ARGS }}: interpolation is textual, so a filterset's parens would reach sh
 # unquoted and be a syntax error — the one nextest argument worth forwarding.
 # Run Rust tests via nextest (matches CI — ci.yml's Rust lanes); args are nextest filters: just rust-test ssml
@@ -108,14 +98,3 @@ smoke-test:
     bun link @drakulavich/kesha-voice-kit
     kesha install {{ TTS_FLAG }}
     bun scripts/smoke-test.ts {{ TTS_FLAG }}
-
-# Verify locally before cutting a GitHub release
-release-preflight: check smoke-test
-    @echo "Release preflight passed. Cut/publish via the GitHub release workflow, not npm publish."
-
-alias release := release-preflight
-
-# Print an existing release body: just release-notes vX.Y.Z
-[positional-arguments]
-release-notes TAG:
-    gh release view "$1" --json body --jq .body

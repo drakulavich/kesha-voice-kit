@@ -160,7 +160,6 @@ describe("isSwept", () => {
     "README.md",
     "CONTRIBUTING.md",
     "docs/architecture.md",
-    ".claude/commands/worktree.md",
     ".claude/skills/release/SKILL.md",
     ".github/workflows/ci.yml",
   ])("sweeps %s", (path) => {
@@ -191,7 +190,7 @@ describe("sweptFiles", () => {
   const files = sweptFiles(REPO_ROOT);
 
   test("finds the files #797 names", () => {
-    for (const path of ["CLAUDE.md", "docs/architecture.md", ".claude/commands/worktree.md"]) {
+    for (const path of ["CLAUDE.md", "docs/architecture.md"]) {
       expect(files).toContain(path);
     }
   });

@@ -9,7 +9,6 @@
       "Bash(git add *)",
       "Bash(git checkout -b *)",
       "Bash(git commit *)",
-      "Bash(git stash*)",
       "Bash(git fetch*)",
       "Bash(git rebase*)",
       "Bash(gh pr *)",
