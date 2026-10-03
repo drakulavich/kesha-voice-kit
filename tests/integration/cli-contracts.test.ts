@@ -2712,6 +2712,54 @@ exit 2
     expect(transcript.exitCode).toBe(0);
   }, 30000);
 
+  test("say --list-voices delivers every id to a slow reader and ends quietly when the reader leaves (#1368)", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-stdout-epipe-more-");
+    const enginePath = join(dir, "kesha-engine-listvoices");
+    writeFileSync(
+      enginePath,
+      `#!${process.execPath}
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ backend: "fake", features: ["tts"] }))});
+  process.exit(0);
+}
+if (args[0] === "say" && args[1] === "--list-voices") {
+  await Bun.write(Bun.stdout, Array.from({ length: 100000 }, (_, i) => "voice-" + String(i).padStart(6, "0") + "\\n").join(""));
+  process.exit(0);
+}
+process.exit(99);
+`,
+    );
+    chmodSync(enginePath, 0o755);
+    const env: Record<string, string> = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath };
+    const expected = Array.from({ length: 100000 }, (_, i) => `voice-${String(i).padStart(6, "0")}\n`).join("");
+
+    const slow = await runCliPipedTo(["say", "--list-voices"], "(sleep 1; cat)", { env, sinkPath: join(dir, "slow.txt") });
+    expect(slow.stderr).toBe("");
+    expect(slow.exitCode).toBe(0);
+    expect(readFileSync(join(dir, "slow.txt"), "utf8")).toBe(expected);
+
+    const voices = await runCliPipedTo(["say", "--list-voices"], "true", { env, sinkPath: join(dir, "voices.txt") });
+    expect(voices.stderr).toBe("");
+    expect(voices.exitCode).toBe(0);
+
+    const unwritable = await runCliWithShellStdout(["say", "--list-voices"], "1</dev/null", env);
+    expect(unwritable.exitCode).not.toBe(0);
+    expect(unwritable.stderr).toContain("failed writing to stdout");
+  }, 30000);
+
+  test("a reader that stops reading ends support-bundle --output /dev/stdout quietly (#1368)", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-bundle-epipe-");
+    const bundle = await runCliPipedTo(["support-bundle", "--output", "/dev/stdout"], "true", {
+      env: isolatedEnv(dir),
+      sinkPath: join(dir, "bundle.tar.gz"),
+    });
+    expect(bundle.stderr).toBe("");
+    expect(bundle.exitCode).toBe(0);
+  }, 30000);
+
   test("kesha record --live stops recording when its reader leaves, instead of holding the microphone (#1187)", async () => {
     if (process.platform === "win32") return;
     const dir = makeTempDir("kesha-cli-contract-record-reader-left-");
