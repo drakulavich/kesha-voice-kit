@@ -1,6 +1,7 @@
 import { runMain, type ArgsDef, type CommandDef } from "citty";
 import { existsSync } from "fs";
 import { log } from "../log";
+import { packageVersion } from "../package-info";
 import { guardStdoutWrites } from "../stdout-pipe";
 import { suggestCommand } from "../suggest-command";
 import { applyCliContext, resolveCliContext } from "./context";
@@ -87,7 +88,7 @@ export function unknownCommandMessages(token: string, subcommandKeys: string[]):
   if (suggestCommand(token, ["transcribe"]) === "transcribe") {
     warnLines.push("To transcribe, pass the audio path directly: kesha ./recording.ogg");
   }
-  return { errorLine: `unknown command '${token}'`, warnLines };
+  return { errorLine: renderInvalidArg(`unknown command '${token}'`), warnLines };
 }
 
 async function resolveArgsDef(command: CommandDef<any>): Promise<ArgsDef> {
@@ -121,6 +122,10 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
 
   switch (classifyFirstArg(firstArg, subcommandKeys)) {
     case "subcommand": {
+      if (restArgs.length === 1 && (restArgs[0] === "--version" || restArgs[0] === "-v")) {
+        process.stdout.write(`${packageVersion}\n`);
+        return;
+      }
       const command = await SUBCOMMANDS[firstArg!]!();
       rejectUnknownOptions(restArgs, await resolveArgsDef(command));
       await runMain(command, { rawArgs: restArgs });
@@ -132,7 +137,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const { errorLine, warnLines } = unknownCommandMessages(firstArg!, subcommandKeys);
       log.error(errorLine);
       for (const line of warnLines) log.warn(line);
-      process.exit(1);
+      process.exit(2);
       break;
     }
 

@@ -16,7 +16,9 @@ describe("transcribe_audio errors", () => {
   test("missing file returns isError, never throws protocol error", async () => {
     const res = await call("transcribe_audio", { path: "/no/such/file.wav" });
     expect(res.isError).toBe(true);
-    expect((res.content as Array<{ text: string }>)[0]?.text).toContain("File not found");
+    expect((res.content as Array<{ text: string }>)[0]?.text).toStartWith(
+      "error [E_INPUT_NOT_FOUND]: File not found: /no/such/file.wav",
+    );
   });
 
   test("missing relative path explains cwd resolution and recommends absolute path", async () => {
