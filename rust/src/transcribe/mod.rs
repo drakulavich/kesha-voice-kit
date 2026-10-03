@@ -1603,6 +1603,23 @@ mod tests {
                 words: Some(words),
             })
         });
+
+        assert_eq!(segments.len(), 1, "{segments:?}");
+        let timings: Vec<(&str, f32, f32)> = segments[0]
+            .words
+            .iter()
+            .flatten()
+            .map(|w| (w.word.as_str(), w.start, w.end))
+            .collect();
+        let expected = [("twenty", 0.5, 1.0), ("one", 1.1, 1.6)];
+        assert_eq!(timings.len(), expected.len(), "{timings:?}");
+        for (got, want) in timings.iter().zip(expected) {
+            assert!(
+                got.0 == want.0 && (got.1 - want.1).abs() < 1e-4 && (got.2 - want.2).abs() < 1e-4,
+                "{timings:?} vs {expected:?}"
+            );
+        }
+
         let output = finalize_output(
             TranscriptionOutput {
                 text: join_segment_texts(&segments),
@@ -1611,14 +1628,8 @@ mod tests {
             true,
             true,
         );
-
         let texts: Vec<&str> = output.segments.iter().map(|s| s.text.as_str()).collect();
         assert_eq!(texts, ["21"]);
-        for s in &output.segments {
-            for w in s.words.iter().flatten() {
-                assert!(w.start >= s.start && w.end <= s.end, "{w:?} outside {s:?}");
-            }
-        }
     }
 
     #[test]
