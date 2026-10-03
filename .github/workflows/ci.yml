@@ -86,6 +86,7 @@ jobs:
               - 'tests/fixtures/**'
               - 'package.json'
               - 'bun.lock'
+              - '.bun-version'
               - 'tsconfig.json'
               # `rust/Cargo.toml` is in the SUPERSET filter so the
               # version-drift check (#267 F16) always fires on a
@@ -127,6 +128,7 @@ jobs:
               - 'tests/fixtures/**'
               - 'package.json'
               - 'bun.lock'
+              - '.bun-version'
               - '.github/workflows/ci.yml'
               - '.github/actions/**'
               - '.github/scripts/install-ffmpeg.sh'
@@ -136,6 +138,7 @@ jobs:
               - 'rust/**'
               - 'package.json'
               - 'bun.lock'
+              - '.bun-version'
               - 'tests/fixtures/**'
               - 'tests/integration/e2e-engine.test.ts'
               - 'tests/integration/mcp-e2e.test.ts'
@@ -170,6 +173,7 @@ jobs:
               - 'rust/**'
               - 'package.json'
               - 'bun.lock'
+              - '.bun-version'
               - 'tests/fixtures/**'
               - 'tests/integration/say-e2e.test.ts'
               - 'tests/integration/mcp-synthesis-e2e.test.ts'
@@ -191,6 +195,7 @@ jobs:
             openspec:
               - 'openspec/**'
               - 'package.json'
+              - '.bun-version'
               - '.github/workflows/ci.yml'
             workflows:
               - '.github/workflows/**'
@@ -198,6 +203,7 @@ jobs:
               - '.github/scripts/**'
               - 'package.json'
               - 'bun.lock'
+              - '.bun-version'
               # The file check:engine-targets guards; without it an asset-name edit never runs the check.
               - 'src/engine-targets.ts'
               # checkFlakeNix (#1088) scans this file; without it here workflow-lint never runs on a flake.nix-only change.

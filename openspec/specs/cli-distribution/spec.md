@@ -65,7 +65,7 @@ Each supported distribution path SHALL deliver the CLI package's `bin/kesha.js` 
 
 ### Requirement: Bun is present on every distribution path, as a dependency or compiled in
 
-The CLI package SHALL declare Bun >= 1.3.0 as its required runtime, and every wrapper path SHALL either depend on Bun, bundle it, or embed it in a compiled binary, so that a successful install never produces a `kesha` that cannot start.
+The CLI package SHALL declare Bun >= 1.4.0 as its required runtime, and every wrapper path SHALL either depend on Bun, bundle it, or embed it in a compiled binary, so that a successful install never produces a `kesha` that cannot start.
 
 #### Scenario: Maks installs the Homebrew formula on a Mac without Bun
 
@@ -92,10 +92,10 @@ The CLI package SHALL declare Bun >= 1.3.0 as its required runtime, and every wr
 - THEN startup fails, because the CLI uses Bun-native APIs and ships no
   compatibility layer
 
-> *Technical Note — `package.json#engines.bun` is `>=1.3.0`.
+> *Technical Note — `package.json#engines.bun` is `>=1.4.0`.
 > `packaging/homebrew/Formula/kesha-voice-kit.rb` declares
 > `depends_on "oven-sh/bun/bun"`. The `Dockerfile` pins
-> `oven/bun:1.4.0-slim`. The Linux binary is compiled for `bun-linux-x64`
+> `oven/bun:1.4.2-slim`. The Linux binary is compiled for `bun-linux-x64`
 > (glibc); `docs/distribution.md` states the musl limitation and points at the
 > container image.*
 
