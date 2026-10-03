@@ -374,7 +374,9 @@ export const sayCommand = defineCommand({
       process.exit(2);
     }
 
-    const inlineText = typeof args.text === "string" ? args.text : undefined;
+    const positionals = (args._ ?? []).map(String);
+    const inlineText =
+      positionals.length > 0 ? positionals.join(" ") : typeof args.text === "string" ? args.text : undefined;
     const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;
     if (shouldRejectMissingSayText(inlineText, stdinIsTty)) {
       log.error(renderInvalidArg("kesha say requires text or piped stdin. Usage: kesha say <text>"));
