@@ -9,7 +9,6 @@ export {
   canInstallDiarizeOnPlatform,
   initCommand,
   initInstallArgs,
-  initSuggestionCommands,
   omitUnsupportedDiarize,
   promptInitSelection,
   renderInitOverview,

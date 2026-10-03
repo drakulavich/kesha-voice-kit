@@ -574,6 +574,11 @@ describe("CLI contracts", () => {
     const short = await runCli(["-v"]);
     expectContract(short, { exitCode: 0, stderrEmpty: true });
     expect(short.stdout).toBe(version.stdout);
+    for (const args of [["say", "--version"], ["status", "--version"], ["logs", "-v"], ["say", "-v"]]) {
+      const sub = await runCli(args);
+      expectContract(sub, { exitCode: 0, stderrEmpty: true });
+      expect(sub.stdout).toBe(version.stdout);
+    }
 
     // S1-1: a consumer that asked for JSON must never receive the usage prose on stdout.
     for (const args of [[], ["--json"]]) {
@@ -738,9 +743,9 @@ describe("CLI contracts", () => {
 
     const typo = await runCli(["instal"], { env });
     expectContract(typo, {
-      exitCode: 1,
+      exitCode: 2,
       stdoutEmpty: true,
-      stderrContains: ["unknown command 'instal'", "Did you mean install?"],
+      stderrContains: ["error [E_INVALID_ARG]: unknown command 'instal'", "Did you mean install?"],
       stderrNotContains: ["fake engine should not have been invoked"],
     });
 
@@ -754,10 +759,10 @@ describe("CLI contracts", () => {
 
     const transcribeTypo = await runCli(["transcrib"], { env });
     expectContract(transcribeTypo, {
-      exitCode: 1,
+      exitCode: 2,
       stdoutEmpty: true,
       stderrContains: [
-        "unknown command 'transcrib'",
+        "error [E_INVALID_ARG]: unknown command 'transcrib'",
         "If this is an audio file, pass a path like './transcrib'.",
         "To transcribe, pass the audio path directly: kesha ./recording.ogg",
       ],
@@ -1447,7 +1452,7 @@ process.exit(99);
       {
         file: mediaPath,
         code: "E_TRANSCRIBE_FAILED",
-        message: `error [E_TRANSCRIBE_FAILED]: ${diarizeError}`,
+        message: diarizeError,
       },
     ]);
   });
@@ -1479,9 +1484,29 @@ process.exit(99);
       {
         file: mediaPath,
         code: "E_DIARIZE_TIMEOUT",
-        message: codedError,
+        message: "speaker diarization timed out after 30s for 4s of audio",
       },
     ]);
+  });
+
+  test("--json --include-errors carries a launch failure's bare message, its code in code", async () => {
+    if (process.platform === "win32") return;
+    const dir = makeTempDir("kesha-cli-contract-spawn-error-");
+    const enginePath = join(dir, "kesha-engine");
+    writeFileSync(enginePath, "not executable");
+    chmodSync(enginePath, 0o644);
+    const mediaPath = join(dir, "workshop.mp4");
+    writeFileSync(mediaPath, "fake media");
+
+    const run = await runCli(["--json", "--include-errors", mediaPath], {
+      env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+    });
+
+    expectContract(run, { exitCode: 1, stderrContains: [`${mediaPath}: error [E_ENGINE_SPAWN]: `, "hint: "] });
+    const [record] = JSON.parse(run.stdout).errors;
+    expect(record.code).toBe("E_ENGINE_SPAWN");
+    expect(record.message).toStartWith(`failed to launch kesha-engine at ${enginePath}`);
+    expect(record.message).not.toContain("hint:");
   });
 
   test("successful machine-readable output keeps progress off stdout", async () => {
@@ -1775,6 +1800,21 @@ process.exit(99);
         stderrContains: ["error [E_INVALID_ARG]: ", `Requested backend "${other}" is not available on this platform`],
       });
     }
+  });
+
+  test("init without a terminal refuses with E_INVALID_ARG, exit 2, naming --yes and --plan, and downloads nothing (#1373)", async () => {
+    const env = isolatedEnv();
+    const run = await runCli(["init", "--tts", "--vad"], { env });
+    expectContract(run, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: [
+        "error [E_INVALID_ARG]: kesha init is interactive and needs a terminal",
+        "kesha init --yes",
+        "kesha init --plan",
+      ],
+    });
+    expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
   });
 
   test("diagnostic logs record failed install events without content, and a coded engine failure exits with the engine's status (#1186)", async () => {

@@ -54,7 +54,7 @@ describe("classifyFirstArg — unknown (typo detection)", () => {
 describe("unknownCommandMessages", () => {
   test("typo of a real subcommand suggests it", () => {
     const { errorLine, warnLines } = unknownCommandMessages("statsu", KNOWN);
-    expect(errorLine).toBe("unknown command 'statsu'");
+    expect(errorLine).toBe("error [E_INVALID_ARG]: unknown command 'statsu'");
     expect(warnLines).toContain("(Did you mean stats?)");
     expect(warnLines).toContain("If this is an audio file, pass a path like './statsu'.");
     expect(warnLines.some((line) => line.startsWith("To transcribe,"))).toBe(false);
@@ -62,7 +62,7 @@ describe("unknownCommandMessages", () => {
 
   test("typo of 'transcribe' adds the direct-invocation hint", () => {
     const { errorLine, warnLines } = unknownCommandMessages("transcrib", KNOWN);
-    expect(errorLine).toBe("unknown command 'transcrib'");
+    expect(errorLine).toBe("error [E_INVALID_ARG]: unknown command 'transcrib'");
     expect(warnLines.some((line) => line.includes("Did you mean"))).toBe(false);
     expect(warnLines).toContain("If this is an audio file, pass a path like './transcrib'.");
     expect(warnLines).toContain("To transcribe, pass the audio path directly: kesha ./recording.ogg");

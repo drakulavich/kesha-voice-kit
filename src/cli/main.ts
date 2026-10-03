@@ -409,7 +409,8 @@ async function processFile(
       error_code: code,
     });
     log.error(`${file}: ${stderrText}`);
-    return { ok: false, error: { file, code, message: stderrText }, exitCode: failureExitCode(err) };
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, error: { file, code, message }, exitCode: failureExitCode(err) };
   }
 }
 

@@ -117,13 +117,13 @@ CLI itself set it; a user-exported `NO_COLOR` is never cleared.
 > no-op colorizers. `--no-color` is stripped from `rawArgs` so citty never sees
 > it.*
 
-### Requirement: Unknown non-path tokens produce a Levenshtein suggestion and exit 1
+### Requirement: Unknown non-path tokens produce a Levenshtein suggestion and exit 2
 
-The CLI SHALL print an "unknown command" error when the first non-flag,
+The CLI SHALL print an `E_INVALID_ARG` "unknown command" error when the first non-flag,
 non-path argument does not match any known subcommand, optionally suggest the
 closest known command by Levenshtein distance (threshold: distance ≤ 3 AND
 ≤ 40% of the candidate length), always print a hint that audio files need a
-path-like form, and exit 1 without spawning the Engine.
+path-like form, and exit 2 without spawning the Engine.
 
 A token is path-like if it contains `.` or `/`, or if it names an existing file
 on disk. Path-like first arguments route to transcription instead of triggering
@@ -132,18 +132,18 @@ the unknown-command handler.
 #### Scenario: Maks typos a subcommand
 
 - WHEN Maks runs `kesha instal`
-- THEN stderr contains `unknown command 'instal'`
+- THEN stderr contains `error [E_INVALID_ARG]: unknown command 'instal'`
 - AND stderr contains `(Did you mean install?)`
 - AND stderr contains `If this is an audio file, pass a path like './instal'.`
-- AND the process exits 1
+- AND the process exits 2
 
 #### Scenario: Completely unrecognised token with no close match
 
 - WHEN Ira runs `kesha xyzzy`
-- THEN stderr contains `unknown command 'xyzzy'`
+- THEN stderr contains `error [E_INVALID_ARG]: unknown command 'xyzzy'`
 - AND no "Did you mean" line appears (distance exceeds threshold)
 - AND the path hint still appears
-- AND the process exits 1
+- AND the process exits 2
 
 #### Scenario: Extensionless file that exists routes to transcription
 
