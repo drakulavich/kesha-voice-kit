@@ -2,6 +2,7 @@ import { describe, it, expect } from "bun:test";
 import { spawn } from "bun";
 import { chmodSync, mkdirSync, readFileSync } from "fs";
 import { describeJson } from "../helpers/fake-engine";
+import { tempDir } from "../helpers/temp-dir";
 
 const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
 
@@ -52,6 +53,34 @@ await Bun.write(args[args.indexOf("--out") + 1], new Uint8Array([82, 73, 70, 70,
 `);
   chmodSync(enginePath, 0o755);
   return enginePath;
+}
+
+async function createRecordingEngine(dir: string): Promise<string> {
+  mkdirSync(dir, { recursive: true });
+  const enginePath = `${dir}/kesha-engine`;
+  await Bun.write(enginePath, `#!/usr/bin/env bun
+const args = Bun.argv.slice(2);
+if (args[0] === "describe") {
+  console.log(${JSON.stringify(describeJson({ features: ["tts"] }))});
+  process.exit(0);
+}
+await Bun.write(${JSON.stringify(dir)} + "/spoken.txt", await new Response(Bun.stdin.stream()).text());
+await Bun.write(args[args.indexOf("--out") + 1], new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
+`);
+  chmodSync(enginePath, 0o755);
+  return enginePath;
+}
+
+async function spokenText(sayArgs: (dir: string) => string[]): Promise<string> {
+  const dir = tempDir("kesha-recording-engine-");
+  const enginePath = await createRecordingEngine(dir);
+  const proc = spawn(["bun", CLI_PATH, "say", ...sayArgs(dir)], {
+    env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  expect(await proc.exited).toBe(0);
+  return readFileSync(`${dir}/spoken.txt`, "utf8");
 }
 
 async function createFailingEngine(dir: string): Promise<string> {
@@ -252,5 +281,22 @@ describe("kesha say (CLI)", () => {
     expect(stdout).toBe("");
     expect(stderr).toContain("--rate must be a finite number");
     expect(stderr).not.toContain("fake engine should not have been invoked");
+  });
+
+  it("speaks every unquoted word, flags before the text (#1379)", async () => {
+    const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "hello", "world"]);
+    expect(spoken).toBe("hello world");
+  });
+
+  it("speaks every unquoted word, flags between and after the text (#1379)", async () => {
+    const spoken = await spokenText((dir) => [
+      "hello", "--voice", "ru-vosk-m02", "world", "--rate", "1.0", "--out", `${dir}/r.wav`,
+    ]);
+    expect(spoken).toBe("hello world");
+  });
+
+  it("speaks a quoted positional exactly as given", async () => {
+    const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "hello   world"]);
+    expect(spoken).toBe("hello   world");
   });
 });
