@@ -2649,6 +2649,10 @@ process.exit(99);
     const voices = await runCliPipedTo(["say", "--list-voices"], "true", { env, sinkPath: join(dir, "voices.txt") });
     expect(voices.stderr).toBe("");
     expect(voices.exitCode).toBe(0);
+
+    const unwritable = await runCliWithShellStdout(["say", "--list-voices"], "1</dev/null", env);
+    expect(unwritable.exitCode).not.toBe(0);
+    expect(unwritable.stderr).toContain("failed writing to stdout");
   }, 30000);
 
   test("a reader that stops reading ends support-bundle --output /dev/stdout quietly (#1368)", async () => {
