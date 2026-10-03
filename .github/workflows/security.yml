@@ -102,7 +102,8 @@ jobs:
         run: bun install --frozen-lockfile
       - id: audit
         name: Audit JS dependencies
-        run: bun audit --audit-level=high
+        # No patched braces yet; drop the ignore with #1397.
+        run: bun audit --audit-level=high --ignore GHSA-vfj7-8cjw-p6xm
         continue-on-error: true
       - name: Report findings (scheduled only)
         if: github.event_name == 'schedule' && steps.audit.outcome == 'failure'
