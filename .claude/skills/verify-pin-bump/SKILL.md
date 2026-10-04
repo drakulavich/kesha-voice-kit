@@ -7,11 +7,13 @@ description: Use when a model SHA-256 mismatch surfaces (download_verified error
 
 ## Why this skill exists
 
-CLAUDE.md "MODEL HASHES ARE PINNED" rule:
+CLAUDE.md product invariant:
 
-> Every entry in `rust/src/models/manifest.rs` (ASR, lang-id, TTS) carries a pinned SHA-256. `download_verified` refuses to cache a file whose hash doesn't match. This makes `KESHA_MODEL_MIRROR` safe (a compromised mirror can't silently swap weights) and turns an upstream HuggingFace republish into a deliberate decision rather than a silent swap.
+> Every model download the engine performs itself goes through `download_verified` and its pinned SHA-256. Tests cover that function, not new callers that bypass it.
 
-The pin exists *because* of incident #174 — a previous regression where verification was disabled "to get it working". Bumping the pin without confirming the new weights are intentional re-introduces that risk.
+The pin makes `KESHA_MODEL_MIRROR` safe (a compromised mirror can't silently swap weights) and turns an upstream HuggingFace republish into a deliberate decision.
+
+Until #174, ASR and lang-id downloads skipped verification. Bumping the pin without confirming the new weights are intentional re-opens that gap.
 
 ## Hard NO
 
@@ -36,7 +38,7 @@ Wipe the existing cache for that file (it may be a partial / corrupted download)
 
 ```bash
 rm -f ~/.cache/kesha/models/<subdir>/<file>
-KESHA_CACHE_DIR=/tmp/pin-bump ./rust/target/release/kesha-engine install --tts
+KESHA_CACHE_DIR=/tmp/pin-bump ./rust/target/release/kesha-engine install --tts en ru   # bare --tts installs English only
 # or, for a single file, curl directly from the URL in models/manifest.rs:
 curl -fsSL "<url-from-models-manifest-rs>" -o /tmp/pin-bump-file
 ```
@@ -108,7 +110,7 @@ This catches: hash not 64 hex chars, URL malformed, rel_path duplicate, manifest
 
 ```bash
 rm -rf /tmp/pin-bump-cache
-KESHA_CACHE_DIR=/tmp/pin-bump-cache ./rust/target/release/kesha-engine install --tts
+KESHA_CACHE_DIR=/tmp/pin-bump-cache ./rust/target/release/kesha-engine install --tts en ru
 ```
 
 Expected: completes with no `expected sha256` errors.
@@ -128,8 +130,6 @@ For ASR bumps:
 KESHA_CACHE_DIR=/tmp/pin-bump-cache ./rust/target/release/kesha-engine transcribe <fixture.ogg>
 # compare to the previous transcript — material drift means quality may have changed
 ```
-
-For lang-id bumps: run the `lang_id_smoke` test.
 
 ### Step 9: Commit
 
