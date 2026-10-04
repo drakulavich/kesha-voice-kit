@@ -22,7 +22,7 @@ const MACOS_NORMALISED = /^\d+\.\d+$/;
 
 // Pinned: a floating version is unreviewed code with OIDC access (Greptile #699 P2).
 const CONVERTER = "@flakiness/junit-xml@1.4.0";
-const UPLOADER = "flakiness@0.289.0";
+const UPLOADER = "flakiness@0.311.0";
 
 type Environment = {
   name?: string;
