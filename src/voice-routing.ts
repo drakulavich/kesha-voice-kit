@@ -162,7 +162,7 @@ async function detectLang(
  * Resolve the voice for a synthesis request. Precedence: explicit voice >
  * explicit language hint (route by the stated language, skipping detection —
  * also the path on Linux/Windows where text-language detection is unavailable) >
- * macOS text-language auto-detection > Russian when detection routes nowhere and most
+ * macOS text-language auto-detection > Russian when detection is inconclusive and most
  * words are Cyrillic (#1387) > engine default (`undefined`). A language
  * hint the build has no voice for resolves to `undefined` (engine default)
  * rather than re-running detection — the user stated the language explicitly.
@@ -180,7 +180,7 @@ export async function resolveSayVoice(
   const { code, confidence } =
     langHint !== undefined ? { code: langHint, confidence: 1 } : await detectLang(text, options);
   const voice = pickVoiceForLang(code, confidence, options.platform, options.arch);
-  if (voice === undefined && langHint === undefined && mostlyCyrillicWords(text)) {
+  if (confidence < 0.5 && mostlyCyrillicWords(text)) {
     return pickVoiceForLang("ru", 1, options.platform, options.arch);
   }
   if (confidence < 0.5) return voice;

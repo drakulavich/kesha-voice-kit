@@ -138,4 +138,24 @@ describe("resolveSayVoice when text-language detection is inconclusive", () => {
       }),
     ).toBe("en-am_michael");
   });
+
+  test("mostly Latin words with one Cyrillic word keep the engine default", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, "Say привет to the new release notes", {
+        platform: "linux",
+        arch: "x64",
+        detectLanguage: inconclusive,
+      }),
+    ).toBeUndefined();
+  });
+
+  test("a confidently detected language with no voice keeps the engine default", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, "Привіт, як справи у вас сьогодні?", {
+        platform: "linux",
+        arch: "x64",
+        detectLanguage: async () => ({ code: "uk", confidence: 0.9 }),
+      }),
+    ).toBeUndefined();
+  });
 });
