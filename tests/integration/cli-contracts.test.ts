@@ -576,6 +576,10 @@ describe("CLI contracts", () => {
       stdoutContains: ["kesha install", "logs", "support-bundle", "--speakers", "--include-errors"],
       stderrEmpty: true,
     });
+    for (const [, name] of help.stdout.matchAll(/^ {2}([a-z-]+) {2,}/gm)) expect(SUBCOMMAND_NAMES).toContain(name!);
+    for (const [flag] of help.stdout.matchAll(/--[a-z-]+/g)) if (flag !== "--help" && flag !== "--all") expect(all.stdout).toContain(flag);
+    expect((await runCli(["-h"])).stdout).toBe(help.stdout);
+    expectContract(await runCli(["--all"]), { exitCode: 2, stderrContains: ["unknown option --all"] });
 
     const version = await runCli(["--version"]);
     expectContract(version, { exitCode: 0, stderrEmpty: true });
