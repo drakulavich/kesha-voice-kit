@@ -564,9 +564,22 @@ describe("CLI contracts", () => {
     const help = await runCli(["--help"]);
     expectContract(help, {
       exitCode: 0,
-      stdoutContains: ["Kesha Voice Kit", "kesha install", "logs", "--json", "--format"],
+      stdoutContains: ["Kesha Voice Kit", "install", "--help --all", "--json", "--format"],
       stderrEmpty: true,
     });
+    const helpLines = help.stdout.trimEnd().split("\n");
+    expect(helpLines.length).toBeLessThanOrEqual(24);
+    expect(Math.max(...helpLines.map((line) => line.length))).toBeLessThanOrEqual(80);
+    const all = await runCli(["--help", "--all"]);
+    expectContract(all, {
+      exitCode: 0,
+      stdoutContains: ["kesha install", "logs", "support-bundle", "--speakers", "--include-errors"],
+      stderrEmpty: true,
+    });
+    for (const [, name] of help.stdout.matchAll(/^ {2}([a-z-]+) {2,}/gm)) expect(SUBCOMMAND_NAMES).toContain(name!);
+    for (const [flag] of help.stdout.matchAll(/--[a-z-]+/g)) if (flag !== "--help" && flag !== "--all") expect(all.stdout).toContain(flag);
+    expect((await runCli(["-h"])).stdout).toBe(help.stdout);
+    expectContract(await runCli(["--all"]), { exitCode: 2, stderrContains: ["unknown option --all"] });
 
     const version = await runCli(["--version"]);
     expectContract(version, { exitCode: 0, stderrEmpty: true });

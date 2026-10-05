@@ -155,9 +155,14 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         log.error(renderInvalidArg(`put global flags after the subcommand: kesha ${misplaced} ...`));
         process.exit(2);
       }
-      const { createMainCommand } = await import("./main");
+      const { briefMainUsage, createMainCommand } = await import("./main");
       const command = createMainCommand(context);
-      rejectUnknownOptions(rawArgs, await resolveArgsDef(command));
+      const help = rawArgs.includes("--help") || rawArgs.includes("-h");
+      rejectUnknownOptions(help ? rawArgs.filter((arg) => arg !== "--all") : rawArgs, await resolveArgsDef(command));
+      if (help) {
+        await showUsage(rawArgs.includes("--all") ? command : briefMainUsage(command));
+        return;
+      }
       await runMain(command, { rawArgs, showUsage });
     }
   }
