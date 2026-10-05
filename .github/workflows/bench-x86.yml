@@ -16,7 +16,9 @@ jobs:
           bun-version: 1.4.2
       - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
       - run: bun add -g @drakulavich/kesha-voice-kit@latest && kesha --version && kesha install
-      - run: bun scripts/benchmark.ts | tee bench.md >> "$GITHUB_STEP_SUMMARY"
+      # faster-whisper 1.2.1 passes av.open(metadata_errors=), which PyAV 19 no longer accepts.
+      - run: python3 -m venv ~/.cache/kesha/benchmark-venv && ~/.cache/kesha/benchmark-venv/bin/pip install -q openai-whisper faster-whisper "av==15.1.0"
+      - run: set -o pipefail && bun scripts/benchmark.ts | tee bench.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
