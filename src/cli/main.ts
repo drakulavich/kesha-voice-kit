@@ -4,7 +4,10 @@ import { existsSync } from "fs";
 import { isDirectoryPath, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
 
 export { isDirectoryPath };
-import { detectAudioLanguageEngine, detectTextLanguageEngine } from "../engine";
+import { detectAudioLanguageEngine, detectTextLanguageEngine, isEngineInstalled } from "../engine";
+import { renderInstallPlan } from "../install-plan";
+import { canInstallDiarizeOnPlatform, promptConfirm } from "./init";
+import { performInstall } from "./install";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
 import type { TextLangDetectResult, TranscribeErrorRecord, TranscribeResult } from "../types";
@@ -571,6 +574,19 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         log.error(renderInvalidArg("no input file"));
         process.stderr.write(`${USAGE_MESSAGE}\n`);
         process.exit(2);
+      }
+
+      if (
+        !isEngineInstalled() &&
+        process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY &&
+        files.every((f) => existsSync(f) && !isDirectoryPath(f)) &&
+        (!args.speakers || canInstallDiarizeOnPlatform())
+      ) {
+        const modules = { vad: vadMode === "on", diarize: Boolean(args.speakers) };
+        log.info(await renderInstallPlan(modules));
+        if (await promptConfirm("Kesha needs these downloads before it can transcribe. Download them now?", true)) {
+          await performInstall({ noCache: false, ttsLangs: [], ...modules });
+        }
       }
 
       const wantsLangId = !!(args.lang || args.verbose || outputFormat !== "text");
