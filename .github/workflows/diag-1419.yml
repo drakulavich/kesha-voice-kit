@@ -16,7 +16,9 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - run: sysctl hw.model kern.hv_vmm_present; echo "ANE device lines: $(ioreg -c AppleARMIODevice | grep -ci ane)"
+      - run: |
+          sysctl hw.model kern.hv_vmm_present
+          echo "ANE device lines: $(ioreg -c AppleARMIODevice | grep -ci ane)"
       - run: bun add -g @drakulavich/kesha-voice-kit && kesha install
       - run: kesha tests/fixtures/benchmark-en/01-check-email.ogg 2>&1 | tail -40
         continue-on-error: true
