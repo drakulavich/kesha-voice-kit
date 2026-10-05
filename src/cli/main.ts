@@ -459,7 +459,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       name: "kesha",
       version: packageVersion,
       description:
-        "Kesha Voice Kit — open-source voice toolkit for Apple Silicon.\n" +
+        "Kesha Voice Kit listens and talks back: local speech for agents and scripts.\n" +
         "\n" +
         "Examples:\n" +
         "  kesha audio.ogg          Transcribe an audio file.\n" +

@@ -11,7 +11,7 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun" alt="Bun"></a>
 </p>
 
-<p align="center"><b>Give your local tools and LLM agents a voice.</b><br>Fast speech-to-text, text-to-speech, voice-activity detection, and language detection in one local-first CLI — CoreML on Apple Silicon, ONNX on Linux and Windows.</p>
+<p align="center"><b>Kesha listens and talks back.</b><br>Your agent gets a voice message, Kesha turns it into text on your machine, and speaks the reply. Fastest on Apple Silicon with CoreML, and it runs on Linux and Windows through ONNX.</p>
 
 - **Transcribe locally** — [25 languages](docs/languages.md#speech-to-text-25), up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Speak back** — text-to-speech in [9 languages](docs/languages.md#text-to-speech)
@@ -63,6 +63,14 @@ All three targets transcribe, detect the spoken language, run VAD, and speak. Th
 | Voice auto-routing from the text's language | ✅ | pass `--lang` | pass `--lang` |
 
 Intel Macs get no published engine binary. Full matrix with maturity labels: [docs/product-positioning.md](docs/product-positioning.md#platform-matrix).
+
+## Plug into your agent
+
+- **MCP server** — `kesha mcp` exposes transcribe/synthesize/list tools to any MCP client (Claude, Cursor, Codex, Gemini). Setup: [docs/mcp.md](docs/mcp.md).
+- **OpenClaw** — give your LLM agent ears. Install & config: [docs/openclaw.md](docs/openclaw.md).
+- **Hermes Agent** — local STT/TTS through Hermes command providers. Setup: [docs/hermes.md](docs/hermes.md).
+- **Raycast** (macOS) — offline microphone dictation from the launcher: *Dictate to Clipboard* records with a live signal meter, auto-stops on silence, transcribes locally, and copies the text. [Install from the Raycast Store](https://www.raycast.com/drakulavich/kesha-voice-kit) · source: [`raycast/`](raycast/).
+- **Programmatic API** — `@drakulavich/kesha-voice-kit/core` for use inside a Bun program. See [docs/api.md](docs/api.md).
 
 ## Speech-to-text
 
@@ -143,14 +151,6 @@ All of these install the Bun CLI wrapper; engine + models still download explici
 - **Docker** (GHCR image) — [docs/docker.md](docs/docker.md)
 - **Nix** (`aarch64-darwin` / `x86_64-linux`) — builds the engine from source (`nix build github:drakulavich/kesha-voice-kit#kesha-engine`). The full `kesha` CLI via `nix run` / `nix profile install` is **not yet available** — it needs a maintainer with Nix to populate a build hash ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)). · [docs/distribution.md](docs/distribution.md#nix)
 - **Shell completions + manpage** — `kesha completions bash|zsh|fish` and `kesha manpage` print the packaged files to install wherever your shell expects them.
-
-## Integrations
-
-- **MCP server** — `kesha mcp` exposes transcribe/synthesize/list tools to any MCP client (Claude, Cursor, Codex, Gemini). Setup: [docs/mcp.md](docs/mcp.md).
-- **OpenClaw** — give your LLM agent ears. Install & config: [docs/openclaw.md](docs/openclaw.md).
-- **Hermes Agent** — local STT/TTS through Hermes command providers. Setup: [docs/hermes.md](docs/hermes.md).
-- **Raycast** (macOS) — offline microphone dictation from the launcher: *Dictate to Clipboard* records with a live signal meter, auto-stops on silence, transcribes locally, and copies the text. [Install from the Raycast Store](https://www.raycast.com/drakulavich/kesha-voice-kit) · source: [`raycast/`](raycast/).
-- **Programmatic API** — `@drakulavich/kesha-voice-kit/core` for use inside a Bun program. See [docs/api.md](docs/api.md).
 
 ## More
 
