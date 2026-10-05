@@ -4,7 +4,7 @@ import { createStableTag, parseArgs, type CommandResult, type CommandRunner } fr
 const target = "a".repeat(40);
 const tagObject = "b".repeat(40);
 const tag = "v1.30.0";
-const notes = "## Release\n\n- safer tagging\n";
+const notes = "## Release\n\n- safer tagging\n\n## Dogfood\n\n- [x] First run\n- [x] Russian voice note\n\n## Follow-ups\n\n- [ ] not part of the dogfood run\n";
 
 const success = (stdout = ""): CommandResult => ({ code: 0, stdout, stderr: "" });
 
@@ -82,6 +82,17 @@ describe("release tag helper", () => {
     const npmNotes = "## Upgrade\n\nnpm update -g @drakulavich/kesha-voice-kit\n";
 
     await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, npmNotes, runner)).rejects.toThrow("bun add -g");
+    expect(calls).toEqual([]);
+  });
+
+  // #1408: the release notes carry the docs/dogfood.md checklist, every item ticked.
+  test("refuses notes without a fully ticked dogfood checklist, before touching git", async () => {
+    const { runner, calls } = fakeRunner();
+    const missing = "## Release\n\n- safer tagging\n";
+    const unticked = "## Dogfood\n\n- [x] First run\n- [ ] English reply\n";
+
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, missing, runner)).rejects.toThrow("docs/dogfood.md");
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, unticked, runner)).rejects.toThrow("- [ ] English reply");
     expect(calls).toEqual([]);
   });
 });

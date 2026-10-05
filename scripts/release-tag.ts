@@ -126,10 +126,20 @@ async function waitForWorkflow(runner: CommandRunner, tag: string, target: strin
   fail(`no push-triggered release.yml run appeared for ${tag} at ${target}; release.yml refuses a stable dispatch, so check the Actions tab before re-tagging`);
 }
 
+function dogfoodRefusal(notes: string): string | null {
+  const section = /^## Dogfood\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(notes)?.[1] ?? "";
+  const open = section.split("\n").filter((line) => line.startsWith("- [ ]"));
+  if (!section.includes("- [x]")) return "release notes need a ## Dogfood section with the ticked checklist from docs/dogfood.md";
+  if (open.length > 0) return `release notes have unticked dogfood items:\n${open.join("\n")}`;
+  return null;
+}
+
 export async function createStableTag(options: Options, notes: string, runner: CommandRunner): Promise<void> {
   if (!notes.trim()) fail("release notes must not be empty");
   const npm = npmGlobalCommands(options.notesPath, notes);
   if (npm.length > 0) fail(npm.join("\n"));
+  const dogfood = dogfoodRefusal(notes);
+  if (dogfood) fail(dogfood);
   await shell(runner, "git", "fetch", "origin", "main");
   const target = await shell(runner, "git", "rev-parse", "origin/main");
   if (!/^[0-9a-f]{40}$/i.test(target)) fail("origin/main did not resolve to a commit SHA");

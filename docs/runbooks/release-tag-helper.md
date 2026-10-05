@@ -6,7 +6,7 @@ Create a stable release tag only from a clean, current root checkout:
 just release-tag vX.Y.Z notes.md
 ```
 
-The helper fetches `origin/main`, refuses a used local or remote tag, makes the annotated tag
+The helper refuses notes without a fully ticked `## Dogfood` checklist ([docs/dogfood.md](../dogfood.md)), fetches `origin/main`, refuses a used local or remote tag, makes the annotated tag
 target that exact commit, pushes it, then reads the remote ref and tag object back. It verifies the
 annotation, target, tagger identity, and the push-triggered `release.yml` run.
 
