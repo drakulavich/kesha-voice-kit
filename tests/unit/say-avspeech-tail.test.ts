@@ -1,7 +1,7 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { tempDir } from "../helpers/temp-dir";
 
 const SOURCE = join(import.meta.dir, "..", "..", "rust", "swift", "say-avspeech.swift");
 const VOICE = "com.apple.voice.compact.en-US.Samantha";
@@ -33,12 +33,10 @@ function run(argv: string[], stdin?: string): Buffer {
 const darwinTest = process.platform === "darwin" ? test : test.skip;
 
 describe("say-avspeech sidecar", () => {
-  const dir = mkdtempSync(join(tmpdir(), "kesha-avspeech-"));
-  afterAll(() => rmSync(dir, { recursive: true, force: true }));
-
   darwinTest(
     "speaks a long text as long as say(1) does, tail included",
     () => {
+      const dir = tempDir("kesha-avspeech-");
       const bin = join(dir, "say-avspeech");
       run(["swiftc", "-o", bin, SOURCE]);
       const sidecarWav = join(dir, "sidecar.wav");
