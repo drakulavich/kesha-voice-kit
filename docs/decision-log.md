@@ -156,13 +156,14 @@ issue/PR that drove it). Newest concerns first within each section.
   runners. The #1105 minutes audit ranked dropping `macos-latest` as the cheapest 10x
   saving available *if* the unit suite had no darwin-specific assertions, and asked for that
   to be checked rather than assumed. It was checked; it has them.
-- **Context:** 14 unit cases assert on `macos-latest` and assert nothing, or less, on
-  `ubuntu-latest` — 9 skipped outright via `isDarwinArm64() ? test : test.skip`, 5 more
+- **Context:** 15 unit cases assert on `macos-latest` and assert nothing, or less, on
+  `ubuntu-latest` — 9 skipped outright via `isDarwinArm64() ? test : test.skip`, 1 via
+  `process.platform === "darwin" ? test : test.skip` (the AVSpeech tail, #1386), 5 more
   cut short by an in-body early return. They cover the darwin sidecars, Gatekeeper
   unblocking, the Kokoro ANE staging and the warm-up, all of which production code reaches
   through `isDarwinArm64` in `src/engine-targets.ts`. Two CI jobs run the unit suite —
   `unit-tests`, and `ts-coverage` through `coverage:ts` → `test:cli-fast` — and `ts-coverage`
-  is `ubuntu-latest` only, so this matrix row is the sole place those 14 cases assert.
+  is `ubuntu-latest` only, so this matrix row is the sole place those 15 cases assert.
 - **Rationale:** the saving is $0 — the repository is public — and 0 s of latency, since
   `windows-latest` is the slowest row and gates the same downstream jobs. Neither ubuntu
   nor macOS is a subset of the other: one case runs on ubuntu and windows and not on macOS.
