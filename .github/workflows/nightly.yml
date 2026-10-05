@@ -475,7 +475,7 @@ jobs:
           - os: macos-14
           - os: windows-latest
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     permissions:
       contents: read
     steps:

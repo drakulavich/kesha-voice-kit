@@ -8,7 +8,8 @@ kesha --version
 installed=$(date +%s)
 kesha install
 models=$(date +%s)
-kesha tests/fixtures/benchmark-en/01-check-email.ogg
+kesha tests/fixtures/benchmark-en/01-check-email.ogg | tee transcript.txt
+grep -q "[[:alpha:]]" transcript.txt
 done=$(date +%s)
 
 {
