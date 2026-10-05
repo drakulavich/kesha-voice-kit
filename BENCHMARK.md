@@ -96,6 +96,7 @@ Kesha ONNX is ~2.5x faster than openai-whisper even on the M2's CPU.
 **CPU:** AMD EPYC 9V45, 15 GiB RAM
 **Kesha:** 2.1.0 from npm, ONNX on CPU; Whisper models run on the same CPU in FP32 (openai-whisper) and int8 (faster-whisper)
 **Run:** [37337994791](https://github.com/drakulavich/kesha-voice-kit/actions/runs/37337994791)
+**Python:** 3.12; faster-whisper 1.2.1 with PyAV pinned to 15.1.0 ([#1421](https://github.com/drakulavich/kesha-voice-kit/issues/1421)); openai-whisper as pip resolved it on 2026-10-05
 
 ### Russian (10 files)
 
