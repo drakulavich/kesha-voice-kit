@@ -103,3 +103,70 @@ describe("resolveSayVoice native-script ja/hi routing", () => {
     expect(await resolveSayVoice(undefined, "es", "Hola mundo", refuse)).toBe("es-em_alex");
   });
 });
+
+// #1387: a short Russian sentence carrying a URL and a product name leaves detection inconclusive.
+describe("resolveSayVoice when text-language detection is inconclusive", () => {
+  const ISSUE_TEXT = "Ссылка на документ: docs.google.com/document/d/abc, пароль в 1Password.";
+  const inconclusive = async () => null;
+  const issueDetection = async () => ({ code: "en", confidence: 0.367 });
+
+  test("mostly Cyrillic words speak through Milena on darwin", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, ISSUE_TEXT, {
+        platform: "darwin",
+        arch: "arm64",
+        detectLanguage: issueDetection,
+      }),
+    ).toBe("macos-com.apple.voice.compact.ru-RU.Milena");
+  });
+
+  test("mostly Cyrillic words speak through the Vosk Russian voice on linux", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, ISSUE_TEXT, {
+        platform: "linux",
+        arch: "x64",
+        detectLanguage: inconclusive,
+      }),
+    ).toBe("ru-vosk-m02");
+  });
+
+  test("a confidently English sentence with one Cyrillic word stays English", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, "Say привет to the new release notes", {
+        platform: "darwin",
+        arch: "arm64",
+        detectLanguage: async () => ({ code: "en", confidence: 0.9 }),
+      }),
+    ).toBe("en-am_michael");
+  });
+
+  test("mostly Latin words with one Cyrillic word keep the engine default", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, "Say привет to the new release notes", {
+        platform: "linux",
+        arch: "x64",
+        detectLanguage: inconclusive,
+      }),
+    ).toBeUndefined();
+  });
+
+  test("an even split of Cyrillic and Latin words keeps the engine default", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, "Привет Hello", {
+        platform: "linux",
+        arch: "x64",
+        detectLanguage: inconclusive,
+      }),
+    ).toBeUndefined();
+  });
+
+  test("a confidently detected language with no voice keeps the engine default", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, "Привіт, як справи у вас сьогодні?", {
+        platform: "linux",
+        arch: "x64",
+        detectLanguage: async () => ({ code: "uk", confidence: 0.9 }),
+      }),
+    ).toBeUndefined();
+  });
+});

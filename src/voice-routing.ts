@@ -1,4 +1,4 @@
-import { detectTextLanguageEngine } from "./engine";
+import { detectTextLanguageEngine, type LangDetectResult } from "./engine";
 import { listVoiceIds } from "./synth";
 
 /** The voice the Engine speaks with when `say` is given no `--voice` — mirrors `tts::voices::DEFAULT_VOICE_ID`. */
@@ -63,6 +63,12 @@ const NATIVE_SCRIPT_ROUTES: Record<string, NativeScriptRoute> = {
 };
 
 const LATIN_LETTER = /[A-Za-z]/u;
+const CYRILLIC = /\p{Script=Cyrillic}/u;
+
+function mostlyCyrillicWords(text: string): boolean {
+  const words = text.split(/\s+/).filter((w) => /\p{L}/u.test(w));
+  return words.filter((w) => CYRILLIC.test(w)).length * 2 > words.length;
+}
 
 /** True when more of the text's letters are in `script` than in the Latin alphabet. */
 function dominantScript(text: string, script: RegExp): boolean {
@@ -110,6 +116,7 @@ export interface ResolveSayVoiceOptions {
   arch?: NodeJS.Architecture;
   /** The engine's `say --list-voices` union; injected so the routing decision is testable without an engine. */
   listVoices?: (signal?: AbortSignal) => Promise<string[]>;
+  detectLanguage?: (text: string, signal?: AbortSignal) => Promise<LangDetectResult | null>;
 }
 
 function baseLangOf(code: string | undefined): string {
@@ -145,7 +152,9 @@ async function detectLang(
   options: ResolveSayVoiceOptions,
 ): Promise<{ code?: string; confidence: number }> {
   if (!text) return { confidence: 0 };
-  const detected = await detectTextLanguageEngine(text, { signal: options.signal });
+  const detected = options.detectLanguage
+    ? await options.detectLanguage(text, options.signal)
+    : await detectTextLanguageEngine(text, { signal: options.signal });
   return { code: detected?.code, confidence: detected?.confidence ?? 0 };
 }
 
@@ -153,7 +162,8 @@ async function detectLang(
  * Resolve the voice for a synthesis request. Precedence: explicit voice >
  * explicit language hint (route by the stated language, skipping detection —
  * also the path on Linux/Windows where text-language detection is unavailable) >
- * macOS text-language auto-detection > engine default (`undefined`). A language
+ * macOS text-language auto-detection > Russian when detection is inconclusive and most
+ * words are Cyrillic (#1387) > engine default (`undefined`). A language
  * hint the build has no voice for resolves to `undefined` (engine default)
  * rather than re-running detection — the user stated the language explicitly.
  *
@@ -170,6 +180,9 @@ export async function resolveSayVoice(
   const { code, confidence } =
     langHint !== undefined ? { code: langHint, confidence: 1 } : await detectLang(text, options);
   const voice = pickVoiceForLang(code, confidence, options.platform, options.arch);
+  if (confidence < 0.5 && mostlyCyrillicWords(text)) {
+    return pickVoiceForLang("ru", 1, options.platform, options.arch);
+  }
   if (confidence < 0.5) return voice;
   return (await nativeScriptOverride(baseLangOf(code), text, options)) ?? voice;
 }
