@@ -576,7 +576,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         process.exit(2);
       }
 
-      if (!isEngineInstalled() && process.stdin.isTTY && process.stderr.isTTY && files.some((f) => existsSync(f))) {
+      if (!isEngineInstalled() && process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY && files.some((f) => existsSync(f))) {
         log.info(await renderInstallPlan());
         if (await promptConfirm("Kesha needs these downloads before it can transcribe. Download them now?", true)) {
           await performInstall({ noCache: false, ttsLangs: [] });
