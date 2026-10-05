@@ -577,9 +577,10 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       }
 
       if (!isEngineInstalled() && process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY && files.some((f) => existsSync(f))) {
-        log.info(await renderInstallPlan());
+        const modules = { vad: vadMode === "on", diarize: Boolean(args.speakers) };
+        log.info(await renderInstallPlan(modules));
         if (await promptConfirm("Kesha needs these downloads before it can transcribe. Download them now?", true)) {
-          await performInstall({ noCache: false, ttsLangs: [] });
+          await performInstall({ noCache: false, ttsLangs: [], ...modules });
         }
       }
 
