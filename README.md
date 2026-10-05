@@ -11,7 +11,7 @@
   <a href="https://bun.sh"><img src="https://img.shields.io/badge/runtime-Bun-f9f1e1?logo=bun" alt="Bun"></a>
 </p>
 
-<p align="center"><b>Kesha listens and talks back.</b><br>Your agent gets a voice message, Kesha turns it into text on your machine, and speaks the reply. Fastest on Apple Silicon with CoreML, and it runs on Linux and Windows through ONNX.</p>
+<p align="center"><b>Kesha listens and talks back.</b><br>Your agent gets a voice message, Kesha turns it into text on your machine, and speaks the reply once you add <code>kesha install --tts</code> (<a href="docs/use-cases.md#sending-voice-replies">voice replies</a>). Fastest on Apple Silicon with CoreML, and it runs on Linux and Windows through ONNX.</p>
 
 - **Transcribe locally** — [25 languages](docs/languages.md#speech-to-text-25), up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
 - **Speak back** — text-to-speech in [9 languages](docs/languages.md#text-to-speech)
