@@ -13,7 +13,7 @@
 
 <p align="center"><b>Kesha listens and talks back.</b><br>Your agent gets a voice message, Kesha turns it into text on your machine, and speaks the reply once you add <code>kesha install --tts</code> (<a href="docs/use-cases.md#sending-voice-replies">voice replies</a>). Fastest on Apple Silicon with CoreML, and it runs on Linux and Windows through ONNX.</p>
 
-- **Transcribe locally** — [25 languages](docs/languages.md#speech-to-text-25), up to ~19x faster than Whisper on Apple Silicon, ~2.5x on CPU
+- **Transcribe locally** — [25 languages](docs/languages.md#speech-to-text-25), up to ~19x faster than Whisper on Apple Silicon, ~10x on an x86 CPU
 - **Speak back** — text-to-speech in [9 languages](docs/languages.md#text-to-speech)
 - **Plug into agents** — ship voice workflows as CLI commands, an MCP server, an <a href="docs/openclaw.md">OpenClaw</a> skill, or a <a href="docs/hermes.md">Hermes</a> agent
 - **Small Rust engine** — single ~65MB binary, no ffmpeg, no Python, no native Node addons
@@ -134,13 +134,13 @@ kesha say "Hello" --format flac --out hi.flac     # FLAC — lossless, plays in 
 
 ## Performance
 
-> **Up to ~19x faster than Whisper** on Apple Silicon (M2), **~2.5x faster** on CPU
+> **Up to ~19x faster than Whisper** on Apple Silicon (M2), **~10x faster** on an x86 Linux CPU (~2.5x faster than faster-whisper)
 
 Compared against Whisper `large-v3-turbo`, all engines auto-detecting language:
 
 ![Benchmark: openai-whisper vs faster-whisper vs Kesha Voice Kit](https://github.com/drakulavich/kesha-voice-kit/raw/main/docs/assets/benchmark.svg)
 
-Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md). The CPU figure is the ONNX engine on an M2's CPU cores; no x86 numbers are published yet.
+Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md). The chart is from an M2. The x86 figure comes from a GitHub-hosted `ubuntu-latest` runner (AMD EPYC, ONNX on CPU), where openai-whisper runs in FP32.
 
 ## Other install methods
 
