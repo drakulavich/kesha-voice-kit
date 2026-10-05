@@ -108,13 +108,14 @@ describe("resolveSayVoice native-script ja/hi routing", () => {
 describe("resolveSayVoice when text-language detection is inconclusive", () => {
   const ISSUE_TEXT = "Ссылка на документ: docs.google.com/document/d/abc, пароль в 1Password.";
   const inconclusive = async () => null;
+  const issueDetection = async () => ({ code: "en", confidence: 0.367 });
 
   test("mostly Cyrillic words speak through Milena on darwin", async () => {
     expect(
       await resolveSayVoice(undefined, undefined, ISSUE_TEXT, {
         platform: "darwin",
         arch: "arm64",
-        detectLanguage: inconclusive,
+        detectLanguage: issueDetection,
       }),
     ).toBe("macos-com.apple.voice.compact.ru-RU.Milena");
   });
@@ -142,6 +143,16 @@ describe("resolveSayVoice when text-language detection is inconclusive", () => {
   test("mostly Latin words with one Cyrillic word keep the engine default", async () => {
     expect(
       await resolveSayVoice(undefined, undefined, "Say привет to the new release notes", {
+        platform: "linux",
+        arch: "x64",
+        detectLanguage: inconclusive,
+      }),
+    ).toBeUndefined();
+  });
+
+  test("an even split of Cyrillic and Latin words keeps the engine default", async () => {
+    expect(
+      await resolveSayVoice(undefined, undefined, "Привет Hello", {
         platform: "linux",
         arch: "x64",
         detectLanguage: inconclusive,
