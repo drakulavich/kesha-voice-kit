@@ -470,9 +470,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # No macOS row: hosted macOS runners have no Neural Engine, and CoreML transcription there fails unreliably (#1419).
         include:
           - os: ubuntu-latest
-          - os: macos-14
           - os: windows-latest
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
