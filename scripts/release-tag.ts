@@ -7,6 +7,7 @@
  * Source: https://docs.github.com/en/rest/git/tags?apiVersion=2022-11-28#create-a-tag-object
  *         https://docs.github.com/en/rest/git/refs?apiVersion=2022-11-28#create-a-reference
  */
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { npmGlobalCommands } from "../.github/scripts/check-recipes";
 
@@ -126,10 +127,22 @@ async function waitForWorkflow(runner: CommandRunner, tag: string, target: strin
   fail(`no push-triggered release.yml run appeared for ${tag} at ${target}; release.yml refuses a stable dispatch, so check the Actions tab before re-tagging`);
 }
 
+function dogfoodRefusal(notes: string): string | null {
+  const section = /^## Dogfood\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(notes)?.[1] ?? "";
+  const open = section.split("\n").filter((line) => line.startsWith("- [ ]"));
+  const ticked = section.split("\n").filter((line) => /^- \[[xX]\]/.test(line)).length;
+  const required = readFileSync(new URL("../docs/dogfood.md", import.meta.url), "utf8").match(/^- \[ \]/gm)?.length ?? 0;
+  if (ticked < required) return `release notes tick ${ticked} of the ${required} items in docs/dogfood.md; paste its checklist as ## Dogfood and tick each one`;
+  if (open.length > 0) return `release notes have unticked dogfood items:\n${open.join("\n")}`;
+  return null;
+}
+
 export async function createStableTag(options: Options, notes: string, runner: CommandRunner): Promise<void> {
   if (!notes.trim()) fail("release notes must not be empty");
   const npm = npmGlobalCommands(options.notesPath, notes);
   if (npm.length > 0) fail(npm.join("\n"));
+  const dogfood = dogfoodRefusal(notes);
+  if (dogfood) fail(dogfood);
   await shell(runner, "git", "fetch", "origin", "main");
   const target = await shell(runner, "git", "rev-parse", "origin/main");
   if (!/^[0-9a-f]{40}$/i.test(target)) fail("origin/main did not resolve to a commit SHA");
