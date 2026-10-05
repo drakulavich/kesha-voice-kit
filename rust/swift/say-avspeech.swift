@@ -98,12 +98,17 @@ var sampleRate: Double = 0
 var channels: AVAudioChannelCount = 0
 var timedOut = false
 
-synth.write(utt) { buffer in
-  guard let pcm = buffer as? AVAudioPCMBuffer else { return }
-  if pcm.frameLength == 0 {
+final class FinishObserver: NSObject, AVSpeechSynthesizerDelegate {
+  func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
     CFRunLoopStop(CFRunLoopGetMain())
-    return
   }
+}
+let finishObserver = FinishObserver()
+synth.delegate = finishObserver
+
+// A zero-length buffer is not the end: AVSpeech emits them mid-utterance too (#1386).
+synth.write(utt) { buffer in
+  guard let pcm = buffer as? AVAudioPCMBuffer, pcm.frameLength > 0 else { return }
   sampleRate = pcm.format.sampleRate
   channels = pcm.format.channelCount
   guard let floatPtr = pcm.floatChannelData?[0] else { return }

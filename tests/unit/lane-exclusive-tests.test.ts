@@ -62,7 +62,7 @@ describe("a lane-exclusive test cannot run nowhere", () => {
 });
 
 describe("the darwin-only unit tests have a lane", () => {
-  // 14 unit cases assert only on darwin (#1105); the other unit lane is ubuntu-only, so this leg is where they assert.
+  // 15 unit cases assert only on darwin (#1105, #1386); the other unit lane is ubuntu-only, so this leg is where they assert.
   const unitTests = () => parseRepoYaml(".github/workflows/ci.yml").jobs["unit-tests"];
 
   test("the matrix keeps a macOS runner it does not exclude", () => {
