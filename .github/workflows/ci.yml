@@ -119,6 +119,8 @@ jobs:
               - 'rust/tests/**'
               # Same reason, and tracked: rust/vendor/vosk-tts/src/*.rs are legal rust/… reference targets too (#1141 review round 1).
               - 'rust/vendor/**'
+              # tests/unit/say-avspeech-tail.test.ts compiles and runs it on the macOS row (#1386).
+              - 'rust/swift/say-avspeech.swift'
               # tests/unit/claude-hooks.test.ts checks that every hook settings.json registers is tracked; a hook-only edit must still run it (#1205 review round 1).
               - '.claude/settings.json'
               - '.claude/hooks/**'
