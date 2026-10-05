@@ -7,6 +7,7 @@
  * Source: https://docs.github.com/en/rest/git/tags?apiVersion=2022-11-28#create-a-tag-object
  *         https://docs.github.com/en/rest/git/refs?apiVersion=2022-11-28#create-a-reference
  */
+import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { npmGlobalCommands } from "../.github/scripts/check-recipes";
 
@@ -129,7 +130,9 @@ async function waitForWorkflow(runner: CommandRunner, tag: string, target: strin
 function dogfoodRefusal(notes: string): string | null {
   const section = /^## Dogfood\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(notes)?.[1] ?? "";
   const open = section.split("\n").filter((line) => line.startsWith("- [ ]"));
-  if (!/- \[[xX]\]/.test(section)) return "release notes need a ## Dogfood section with the ticked checklist from docs/dogfood.md";
+  const ticked = section.split("\n").filter((line) => /^- \[[xX]\]/.test(line)).length;
+  const required = readFileSync(new URL("../docs/dogfood.md", import.meta.url), "utf8").match(/^- \[ \]/gm)?.length ?? 0;
+  if (ticked < required) return `release notes tick ${ticked} of the ${required} items in docs/dogfood.md; paste its checklist as ## Dogfood and tick each one`;
   if (open.length > 0) return `release notes have unticked dogfood items:\n${open.join("\n")}`;
   return null;
 }

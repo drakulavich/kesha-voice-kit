@@ -11,7 +11,7 @@ Use the release candidate from `main`, real voice notes from Telegram or WhatsAp
 - [ ] Russian voice note: `kesha ru.ogg` reads like what was said.
 - [ ] English voice note: `kesha en.ogg` reads like what was said.
 - [ ] Batch: `kesha --json ru.ogg en.ogg` gives each file its own correct `lang`.
-- [ ] Long voice note (over two minutes) goes through VAD and stays in its language.
+- [ ] Long voice note: after `kesha install --vad`, a note over two minutes goes through VAD and stays in its language.
 - [ ] Russian reply: `kesha say --format ogg-opus "…" > reply.ogg` with a number, a date, an abbreviation and a link plays in a messenger, every word spoken, nothing cut at the end.
 - [ ] English reply: the same with an English sentence.
 - [ ] Agent: Claude Code with `kesha mcp` (see `docs/mcp.md`) transcribes a voice note and speaks a reply without hints.

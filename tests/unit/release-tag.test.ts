@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { createStableTag, parseArgs, type CommandResult, type CommandRunner } from "../../scripts/release-tag";
 
 const target = "a".repeat(40);
 const tagObject = "b".repeat(40);
 const tag = "v1.30.0";
-const notes = "## Release\n\n- safer tagging\n\n## Dogfood\n\n- [X] First run\n- [X] Russian voice note\n\n## Follow-ups\n\n- [ ] not part of the dogfood run\n";
+const dogfoodItems = readFileSync("docs/dogfood.md", "utf8").match(/^- \[ \] .*/gm)!;
+const ticked = dogfoodItems.map((item) => item.replace("- [ ]", "- [X]")).join("\n");
+const notes = `## Release\n\n- safer tagging\n\n## Dogfood\n\n${ticked}\n\n## Follow-ups\n\n- [ ] not part of the dogfood run\n`;
 
 const success = (stdout = ""): CommandResult => ({ code: 0, stdout, stderr: "" });
 
@@ -89,10 +92,12 @@ describe("release tag helper", () => {
   test("refuses notes without a fully ticked dogfood checklist, before touching git", async () => {
     const { runner, calls } = fakeRunner();
     const missing = "## Release\n\n- safer tagging\n";
-    const unticked = "## Dogfood\n\n- [x] First run\n- [ ] English reply\n";
+    const unticked = `## Dogfood\n\n${ticked}\n- [ ] English reply\n`;
+    const partial = `## Dogfood\n\n${ticked.split("\n")[0]}\n`;
 
     await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, missing, runner)).rejects.toThrow("docs/dogfood.md");
     await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, unticked, runner)).rejects.toThrow("- [ ] English reply");
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, partial, runner)).rejects.toThrow(`tick 1 of the ${dogfoodItems.length} items`);
     expect(calls).toEqual([]);
   });
 });
