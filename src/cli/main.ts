@@ -6,7 +6,7 @@ import { isDirectoryPath, transcribeWithSegments, validateTranscribeRequest } fr
 export { isDirectoryPath };
 import { detectAudioLanguageEngine, detectTextLanguageEngine, isEngineInstalled } from "../engine";
 import { renderInstallPlan } from "../install-plan";
-import { promptConfirm } from "./init";
+import { canInstallDiarizeOnPlatform, promptConfirm } from "./init";
 import { performInstall } from "./install";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
@@ -576,7 +576,12 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         process.exit(2);
       }
 
-      if (!isEngineInstalled() && process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY && files.some((f) => existsSync(f))) {
+      if (
+        !isEngineInstalled() &&
+        process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY &&
+        files.every((f) => existsSync(f) && !isDirectoryPath(f)) &&
+        (!args.speakers || canInstallDiarizeOnPlatform())
+      ) {
         const modules = { vad: vadMode === "on", diarize: Boolean(args.speakers) };
         log.info(await renderInstallPlan(modules));
         if (await promptConfirm("Kesha needs these downloads before it can transcribe. Download them now?", true)) {
