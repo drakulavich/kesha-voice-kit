@@ -1,6 +1,6 @@
 # Product positioning
 
-Kesha Voice Kit is a local-first voice toolkit for developers and agent workflows. It is built for small, scriptable jobs where a CLI can turn audio into text, text into audio, or voice messages into structured data without sending content to a hosted API.
+Kesha listens and talks back: an agent gets a voice message, Kesha turns it into text locally, and speaks the reply. It is a local-first voice toolkit for developers and agent workflows, and Apple Silicon is where it is fastest and most complete. It is built for small, scriptable jobs where a CLI can turn audio into text, text into audio, or voice messages into structured data without sending content to a hosted API.
 
 The product promise is not "one model for every audio problem." The promise is a boring, automatable local voice stack with clear platform limits, predictable install paths, and machine-readable output.
 

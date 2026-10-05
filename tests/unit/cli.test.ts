@@ -257,7 +257,7 @@ describe("directory input rejection (#directory-check)", () => {
 
 describe("CLI help golden contracts (#324 P1)", () => {
   test("main help matches the normalized golden output", async () => {
-    expect(normalizeUsage(await renderUsage(createMainCommand()))).toBe(`Kesha Voice Kit — open-source voice toolkit for Apple Silicon.
+    expect(normalizeUsage(await renderUsage(createMainCommand()))).toBe(`Kesha Voice Kit listens and talks back: local speech for agents and scripts.
 
 Examples:
   kesha audio.ogg          Transcribe an audio file.

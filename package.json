@@ -1,7 +1,7 @@
 {
   "name": "@drakulavich/kesha-voice-kit",
   "version": "2.2.0",
-  "description": "Give your tools a voice — speech to text and back, 25 languages, up to ~19× faster than Whisper. On your machine.",
+  "description": "Kesha listens and talks back: local speech to text and text to speech for agents and scripts, fastest on Apple Silicon.",
   "type": "module",
   "bin": {
     "kesha": "bin/kesha.js"
