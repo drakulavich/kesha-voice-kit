@@ -69,7 +69,7 @@ Three-way comparison: openai-whisper (OpenClaw default) vs faster-whisper vs Kes
 | **Total** | | **59.3s** | **120.3s** | **25.6s** | **3.2s** | | |
 
 **Kesha CoreML is ~18.5x faster than openai-whisper, ~37.6x faster than faster-whisper.**
-Kesha ONNX is ~2.3x faster than openai-whisper even on CPU.
+Kesha ONNX is ~2.3x faster than openai-whisper even on the M2's CPU.
 
 ### English (10 TTS-generated clips, ~4-5s each)
 
@@ -88,7 +88,55 @@ Kesha ONNX is ~2.3x faster than openai-whisper even on CPU.
 | **Total** | | **62.9s** | **125.4s** | **25.4s** | **3.3s** | | |
 
 **Kesha CoreML is ~19.1x faster than openai-whisper, ~38x faster than faster-whisper.**
-Kesha ONNX is ~2.5x faster than openai-whisper even on CPU.
+Kesha ONNX is ~2.5x faster than openai-whisper even on the M2's CPU.
+
+## Linux x64, GitHub-hosted `ubuntu-latest` runner
+
+**Date:** 2026-10-05
+**CPU:** AMD EPYC 9V45, 15 GiB RAM
+**Kesha:** 2.1.0 from npm, ONNX on CPU; Whisper models run on the same CPU in FP32 (openai-whisper) and int8 (faster-whisper)
+**Run:** [37337994791](https://github.com/drakulavich/kesha-voice-kit/actions/runs/37337994791)
+**Python:** 3.12; faster-whisper 1.2.1 with PyAV pinned to 15.1.0 ([#1421](https://github.com/drakulavich/kesha-voice-kit/issues/1421)); openai-whisper as pip resolved it on 2026-10-05
+
+### Russian (10 files)
+
+| # | File | openai-whisper | faster-whisper | Kesha ONNX | Transcript (Kesha) |
+|---|---|---|---|---|---|
+| 1 | 01-ne-nuzhno-slat-soobshcheniya.ogg | 23.1s | 5.4s | 6.7s | не нужно слать сообщения с транскрипцией сразу выполняй инст... |
+| 2 | 02-prover-vse-svoi-konfigi.ogg | 22.5s | 5.4s | 1.9s | . Проверь все свои конфигии и перенеси секреты в Дотэн файл. |
+| 3 | 03-ty-dobavil-sebe-v-pamyat.ogg | 22.9s | 5.2s | 1.9s | Ты добавил себе в память информацию из Вентеж Хэндбук репози... |
+| 4 | 04-pokazhi-ego-yuzerneim.ogg | 21.4s | 5.3s | 1.9s | Покажи его юзернейм в Телеграме, хочу написать ему.. |
+| 5 | 05-vynesi-eshche-sekret-ot-kloda.ogg | 21.2s | 5.2s | 1.7s | Вынеси еще секрет от Клода, который я тебе добавил.. |
+| 6 | 06-kakie-eshche-telegram-yuzery.ogg | 21.2s | 5.2s | 1.7s | Какие еще Телеграм юзеры имеют доступ к тебе? |
+| 7 | 07-to-chto-nakhoditsya-v-papke.ogg | 21.2s | 5.2s | 1.7s | То, что находишься в папке Воркспейс, Ты тоже комитешь.. |
+| 8 | 08-uznai-vtorogo-yuzera.ogg | 21.2s | 5.2s | 1.6s | Узнай второго юзера в Телеграме.. |
+| 9 | 09-ustanovi-poka-klod-kod.ogg | 21s | 5.1s | 1.6s | установи, пока, Клот кот. |
+| 10 | 10-zakomit-izmeneniya-v-git.ogg | 21s | 5.2s | 1.6s | Законить изменения в Гет. |
+| **Total** | | **216.7s** | **52.4s** | **22.3s** | |
+
+**Speedup:** Kesha ONNX is ~9.7x faster than openai-whisper, ~2.3x faster than faster-whisper
+
+### English (10 files)
+
+| # | File | openai-whisper | faster-whisper | Kesha ONNX | Transcript (Kesha) |
+|---|---|---|---|---|---|
+| 1 | 01-check-email.ogg | 21.3s | 5.2s | 1.7s | Please check your email and get back to me as soon as possib... |
+| 2 | 02-meeting-rescheduled.ogg | 21.3s | 5.2s | 1.7s | The meeting has been rescheduled to next Tuesday at 3 PM in ... |
+| 3 | 03-review-pull-request.ogg | 21.1s | 5.2s | 1.9s | I need you to review the pull request before we can merge it... |
+| 4 | 04-deploy-staging.ogg | 21.2s | 5.1s | 1.7s | Can you deploy the latest changes to the staging environment... |
+| 5 | 05-database-migration.ogg | 21.1s | 5.2s | 1.8s | The database migration completed successfully but we need to... |
+| 6 | 06-code-review-session.ogg | 21.1s | 5.1s | 1.9s | We should schedule a code review session for the new authent... |
+| 7 | 07-run-test-suite.ogg | 21.2s | 5.1s | 1.9s | Please run the test suite before pushing your changes to the... |
+| 8 | 08-update-documentation.ogg | 21.2s | 5.1s | 1.8s | Could you update the documentation to reflect the changes we... |
+| 9 | 09-refactor-notifications.ogg | 21.2s | 5.2s | 1.7s | I think we need to refactor the notification system before a... |
+| 10 | 10-load-balancer-config.ogg | 21.4s | 5.2s | 2s | The Load Balancer configuration needs to be updated to handl... |
+| **Total** | | **212.1s** | **51.6s** | **18.1s** | |
+
+**Speedup:** Kesha ONNX is ~11.7x faster than openai-whisper, ~2.9x faster than faster-whisper
+
+The first Kesha file includes model warm-up.
+
+---
 
 ## Summary
 
