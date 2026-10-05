@@ -69,7 +69,7 @@ Three-way comparison: openai-whisper (OpenClaw default) vs faster-whisper vs Kes
 | **Total** | | **59.3s** | **120.3s** | **25.6s** | **3.2s** | | |
 
 **Kesha CoreML is ~18.5x faster than openai-whisper, ~37.6x faster than faster-whisper.**
-Kesha ONNX is ~2.3x faster than openai-whisper even on CPU.
+Kesha ONNX is ~2.3x faster than openai-whisper even on the M2's CPU.
 
 ### English (10 TTS-generated clips, ~4-5s each)
 
@@ -88,7 +88,7 @@ Kesha ONNX is ~2.3x faster than openai-whisper even on CPU.
 | **Total** | | **62.9s** | **125.4s** | **25.4s** | **3.3s** | | |
 
 **Kesha CoreML is ~19.1x faster than openai-whisper, ~38x faster than faster-whisper.**
-Kesha ONNX is ~2.5x faster than openai-whisper even on CPU.
+Kesha ONNX is ~2.5x faster than openai-whisper even on the M2's CPU.
 
 ## Linux x64, GitHub-hosted `ubuntu-latest` runner
 
