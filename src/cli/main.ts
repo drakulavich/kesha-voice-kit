@@ -1,4 +1,4 @@
-import { defineCommand } from "citty";
+import { defineCommand, type ArgsDef, type CommandDef } from "citty";
 import { errorMessage } from "../error-utils";
 import { existsSync } from "fs";
 import { isDirectoryPath, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
@@ -452,6 +452,34 @@ export const MAIN_VAD_ARGS = {
     default: false,
   },
 } as const;
+
+const BRIEF_HELP_DESCRIPTION =
+  "Kesha Voice Kit listens and talks back: local speech for agents and scripts.\n" +
+  "Try: kesha audio.ogg, or kesha say \"hello\"\n" +
+  "\n" +
+  "Commands:\n" +
+  "  init      Interactive setup guide.\n" +
+  "  install   Download engine and models.\n" +
+  "  say       Synthesize speech from text.\n" +
+  "  record    Record microphone audio.\n" +
+  "  status    Inspect installed backend.\n" +
+  "  doctor    Collect support diagnostics.\n" +
+  "  mcp       Run an MCP server over stdio.\n" +
+  "\n" +
+  "All commands and flags: kesha --help --all";
+
+const BRIEF_HELP_ARGS: ArgsDef = {
+  json: { type: "boolean", description: "Output results as JSON" },
+  format: { type: "string", description: "transcript | json | toon" },
+  lang: { type: "string", description: "Expected language code, e.g. en" },
+  timestamps: { type: "boolean", description: "Timestamped segments in JSON/TOON" },
+  quiet: { type: "boolean", alias: "q", description: "Print only results and errors" },
+};
+
+/** What plain `kesha --help` renders; parsing still uses every flag of createMainCommand. */
+export function briefMainUsage(command: CommandDef<any>): CommandDef<any> {
+  return { ...command, meta: { ...command.meta, description: BRIEF_HELP_DESCRIPTION }, args: BRIEF_HELP_ARGS };
+}
 
 export function createMainCommand(context: CliContext = { quiet: false, disableColor: false }) {
   return defineCommand({
