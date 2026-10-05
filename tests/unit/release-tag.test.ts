@@ -4,7 +4,7 @@ import { createStableTag, parseArgs, type CommandResult, type CommandRunner } fr
 const target = "a".repeat(40);
 const tagObject = "b".repeat(40);
 const tag = "v1.30.0";
-const notes = "## Release\n\n- safer tagging\n\n## Dogfood\n\n- [x] First run\n- [x] Russian voice note\n\n## Follow-ups\n\n- [ ] not part of the dogfood run\n";
+const notes = "## Release\n\n- safer tagging\n\n## Dogfood\n\n- [X] First run\n- [X] Russian voice note\n\n## Follow-ups\n\n- [ ] not part of the dogfood run\n";
 
 const success = (stdout = ""): CommandResult => ({ code: 0, stdout, stderr: "" });
 

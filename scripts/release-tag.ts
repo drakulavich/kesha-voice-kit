@@ -129,7 +129,7 @@ async function waitForWorkflow(runner: CommandRunner, tag: string, target: strin
 function dogfoodRefusal(notes: string): string | null {
   const section = /^## Dogfood\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(notes)?.[1] ?? "";
   const open = section.split("\n").filter((line) => line.startsWith("- [ ]"));
-  if (!section.includes("- [x]")) return "release notes need a ## Dogfood section with the ticked checklist from docs/dogfood.md";
+  if (!/- \[[xX]\]/.test(section)) return "release notes need a ## Dogfood section with the ticked checklist from docs/dogfood.md";
   if (open.length > 0) return `release notes have unticked dogfood items:\n${open.join("\n")}`;
   return null;
 }
