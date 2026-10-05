@@ -470,7 +470,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # No macOS row: hosted macOS runners have no Neural Engine, so CoreML transcription fails there (#1419).
+        # No macOS row: hosted macOS runners have no Neural Engine, and CoreML transcription there fails unreliably (#1419).
         include:
           - os: ubuntu-latest
           - os: windows-latest
