@@ -32,7 +32,7 @@ curl -fsSL https://bun.sh/install | bash        # macOS/Linux — or: brew insta
 powershell -c "irm bun.sh/install.ps1 | iex"    # Windows
 
 # 2. Install Kesha
-bun add -g @drakulavich/kesha-voice-kit
+bun add -g kesha
 kesha --version                                 # confirms `kesha` resolved on PATH
 
 # 3. Download the engine and models — pick one path

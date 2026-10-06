@@ -3,7 +3,7 @@
 set -euo pipefail
 
 start=$(date +%s)
-bun add -g @drakulavich/kesha-voice-kit
+bun add -g kesha
 kesha --version
 installed=$(date +%s)
 kesha install

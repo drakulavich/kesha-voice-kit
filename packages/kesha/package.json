@@ -1,0 +1,26 @@
+{
+  "name": "kesha",
+  "version": "0.0.0",
+  "description": "Kesha listens and talks back: local speech to text and text to speech for agents and scripts. The short name for @drakulavich/kesha-voice-kit.",
+  "type": "module",
+  "bin": {
+    "kesha": "bin/kesha.js"
+  },
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "dependencies": {
+    "@drakulavich/kesha-voice-kit": "0.0.0"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/drakulavich/kesha-voice-kit.git",
+    "directory": "packages/kesha"
+  },
+  "homepage": "https://drakulavich.github.io/kesha-voice-kit/"
+}

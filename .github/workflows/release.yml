@@ -543,6 +543,11 @@ jobs:
         env:
           NPM_DIST_TAG: ${{ needs.classify.outputs.dist_tag }}
         run: npm publish --provenance --access public --tag "$NPM_DIST_TAG"
+      - name: Publish the kesha alias
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          NPM_DIST_TAG: ${{ needs.classify.outputs.dist_tag }}
+        run: bash .github/scripts/publish-alias.sh
 
   # The post-publish check release-cli.yml ran: the exact version from the registry, installed into an isolated prefix.
   npm-smoke:
