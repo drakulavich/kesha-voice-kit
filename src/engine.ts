@@ -312,7 +312,7 @@ function hostIsVirtualMac(): boolean {
   return spawnSync("sysctl", ["-n", "kern.hv_vmm_present"], { encoding: "utf8" }).stdout?.trim() === "1";
 }
 
-/** CoreML transcription needs an Apple Neural Engine, which no virtualised Mac has (#1419); synthesis says the same (#742). */
+/** CoreML transcription is unreliable without an Apple Neural Engine, which no virtualised Mac has (#1419); synthesis says the same (#742). */
 export function withVirtualMacHint(
   err: KeshaError,
   platform: string = process.platform,
@@ -323,7 +323,7 @@ export function withVirtualMacHint(
     exitCode: err.exitCode,
     stderr: err.stderr,
     origin: err.origin,
-    hint: "this is a virtualised Mac with no Apple Neural Engine, which Kesha's CoreML speech model needs on macOS; transcribe on a physical Mac, or on Linux or Windows",
+    hint: "this is a virtualised Mac with no Apple Neural Engine, where CoreML transcription is unreliable; transcribe on a physical Mac, or on Linux or Windows",
   });
 }
 
