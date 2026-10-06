@@ -29,6 +29,8 @@ describe("withVirtualMacHint", () => {
   test("leaves other engine failures and existing hints alone", () => {
     const missing = new KeshaError("E_MODEL_MISSING", "ASR model not installed", { hint: "run `kesha install`" });
     expect(withVirtualMacHint(missing, "darwin", () => true).hint).toBe("run `kesha install`");
+    const hintedBridge = new KeshaError("E_INTERNAL", "Swift bridge error: Transcription failed", { hint: "keep this hint" });
+    expect(withVirtualMacHint(hintedBridge, "darwin", () => true)).toBe(hintedBridge);
     const other = new KeshaError("E_INTERNAL", "kesha-engine transcribe exited with code 1");
     expect(withVirtualMacHint(other, "darwin", () => true).hint).toBeUndefined();
   });

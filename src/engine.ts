@@ -509,7 +509,7 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
   const signalled = target.live && SIGNALLED_LIVE_EXIT_CODES.has(exitCode);
   // A clean interrupt delivers the transcript and exits 128+signal saying nothing (rust/src/cli/record.rs:82),
   // so an error event beside that status is a real failure the signal must not excuse.
-  if (events.error || events.invalid.length > 0) throw engineFailure("record", events, exitCode);
+  if (events.error || events.invalid.length > 0) throw withVirtualMacHint(engineFailure("record", events, exitCode));
   // A silent non-zero exit named nothing, so it stays the operational 1 it has been since #1167.
   if (!signalled && exitCode !== 0) throw new Error(`kesha-engine record exited with code ${exitCode}`);
 }

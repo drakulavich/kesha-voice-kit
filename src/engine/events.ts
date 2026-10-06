@@ -128,7 +128,8 @@ export class KeshaError extends Error {
     const transcript = this.stderr?.trim();
     if (!transcript) return renderError(this);
     const line = renderError(this).split("\n")[0] ?? "";
-    return transcript.split("\n").some((l) => l === line) ? transcript : `${renderError(this)}\n${transcript}`;
+    if (!transcript.split("\n").some((l) => l === line)) return `${renderError(this)}\n${transcript}`;
+    return this.hint && !transcript.includes(`  hint: ${this.hint}`) ? `${transcript}\n  hint: ${this.hint}` : transcript;
   }
 }
 
