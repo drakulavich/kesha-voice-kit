@@ -1,3 +1,4 @@
+import { spawnSync } from "child_process";
 import { existsSync, statSync, type Stats } from "fs";
 import { errorMessage } from "./error-utils";
 import { join } from "path";
@@ -307,10 +308,29 @@ export function buildTranscribeArgs(
   return args;
 }
 
+function hostIsVirtualMac(): boolean {
+  return spawnSync("sysctl", ["-n", "kern.hv_vmm_present"], { encoding: "utf8" }).stdout?.trim() === "1";
+}
+
+/** CoreML transcription is unreliable without an Apple Neural Engine, which no virtualised Mac has (#1419); synthesis says the same (#742). */
+export function withVirtualMacHint(
+  err: KeshaError,
+  platform: string = process.platform,
+  isVirtualMac: () => boolean = hostIsVirtualMac,
+): KeshaError {
+  if (platform !== "darwin" || err.hint || !err.message.includes("Swift bridge error") || !isVirtualMac()) return err;
+  return new KeshaError(err.code, err.message, {
+    exitCode: err.exitCode,
+    stderr: err.stderr,
+    origin: err.origin,
+    hint: "this is a virtualised Mac with no Apple Neural Engine, where CoreML transcription is unreliable; transcribe on a physical Mac, or on Linux or Windows",
+  });
+}
+
 export async function transcribeEngine(audioPath: string, opts: TranscribeEngineOptions = {}): Promise<string> {
   const args = await validatedArgs(buildTranscribeArgs(audioPath, opts), { signal: opts.signal });
   const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
-  if (failed(run)) throw engineFailure(args[0] ?? "", run, run.exitCode);
+  if (failed(run)) throw withVirtualMacHint(engineFailure(args[0] ?? "", run, run.exitCode));
   return run.stdout;
 }
 
@@ -368,7 +388,7 @@ export async function transcribeEngineWithSegments(
   const args = await validatedArgs(buildTranscribeArgs(audioPath, opts, true), { signal: opts.signal });
   if (opts.speakers) assertSpeakerModelsInstalled();
   const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
-  if (failed(run)) throw engineFailure(args[0] ?? "", run, run.exitCode);
+  if (failed(run)) throw withVirtualMacHint(engineFailure(args[0] ?? "", run, run.exitCode));
   try {
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
@@ -489,7 +509,7 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
   const signalled = target.live && SIGNALLED_LIVE_EXIT_CODES.has(exitCode);
   // A clean interrupt delivers the transcript and exits 128+signal saying nothing (rust/src/cli/record.rs:82),
   // so an error event beside that status is a real failure the signal must not excuse.
-  if (events.error || events.invalid.length > 0) throw engineFailure("record", events, exitCode);
+  if (events.error || events.invalid.length > 0) throw withVirtualMacHint(engineFailure("record", events, exitCode));
   // A silent non-zero exit named nothing, so it stays the operational 1 it has been since #1167.
   if (!signalled && exitCode !== 0) throw new Error(`kesha-engine record exited with code ${exitCode}`);
 }

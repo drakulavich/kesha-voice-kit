@@ -205,6 +205,14 @@ describe("KeshaError.render() keeps the transcript without letting it hide the c
     const err = new KeshaError("E_INTERNAL", "kesha-engine transcribe exited with code 101", { exitCode: 101, stderr: transcript });
     expect(errorMessage(err)).toBe(`error [E_INTERNAL]: kesha-engine transcribe exited with code 101\n${transcript}`);
   });
+
+  test("a hint is appended when the transcript already carries the coded line", () => {
+    const err = new KeshaError("E_INTERNAL", "Transcription failed", {
+      hint: "use a physical Mac",
+      stderr: "error [E_INTERNAL]: Transcription failed",
+    });
+    expect(errorMessage(err)).toBe("error [E_INTERNAL]: Transcription failed\n  hint: use a physical Mac");
+  });
 });
 
 describe("KeshaError.render() only trusts a transcript that renders this very error", () => {
