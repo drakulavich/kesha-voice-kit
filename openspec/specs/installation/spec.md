@@ -564,8 +564,8 @@ file the first one is still streaming into.
 ### Requirement: A lock whose owner is gone is cleared within one poll interval
 
 The next waiter SHALL clear a lock within one poll interval, rather than wait it out, when
-its owner is a process on the same host that has exited or has held it past the stale
-ceiling.
+its owner is a process on this host that has exited, or when its owner, on any host, has
+held it past the stale ceiling.
 
 #### Scenario: The lock's owner exited on this host
 
@@ -578,8 +578,9 @@ ceiling.
 
 - GIVEN the lock's owner record names a process on another host, taken less than the
   stale ceiling ago
-- WHEN Ira runs `kesha install` with `KESHA_INSTALL_LOCK_WAIT_SECS` set
-- THEN the install waits out that ceiling and fails with `E_INSTALL_RACE` naming that
+- WHEN Ira runs `kesha install` with `KESHA_INSTALL_LOCK_WAIT_SECS` shorter than the time
+  left before that ceiling
+- THEN the install waits out its wait ceiling and fails with `E_INSTALL_RACE` naming that
   holder
 - AND the lock is still there
 

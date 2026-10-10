@@ -453,7 +453,7 @@ Every documented key SHALL be present in every `kesha status --json` payload: an
 
 #### Scenario: Ira reads the payload on a runner with no Engine
 
-- GIVEN no Engine is installed
+- GIVEN no Engine is installed and no voices are cached
 - WHEN Ira runs `kesha status --json`
 - THEN `engine.installed` is `false`, `engine.capabilities` and `disk` are present
   with `null` values, and `voices` is `[]`
