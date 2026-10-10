@@ -86,7 +86,7 @@ describe("buildUpdatedFormula", () => {
 
   test("publishes the in-repo formula, so a fix to its body reaches the tap", async () => {
     const out = await buildUpdatedFormula({ tag: "v2.2.0", fetchImpl: fetchReturning("2.2.0") });
-    const body = (f: string) => f.replace(/^ {2}(url|sha256|version) .*\n/gm, "");
+    const body = (f: string) => f.replace(/\r\n/g, "\n").replace(/^ {2}(url|sha256|version) .*\n/gm, "");
 
     expect(body(out)).toBe(body(FORMULA));
     expect(out).toContain('url "https://github.com/drakulavich/kesha-voice-kit/archive/refs/tags/v2.2.0.tar.gz"');

@@ -13,7 +13,7 @@ function importedRootAssets(): string[] {
   ];
   const assets = new Set<string>();
   for (const file of sources) {
-    for (const [, spec] of readRepoFile(file).matchAll(/(?:from|import\()\s*"(\.\.?\/[^"]+)"/g)) {
+    for (const [, spec] of readRepoFile(file).matchAll(/(?:from|import\()\s*["'](\.\.?\/[^"']+)["']/g)) {
       const top = relative(REPO_ROOT, join(REPO_ROOT, dirname(file), spec!)).split(/[\\/]/)[0]!;
       if (top !== "src" && top !== "bin") assets.add(top);
     }
