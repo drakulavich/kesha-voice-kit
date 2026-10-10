@@ -94,7 +94,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.5.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@toon-format/toon": "^4.1.0",
     "citty": "^0.2.2",
     "fastest-levenshtein": "^1.0.16",
