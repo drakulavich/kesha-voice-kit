@@ -17,7 +17,7 @@
 ## 4. Land
 
 - [x] 4.1 Update the `cli-distribution` Open Issues: drop "`model-plan.json` is unaffected", and close out the template/tap drift note
-- [ ] 4.2 PR with `Closes #1429`; release notes for the next stable release mention that `parakeet` leaves Homebrew
+- [x] 4.2 PR with `Closes #1429`; release notes for the next stable release mention that `parakeet` leaves Homebrew
 
 ## Definition of Done
 
