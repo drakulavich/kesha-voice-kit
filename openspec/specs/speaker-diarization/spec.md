@@ -218,8 +218,8 @@ count, except for a clip below the diarizer floor (next requirement).
 
 ### Requirement: A clip below the diarizer floor returns an unlabeled transcript
 
-When diarization returns no spans and the clip is shorter than the 1.04 s floor,
-the Engine SHALL return the transcript without `speaker` fields, exit 0, and say
+The Engine SHALL return the transcript without `speaker` fields and exit 0 when
+diarization returns no spans and the clip is shorter than the 1.04 s floor, and say
 on stderr that the clip is below the floor and the requested labels are not in
 the output. It SHALL believe a below-floor duration only when the ASR timeline
 ends before 1.04 s; otherwise it SHALL fail closed.

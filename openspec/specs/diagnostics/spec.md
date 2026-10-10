@@ -447,6 +447,23 @@ absent, the setup hint the human path writes to stderr.
 - THEN `modelMirror` is `null` and `voices` is `[]`, and both keys are present, as
   every documented key is in every payload
 
+### Requirement: Every documented `kesha status --json` key is present in every payload
+
+Every documented key SHALL be present in every `kesha status --json` payload: an absent value SHALL be `null`, or the empty list for Voice ids, and SHALL never be omitted.
+
+#### Scenario: Ira reads the payload on a runner with no Engine
+
+- GIVEN no Engine is installed
+- WHEN Ira runs `kesha status --json`
+- THEN `engine.installed` is `false`, `engine.capabilities` and `disk` are present
+  with `null` values, and `voices` is `[]`
+
+#### Scenario: A consumer checks for a key by name
+
+- GIVEN any install state
+- WHEN Sona's script tests `has("modelMirror")` on the payload
+- THEN it is `true`, because no documented key is ever dropped
+
 > *Technical Note — every key is always present so a consumer never has to tell a
 > missing key apart from a null value; the CLI version lets a consumer that needs to
 > distinguish payload shapes key off it without a second invocation. Source:

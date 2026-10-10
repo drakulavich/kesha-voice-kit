@@ -879,8 +879,8 @@ voices for the matching locale.
 
 ### Requirement: Minority and unpronounceable scripts are reported, never internal errors
 
-When only a minority of the letters are in a script the voice cannot
-pronounce, synthesis SHALL proceed and one `warn` event SHALL name the tokens
+Synthesis SHALL proceed when only a minority of the letters are in a script the
+voice cannot pronounce, and one `warn` event SHALL name the tokens
 that will be mispronounced, for every such script the text contains. Text with
 no pronounceable content at all (emoji only, punctuation only) and a single
 token the G2P rejects SHALL be `E_SCRIPT_UNSUPPORTED`, never `E_INTERNAL` and
