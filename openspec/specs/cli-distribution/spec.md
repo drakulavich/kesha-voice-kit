@@ -54,7 +54,7 @@ Each supported distribution path SHALL deliver the CLI package's `bin/kesha.js` 
 > *Technical Note — `bin/kesha.js` is a four-line `#!/usr/bin/env bun` shim
 > that awaits `src/cli/dispatch.ts::runCli`. `package.json#bin` maps
 > `kesha → bin/kesha.js`; `package.json#files` publishes `bin/` and `src/`
-> as-is. Homebrew's `install` stages `bin`, `src`, `completions`, `man`,
+> as-is. Homebrew's `install` stages `bin`, `src`, `completions`, `man`, `model-plan.json`,
 > `package.json`, `bun.lock` and `tsconfig.json` into `libexec` and writes a
 > shell wrapper that execs Bun against `libexec/bin/kesha.js`
 > (`packaging/homebrew/Formula/kesha-voice-kit.rb`). The `Dockerfile`

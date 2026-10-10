@@ -33,7 +33,11 @@ const PAYLOADS: Record<string, () => string[]> = {
     readRepoFile("Dockerfile")
       .split("\n")
       .filter((l) => l.startsWith("COPY "))
-      .flatMap((l) => l.split(/\s+/).slice(1, -1)),
+      .flatMap((l) => {
+        const [, ...args] = l.split(/\s+/);
+        const dest = args.pop();
+        return args.filter((src) => dest === "./" || dest === `./${src}`);
+      }),
   "flake.nix fileset": () => [...readRepoFile("flake.nix").matchAll(/^\s+\.\/([\w.-]+)$/gm)].map((m) => m[1]!),
   "flake.nix installPhase": () =>
     readRepoFile("flake.nix")
