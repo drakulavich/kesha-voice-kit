@@ -86,12 +86,11 @@ and continue after a failing file rather than aborting the batch.
 
 The CLI SHALL provide JSON (`--json` / `--format json`) and TOON (`--toon` /
 `--format toon`) output: an array of per-file result objects
-(`file`, `text`, `lang`, and detection/timing fields), with TOON losslessly
-round-tripping to the same data as JSON. The CLI SHALL also provide
+(`file`, `text`, `lang`, and detection/timing fields) that TOON round-trips
+losslessly to the same data as JSON. The CLI SHALL also provide
 `--format transcript` (text plus a `[lang: <code>, confidence: <n>]` trailer)
-and `--verbose`, which prints detection details and STT time to stderr for
-every output format; stdout carries the result alone, so a redirected
-`--verbose` run leaves a file holding nothing but the transcript.
+and `--verbose`, which prints detection details and STT time to stderr in
+every output format while stdout carries the result alone.
 
 #### Scenario: Sona requests JSON
 
@@ -210,14 +209,21 @@ The CLI SHALL transcribe audio of any length: with VAD installed, audio of
 `--vad` forces splitting (and fails if the VAD model is not installed);
 `--no-vad` forces a single pass and SHALL fail rather than truncate when the
 file exceeds the single-pass ceiling (24 minutes), reporting the refusal as the
-Error code `E_INVALID_ARG` before any model is required. Without VAD installed,
-long audio falls back to fixed overlapping windows with boundary deduplication.
+Error code `E_INVALID_ARG` before any model is required.
 
 #### Scenario: Hour-long recording with VAD installed
 
 - GIVEN the Silero VAD model is installed
 - WHEN Maks runs `kesha lecture.mp3` on a 60-minute file
 - THEN the full lecture is transcribed via VAD-segmented passes
+- AND the process exits 0
+
+#### Scenario: Hour-long recording without VAD installed
+
+- GIVEN the Silero VAD model is not installed
+- WHEN Maks runs `kesha lecture.mp3` on a 60-minute file
+- THEN the full lecture is transcribed in fixed overlapping windows
+- AND text repeated across a window boundary appears once
 - AND the process exits 0
 
 #### Scenario: Forcing VAD without the model

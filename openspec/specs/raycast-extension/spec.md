@@ -119,22 +119,12 @@ touched.
 
 ### Requirement: Recording shows live elapsed time, input device, and Signal meter
 
-While recording, the extension SHALL show elapsed time, the default input
-device's name (with its sample rate and channel count when the system reports
-them), and a Signal meter that distinguishes **signal** from **listening**. When
-the meter cannot start, the session SHALL continue recording and report the
-meter as unavailable rather than failing.
-
-The **signal** / **listening** verdict SHALL depend only on how loudly Maks is
-speaking, never on how many channels his input device exposes. A device that
-carries his voice on one input and digital silence on the rest SHALL classify
-the same speech the same way a single-channel microphone does — otherwise Idle
-auto-stop ends a Dictation session while he is still talking, which is the
-failure this extension is least able to afford.
-
-A meter sample that carries no usable channel level SHALL read as **listening**.
-Absence of a measurement is not evidence of speech, and treating it as such
-would disable Idle auto-stop for the whole session.
+While recording, the extension SHALL show elapsed time, the default input device's
+name (with its sample rate and channel count when the system reports them), and a
+Signal meter that distinguishes **signal** from **listening**. When the meter cannot
+start, the session SHALL continue recording and report the meter as unavailable
+rather than failing. The verdict SHALL depend only on how loudly Maks is speaking,
+never on how many channels his input device exposes.
 
 #### Scenario: Maks watches the level while dictating
 
@@ -183,7 +173,13 @@ would disable Idle auto-stop for the whole session.
 > `percentFromPeak` (line 63). Unavailable fallback: lines 133–141. Distinct
 > from `SILENCE_PEAK_THRESHOLD = 0.0001` (`dictation-config.ts` line 5), which
 > is not a speech test and is used only by `raycast/src/lib/wav.ts` lines 71 and
-> 87 to reject an all-silent recording.*
+> 87 to reject an all-silent recording. A device that carries Maks's voice on one
+> input and digital silence on the rest classifies the same speech the same way a
+> single-channel microphone does; otherwise Idle auto-stop would end a Dictation session
+> while he is still talking, the failure this extension is least able to afford. A
+> sample with no usable channel level reads as **listening** because absence of a
+> measurement is not evidence of speech, and treating it as speech would disable Idle
+> auto-stop for the whole session.*
 
 ### Requirement: Idle auto-stop ends recording after 45 s of no speech
 
@@ -216,33 +212,12 @@ session.
 
 ### Requirement: Dictation uses live Transcription when the Engine advertises `record.live`
 
-The extension SHALL read the Engine's advertised feature list from the CLI's
-machine-readable status output, and SHALL run a single `kesha record --live`
-process — which transcribes the microphone as it captures and prints the
-transcript when recording stops — whenever `record.live` appears in it **and**
-the reported CLI version is one that accepts the `--live` flag. When either half
-is missing, the extension SHALL record a WAV and transcribe that file in a
-second process, exactly as before. An unreadable, malformed, or absent feature
-list SHALL be treated as the feature being absent, never as an Error: the
-fallback path works everywhere, so guessing wrong in that direction costs
-nothing.
-
-Both halves are required because the Engine and the CLI version independently.
-The Engine advertises what it can do; the CLI is what has to accept the flag,
-and it ignores a flag it does not know rather than rejecting it — so an Engine
-newer than the CLI's pin would otherwise reach a CLI that exits 2 asking for
-`--out`, with the recording already lost.
-
-Live Transcription removes the separate Transcription phase rather than adding a
-progressive one. `--live` prints its transcript once, when recording stops; the
-extension SHALL not present it as text appearing while Maks speaks.
-
-A live session prepares its streaming Transcription before it opens the input
-device — a first run compiles models for the ANE and takes about 20 s. The
-extension SHALL keep showing the preparing view, with no Signal meter, no idle
-countdown and no Stop action, until the Engine reports that it is listening.
-Claiming to record through that window would lose everything spoken in it and
-then blame macOS Microphone permission for the empty transcript.
+The extension SHALL run a single `kesha record --live` process, which transcribes the
+microphone as it captures and prints the transcript when recording stops, whenever
+the CLI's machine-readable status lists `record.live` among the Engine's features
+**and** reports a CLI version that accepts `--live`. Otherwise it SHALL record a WAV
+and transcribe that file in a second process. An unreadable, malformed, or absent
+feature list SHALL count as the feature being absent, never as an Error.
 
 #### Scenario: Apple Silicon with an Engine that advertises the feature
 
@@ -294,6 +269,14 @@ then blame macOS Microphone permission for the empty transcript.
 - THEN the extension takes the record-then-transcribe path rather than failing
 - AND no setup Error is shown on account of the missing feature list
 
+#### Scenario: Maks watches the view while a live session records
+
+- GIVEN a live Dictation session that is recording
+- WHEN Maks speaks for a minute
+- THEN no text appears in the view while he talks, because live Transcription removes
+  the separate Transcription phase rather than adding a progressive one
+- AND the transcript is shown once, when recording stops
+
 > *Technical Note — the feature list is read by `probeEngineAvailability`
 > (`raycast/src/lib/kesha-bin.ts`), which already ran `kesha status --json` for
 > the setup probe and now returns `engine.capabilities.features` and
@@ -316,20 +299,47 @@ then blame macOS Microphone permission for the empty transcript.
 > finished first, so a failed spawn neither hangs the session nor drives it
 > through a recording view; that branch awaits `task.done` so the Engine's own
 > failure is what Maks sees. `kesha install`'s warmup covers `backend::create_backend`, not
-> `init_streaming_asr`, so the first live session pays that cost.*
+> `init_streaming_asr`, so the first live session pays that cost. Both halves of the
+> gate are required because the Engine and the CLI version independently: the Engine
+> advertises what it can do, while the CLI has to accept the flag and ignores one it
+> does not know, so an Engine newer than the CLI's pin would otherwise reach a CLI
+> that exits 2 asking for `--out`, with the recording already lost. Failing toward the
+> fallback costs nothing, since the fallback path works everywhere.*
+
+### Requirement: A live session shows the preparing view until the Engine is listening
+
+A live Dictation session SHALL keep showing the preparing view, with no Signal meter,
+no idle countdown and no Stop action, until the Engine reports that it is listening.
+
+#### Scenario: A warm Engine opens the microphone quickly
+
+- GIVEN a live Dictation session whose streaming models are already compiled
+- WHEN the Engine reports that it is listening
+- THEN the view switches to Recording, the Signal meter starts, the idle countdown
+  begins and **Stop and Transcribe** is offered
+
+#### Scenario: Maks looks for Stop while the Engine warms up
+
+- GIVEN a live Dictation session whose Engine is still compiling its streaming models
+- WHEN Maks looks at the view before the Engine reports listening
+- THEN it offers no **Stop and Transcribe** action and no idle countdown runs
+- AND the view still reads `Preparing microphone...`
+
+> *Technical Note — a live session prepares its streaming Transcription before it
+> opens the input device, and a first run compiles models for the ANE in about 20 s.
+> Claiming to record through that window would lose everything spoken in it and then
+> blame macOS Microphone permission for the empty transcript. Sources:
+> `liveRecordPhase` awaiting `micOpen` in `raycast/src/lib/dictation-controller.ts`;
+> the preparing view in `raycast/src/dictate-to-clipboard.tsx`.*
 
 ### Requirement: Silent audio is rejected before Transcription with a permission hint
 
-On the record-then-transcribe path the extension SHALL fail the Dictation
-session when the recorded WAV contains no sample above the silence threshold,
-naming the two plausible causes — macOS Microphone permission for Raycast, and
-the selected input device — instead of spending time on a Transcription that
-would return nothing.
-
-The live path has no WAV to inspect, so its equivalent signal is an empty
-transcript. It SHALL carry the same guidance, in a single message naming the
-permission cause, because nothing on that path can tell a silent capture apart
-from speech that produced no text.
+On the record-then-transcribe path the extension SHALL fail the Dictation session
+when the recorded WAV contains no sample above the silence threshold, naming the two
+plausible causes — macOS Microphone permission for Raycast, and the selected input
+device — instead of spending time on a Transcription that would return nothing. On
+the live path an empty transcript SHALL carry the same guidance, in a single message
+naming the permission cause.
 
 #### Scenario: Raycast lacks Microphone permission
 
@@ -363,34 +373,19 @@ from speech that produced no text.
 > Unrecognised formats return "not silent" so the check can never block a valid
 > recording (line 29). The live equivalent is `normalizeLiveTranscript` in
 > `raycast/src/lib/dictation-controller.ts`, kept separate from
-> `normalizeTranscribeResult` so the fallback's two distinct messages survive.*
+> `normalizeTranscribeResult` so the fallback's two distinct messages survive. The
+> live path has no WAV to inspect, so an empty transcript is its equivalent signal, and
+> nothing on that path can tell a silent capture apart from speech that produced no
+> text.*
 
 ### Requirement: Transcription runs through the CLI and times out proportionally to the recording length
 
 On the record-then-transcribe path the extension SHALL obtain the transcript by
-running the CLI's default Transcription command on the recorded file and reading
-its stdout. The scaled timeout, the kept recording and its named path below all
-belong to that path: the live path has no separate Transcription window to
-outrun and no recording of its own to keep. It SHALL
-abandon a Transcription that has not finished within a timeout that scales with
-the length of the recording — a fixed floor plus a per-second allowance — so a
-recording made at the default `maxSeconds` cannot fail Transcription purely
-because of the timeout. Once the audio has been captured, the recording SHALL be
-kept — and its path named in the Error — whenever Transcription does not deliver
-a transcript, whether it times out, fails for any other reason, or Maks cancels
-it, so the recording is never lost to anything but a successful transcript. A
-kept recording left by an earlier session SHALL be pruned once it is older than
-a week. A non-zero Exit code SHALL be surfaced using the CLI's own stderr text
-so the Engine's Error code and hint reach Maks unedited.
-
-A live session is the one case where "unedited" needs saying precisely: its
-stderr also carries a progress line the Engine repaints in place once a second
-with a carriage return, and surfacing every fragment would bury the Error under
-thousands of characters. The extension SHALL render those carriage returns the
-way a terminal does — keeping only the final state of each line, and treating a
-carriage return that merely terminates a CRLF line as part of the line ending
-rather than as an overwrite — and SHALL change nothing else, so a multi-line
-Error keeps its blank lines and its install hint.
+running the CLI's default Transcription command on the recorded file and reading its
+stdout, and SHALL abandon a Transcription that has not finished within a timeout
+that scales with the recording's length (a fixed floor plus a per-second allowance),
+so a recording made at the default `maxSeconds` cannot fail purely because of the
+timeout.
 
 #### Scenario: Maks dictates a short note
 
@@ -460,7 +455,60 @@ Error keeps its blank lines and its install hint.
 > cleaned up and its path is surfaced via `keptAudioHint`
 > (`raycast/src/lib/dictation-controller.ts`). stderr is preferred over a
 > synthetic message on non-zero exit. Buffers are tail-capped — 16 MiB stdout,
-> 8 000 characters of stderr — by `capTail`.*
+> 8 000 characters of stderr — by `capTail`. The scaled timeout and the kept
+> recording belong to the record-then-transcribe path only: the live path has no
+> separate Transcription window to outrun and no recording of its own to keep.*
+
+### Requirement: A recording that yields no transcript is kept
+
+The extension SHALL keep a captured recording on the record-then-transcribe path, and
+name its path in the Error, whenever Transcription does not deliver a transcript,
+whether it times out, fails for any other reason, or Maks cancels it. A kept
+recording left by an earlier session SHALL be pruned once it is older than a week.
+
+#### Scenario: The CLI fails on a captured recording
+
+- GIVEN a captured recording and a CLI that exits non-zero during Transcription
+- WHEN the Error is shown
+- THEN the recording is still on disk and the Error hint names its path and a
+  `kesha "<path>"` command to transcribe it manually
+
+#### Scenario: A week-old kept recording is pruned
+
+- GIVEN one recording kept eight days ago and another kept two days ago
+- WHEN Maks starts a new Dictation session
+- THEN the eight-day-old recording is deleted and the two-day-old one is left alone
+
+> *Technical Note — sources: `keptAudioHint` and the keep-on-failure branch in
+> `raycast/src/lib/dictation-controller.ts`; `pruneOldRecordings` runs at session
+> start and removes `raycast-kesha-dictate-*` temp dirs older than
+> `RECORDING_MAX_AGE_MS` (7 days).*
+
+### Requirement: CLI stderr reaches Maks unedited
+
+A non-zero Exit code SHALL be surfaced using the CLI's own stderr text so the
+Engine's Error code and hint reach Maks unedited. For a live session the extension
+SHALL render carriage returns in that text the way a terminal does, keeping only the
+final state of each line and treating a carriage return that ends a CRLF line as part
+of the line ending, and SHALL change nothing else.
+
+#### Scenario: A multi-line Error keeps its shape
+
+- GIVEN a live Dictation session that fails with a multi-line Error containing a
+  blank line and an install hint
+- WHEN the Error is shown
+- THEN the blank line and the install hint appear exactly as the CLI wrote them
+
+#### Scenario: CRLF line endings are not read as overwrites
+
+- GIVEN a live session whose stderr ends each line with CRLF
+- WHEN the Error is shown
+- THEN every line keeps its full text
+
+> *Technical Note — a live session's stderr also carries a progress line the Engine
+> repaints once a second with a carriage return, and surfacing every fragment would
+> bury the Error under thousands of characters (#947). Source:
+> `renderCarriageReturns` in `raycast/src/lib/process-tasks.ts`.*
 
 ### Requirement: A successful transcript is copied to the clipboard; an empty one is an error
 
@@ -537,20 +585,11 @@ which is the only one with a Transcription phase to cancel. On the live path
 ### Requirement: No orphaned recorder or transcriber processes survive a session
 
 Every child process the extension starts SHALL be terminated when its Dictation
-session ends, by any route — normal completion, stop, cancel, error, or the
-command closing. Termination SHALL escalate: a cooperative stop first, then
-SIGTERM, then SIGKILL, targeting the whole process group so an interpreter
-wrapper cannot leave the CLI behind.
-
-The live path starts one child where the fallback starts two, and the escalation
-after a **Stop and Transcribe** SHALL be slower, because a live session produces
-its transcript *after* the cooperative stop: signalling it on the fallback
-recorder's schedule would destroy the transcript the session exists to deliver.
-
-That patience is owed only to a stop that is waiting for a transcript. A
-cancelled live session — the command being dismissed — discards its transcript,
-so it SHALL release the input device immediately rather than hold the microphone
-for the length of the finish ladder.
+session ends, by any route — normal completion, stop, cancel, error, or the command
+closing — escalating from a cooperative stop to SIGTERM to SIGKILL against the whole
+process group, so an interpreter wrapper cannot leave the CLI behind. On the live
+path the escalation after **Stop and Transcribe** SHALL be slower, while a cancelled
+live session SHALL release the input device immediately.
 
 #### Scenario: A stopped recorder exits promptly
 
@@ -601,7 +640,11 @@ for the length of the finish ladder.
 > (`raycast/src/lib/process-tasks.ts` lines 93 and 124,
 > `raycast/src/lib/signal-meter.ts` line 111). Session-scoped teardown
 > regardless of outcome: `raycast/src/lib/dictation-controller.ts` lines
-> 177–185.*
+> 177–185. The live path starts one child where the fallback starts two. Its
+> slower ladder exists because a live session produces its transcript after the
+> cooperative stop: signalling it on the fallback recorder's schedule would destroy the
+> transcript the session exists to deliver. A cancelled live session discards its
+> transcript, so holding the microphone for the finish ladder buys nothing.*
 
 ### Requirement: Recorded audio is written to a private temp directory and deleted
 
@@ -650,43 +693,8 @@ Every error state SHALL render an ActionPanel with at least: copy the error text
 Before entering the recording state, the extension SHALL probe the resolved CLI (version/engine availability) and, on failure, render a dedicated finish-setup view naming the exact remaining command instead of starting a recording that cannot succeed.
 
 The probe SHALL decide Engine availability from the CLI's machine-readable status
-output rather than by matching human-readable prose, so that rewording the CLI's
-status text cannot break a published extension.
-
-Engine availability SHALL mean present AND reporting readable capabilities. An
-Engine binary that exists but cannot report its capabilities is unusable, and the
-probe SHALL treat it as unavailable rather than starting a Dictation session that
-will fail during Transcription. The finish-setup view SHALL distinguish this case
-from a never-installed Engine in both its message and its hint, because the
-remedy differs: a plain `kesha install` takes the cached-engine path and only
-re-trusts an existing binary, so repairing one requires `kesha install
---no-cache`. On a read-only engine directory (a Nix-store install) that flag is
-deliberately a no-op, and the probe cannot tell the two topologies apart, so the
-hint SHALL name both routes rather than promising a repair that would silently
-skip.
-
-When the resolved CLI is older than the machine-readable output and therefore
-does not produce it, the probe SHALL fall back to the previous prose marker
-rather than reporting a broken install — the extension is distributed through the Raycast Store and cannot
-assume the CLI on a given machine matches it.
-
-The prose fallback SHALL be taken only when the output is not machine-readable at
-all, and only when that output is recognisably a status report; unrecognisable
-output SHALL fail open rather than be searched for loose text. Output that is
-machine-readable but does not satisfy the contract SHALL be treated as
-unavailable, never passed to the prose fallback: a structured response missing
-the presence field would otherwise also fail the prose match and be reported as a
-healthy Engine. Failing closed here costs Maks a dismissible setup view; failing
-open costs him a Dictation session. A contract failure SHALL be reported as a
-version mismatch between CLI and extension rather than as a broken Engine, since
-re-downloading the Engine would not resolve it. Readable capabilities SHALL mean
-a non-empty structured value, not merely a non-null one. The prose match SHALL be
-anchored to the Engine binary line rather than to the whole output, so an
-unrelated line rendered with the same missing-marker cannot be misread as the
-Engine being absent.
-
-A probe that cannot run at all SHALL continue to fail open, letting the CLI's own
-guards report the real problem with a better message than the probe could.
+output rather than by matching human-readable prose. A probe that cannot run at all
+SHALL continue to fail open.
 
 #### Scenario: CLI present but engine not installed
 
@@ -744,7 +752,87 @@ guards report the real problem with a better message than the probe could.
 > line. The verdict reaches the setup view through `EnginePreflightResult.reason`
 > (`"missing"` / `"unusable"`), which `dictation-controller.ts` maps to distinct
 > messages. `raycast/` is mirrored into `raycast/extensions`, so a change here
-> needs a follow-up upstream sync.*
+> needs a follow-up upstream sync. Reading structured output means rewording the CLI's
+> status text cannot break a published extension. A probe that cannot run fails open so
+> the CLI's own guards report the real problem with a better message than the probe
+> could.*
+
+### Requirement: A present but unusable Engine is caught before recording
+
+Engine availability SHALL mean present AND reporting readable capabilities, a
+non-empty structured value rather than merely a non-null one. The probe SHALL treat a
+present Engine without them as unavailable, and the finish-setup view SHALL word that
+case apart from a never-installed Engine in both message and hint, the hint naming
+both `kesha install --no-cache` and the repair route for a read-only engine
+directory.
+
+#### Scenario: A healthy Engine reports its capabilities
+
+- GIVEN the Engine is installed and `kesha status --json` reports a non-empty
+  `engine.capabilities`
+- WHEN Maks starts a Dictation session
+- THEN recording starts without a finish-setup view
+
+#### Scenario: The Engine reports an empty capabilities object
+
+- GIVEN `kesha status --json` reports `engine.installed: true` and
+  `engine.capabilities: {}`
+- WHEN Maks starts a Dictation session
+- THEN the view reads `Kesha's engine is installed but not working.`
+- AND the hint names `kesha install --no-cache` and repairing a read-only (Nix)
+  install through its package manager
+- AND no recording starts
+
+> *Technical Note — an unusable Engine would otherwise fail during Transcription,
+> after the recording is gone (#647). A plain `kesha install` takes the cached-engine
+> path and only re-trusts an existing binary, so repair needs `--no-cache`; on a
+> read-only engine directory (a Nix-store install) that flag is a no-op, and the probe
+> cannot tell the two topologies apart, so the hint names both rather than promising a
+> repair that would silently skip. Sources: `capabilitiesAreReadable`, `REPAIR_HINT`
+> in `raycast/src/lib/kesha-bin.ts`; `preflightMessage` in
+> `raycast/src/lib/dictation-controller.ts`.*
+
+### Requirement: The prose fallback is reserved for output that is not machine-readable
+
+When the CLI's status output is not machine-readable, the probe SHALL fall back to
+the previous prose marker, matched on the Engine binary line only, and only when the
+output is recognisably a status report; unrecognisable output SHALL fail open.
+Machine-readable output that breaks the contract SHALL be treated as an unavailable
+Engine, never passed to the prose fallback, and SHALL be reported as a version
+mismatch between CLI and extension rather than a broken Engine.
+
+#### Scenario: Another line of an older CLI's output carries the marker
+
+- GIVEN an older CLI whose human status shows the Engine binary as installed and
+  `not installed` on an unrelated line
+- WHEN Maks starts a Dictation session
+- THEN the probe reads only the Binary line, reports the Engine as available and
+  recording starts
+
+#### Scenario: The status object has the wrong presence type
+
+- GIVEN the resolved CLI emits a JSON object whose `engine.installed` is the string
+  `"yes"`
+- WHEN Maks starts a Dictation session
+- THEN the view reads `Kesha CLI and this extension are out of sync.`
+- AND no recording starts
+
+#### Scenario: Output that is neither JSON nor a status report
+
+- GIVEN the resolved CLI prints text with no Binary line
+- WHEN Maks starts a Dictation session
+- THEN the probe fails open and the Dictation session proceeds
+
+> *Technical Note — the prose fallback exists because the extension is distributed
+> through the Raycast Store and cannot assume the CLI on a given machine matches it.
+> Structured output missing the presence field would also fail the prose match and be
+> reported as a healthy Engine, so it fails closed: that costs Maks a dismissible setup
+> view, while failing open costs him a Dictation session. A contract failure is a
+> version mismatch because re-downloading the Engine would not resolve it. The Binary
+> line anchor keeps an unrelated line rendered with the same missing-marker from being
+> misread as the Engine being absent. Sources: `classifyStatusStdout`,
+> `readStructuredStatus`, `proseSaysEngineMissing` and `CONTRACT_HINT` in
+> `raycast/src/lib/kesha-bin.ts`.*
 
 ### Requirement: Missing microphone input is reported early
 When the signal meter delivers no sample within a short window (~8 s) of recording start, the extension SHALL surface microphone-permission guidance as a non-blocking warning while recording continues — a meter failure alone MUST NOT abort a session that may still be capturing audio. An unavailable meter MUST NOT disarm the silence auto-stop, so a session without input ends at the idle stop instead of the maximum duration.

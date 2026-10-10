@@ -42,23 +42,10 @@ API.
 `say` SHALL accept a `SayOptions` object and return a `Promise<Uint8Array>`
 containing the raw audio bytes (WAV IEEE-float mono by default, or the format
 specified by `opts.format`). When `opts.out` is set, the Engine writes to the
-file and the returned `Uint8Array` is empty.
-
-`say` SHALL throw `KeshaError` — a subclass of `Error` carrying `exitCode`,
-`stderr`, and `code` — on any failure. Specific pre-flight failures:
-- `text` is empty or missing → `KeshaError` with `exitCode: 2` and
-  `code: "E_TEXT_EMPTY"`.
-- `text` exceeds `MAX_TEXT_CHARS` (5000 Unicode code points) → `KeshaError`
-  with `exitCode: 5` and `code: "E_TEXT_TOO_LONG"`.
-- `text` contains a NUL byte → `KeshaError` with `exitCode: 2` and
-  `code: "E_INVALID_ARG"`.
-- Engine not installed → `KeshaError` with `exitCode: 1` and
-  `code: "E_ENGINE_SPAWN"`.
-
-When `opts.noExpandAbbrev` is set and the Engine does not advertise
-`tts.ru_acronym_expansion` or `tts.en_acronym_expansion`, the flag is dropped and
-one `warn` event is rendered (not a thrown error), per the `whenUngated: drop`
-rule of the `describe` schema (engine-contract, protocol-v4).
+file and the returned `Uint8Array` is empty. On any failure `say` SHALL throw a
+`KeshaError` (a subclass of `Error` carrying `exitCode`, `stderr` and `code`),
+with the pre-flight codes and Exit codes the scenarios below name; missing
+`text` counts as empty.
 
 #### Scenario: Sona synthesizes a Russian reply
 
@@ -95,14 +82,30 @@ rule of the `describe` schema (engine-contract, protocol-v4).
 - THEN the file `/tmp/hello.wav` is written with WAV audio
 - AND the returned `Uint8Array` is empty
 
+#### Scenario: Text with a NUL byte throws immediately
+
+- WHEN Sona calls `await say({ text: "hel\u0000lo" })`
+- THEN the promise rejects with a `KeshaError`
+- AND `err.exitCode === 2`
+- AND `err.code === "E_INVALID_ARG"`
+
+#### Scenario: Acronym expansion cannot be turned off on an older Engine
+
+- GIVEN the Engine advertises neither `tts.ru_acronym_expansion` nor
+  `tts.en_acronym_expansion`
+- WHEN Sona calls `await say({ text: "NASA", noExpandAbbrev: true })`
+- THEN the flag is dropped and one `warn` event is rendered
+- AND the promise resolves with audio rather than rejecting
+
 > *Technical Note — `say` in `src/synth.ts`, wrapped by `src/lib.ts::say`.
-> `MAX_TEXT_CHARS = 5000`; the text pre-flight is `validateSayText`, which the
+> `MAX_TEXT_CHARS = 5000` Unicode code points; the text pre-flight is `validateSayText`, which the
 > CLI runs too. Engine-not-installed throws `E_ENGINE_SPAWN` with exit code 1;
 > its message embeds `installHint("--tts")` (`src/install-hint.ts`) — `kesha init
 > --tts` when `process.stderr.isTTY`, `kesha install --tts` otherwise — and it
 > carries no separate `hint`, because `kesha say` prints the same error and its
 > output does not change. The `noExpandAbbrev` drop is schema-driven in
-> `src/engine/describe.ts::validateArgv`.*
+> `src/engine/describe.ts::validateArgv`, per the `whenUngated: drop` rule of the
+> `describe` schema (engine-contract, protocol-v4).*
 
 ### Requirement: `toToon(results)` encodes a result array as TOON
 
@@ -168,7 +171,7 @@ that names the `kesha install` command needed to fix the situation: in its
 
 ### Requirement: `transcribe(path, opts?)` returns a `TranscribeResult`
 
-`transcribe` SHALL accept an audio file path and an optional `TranscribeOptions` object and SHALL resolve to a `TranscribeResult` — the type one file produces under `kesha --json` — whose `file` is the path it was given, whose `text` is the transcript, whose `lang` is the language the CLI-side text detector names (empty when it names none above the confidence floor), and whose `segments` is present only when `opts.timestamps` or `opts.speakers` was set. It SHALL reject with `KeshaError` `E_INPUT_NOT_FOUND` before spawning the Engine when the file does not exist, and with `E_INVALID_ARG` when the path is a directory; it SHALL NOT surface Engine events on the caller's stderr, and SHALL reject with the Engine's Error code when the Engine fails.
+`transcribe` SHALL accept an audio file path and an optional `TranscribeOptions` object and SHALL resolve to a `TranscribeResult` (the type one file produces under `kesha --json`) whose `file` is the given path, `text` the transcript, `lang` the language the CLI-side text detector names (empty when none clears the confidence floor), and `segments` present only when `opts.timestamps` or `opts.speakers` was set. It SHALL NOT surface Engine events on the caller's stderr.
 
 #### Scenario: Sona transcribes a voice note
 
@@ -196,15 +199,38 @@ that names the `kesha install` command needed to fix the situation: in its
 
 > *Technical Note — `src/lib.ts::transcribe` runs `src/transcribe.ts::assertAudioFileArgument`, then `transcribeWithSegments`, then `src/language-routing.ts::detectTextLanguageFallback` and `routeLanguage`. The Engine's audio language ID and the macOS text detector stay CLI-only: each is another Engine spawn, and each warns on the caller's stderr when it fails. `transcribeWithTimestamps` and the alias `transcribeWithSegments` are removed by this change.*
 
+### Requirement: `transcribe` rejects with the Error code of the side that failed
+
+`transcribe` SHALL reject with a `KeshaError` whose `code` is `E_INPUT_NOT_FOUND` before spawning the Engine when the file does not exist, and `E_INVALID_ARG` when the path is a directory. When the Engine fails, it SHALL reject with the Engine's Error code.
+
+#### Scenario: A readable file is handed to the Engine
+
+- GIVEN the Engine and ASR models are installed and `note.ogg` exists
+- WHEN Sona calls `await transcribe("note.ogg")`
+- THEN the Engine is spawned and the promise resolves
+
+#### Scenario: The Engine cannot decode the file
+
+- GIVEN `broken.ogg` exists but holds no decodable audio
+- WHEN Sona calls `await transcribe("broken.ogg")`
+- THEN the promise rejects with a `KeshaError` whose `code` is `E_BAD_AUDIO`, the code the Engine reported
+
+> *Technical Note — the path checks are `src/transcribe.ts::assertAudioFileArgument`; Engine failures surface through `KeshaError` in `src/engine/events.ts`.*
+
 ### Requirement: `install(opts?)` is the one programmatic installer
 
-The Core API SHALL expose `install(opts?)`, which performs what `kesha install` performs for the same options: `tts` (a list of language codes, `--tts <langs>`, default none), `vad` (`--vad`), `diarize` (`--diarize`), `noCache` (`--no-cache`), `backend` (`"coreml"` or `"onnx"`, `--coreml`/`--onnx`), `engineVersion` (`--engine-version`). With no options it installs the Engine and the ASR models. It SHALL make the refusals `kesha install` makes before any download, with the same Error codes, and SHALL be the only exported function that downloads anything.
+The Core API SHALL expose `install(opts?)`, which performs what `kesha install` performs for the same options: `tts` (language codes, `--tts <langs>`, default none), `vad` (`--vad`), `diarize` (`--diarize`), `noCache` (`--no-cache`), `backend` (`"coreml"` or `"onnx"`, `--coreml`/`--onnx`), `engineVersion` (`--engine-version`). It SHALL make the refusals `kesha install` makes before any download, with the same Error codes, and SHALL be the only exported function that downloads anything.
 
 #### Scenario: Sona installs the Engine and English TTS from her setup script
 
 - WHEN Sona calls `await install({ tts: ["en"] })`
 - THEN the Engine binary and the English TTS models are present in the Model cache
 - AND subsequent `transcribe` and `say` calls succeed
+
+#### Scenario: Sona installs with no options
+
+- WHEN Sona calls `await install()`
+- THEN the Engine binary and the ASR models are present in the Model cache
 
 #### Scenario: Diarize requested where it cannot be served
 

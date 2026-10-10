@@ -54,21 +54,11 @@ timestamps when `--speakers` is set.
 ### Requirement: Diarization engages VAD windowing at any duration
 
 When `--speakers` is requested the Engine SHALL force VAD preprocessing
-regardless of audio duration, overriding the 120 s auto-VAD threshold, because
-speaker labels attach to ASR Segments: without VAD the transcript is a single
-whole-file Segment with nothing to label. The Engine SHALL fail with an
-actionable message naming `kesha install --vad` when the VAD model is missing.
-An explicit `--no-vad` SHALL be refused rather than silently
-overridden: the CLI SHALL exit 2 before spawning the Engine, and the Engine SHALL
-report `E_INVALID_ARG` if reached directly. The two layers report differently on
-purpose — CLI flag gates exit 2 with an uncoded message (the
-`validateTranscribeArgs` convention), while the Engine exits 1 with
-`E_INVALID_ARG` — and the Engine SHALL evaluate the flag pair before resolving
-any model, so an invalid invocation reads as invalid even with nothing installed.
-
-Because speaker labels depend on VAD, `kesha install --diarize` SHALL also
-install the VAD model, and the CLI preflight SHALL check for both before
-spawning the Engine.
+regardless of audio duration, overriding the 120 s auto-VAD threshold, and SHALL
+fail with an actionable message naming `kesha install --vad` when the VAD model
+is missing. An explicit `--no-vad` SHALL be refused rather than silently
+overridden: the CLI SHALL exit 2 before spawning the Engine, and the Engine, if
+reached directly, SHALL report `E_INVALID_ARG` before resolving any model.
 
 #### Scenario: Maks diarizes a 6-second voice-note exchange
 
@@ -84,11 +74,43 @@ spawning the Engine.
   VAD-windowed Segments and that `--no-vad` leaves nothing to label
 - AND the process exits 2 without spawning the Engine
 
-> *Technical Note — `reject_no_vad_with_speakers` runs at the top of
+> *Technical Note — VAD is forced because speaker labels attach to ASR Segments:
+> without VAD the transcript is a single whole-file Segment with nothing to label.
+> The two layers report `--no-vad` differently on purpose: CLI flag gates exit 2
+> with an uncoded message (the `validateTranscribeArgs` convention), while the
+> Engine exits 1 with `E_INVALID_ARG`. The Engine checks the flag pair before
+> resolving any model so an invalid invocation reads as invalid even with nothing
+> installed. `reject_no_vad_with_speakers` runs at the top of
 > `transcribe_with_options` and `vad_mode_for_diarization` resolves the mode
 > before the ASR install check (`rust/src/transcribe/mod.rs`); the CLI-side
 > exit-2 guard lives in `validateTranscribeArgs` (`src/cli/main.ts`) and the
 > model preflight in `src/engine.ts`. Closes #768.*
+
+### Requirement: Installing diarization installs the VAD model too
+
+`kesha install --diarize` SHALL also install the VAD model, and the CLI preflight
+for `--speakers` SHALL check for both the diarize and the VAD model before
+spawning the Engine.
+
+#### Scenario: Maks installs diarization once
+
+- GIVEN neither the diarize nor the VAD model is installed on darwin-arm64
+- WHEN Maks runs `kesha install --diarize`
+- THEN both the diarize model and the VAD model are present in the Model cache
+- AND `kesha --json --speakers meeting.ogg` runs without asking for `--vad`
+
+#### Scenario: The VAD model is missing at transcription time
+
+- GIVEN the diarize model is installed but the VAD model is not
+- WHEN Maks runs `kesha --json --speakers meeting.ogg`
+- THEN the CLI reports `E_MODEL_MISSING` saying speaker diarization requires the
+  VAD model, with a hint naming `--vad`
+- AND the process exits 1 without spawning the Engine
+
+> *Technical Note — speaker labels depend on VAD, so `--diarize` pulls `--vad` into
+> the install argv (`src/engine-install.ts`, #768). The preflight is
+> `assertSpeakerModelsInstalled` in `src/engine.ts`, which runs
+> `assertDiarizeModelInstalled` then `assertVadModelInstalled`.*
 
 ### Requirement: Diarization is gated on darwin-arm64 and the installed model
 
@@ -135,26 +157,12 @@ missing.
 ### Requirement: Coverage validation prevents silently partial labels
 
 After diarization, the Engine SHALL validate that at least 95 % of ASR
-Segments have been labeled by midpoint overlap, AND that the diarization
-timeline ends no more than 30 s before the final ASR Segment. If either
-check fails, the Engine SHALL report an error with labeled/total counts and
-the span/transcript end times.
-
-The percentage check SHALL be skipped when there is exactly one ASR Segment: the
-ratio can then only be 0 % or 100 % depending on whether that Segment's midpoint
-lands in a speaker-change gap, which measures absent segmentation rather than
-partial labeling. Diarization returning no spans at all SHALL still fail closed
-at any Segment count, with one exception: when the clip is shorter than the 1.04 s
-the Sortformer chunker needs before it can emit its first chunk, an empty result is
-the clip being too short rather than labels going missing. There the Engine SHALL
-return the transcript without `speaker` fields and exit 0, and SHALL say on stderr
-that the clip is below the floor and that the labels the user asked for are not in
-the output. A clip long enough to diarize is judged by the checks above unchanged,
-whether it lost some of its labels or all of them. Because a container can
-under-report its own duration, the Engine SHALL believe a below-floor measurement
-only when the transcript agrees: an ASR timeline reaching 1.04 s or beyond means the
-measurement is wrong, and the Engine SHALL fail closed rather than degrade — so the
-stderr notice never claims a length the transcript contradicts.
+Segments are labeled by midpoint overlap, AND that the diarization timeline
+ends no more than 30 s before the final ASR Segment. A failed check SHALL report
+an error with labeled/total counts and the span/transcript end times. The
+percentage check SHALL be skipped when there
+is exactly one ASR Segment. No spans at all SHALL fail closed at any Segment
+count, except for a clip below the diarizer floor (next requirement).
 
 #### Scenario: Ira diarizes a voice command shorter than the model's window
 
@@ -192,7 +200,10 @@ stderr notice never claims a length the transcript contradicts.
   transcript ends at 110.0s`
 - AND the process exits 1
 
-> *Technical Note — constants: `MIN_DIARIZE_SEGMENT_COVERAGE = 0.95`,
+> *Technical Note — with exactly one ASR Segment the ratio can only be 0 % or
+> 100 %, depending on whether that Segment's midpoint lands in a speaker-change
+> gap, which measures absent segmentation rather than partial labeling.
+> Constants: `MIN_DIARIZE_SEGMENT_COVERAGE = 0.95`,
 > `MAX_DIARIZE_TAIL_GAP_SECONDS = 30.0`, `MIN_DIARIZABLE_SECONDS = 1.04`.
 > Source: `rust/src/transcribe/diarize.rs`.
 > Validation function: `validate_coverage`; the short-clip exception is
@@ -204,6 +215,39 @@ stderr notice never claims a length the transcript contradicts.
 > observed one, and a clip in that 17 ms band degrades where it could still have
 > been labeled. The duration cross-check is `max_asr_end`, the same clock
 > `validate_coverage` uses. Closes #999.*
+
+### Requirement: A clip below the diarizer floor returns an unlabeled transcript
+
+When diarization returns no spans and the clip is shorter than the 1.04 s floor,
+the Engine SHALL return the transcript without `speaker` fields, exit 0, and say
+on stderr that the clip is below the floor and the requested labels are not in
+the output. It SHALL believe a below-floor duration only when the ASR timeline
+ends before 1.04 s; otherwise it SHALL fail closed.
+
+#### Scenario: Maks diarizes a one-word reply
+
+- GIVEN a 0.5 s recording whose ASR timeline ends at 0.4 s, and the VAD +
+  diarize models installed
+- WHEN Maks runs `kesha --json --speakers yes.wav`
+- THEN stdout carries the transcript, whose Segments carry no `speaker` field
+- AND stderr names the 1.04 s floor, and the process exits 0
+
+#### Scenario: A clip just long enough to diarize loses all its labels
+
+- GIVEN a 1.2 s recording whose ASR timeline ends at 1.1 s and diarization
+  returning no spans
+- WHEN Maks runs `kesha --json --speakers short.wav`
+- THEN the Engine reports the coverage error rather than degrading
+- AND the process exits 1
+
+> *Technical Note — 1.04 s is what the Sortformer chunker needs before it can emit
+> its first chunk, so an empty result below it is the clip being too short rather
+> than labels going missing. A container can under-report its own duration, so the
+> transcript has to agree before the measurement is believed, and the stderr
+> notice never claims a length the transcript contradicts. A clip long enough to
+> diarize is judged by the coverage checks unchanged, whether it lost some of its
+> labels or all of them. `below_diarizer_floor` in
+> `rust/src/transcribe/diarize.rs` (#999).*
 
 ### Requirement: Speaker ids are cluster indices stable within one call only
 
@@ -255,27 +299,13 @@ outside every diarization span SHALL omit the `speaker` field entirely.
 
 ### Requirement: Diarization reports progress and is supervised per phase
 
-The Engine SHALL report diarization progress on stderr — never stdout — naming
+The Engine SHALL report diarization progress on stderr, never stdout, naming
 the compute units at the start, the model load time once the binding reports the
-model ready, and the percentage of audio processed at intervals thereafter.
-
-The CLI SHALL relay each of those lines as the Engine writes it, not once the run
-is over. Progress that arrives only after the wait it described cannot tell a slow
-run from a hung one, which is what a silent 51 s model load was taken for (#1002).
-Progress relayed this way SHALL NOT be repeated in the failure report, which keeps
-naming the file and the Engine's own error.
-
-The Engine SHALL supervise the run with a budget per phase rather than one
-wall-clock timeout, each phase delimited by a signal from the binding rather than
-inferred: 300 s for the model load (up to the model-ready marker), 60 s plus
-0.01 s per audio-second for reading and resampling the file (up to the first
-processed chunk), and 60 s without a processed chunk thereafter. Exceeding any of
-them SHALL cancel the run and report `E_DIARIZE_TIMEOUT` with a message naming
-the phase and offering only remedies that can act on it. The load budget SHALL be
-overridable by `KESHA_DIARIZE_LOAD_TIMEOUT_SECS`, since a cold ANE compile is a
-fixed cost of the host rather than of the user's audio. There SHALL be no default
-cap on total run time; `KESHA_DIARIZE_TIMEOUT_SECS` optionally imposes one, and it
-can only shorten a run — never widen a phase budget.
+model ready, and the percentage of audio processed at intervals. The
+CLI SHALL relay each line as the Engine writes it, not once the run is over, and
+SHALL NOT repeat relayed progress in the failure report, which keeps naming the
+file and the Engine's own error. The run is supervised per phase as the next two
+requirements state.
 
 #### Scenario: Maks watches a long meeting diarize
 
@@ -338,7 +368,9 @@ can only shorten a run — never widen a phase budget.
   variable and the percentage reached, and exits 1
 - AND the message blames the cap rather than reporting a stall
 
-> *Technical Note — constants: `MODEL_LOAD_BUDGET_SECS = 300`,
+> *Technical Note — progress that arrives only after the wait it described cannot
+> tell a slow run from a hung one, which is what a silent 51 s model load was
+> taken for (#1002). Constants: `MODEL_LOAD_BUDGET_SECS = 300`,
 > `PREPARE_BUDGET_FLOOR_SECS = 60`, `PREPARE_BUDGET_PER_AUDIO_SECOND = 0.01`,
 > `PROGRESS_STALL_BUDGET_SECS = 60`, `PROGRESS_REPORT_INTERVAL = 5 s`,
 > `CANCEL_GRACE = 10 s` (the processing-phase floor; an uninterruptible phase
@@ -353,20 +385,69 @@ can only shorten a run — never widen a phase budget.
 > (`fluidaudio-rs`, `swift/Diarize_ffi.swift`) — so no phase is inferred from
 > silence.*
 
+### Requirement: Each diarization phase has its own time budget
+
+The Engine SHALL supervise diarization with a budget per phase rather than one
+wall-clock timeout, each phase delimited by a signal from the binding: 300 s for
+the model load (up to the model-ready marker), 60 s plus 0.01 s per audio-second
+for reading and resampling (up to the first processed chunk), and 60 s without a
+processed chunk thereafter. Exceeding one SHALL cancel the run and report
+`E_DIARIZE_TIMEOUT` naming the phase and offering only remedies that act on it.
+
+#### Scenario: A ten-hour recording gets a longer read budget
+
+- GIVEN a 10-hour recording and a warm model
+- WHEN Ira runs `kesha --json --speakers archive.wav`
+- THEN reading and resampling is allowed 420 s before the first chunk is due
+- AND the run completes without `E_DIARIZE_TIMEOUT` while chunks keep arriving
+
+#### Scenario: The model load outruns its budget
+
+- GIVEN a model load that has not reported the model-ready marker after 300 s
+- WHEN the load budget runs out
+- THEN the Engine cancels the run and reports `E_DIARIZE_TIMEOUT` saying it gave
+  up waiting for the CoreML model to load, before reading any audio
+- AND the message offers rewarming with `kesha install --diarize`,
+  `KESHA_DIARIZE_COMPUTE_UNITS=cpu-and-gpu`, and raising
+  `KESHA_DIARIZE_LOAD_TIMEOUT_SECS`, and the process exits 1
+
+> *Technical Note — `prepare_budget` and `stall_error` in
+> `rust/src/transcribe/diarize.rs`; the 10-hour figure is pinned by
+> `prepare_budget(36_000.0) == 420 s` there.*
+
+### Requirement: Diarization time limits are set by environment variables
+
+The Engine SHALL let `KESHA_DIARIZE_LOAD_TIMEOUT_SECS` replace the 300 s
+model-load budget. There SHALL be no default cap on total run time;
+`KESHA_DIARIZE_TIMEOUT_SECS` optionally imposes one, and it SHALL only shorten a
+run, never widen a phase budget.
+
+#### Scenario: Ira's slow build host gets a longer load
+
+- GIVEN `KESHA_DIARIZE_LOAD_TIMEOUT_SECS=600` and a cold model load of 400 s
+- WHEN Ira runs `kesha --json --speakers meeting.ogg`
+- THEN the load completes inside its budget and the run exits 0
+
+#### Scenario: A generous total cap does not widen the stall budget
+
+- GIVEN `KESHA_DIARIZE_TIMEOUT_SECS=3600` and a run that stops producing chunks
+- WHEN 60 s pass with no further chunk
+- THEN the Engine reports `E_DIARIZE_TIMEOUT` for the stall without waiting for
+  the cap, and the process exits 1
+
+> *Technical Note — the load budget is the one a user can tune, since a cold ANE
+> compile is a fixed cost of the host rather than of the user's audio.
+> `load_budget_from_env` and `positive_secs_from_env` in
+> `rust/src/transcribe/diarize.rs`.*
+
 ### Requirement: Cancellation stops the CoreML work
 
 When the Engine abandons a diarization it SHALL cancel the underlying Swift task
-and wait for it to unwind before returning. Returning while the task is still
-running crashes the process during exit.
-
-The chunk loop is cancellable; the model load and the audio read are not. The
-wait SHALL therefore be as long as the cancelled phase needs: 10 s while
-processing, since the Swift side checks the token between chunks, but the
-remainder of the current phase's own budget while loading or reading, because a
-cancellation there only takes effect when that single call returns. Waiting less
-than that would return under a live CoreML call — the crash this requirement
-exists to prevent. Only once a phase outlives its full budget does the Engine
-fall back to abandoning the worker thread for process exit to reap.
+and wait for it to unwind before returning. The wait SHALL be as long as the
+cancelled phase needs: 10 s while processing chunks, and the remainder of the
+current phase's own budget while loading the model or reading the audio. Only
+once a phase outlives its full budget does the Engine fall back to abandoning
+the worker thread for process exit to reap.
 
 #### Scenario: A capped run exits cleanly
 
@@ -385,7 +466,12 @@ fall back to abandoning the worker thread for process exit to reap.
 - AND it waits out the remainder of the load budget rather than 10 s, so the
   process exits 1 — not with a signal
 
-> *Technical Note — `stop_worker` in `rust/src/transcribe/diarize.rs`. The
+> *Technical Note — returning while the Swift task is still running crashes the
+> process during exit. The chunk loop is cancellable because the Swift side checks
+> the token between chunks; the model load and the audio read are single calls, so
+> a cancellation there only takes effect when the call returns, and a shorter wait
+> would return under a live CoreML call. `stop_worker` in
+> `rust/src/transcribe/diarize.rs`. The
 > binding's `DiarizeCancelToken` is sticky and thread-safe, so the supervising
 > thread can cancel work the worker thread is parked inside
 > (`fluidaudio-rs`, `swift/Diarize_ffi.swift`).*

@@ -59,9 +59,9 @@ The CLI SHALL reject an invocation that passes both `--live` and `--out`, and SH
 
 ### Requirement: `--live` transcribes the microphone without writing a file
 
-`kesha record --live` SHALL capture the default microphone and transcribe it through a streaming ASR session, printing the final transcript to stdout when recording stops. No WAV file SHALL be written. Progress and errors go to stderr so stdout carries the transcript and nothing else. The no-speech line is the session's outcome, not progress: `--quiet` SHALL keep it.
+`kesha record --live` SHALL capture the default microphone and transcribe it through a streaming ASR session, printing the final transcript to stdout when recording stops. No WAV file SHALL be written. Progress and errors go to stderr so stdout carries the transcript and nothing else. `--quiet` SHALL keep the no-speech line.
 
-Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapsed, or stdin EOF. The CLI's relay adds a contract of its own for the reader of stdout: when a write to stdout fails because the reader closed the pipe, the relay SHALL write nothing further, SHALL keep draining the Engine's stdout so the Engine never blocks, SHALL stop the Engine once rather than let it hold the microphone until `--max-seconds`, and SHALL judge the Engine's exit exactly as it judges any other live stop — the clean interrupt status is success, an error event is a failure. The shipped Engine delivers the transcript in one write after recording has stopped, so no write can fail before the stop and this contract has no observable effect today; it binds the moment the live session streams partial lines.
+Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapsed, or stdin EOF.
 
 #### Scenario: Maks dictates a note straight to text
 
@@ -109,13 +109,40 @@ Recording stops on the same conditions as capture-to-WAV: `--max-seconds` elapse
 > is wrapped in `fluid_stdout::with_silenced_stdout` (#259). The live capture
 > loop is `record_default_input_live` in `rust/src/record.rs`, sharing
 > `build_input_stream`, `mix_frame_to_mono` and `spawn_stdin_stop_thread` with
-> the WAV path.*
+> the WAV path. `--quiet` keeps the no-speech line because it is the session's
+> outcome, not progress. The relay's contract for a reader that leaves is the
+> next requirement.*
+
+### Requirement: The `--live` relay stops the Engine when the stdout reader leaves
+
+When a write to stdout fails because the reader closed the pipe, the CLI's `--live` relay SHALL write nothing further, SHALL keep draining the Engine's stdout so the Engine never blocks, SHALL stop the Engine once rather than let it hold the microphone until `--max-seconds`, and SHALL judge the Engine's exit as it judges any other live stop: the clean interrupt status is success, an error event is a failure.
+
+#### Scenario: Sona's reader leaves and the Engine stops cleanly
+
+- GIVEN an Engine that streams partial transcript lines to stdout (none ships today)
+- AND Sona runs `kesha record --live | head -1`
+- WHEN `head` exits after the first line, closing the pipe
+- THEN the CLI writes nothing further to stdout and stops the Engine once
+- AND the Engine exits with the clean interrupt status and the process exits 0
+
+#### Scenario: The Engine reports an error after the reader left
+
+- GIVEN an Engine that streams partial transcript lines to stdout (none ships today)
+- AND Sona's reader has closed the pipe
+- WHEN the Engine, while being stopped, emits an `error` event
+- THEN the process exits non-zero with that error, as any other failed live stop does
+
+> *Technical Note — the shipped Engine delivers the transcript in one write
+> after recording has stopped, so no write can fail before the stop and this
+> contract has no observable effect today; it binds the moment the live session
+> streams partial lines. "Sona takes only the first line of a streaming
+> transcript" under the previous requirement shows the same stop.*
 
 ### Requirement: `--live` requires an Engine that advertises `record.live`
 
-The CLI SHALL read the Engine's describe document for the `record.live` feature before spawning, and SHALL refuse `--live` with `E_INVALID_ARG` and a message naming the platform requirement and pointing at the capture-then-transcribe alternative when that feature is absent from `features`. The flag SHALL NOT be forwarded to an Engine that does not advertise it.
+The CLI SHALL read the Engine's describe document before spawning and SHALL refuse `--live` with `E_INVALID_ARG` when `record.live` is absent from `features`, naming the platform requirement and the capture-then-transcribe alternative. The flag SHALL NOT be forwarded to an Engine that does not advertise it.
 
-A describe document the CLI cannot read SHALL end the command as a refusal rather than an assumption of support, carrying the `KeshaError` that the failed read produced and a hint naming `kesha install`.
+A describe document the CLI cannot read SHALL end the command as a refusal, carrying the `KeshaError` the failed read produced and a hint naming `kesha install`.
 
 #### Scenario: Maks records live on a CoreML Engine
 
@@ -293,13 +320,21 @@ IEEE-float WAV format. Parent directories are created if they do not exist.
 
 ### Requirement: An `--out` path that cannot take the WAV is refused before the microphone opens
 
-The Engine SHALL open the `--out` path before it opens the microphone, and SHALL refuse a path it cannot write — a directory, a symlink to one, a location this user cannot write into — with the Error code `E_INVALID_ARG`, a message naming `--out`, the path and the operating system's reason, and exit 1, without recording anything. Opening the path SHALL NOT truncate a file already there: the recording is written beside it and moved into place only once it succeeded, so a capture that fails leaves the earlier file untouched.
+The Engine SHALL open the `--out` path before it opens the microphone, and SHALL refuse a path it cannot write with the Error code `E_INVALID_ARG`, a message naming `--out`, the path and the operating system's reason, and exit 1, without recording anything. Opening the path SHALL NOT truncate a file already there: the recording is written beside it and moved into place only once it succeeded, so a capture that fails leaves the earlier file untouched.
 
 #### Scenario: Maks passes a directory as --out
 
 - GIVEN `~/recordings` is a directory
 - WHEN Maks runs `kesha record --out ~/recordings --max-seconds 30`
 - THEN the Engine reports `E_INVALID_ARG` naming `~/recordings` and `Is a directory`
+- AND no recording runs first
+- AND the process exits 1
+
+#### Scenario: Maks passes a symlink to a directory as --out
+
+- GIVEN `~/latest` is a symlink to the directory `~/recordings`
+- WHEN Maks runs `kesha record --out ~/latest`
+- THEN the Engine reports `E_INVALID_ARG` naming `~/latest` and `Is a directory`
 - AND no recording runs first
 - AND the process exits 1
 

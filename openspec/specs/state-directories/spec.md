@@ -24,15 +24,13 @@ sees the same absolute paths.
 ## Requirements
 ### Requirement: Every state location resolves through one precedence rule
 
-The CLI SHALL resolve each of its four mutable-state locations — the Model cache, the Diagnostic log directory, the Stats DB file, and the MCP audio directory — by the same rule: the location's specific variable when set (`KESHA_CACHE_DIR`, `KESHA_LOG_DIR`, `KESHA_STATS_DB`; the MCP audio directory has none), otherwise the path derived from `KESHA_HOME` when set, otherwise the platform default. A variable set to the empty string SHALL count as unset. A relative value SHALL be resolved against the working directory once, when the CLI starts, so every consumer in the process and every Engine spawn sees the same absolute path. The resolution SHALL be a pure function of the environment, platform, home directory and temp directory, with no file-system access, so it is testable as a table.
-
-Platform defaults are unchanged by this requirement: `~/.cache/kesha` for the Model cache on every platform; `~/Library/Logs/kesha`, `%LOCALAPPDATA%\kesha\logs` or `$XDG_STATE_HOME/kesha/logs` for logs; `~/Library/Application Support/kesha/stats.sqlite`, `%APPDATA%\kesha\stats.sqlite` or `$XDG_DATA_HOME/kesha/stats.sqlite` for Stats; `<tmpdir>/kesha-mcp` for MCP audio.
+The CLI SHALL resolve each of its four mutable-state locations (Model cache, Diagnostic log directory, Stats DB file, MCP audio directory) by one rule: the location's specific variable when set (`KESHA_CACHE_DIR`, `KESHA_LOG_DIR`, `KESHA_STATS_DB`; none for MCP audio), otherwise the path derived from `KESHA_HOME`, otherwise the platform default. A variable set to the empty string SHALL count as unset. A relative value SHALL be resolved against the working directory once, at CLI start.
 
 #### Scenario: Ira sets nothing
 
 - GIVEN none of `KESHA_HOME`, `KESHA_CACHE_DIR`, `KESHA_LOG_DIR`, `KESHA_STATS_DB` is set
 - WHEN Ira runs any `kesha` command on macOS
-- THEN the four locations are the platform defaults above
+- THEN the four locations are the platform defaults ("State locations fall back to fixed platform defaults")
 - AND each reports its source as `default`
 
 #### Scenario: Maks sets only the umbrella
@@ -68,11 +66,53 @@ Platform defaults are unchanged by this requirement: `~/.cache/kesha` for the Mo
 > `src/stats.ts::resolveStatsDbPath` and `src/mcp/audio-output.ts::audioDir` are thin
 > callers that keep their names for existing importers. The precedence table is pinned by
 > a unit test over all three platforms and the eight variable combinations; no test in it
-> touches the file system.*
+> touches the file system. Anchoring a relative value once at startup is what lets every
+> consumer in the process and every Engine spawn see the same absolute path.*
+
+### Requirement: State resolution reads no file system
+
+The resolution of state locations SHALL be a pure function of the environment, platform, home directory and temp directory, with no file-system access, so it is testable as a table.
+
+#### Scenario: Sona resolves a home that does not exist yet
+
+- GIVEN `KESHA_HOME=/tmp/kesha-new` and no such directory exists
+- WHEN the CLI resolves its state locations
+- THEN the Model cache resolves to `/tmp/kesha-new/cache`
+- AND resolving creates nothing on disk
+
+#### Scenario: The same inputs give the same locations
+
+- GIVEN one environment, platform, home directory and temp directory
+- WHEN Sona's process resolves the state locations twice, with files created and removed in between
+- THEN both results are identical
+
+> *Technical Note — `src/state-paths.ts::resolveStatePaths` takes the environment,
+> platform, home directory, temp directory and startup working directory as arguments
+> and calls no `fs` function.*
+
+### Requirement: State locations fall back to fixed platform defaults
+
+When neither its specific variable nor `KESHA_HOME` is set, each state location SHALL resolve to its platform default: `~/.cache/kesha` for the Model cache on every platform; `~/Library/Logs/kesha`, `%LOCALAPPDATA%\kesha\logs` or `$XDG_STATE_HOME/kesha/logs` for logs; `~/Library/Application Support/kesha/stats.sqlite`, `%APPDATA%\kesha\stats.sqlite` or `$XDG_DATA_HOME/kesha/stats.sqlite` for Stats; `<tmpdir>/kesha-mcp` for MCP audio.
+
+#### Scenario: Ira's macOS defaults
+
+- GIVEN no state variable is set on macOS
+- WHEN Ira runs `kesha status --json`
+- THEN the Model cache is `~/.cache/kesha`, the log directory `~/Library/Logs/kesha`, the Stats DB `~/Library/Application Support/kesha/stats.sqlite`, and the MCP audio directory `<tmpdir>/kesha-mcp`
+
+#### Scenario: Maks on Windows
+
+- GIVEN no state variable is set on Windows and `LOCALAPPDATA` and `APPDATA` are set
+- WHEN Maks runs `kesha status --json`
+- THEN the log directory is `%LOCALAPPDATA%\kesha\logs` and the Stats DB `%APPDATA%\kesha\stats.sqlite`
+- AND the Model cache is still `~/.cache/kesha`
+
+> *Technical Note — these defaults predate this spec and it leaves them unchanged.
+> Source: `src/state-paths.ts::platformDefaults`.*
 
 ### Requirement: `KESHA_HOME` roots every state location under one directory with one layout
 
-When `KESHA_HOME` is set, the CLI SHALL place its state under it with the same layout on every platform — `cache/`, `logs/`, `stats.sqlite`, `mcp-audio/` — and SHALL create nothing outside it except what a specific variable redirects elsewhere. Setting `KESHA_HOME` SHALL NOT move, copy or delete any existing file: a user who points it at an empty directory starts from an empty Model cache and installs into it explicitly with `kesha install`; the never-auto-download rule applies unchanged. The CLI SHALL forward the resolved Model cache to every Engine spawn as `KESHA_CACHE_DIR` when `KESHA_HOME` decided it, so the Engine's own state (models, `recordings/`, FluidAudio bundles it roots under the cache) lands under the same directory; the Engine itself does not read `KESHA_HOME`.
+When `KESHA_HOME` is set, the CLI SHALL place its state under it with the same layout on every platform (`cache/`, `logs/`, `stats.sqlite`, `mcp-audio/`) and SHALL create nothing outside it except what a specific variable redirects elsewhere. Setting `KESHA_HOME` SHALL NOT move, copy or delete any existing file: an empty directory starts an empty Model cache that `kesha install` fills explicitly; the Never-auto-download rule applies unchanged.
 
 #### Scenario: Ira isolates a CI job with one line
 
@@ -107,6 +147,28 @@ When `KESHA_HOME` is set, the CLI SHALL place its state under it with the same l
 > `tests/helpers/harness-home.ts::harnessHome`, which first pins `KESHA_CACHE_DIR` to its
 > previous default so the real-engine lanes keep their cache while logs, Stats and MCP
 > audio move; the suite never writes the developer's real logs or Stats.*
+
+### Requirement: A Model cache decided by `KESHA_HOME` is forwarded to every Engine spawn
+
+The CLI SHALL forward the resolved Model cache to every Engine spawn as `KESHA_CACHE_DIR` when `KESHA_HOME` decided it, so the Engine's own state (models, `recordings/`, FluidAudio bundles it roots under the cache) lands under the same directory. The Engine itself does not read `KESHA_HOME`.
+
+#### Scenario: Ira's transcription runs against the isolated cache
+
+- GIVEN `KESHA_HOME=/tmp/kesha-ci` with the Engine and models installed under `/tmp/kesha-ci/cache`
+- WHEN Ira runs `kesha meeting.ogg`
+- THEN the Engine loads its models from `/tmp/kesha-ci/cache`
+- AND `~/.cache/kesha` is not read or written
+
+#### Scenario: A user-set cache variable is left alone
+
+- GIVEN `KESHA_HOME=/tmp/kesha-ci` and `KESHA_CACHE_DIR=/data/kesha-cache` with the Engine installed there
+- WHEN Maks runs `kesha meeting.ogg`
+- THEN the Engine loads its models from `/data/kesha-cache`
+- AND nothing is written under `/tmp/kesha-ci/cache`
+
+> *Technical Note — `src/engine/spawn.ts::spawnEngineProcess` (see the previous
+> requirement's note) sets `KESHA_CACHE_DIR` on the child only when the resolved cache's
+> source is `KESHA_HOME`; the Engine reads it in `rust/src/models/paths.rs::cache_dir`.*
 
 ## Open Issues
 

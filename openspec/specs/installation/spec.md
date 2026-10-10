@@ -103,21 +103,12 @@ other platform is unsupported and fails.
 
 ### Requirement: Windows x64 installs the released ONNX Engine
 
-`kesha install` on win32-x64 SHALL download the published Windows Engine asset and
-complete the same install flow as linux-x64, with no platform-specific refusal. The
-Install plan SHALL describe that platform in the same terms it uses for the platforms
-it installs on, so a reader is never told a platform is blocked while the same output
-lists its Engine asset and size.
-
-The capability set Windows receives is the ONNX one: Transcription, Language detection
-(audio), VAD, and TTS through the Kokoro, Vosk, and CharsiuG2P TTS engines. Capabilities
-that require Apple frameworks — CoreML, `macos-*` Voice ids, Diarization, and Language
-detection (text) — remain unavailable there and SHALL keep failing with their existing
-platform errors.
-
-The Engine SHALL be installed at a path the CLI can spawn on Windows. The release asset
-is a PE, so the installed binary keeps its `.exe` suffix rather than the extensionless
-name used on POSIX platforms.
+`kesha install` on win32-x64 SHALL download the published Windows Engine asset, install
+it at a path the CLI can spawn, and complete the same install flow as linux-x64, with no
+platform-specific refusal. The Install plan SHALL describe that platform in the same
+terms it uses for the platforms it installs on. Windows receives the ONNX capability set;
+CoreML, `macos-*` Voice ids, Diarization, and Language detection (text) SHALL keep
+failing there with their existing platform errors.
 
 #### Scenario: Installing on a Windows build agent
 
@@ -147,11 +138,16 @@ name used on POSIX platforms.
 > `installEngine` only when the cached-version check fails), `src/paths.ts::defaultEngineBinPath`
 > (`.exe` on win32), `src/install-plan.ts::buildEngineComponent`. Built by
 > the `build` job of `.github/workflows/release.yml` from the `portable` profile; issue #216's MSVC link
-> failure was resolved by vendoring the Vosk-TTS runtime under `rust/vendor/vosk-tts/`.*
+> failure was resolved by vendoring the Vosk-TTS runtime under `rust/vendor/vosk-tts/`.
+> The ONNX capability set is Transcription, Language detection (audio), VAD, and TTS
+> through the Kokoro, Vosk, and CharsiuG2P TTS engines. The plan's wording matters
+> because a reader must never be told a platform is blocked while the same output lists
+> its Engine asset and size. The release asset is a PE, so the installed binary keeps its
+> `.exe` suffix rather than the extensionless name used on POSIX platforms.*
 
 ### Requirement: Every shipped platform is verified end to end before release
 
-The release pipeline SHALL verify, for each platform whose Engine is published on the stable Channel, that the built asset performs real synthesis and real Transcription before the release is created — by downloading the just-built asset as a workflow artifact, running `describe`, `kesha say` and a transcription of the result — and SHALL refuse to create the release when any platform fails. A platform whose Engine ships without that verification SHALL be documented as unverified. Because the install-time ASR warm-up is non-fatal by design, a successful `kesha install` SHALL NOT by itself count as verification. Engine assets on the alpha Channel SHALL NOT be presented as verified and SHALL NOT change the platform support matrix.
+The release pipeline SHALL verify that each stable-Channel platform's built Engine asset performs real synthesis and real Transcription before the release is created, and SHALL refuse to create the release when any platform fails. A platform whose Engine ships without that verification SHALL be documented as unverified. A successful `kesha install` SHALL NOT by itself count as verification. Alpha Engine assets SHALL NOT be presented as verified or change the platform support matrix.
 
 #### Scenario: Smoke on the built asset
 
@@ -188,7 +184,7 @@ The release pipeline SHALL verify, for each platform whose Engine is published o
 - THEN it resolves the stable Engine
 - AND the alpha does not affect that lane's outcome
 
-> *Technical Note — sources: `.github/workflows/release.yml::build` (every row runs `describe`; linux-x64 and windows-x64 synthesise and transcribe back before upload), `.github/workflows/release.yml::roundtrip-smoke` (`.github/scripts/release-install-smoke.sh::run_artifact`: version, `describe`, ASR warm-up, a fixture transcript, a synthesis round trip) and `.github/workflows/release.yml::darwin-synthesis-smoke` (Kokoro and the AVSpeech Sidecar; hosted macOS runners have no Neural Engine, so darwin-arm64 is documented as unverified for Transcription, #678, #742). Two earlier scenarios were retired because verification moved ahead of publication: "Smoke on the published asset" and "Warm-up fails but install reports success" described a cold install of an already-published asset.*
+> *Technical Note — verification downloads the just-built asset as a workflow artifact and runs `describe`, `kesha say` and a transcription of the result. A successful `kesha install` does not count because the install-time ASR warm-up is non-fatal by design. Sources: `.github/workflows/release.yml::build` (every row runs `describe`; linux-x64 and windows-x64 synthesise and transcribe back before upload), `.github/workflows/release.yml::roundtrip-smoke` (`.github/scripts/release-install-smoke.sh::run_artifact`: version, `describe`, ASR warm-up, a fixture transcript, a synthesis round trip) and `.github/workflows/release.yml::darwin-synthesis-smoke` (Kokoro and the AVSpeech Sidecar; hosted macOS runners have no Neural Engine, so darwin-arm64 is documented as unverified for Transcription, #678, #742). Two earlier scenarios were retired because verification moved ahead of publication: "Smoke on the published asset" and "Warm-up fails but install reports success" described a cold install of an already-published asset.*
 
 ### Requirement: Linux packages ship only from a release that publishes the same CLI version
 
@@ -219,20 +215,12 @@ A `.deb` or `.rpm` SHALL be published only by the stable release whose version i
 
 ### Requirement: TTS install is opt-in and requires `--tts`
 
-The CLI SHALL install TTS models only when `--tts` is passed. Bare `--tts` installs
-English only. `--tts <lang>…` installs the listed languages. Positional language codes
-without `--tts` SHALL fail with `error [E_INVALID_ARG]: …` and exit 2 explaining the
-required flag, the usage class every other argument error shares. Unsupported
-language codes SHALL fail with `error [E_INVALID_ARG]: …` and exit 2, listing the
-supported set, before anything is downloaded and also under `--plan`.
-
-The supported TTS language sets are:
-
-- ONNX build (linux-x64, macOS ONNX): `en`, `es`, `fr`, `it`, `pt`, `ru`
-- darwin-arm64 (CoreML): additionally `hi`, `ja`, `zh`
-
-Installs are additive; re-running `kesha install --tts ru` on a system with English
-already installed leaves English in place.
+The CLI SHALL install TTS models only when `--tts` is passed: bare `--tts` installs
+English only and `--tts <lang>…` the listed languages. Language codes given without
+`--tts` SHALL fail with `error [E_INVALID_ARG]: …` and exit 2 explaining the required
+flag. Unsupported language codes SHALL fail the same way, listing the supported set,
+before any download, even under `--plan`. ONNX builds support `en`, `es`,
+`fr`, `it`, `pt`, `ru`; darwin-arm64 adds `hi`, `ja`, `zh`. Installs SHALL be additive.
 
 #### Scenario: Ira installs English TTS
 
@@ -266,7 +254,17 @@ already installed leaves English in place.
 - WHEN Maks runs `kesha install --plan --tts xx`
 - THEN the same coded line is printed and the process exits 2 with an empty stdout
 
-> *Technical Note — sources: `src/cli/install.ts::resolveTtsLangs`,
+#### Scenario: Adding Russian keeps English in place
+
+- GIVEN English TTS is already installed
+- WHEN Maks runs `kesha install --tts ru`
+- THEN the Vosk-TTS Russian files are downloaded
+- AND the English Kokoro files are left in place
+- AND the process exits 0
+
+> *Technical Note — the positional-code error uses `E_INVALID_ARG` and exit 2 because
+> that is the usage class every other argument error shares. "ONNX builds" covers
+> linux-x64 and macOS ONNX. Sources: `src/cli/install.ts::resolveTtsLangs`,
 > `src/install-plan.ts` (KOKORO_GRAPH_FILE ~325 MB, per-language KOKORO_VOICE_FILES
 > ~522 KB each, VOSK_RU_FILES ~937 MB total, G2P_CHARSIU_FILES ~100 MB for es/fr/it/pt
 > on ONNX). Supported language list comes from `getEngineCapabilities()` when the
@@ -279,28 +277,10 @@ already installed leaves English in place.
 
 On darwin-arm64 `kesha install --tts` SHALL stage every asset first synthesis
 would otherwise fetch, verified against the same Pinned hashes as any other
-model. The non-Russian voices there are served by FluidAudio's CoreML/ANE
-bundles, which upstream reads from directories of its own choosing rather than
-from the Model cache, so the assets are staged into those directories:
-
-- for any of `en`, `es`, `fr`, `hi`, `it`, `ja`, `pt` — the English ANE model
-  chain with its vocab and bundled voice pack, the requested languages' voice
-  packs, and the shared BART G2P bundle with the Misaki lexicon;
-- for `zh` — the Mandarin ANE bundle with its voice packs and its pinyin
-  dictionaries.
-
-The ANE chain and the Mandarin bundle SHALL follow whichever models root the
-Engine points FluidAudio at, so relocating the root relocates the staged
-assets. The shared G2P assets SHALL be staged to the fixed path upstream's
-singleton resolves for itself, which no models root can move. Staging SHALL be
-additive and idempotent: an asset already present and matching its Pinned hash
-is not downloaded again. Russian is unaffected — Vosk-TTS installs into the
-Model cache on every platform.
-
-One asset group is deliberately excluded: the Mandarin jieba HMM tables, which
-upstream never published. Segmentation falls back to FMM without them, so their
-absence degrades quality rather than blocking synthesis, and the pre-synthesis
-asset check SHALL NOT require them.
+model, into the directories FluidAudio's CoreML/ANE bundles read from rather than
+the Model cache. Staging SHALL be additive and idempotent: an asset already
+present and matching its Pinned hash is not downloaded again. Russian is
+unaffected; Vosk-TTS installs into the Model cache on every platform.
 
 #### Scenario: Maks installs Mandarin TTS on Apple Silicon
 
@@ -312,6 +292,17 @@ asset check SHALL NOT require them.
 - AND the process exits 0
 - AND a later `kesha say --voice zh-zm_050` synthesizes without downloading
   anything
+
+#### Scenario: Ira installs Spanish TTS on Apple Silicon
+
+- GIVEN the machine is darwin-arm64
+- WHEN Ira runs `kesha install --tts es`
+- THEN the English ANE model chain with its vocab and bundled voice pack, the `es`
+  voice pack, and the shared BART G2P bundle with the Misaki lexicon are downloaded,
+  hash-verified, and staged into FluidAudio's directories
+- AND the process exits 0
+- AND the same asset set is staged for any of `en`, `es`, `fr`, `hi`, `it`, `ja`, `pt`,
+  with the requested languages' voice packs
 
 #### Scenario: A second language install leaves the first in place
 
@@ -343,7 +334,68 @@ asset check SHALL NOT require them.
 > shared G2P set, via `src/kokoro-ane.ts::kokoroAneComponents`; the Mandarin
 > bundle is excluded there on purpose, since `--tts zh` is a separate opt-in
 > and its bytes already appear under the cache report's Kokoro ANE root
-> (#823, #828, #831).*
+> (#823, #828, #831). The non-Russian voices on darwin-arm64 are served by
+> FluidAudio's CoreML/ANE bundles, which upstream reads from directories of its
+> own choosing, which is why staging targets those directories.*
+
+### Requirement: Staged FluidAudio Kokoro assets land where upstream reads them
+
+On darwin-arm64 the staged ANE chain and Mandarin bundle SHALL follow whichever
+models root the Engine points FluidAudio at, so relocating the root relocates
+them, and the shared G2P assets SHALL be staged to the fixed path upstream's
+singleton resolves for itself, which no models root can move.
+
+#### Scenario: Ira installs English TTS into a relocated Model cache
+
+- GIVEN the machine is darwin-arm64 with no Kokoro ANE bundle under FluidAudio's own
+  default directory
+- AND `KESHA_CACHE_DIR=/Volumes/ci/kesha`
+- WHEN Ira runs `kesha install --tts en`
+- THEN the English ANE chain is staged under `/Volumes/ci/kesha/fluidaudio`
+- AND the shared BART G2P bundle and the Misaki lexicon are staged under
+  `~/.cache/fluidaudio/Models/kokoro`
+- AND the process exits 0
+
+#### Scenario: Maks moves the Model cache after staging English
+
+- GIVEN English TTS is staged and the shared G2P assets sit at their fixed path
+- WHEN Maks points `KESHA_CACHE_DIR` at a new directory and runs `kesha install --tts en`
+- THEN the English ANE chain is staged under the new models root
+- AND the shared G2P assets stay at their fixed path and are not downloaded again
+
+> *Technical Note — sources: `rust/src/models/paths.rs::fluidaudio_location` (a legacy
+> directory that already holds the bundle is kept; otherwise the root is
+> `fluidaudio_models_root()`, `<Model cache>/fluidaudio`) and
+> `rust/src/models/paths.rs::fluidaudio_kokoro_g2p_dir` (`G2PModel.shared` resolves
+> `~/.cache/fluidaudio/Models/kokoro` itself, fluidaudio-rs 4e488d7, still true at
+> upstream 0.15.7; staging elsewhere leaves English synthesis failing with
+> `G2PModelError.vocabLoadFailed`).*
+
+### Requirement: The pre-synthesis asset check does not require the Mandarin jieba HMM tables
+
+The pre-synthesis asset check SHALL NOT require the Mandarin jieba HMM tables, which
+`kesha install --tts zh` deliberately does not stage; their absence degrades Mandarin
+segmentation rather than blocking synthesis.
+
+#### Scenario: Maks synthesizes Mandarin without the jieba HMM tables
+
+- GIVEN `kesha install --tts zh` has staged the Mandarin bundle on darwin-arm64
+- AND the jieba HMM tables are absent
+- WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
+- THEN the asset check reports nothing missing and audio is written
+- AND the process exits 0
+
+#### Scenario: A Mandarin install stages no jieba HMM tables
+
+- GIVEN the machine is darwin-arm64
+- WHEN Ira runs `kesha install --tts zh`
+- THEN no jieba HMM table is downloaded or staged
+- AND the process exits 0
+
+> *Technical Note — segmentation falls back to FMM without the tables. The spec has
+> recorded them as never published upstream; the comment on
+> `rust/src/models/manifest.rs::ANE_ZH_G2P_ASSETS` says upstream first published them
+> at this pin (FluidAudio#919) and kesha does not stage them yet.*
 
 ### Requirement: VAD and Diarize install are separate opt-in flags
 
@@ -377,16 +429,12 @@ The CLI SHALL install the Sortformer diarization model only when `--diarize` is 
 
 ### Requirement: Every model file has a Pinned hash; mismatches are rejected, not cached
 
-The Engine SHALL verify the SHA-256 hash of every downloaded model file against the
-Pinned hash recorded in `rust/src/models/manifest.rs`. A file whose hash does not match SHALL
-be deleted and the install SHALL fail with an error. The file SHALL NOT be left in the
-Model cache.
-
-Activating `KESHA_MODEL_MIRROR` rewrites HuggingFace model download URLs to a
-user-supplied base URL; GitHub release asset URLs (Engine binary, Sidecars) are never
-rewritten. Hash verification applies identically whether the mirror is active or not.
-When `KESHA_MODEL_MIRROR` is set, a banner is printed to stderr before any downloads
-begin.
+The Engine SHALL verify every downloaded model file against its Pinned hash, whether or
+not `KESHA_MODEL_MIRROR` is active. A mismatching file SHALL be deleted, SHALL NOT be
+left in the Model cache, and the install SHALL fail with an error. The Model mirror
+SHALL rewrite only HuggingFace model download URLs, never GitHub release asset URLs
+(Engine binary, Sidecars), and SHALL be announced by a banner on stderr before any
+download begins.
 
 #### Scenario: Corrupted download is rejected
 
@@ -409,20 +457,12 @@ begin.
 
 ### Requirement: Downloads land atomically and an installed Engine is verified by running it
 
-The CLI SHALL stream every downloaded file into a staging file beside its destination and
-rename it into place only once the download completes, so an interrupted download never
-leaves a partial file where a complete one is expected. A download that fails or is
-interrupted SHALL leave the previous file untouched, or no file at all when there was none.
-
-`kesha install` SHALL treat an Engine whose recorded version matches the requested one but
-which cannot be spawned as invalid, and re-download it. The same applies to the Sidecars on
-a cache hit: one that is present but which the OS refuses to execute SHALL be re-downloaded
-rather than re-trusted. A Capabilities probe that fails because the installed Engine cannot
-be spawned SHALL NOT abort the install.
-
-Staging files left behind by a killed process SHALL be swept only once they are older than
-24 hours, so a second `kesha install` running concurrently never deletes the staging file
-the first one is still streaming into.
+The CLI SHALL stream every download into a staging file beside its destination and rename
+it into place only once complete; a failed or interrupted download SHALL leave the
+previous file untouched, or no file when there was none. `kesha install` SHALL re-download
+an Engine whose Recorded Engine version matches but which cannot be spawned, and a cached
+Sidecar the OS refuses to execute. A Capabilities probe that fails because the Engine
+cannot be spawned SHALL NOT abort the install.
 
 #### Scenario: Maks interrupts a download with Ctrl-C
 
@@ -457,9 +497,32 @@ the first one is still streaming into.
 > `cleanup_orphan_staging`): Windows keeps last-write time stale while a handle is open,
 > so an in-flight download there cannot be told apart from an orphan.*
 
+### Requirement: Orphaned staging files are swept only once they are older than 24 hours
+
+Staging files left behind by a killed process SHALL be swept only once they are older
+than 24 hours, so a second `kesha install` running concurrently never deletes the staging
+file the first one is still streaming into.
+
+#### Scenario: Maks re-runs install a day after a killed download
+
+- GIVEN a staging file from a killed `kesha install` is older than 24 hours
+- WHEN Maks runs `kesha install` on macOS
+- THEN the orphaned staging file is removed
+- AND the install completes
+
+#### Scenario: A recent staging file survives a second install
+
+- GIVEN a staging file younger than 24 hours sits beside the Engine binary
+- WHEN Ira runs `kesha install`
+- THEN that staging file is left in place
+
+> *Technical Note — sources: `src/progress.ts` (`STALE_STAGING_MS`, the sweep returns
+> early on win32) and `rust/src/models/download.rs::cleanup_orphan_staging`. The sweep is
+> Unix-only for the reason in the previous requirement's note.*
+
 ### Requirement: Concurrent installs into one Model cache are serialised, and a lock nobody holds is cleared
 
-`kesha install` SHALL take a lock on the Engine directory before writing to it, so that two installs sharing one Model cache never overwrite each other, and SHALL wait for a live holder rather than fail. A lock whose owner is a process on the same host that has exited, whose owner has held it past the stale ceiling, or whose owner record does not parse SHALL be cleared by the next waiter within one poll interval rather than waited out — an owner on another host cannot be probed, so its death is only known once the ceiling passes; an owner record that cannot be read at all SHALL be treated as a live holder, since a permission or I/O failure says nothing about the install behind it. A waiter that outlasts the wait ceiling SHALL fail with `E_INSTALL_RACE`, naming the holder when it can and the lock path to delete in every case.
+`kesha install` SHALL take a lock on the Engine directory before writing to it, and SHALL wait for a live holder rather than fail. A lock whose owner record does not parse SHALL be cleared by the next waiter within one poll interval; one that cannot be read at all SHALL be treated as a live holder. A waiter that outlasts the wait ceiling SHALL fail with `E_INSTALL_RACE`, naming the holder when it can and the lock path to delete in every case.
 
 #### Scenario: Ira runs two installs at once against a shared cache
 
@@ -494,22 +557,44 @@ the first one is still streaming into.
 > record, the owner file's token with no record when the file does not parse, the token
 > marked `unreadable` when the file cannot be read, or null when there is no owner file; `clearLock` unlinks the owner by its exact name and then
 > removes the directory. `waitTimedOut` is the `E_INSTALL_RACE` (#1018). Pinned by
-> `tests/unit/install-lock.test.ts`.*
+> `tests/unit/install-lock.test.ts`. The lock exists so two installs sharing one Model cache
+> never overwrite each other. An unreadable owner record counts as a live holder
+> because a permission or I/O failure says nothing about the install behind it.*
+
+### Requirement: A lock whose owner is gone is cleared within one poll interval
+
+The next waiter SHALL clear a lock within one poll interval, rather than wait it out, when
+its owner is a process on the same host that has exited or has held it past the stale
+ceiling.
+
+#### Scenario: The lock's owner exited on this host
+
+- GIVEN the lock's owner record names a process on this host that is no longer running
+- WHEN Maks runs `kesha install`
+- THEN the install clears that lock on its first poll and proceeds
+- AND it does not report `E_INSTALL_RACE`
+
+#### Scenario: The lock's owner runs on another host
+
+- GIVEN the lock's owner record names a process on another host, taken less than the
+  stale ceiling ago
+- WHEN Ira runs `kesha install` with `KESHA_INSTALL_LOCK_WAIT_SECS` set
+- THEN the install waits out that ceiling and fails with `E_INSTALL_RACE` naming that
+  holder
+- AND the lock is still there
+
+> *Technical Note — an owner on another host cannot be probed, so its death is only known
+> once the stale ceiling (`STALE_LOCK_MS`, 6 hours) passes. Sources:
+> `src/install-lock.ts` (owner `host` compared with `hostname()`, `pidAlive`).*
 
 ### Requirement: `--plan` shows the download plan without changing local state
 
 The CLI SHALL print a human-readable Install plan when `--plan` is passed, listing all
 components with their sizes, cache status (cached / needed / refresh), source, and the
-expected network bytes for the current run. No files SHALL be downloaded or modified.
-On darwin-arm64 the FluidAudio Kokoro ANE chain, the shared G2P bundle and each
-requested language's voice pack SHALL appear as sized components, their sizes derived
-from the pinned manifest, so `--tts <lang>` for a language whose pack is not staged
-states the bytes it will fetch and a staged one counts as cached. The plan also
-includes warm-up steps and ends with the equivalent `kesha install …` command.
-The Engine and Sidecar sizes SHALL come from the Engine pin injected into the published
-package; for a release that pin does not describe (`--engine-version`, or a source
-checkout, which carries no pin) the plan SHALL state their size as unknown and leave them
-out of the totals rather than show another release's size.
+expected network bytes for the current run, then warm-up steps and the equivalent
+`kesha install …` command. No files SHALL be downloaded or modified. On darwin-arm64 the
+FluidAudio Kokoro ANE chain, the shared G2P bundle and each requested language's voice
+pack SHALL appear as components sized from the pinned manifest.
 
 #### Scenario: Ira previews a fresh install
 
@@ -551,7 +636,34 @@ out of the totals rather than show another release's size.
 > Engine and Sidecar sizes: `src/install-plan.ts::releaseAssetSize`, from the pin
 > `.github/scripts/engine-pin.ts::buildEnginePin` injects (openspec unified-release D1).
 > Key totals: cold-cache ASR + lang-id ~2.6 GB; VAD ~2.3 MB; Diarize ~245 MB;
-> TTS English only ~326 MB; TTS English + Russian ~937 MB.*
+> TTS English only ~326 MB; TTS English + Russian ~937 MB. Sizing FluidAudio components
+> from the manifest is what makes `--tts <lang>` for an unstaged pack state the bytes it
+> will fetch while a staged one counts as cached.*
+
+### Requirement: The Install plan sizes the Engine only from the release the CLI pins
+
+The Install plan SHALL take Engine and Sidecar sizes from the Engine pin injected into
+the published package; for a release that pin does not describe (`--engine-version`, or a
+source checkout, which carries no pin) it SHALL state their size as unknown and leave
+them out of the totals rather than show another release's size.
+
+#### Scenario: Ira previews an install from the published package
+
+- GIVEN Ira installed the CLI package from npm, which carries the Engine pin
+- WHEN Ira runs `kesha install --plan`
+- THEN the Engine and Sidecar components show the sizes the pin records
+- AND those sizes are counted in `Expected Kesha-managed network for this run`
+
+#### Scenario: Maks previews an install from a source checkout
+
+- GIVEN Maks runs the CLI from a source checkout, which carries no Engine pin
+- WHEN Maks runs `kesha install --plan`
+- THEN the Engine component reads `size unknown`
+- AND the totals name it under `Not counted (size unknown)`
+
+> *Technical Note — sources: `src/install-plan.ts::releaseAssetSize`, fed by
+> `.github/scripts/engine-pin.ts::buildEnginePin`. The `--engine-version` case is pinned
+> by the scenario "Plan for an Engine release the CLI does not pin" above.*
 
 ### Requirement: `--no-cache` forces a re-download; silently ignored on read-only engine directories
 
@@ -611,18 +723,12 @@ Sequoia.
 
 ### Requirement: Warm-up runs after download; `--no-warmup` skips it; failures are non-fatal
 
-After installing models, the Engine SHALL warm up the ASR Backend by instantiating it
-once, so the expensive cold-start cost (CoreML ANE compile ~20–30 s on darwin-arm64;
-ORT session init ~500 ms on ONNX) is paid during install rather than on the first
-transcription. When `--diarize` is installed, the Sortformer model is also compiled to
-a stable `.mlmodelc` path (first-time compile ~1–2 minutes). Warm-up failures are
-non-fatal: the install still succeeds and a warning is printed.
-
-Passing `--no-warmup` (an Engine-level flag forwarded by the CLI) skips all warm-up.
-
-On darwin-arm64, the CLI also runs a separate Kokoro TTS warm-up by calling
-`kesha-engine say` to prime the FluidAudio CoreML cache. This is skipped when only
-Russian TTS (`--tts ru`) is requested (Vosk does not need it).
+After installing models, the Engine SHALL warm up the ASR Backend once, so its
+cold-start cost is paid during install rather than on the first Transcription, and
+SHALL compile the Sortformer model to a stable `.mlmodelc` path when `--diarize` is
+installed. Warm-up failures SHALL be non-fatal: the install succeeds and a warning is
+printed. `--no-warmup` SHALL skip all warm-up. On darwin-arm64 the CLI SHALL also warm
+up Kokoro TTS, except when only Russian TTS (`--tts ru`) is requested.
 
 #### Scenario: First install on Apple Silicon
 
@@ -645,7 +751,12 @@ Russian TTS (`--tts ru`) is requested (Vosk does not need it).
 - THEN no warm-up step runs
 - AND the install completes faster
 
-> *Technical Note — sources: `rust/src/cli/install.rs::run` (`no_warmup` flag,
+> *Technical Note — cold-start costs: CoreML ANE compile ~20–30 s on darwin-arm64, ORT
+> session init ~500 ms on ONNX, first-time Sortformer compile ~1–2 minutes. The ASR
+> warm-up instantiates the Backend once. `--no-warmup` is an Engine-level flag the CLI
+> forwards. The Kokoro warm-up calls `kesha-engine say` to prime the FluidAudio CoreML
+> cache; Russian-only installs skip it because Vosk does not need it.
+> Sources: `rust/src/cli/install.rs::run` (`no_warmup` flag,
 > `backend::create_backend` warm-up, diarize compile via
 > `fa.compile_diarization_model`); `src/engine-install.ts::warmDarwinKokoro`
 > (TTS Kokoro warm-up on darwin-arm64, timeout 180 s). Diarize warm-up note:
@@ -654,27 +765,12 @@ Russian TTS (`--tts ru`) is requested (Vosk does not need it).
 
 ### Requirement: `kesha init` is the interactive guided setup
 
-`kesha init` SHALL present an interactive guided setup for new users: a description
-of optional features, a multi-select TTS language picker (English pre-checked), a
-yes/no prompt for VAD, and a yes/no prompt for diarization (darwin-arm64 only). After
-selection, it shows the Install plan and asks for confirmation before running the
-install.
-
-`--yes` accepts all current defaults non-interactively and runs the install
-immediately. `--plan` prints the overview and plan without prompting or downloading.
-
-When stdin or stdout is not a TTY and neither `--yes` nor `--plan` is given,
-`kesha init` SHALL refuse with `E_INVALID_ARG` (exit 2) and a hint naming
-`kesha init --yes` and `kesha init --plan`, print nothing on stdout, and download
-nothing — it never hangs waiting for interactive input.
-
-`--diarize` on a non-darwin-arm64 platform is silently dropped with a warning; the
-install proceeds without it.
-
-Cancelling any prompt (Ctrl-C or Escape) SHALL end `kesha init` with `Init cancelled.`
-and exit 130 — the same code an interrupted `kesha install` reports — so a chained
-`kesha init && …` does not continue as though setup had succeeded. Nothing is
-downloaded on that path.
+`kesha init` SHALL present an interactive guided setup: a description of optional
+features, a multi-select TTS language picker (English pre-checked), yes/no prompts for
+VAD and, on darwin-arm64, diarization, then the Install plan and a confirmation before
+installing. `--yes` SHALL install the current defaults without prompting, and `--plan`
+SHALL print the overview and plan without prompting or downloading. `--diarize` off
+darwin-arm64 is dropped with a warning; the install proceeds.
 
 #### Scenario: Maks runs guided setup on Apple Silicon
 
@@ -721,6 +817,53 @@ downloaded on that path.
 > A cancelled clack prompt returns `isCancel`'s sentinel rather than throwing;
 > `src/cli/init.ts::exitIfCancelled` turns it into `process.exit(130)`. Pinned by
 > `tests/unit/init.test.ts` (S4-F1).*
+
+### Requirement: `kesha init` refuses to prompt without a terminal
+
+`kesha init` SHALL refuse with `E_INVALID_ARG` (exit 2) when stdin or stdout is not a TTY
+and neither `--yes` nor `--plan` is given, with a hint naming `kesha init --yes` and
+`kesha init --plan`, print nothing on stdout, and download nothing, so it never hangs
+waiting for interactive input.
+
+#### Scenario: Ira previews setup in a CI pipeline
+
+- GIVEN stdin is not a TTY
+- WHEN Ira runs `kesha init --plan`
+- THEN the overview and the Install plan are printed without any prompt
+- AND the process exits 0 and nothing is downloaded
+
+#### Scenario: Maks pipes init's output into a log
+
+- GIVEN stdin is a TTY and stdout is piped
+- WHEN Maks runs `kesha init | tee init.log`
+- THEN stderr carries `error [E_INVALID_ARG]: kesha init is interactive and needs a terminal`
+- AND the process exits 2 with nothing on stdout and nothing downloaded
+
+> *Technical Note — sources: `src/cli/init.ts::initCommand` (`--plan` and `--yes` return
+> before the TTY check).*
+
+### Requirement: Cancelling a `kesha init` prompt exits 130
+
+Cancelling any `kesha init` prompt (Ctrl-C or Escape) SHALL end it with `Init cancelled.`
+and exit 130, downloading nothing, so a chained `kesha init && …` does not continue as
+though setup had succeeded.
+
+#### Scenario: Maks presses Escape at the confirmation
+
+- GIVEN Maks has made his selections in `kesha init` and the Install plan is shown
+- WHEN Maks presses Escape at the confirmation prompt
+- THEN the CLI prints `Init cancelled.` and exits 130
+- AND nothing is downloaded
+
+#### Scenario: Ira presses Ctrl-C at the VAD prompt
+
+- GIVEN Ira runs `kesha init && kesha say "ready"` in a TTY
+- WHEN Ira presses Ctrl-C at the VAD prompt
+- THEN the CLI exits 130 without downloading anything
+- AND `kesha say` does not run
+
+> *Technical Note — 130 is the same code an interrupted `kesha install` reports. Source:
+> `src/cli/init.ts::exitIfCancelled`.*
 
 ### Requirement: The star prompt is gated to meaningful version bumps and bounded in time
 
@@ -802,3 +945,7 @@ Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL m
 
 - `kesha record` has no Windows or Linux microphone capture; `record.rs` gates capture on
   macOS and the README directs other platforms to pass an existing audio file.
+- The spec has said the Mandarin jieba HMM tables were never published upstream, while
+  the comment on `rust/src/models/manifest.rs::ANE_ZH_G2P_ASSETS` says FluidAudio#919
+  published them at the current pin and kesha does not stage them yet. Whether to stage
+  them is undecided.

@@ -148,27 +148,6 @@ The CLI SHALL populate language fields in transcription output whenever any of
   transcript text.
 - `--json` / `--toon` include `lang`, and language detection sub-fields in
   each result object.
-- When the Engine text-lang call succeeds, its result is used; when it fails
-  or is unavailable — which is every non-macOS platform — the CLI-side
-  `tinyld` result is used as a fallback.
-- `textLanguage` SHALL carry a `source` field naming the detector behind it:
-  `"engine"` or `"tinyld"`. Each detector reports its own score in
-  `confidence`; the scores are on different scales (`NLLanguageRecognizer`'s
-  probability vs `tinyld`'s n-gram accuracy) and SHALL NOT be compared across
-  sources. `audioLanguage` has one source and carries no such field.
-- The top-level `lang` SHALL NOT be named by a `tinyld` guess whose
-  confidence is below 0.5; the guess stays in `textLanguage` unchanged, and
-  `--verbose` marks it "below the 0.5 floor, ignored for lang". An Engine
-  text result is not floored: its probability is on another scale.
-- `audioLanguage` SHALL name `lang` only when no text result did and its
-  confidence is at least 0.5; below that the model's no-signal prior (silence
-  returns `nn` at 0.27) stays in `audioLanguage` unchanged, `lang` is
-  `""`, and `--verbose` marks the `Audio language` line the same way.
-- The `--lang` comparison SHALL be case-insensitive and SHALL compare only the
-  primary language subtag, treating `_` as `-`: `en-US`, `EN` and `en_us` all
-  match a detected `en`. Codes are ISO 639-1; a three-letter code such as
-  `eng` is not recognised and warns like any other mismatch. The warning
-  quotes the code as the user typed it.
 
 #### Scenario: Maks checks language on a voice note
 
@@ -238,6 +217,77 @@ The CLI SHALL populate language fields in transcription output whenever any of
 > matching: `primaryLanguageSubtag` and `checkLanguageMismatch` in
 > `src/cli/main.ts`. Floor: `LANG_CONFIDENCE_FLOOR` and `routeLanguage` in
 > `src/language-routing.ts`.*
+
+### Requirement: Text language falls back to `tinyld` and names its source
+
+When the Engine text-lang call fails or is unavailable, which is every non-macOS platform, the CLI SHALL use its `tinyld` result instead. `textLanguage` SHALL carry a `source` field naming the detector behind it, `"engine"` or `"tinyld"`, and its `confidence` SHALL NOT be compared across sources. `audioLanguage` has one source and carries no such field.
+
+#### Scenario: Ira's Mac uses the Engine detector
+
+- GIVEN Ira runs on macOS with the Engine's text detection available
+- WHEN Ira runs `kesha --json call.ogg`
+- THEN `textLanguage.source` is `"engine"` and `textLanguage.confidence` is the Engine's score
+- AND `audioLanguage` has no `source` field
+
+#### Scenario: The Engine text call fails on macOS
+
+- GIVEN Ira runs on macOS and the Engine text-lang call fails
+- WHEN Ira runs `kesha --json call.ogg`
+- THEN `textLanguage.source` is `"tinyld"` with `tinyld`'s own score
+- AND the process exits 0
+
+> *Technical Note — the scores are on different scales: `NLLanguageRecognizer`'s
+> probability for `"engine"`, `tinyld`'s n-gram accuracy for `"tinyld"`. Sources:
+> `src/engine.ts::detectTextLanguageEngine` and
+> `src/language-routing.ts::detectTextLanguageFallback`.*
+
+### Requirement: Only a confident detection names `lang`
+
+The top-level `lang` SHALL NOT be named by a `tinyld` guess whose confidence is below 0.5; an Engine text result is not floored. `audioLanguage` SHALL name `lang` only when no text result did and its confidence is at least 0.5; otherwise `lang` is `""`. A floored guess stays unchanged in `textLanguage` or `audioLanguage`, and `--verbose` marks its line "below the 0.5 floor, ignored for lang".
+
+#### Scenario: A confident tinyld guess names the language
+
+- GIVEN Sona runs on Linux and `tinyld` scores the transcript `de` at 0.9
+- WHEN Sona runs `kesha --json de.ogg`
+- THEN `lang` is `de`, taken from `textLanguage`
+
+#### Scenario: A weak Engine text result still names the language
+
+- GIVEN Ira runs on macOS and the Engine scores a short transcript `fr` at 0.3
+- WHEN Ira runs `kesha --json --verbose fr.ogg`
+- THEN `lang` is `fr`, because the floor applies only to `tinyld`
+- AND stderr's `Text language` line carries no floor mark
+
+#### Scenario: Silence stays out of `lang`
+
+- GIVEN `silence.wav` holds no speech, so audio lang-id returns its no-signal prior `nn` at 0.27
+- WHEN Maks runs `kesha --json silence.wav`
+- THEN `lang` is `""` and `audioLanguage` still reports `nn` at 0.27
+
+> *Technical Note — an Engine text result is not floored because its
+> probability is on another scale than `tinyld`'s. Source:
+> `LANG_CONFIDENCE_FLOOR` and `routeLanguage` in `src/language-routing.ts`.*
+
+### Requirement: `--lang` matches on the primary language subtag
+
+The `--lang` comparison SHALL be case-insensitive and SHALL compare only the primary language subtag, treating `_` as `-`: `en-US`, `EN` and `en_us` all match a detected `en`. Codes are ISO 639-1; a three-letter code such as `eng` is not recognised and SHALL warn like any other mismatch. The warning quotes the code as typed.
+
+#### Scenario: Ira passes a British English tag
+
+- GIVEN `note.ogg` contains English speech
+- WHEN Ira runs `kesha --lang EN-gb note.ogg`
+- THEN no language-mismatch warning is printed
+- AND the process exits 0
+
+#### Scenario: Ira passes a three-letter code
+
+- GIVEN `note.ogg` contains English speech
+- WHEN Ira runs `kesha --lang eng note.ogg`
+- THEN stderr carries a language-mismatch warning quoting `eng`
+- AND the transcript is still printed and the process exits 0
+
+> *Technical Note — `primaryLanguageSubtag` and `checkLanguageMismatch` in
+> `src/cli/main.ts`.*
 
 ## Open Issues
 

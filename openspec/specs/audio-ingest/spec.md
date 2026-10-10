@@ -106,7 +106,7 @@ Every transcription entry point SHALL validate that the input is a supported con
 
 ### Requirement: A missing input is distinguished from an unreadable one
 
-The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` Error code, and a path that exists but is otherwise unreadable — it cannot be **opened**, carries no container the Engine can demux, holds no supported audio track, declares no sample rate, uses a codec the Engine cannot decode, or raises a hard **decode** fault — with `E_BAD_AUDIO`, so a caller can tell a typo from an unreadable file without parsing prose, and never sees `E_INTERNAL` for input the Engine simply cannot read.
+The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` Error code, and a path that exists but is otherwise unreadable — it cannot be **opened**, carries no container the Engine can demux, holds no supported audio track, declares no sample rate, uses a codec the Engine cannot decode, or raises a hard **decode** fault — with `E_BAD_AUDIO`, and a caller SHALL never see `E_INTERNAL` for input the Engine simply cannot read.
 
 #### Scenario: Ira mistypes a filename in a batch
 
@@ -145,7 +145,8 @@ The Engine SHALL report a path that does not exist with the `E_INPUT_NOT_FOUND` 
 > sample-rate branch and the decoded-nothing guard take the identical change
 > but have no cheap deterministic fixture — a container that demuxes yet
 > reports no sample rate, or decodes to zero frames without first failing an
-> earlier arm, needs an encoder toolchain to synthesise.*
+> earlier arm, needs an encoder toolchain to synthesise. The two codes let a caller
+> tell a typo from an unreadable file without parsing prose.*
 
 ### Requirement: Recoverable decode faults are skipped, unrecoverable ones stop the read
 

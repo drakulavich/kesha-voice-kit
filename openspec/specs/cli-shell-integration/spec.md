@@ -58,27 +58,10 @@ regardless of quiet.
 
 The CLI SHALL resolve color mode from `--no-color`, the `CI` environment
 variable, and the `NO_COLOR` environment variable before any subcommand runs.
-Two distinct mechanisms cooperate:
-
-1. Per-invocation resolution (`resolveColorMode`): `--no-color` (bare) or
-   `--no-color=<truthy>` in `rawArgs` → disable; otherwise `CI` set to a
-   non-falsey value → disable (covers GitHub Actions, GitLab, CircleCI, and any
-   CI system that sets `CI=true`).
-2. Process-start preference: `NO_COLOR` set to a non-falsey value is honored by
-   the colorizer library at import time (user-level preference; never cleared
-   by the CLI). Because that decision is made at import, a later
-   `--no-color=false` cannot override a user-exported `NO_COLOR`.
-
-Falsey values for both flags and env vars are: the empty string, `"0"`,
-`"false"`, `"no"`, `"off"` (case-insensitive, trimmed). Any other non-empty
-value is truthy.
-
-`--no-color=false` explicitly re-enables color even when `CI=true`.
-
-When the CLI disables color, it sets `NO_COLOR=1` in `process.env` so that
-Engine subprocesses spawned later in the same process also see it. When the CLI
-re-enables color, it clears `NO_COLOR` from `process.env` — but only when the
-CLI itself set it; a user-exported `NO_COLOR` is never cleared.
+A bare or truthy `--no-color`, or a truthy `CI`, SHALL disable color, and
+`--no-color=false` SHALL re-enable it even when `CI=true`. A truthy `NO_COLOR`
+exported before the process started SHALL keep color off: a later
+`--no-color=false` cannot override it.
 
 #### Scenario: Ira pipes output in CI
 
@@ -115,19 +98,60 @@ CLI itself set it; a user-exported `NO_COLOR` is never cleared.
 > whether re-enabling may clear `NO_COLOR` from `process.env`. The
 > `src/log.ts::setColorEnabled` toggle swaps picocolors between its full and
 > no-op colorizers. `--no-color` is stripped from `rawArgs` so citty never sees
-> it.*
+> it. A truthy `CI` covers GitHub Actions, GitLab, CircleCI and any CI system that
+> sets `CI=true`. A user-exported `NO_COLOR` is a user-level preference decided at
+> import, which is why no flag read later can override it.*
+
+### Requirement: Color flag and environment values share one falsey grammar
+
+The CLI SHALL read the empty string, `"0"`, `"false"`, `"no"` and `"off"` (case-insensitive, trimmed) as false in a `--no-color=<value>` flag and in the `CI` and `NO_COLOR` environment variables, and any other non-empty value as true.
+
+#### Scenario: A falsey CI value leaves color on
+
+- GIVEN `CI=" Off "` is set in Maks's terminal
+- WHEN Maks runs `kesha status`
+- THEN the CLI does not disable color on account of `CI`
+
+#### Scenario: An unrecognised flag value counts as true
+
+- WHEN Ira runs `kesha --no-color=maybe status`
+- THEN all output is plain text with no ANSI escape codes
+
+> *Technical Note — `src/cli/context.ts::isFalsey` trims and lower-cases the value
+> before looking it up in `src/cli/context.ts::FALSEY_VALUES`; the flag parser,
+> `resolveColorMode` (for `CI`) and `USER_FORCED_NO_COLOR` (for `NO_COLOR`) all
+> call it.*
+
+### Requirement: The CLI's color decision reaches Engine subprocesses
+
+When the CLI disables color, it SHALL set `NO_COLOR=1` in `process.env` so that Engine subprocesses spawned later in the same process also see it. When it re-enables color, it SHALL clear `NO_COLOR` from `process.env` only if the CLI itself set it; a user-exported `NO_COLOR` SHALL never be cleared.
+
+#### Scenario: Maks's `--no-color` reaches the Engine
+
+- GIVEN `NO_COLOR` is not exported
+- WHEN Maks runs `kesha --no-color say "hello"`
+- THEN the Engine subprocess is spawned with `NO_COLOR=1` in its environment
+
+#### Scenario: Re-enabling color keeps Ira's exported NO_COLOR
+
+- GIVEN Ira exported `NO_COLOR=1` before the process started
+- WHEN Ira runs `kesha --no-color=false say "hello"`
+- THEN the Engine subprocess still sees `NO_COLOR=1`
+
+> *Technical Note — `src/cli/context.ts::applyColorEnv` sets or clears
+> `NO_COLOR`, guarded by `src/cli/context.ts::USER_FORCED_NO_COLOR`, which is
+> captured once at module import.*
 
 ### Requirement: Unknown non-path tokens produce a Levenshtein suggestion and exit 2
 
 The CLI SHALL print an `E_INVALID_ARG` "unknown command" error when the first non-flag,
-non-path argument does not match any known subcommand, optionally suggest the
-closest known command by Levenshtein distance (threshold: distance ≤ 3 AND
-≤ 40% of the candidate length), always print a hint that audio files need a
-path-like form, and exit 2 without spawning the Engine.
+non-path argument matches no known subcommand, suggest the closest known
+command by Levenshtein distance when one is within distance ≤ 3 and ≤ 40% of the
+candidate length, always print a hint that audio files need a path-like form, and
+exit 2 without spawning the Engine.
 
-A token is path-like if it contains `.` or `/`, or if it names an existing file
-on disk. Path-like first arguments route to transcription instead of triggering
-the unknown-command handler.
+A token is path-like if it contains `.` or `/` or names an existing file; a
+path-like first argument SHALL route to transcription.
 
 #### Scenario: Maks typos a subcommand
 
@@ -167,7 +191,7 @@ the unknown-command handler.
 
 ### Requirement: Unknown options are rejected before any command runs
 
-The CLI SHALL reject an option that the invoked command does not declare — on the transcription form and on every subcommand — with exactly one stderr line, `error [E_INVALID_ARG]: unknown option <flag>`, naming the closest declared flag when one is within the unknown-command edit-distance threshold, exit 2, and nothing on stdout. The rejection happens before any input is opened or any Engine is spawned, so its cost does not depend on the input. The value following an unknown option is never promoted to an input path.
+The CLI SHALL reject an option that the invoked command does not declare — on the transcription form and on every subcommand — with exactly one stderr line, `error [E_INVALID_ARG]: unknown option <flag>`, naming the closest declared flag when one is within the unknown-command edit-distance threshold, exit 2, and nothing on stdout. The rejection happens before any input is opened or any Engine is spawned. The value following an unknown option is never promoted to an input path.
 
 #### Scenario: Ira misspells a flag that has a near miss
 
@@ -202,7 +226,8 @@ The CLI SHALL reject an option that the invoked command does not declare — on 
 > command and before `runMain`. The suggestion reuses
 > `src/suggest-command.ts::suggestCommand`. Pinned by the "unknown option"
 > case in `tests/integration/cli-contracts.test.ts` and
-> `tests/unit/cli-options.test.ts`.*
+> `tests/unit/cli-options.test.ts`. Rejecting before any input is opened keeps the
+> cost of the error independent of the input.*
 
 ### Requirement: Usage errors the CLI refuses carry the `E_INVALID_ARG` code
 
@@ -236,7 +261,7 @@ Every usage error the CLI answers before doing any work — a contradictory or m
 
 ### Requirement: Global flags typed before a subcommand name reach the subcommand
 
-The CLI SHALL treat flag-shaped tokens that precede a subcommand name as that subcommand's flags, so `kesha --debug record --out take.wav` runs `record` with `--debug` applied, and a flag the subcommand does not declare is then reported as an unknown option rather than the subcommand name being read as an input file. When a leading flag carries a separate value, so the subcommand name is not the first non-flag token, the CLI SHALL refuse with `error [E_INVALID_ARG]: put global flags after the subcommand: kesha <name> ...` and exit 2, never reporting the subcommand name as a missing file.
+The CLI SHALL treat flag-shaped tokens that precede a subcommand name as that subcommand's flags, so a flag the subcommand does not declare is reported as an unknown option. When a leading flag carries a separate value, so the subcommand name is not the first non-flag token, the CLI SHALL refuse with `error [E_INVALID_ARG]: put global flags after the subcommand: kesha <name> ...` and exit 2. In neither case SHALL the subcommand name be read as an input file.
 
 #### Scenario: Maks types the global flag first
 
@@ -268,15 +293,11 @@ The CLI SHALL treat flag-shaped tokens that precede a subcommand name as that su
 The CLI SHALL print the bundled shell completion script for `bash`, `zsh`, or
 `fish` to stdout and exit 0. A missing or unknown shell argument SHALL leave
 stdout empty, print `error [E_INVALID_ARG]: <message>` and the usage line to
-stderr, and exit 2, so a redirected install gesture never writes a partial
-script that a shell would try to source. The script is read from the bundled
-`completions/kesha.<shell>` file at runtime.
+stderr, and exit 2.
 
 Each script SHALL keep the shell's own file-path completion for the positional
-audio file — `kesha <audio_file>` is the primary invocation — so installing the
-completions never completes less than the bare shell did: where the script has
-no candidate of its own (a word that is not a subcommand or option), the shell
-falls back to filename completion.
+audio file: where the script has no candidate of its own (a word that is not a
+subcommand or option), the shell SHALL fall back to filename completion.
 
 #### Scenario: Maks installs zsh completions
 
@@ -305,8 +326,12 @@ falls back to filename completion.
 - THEN the shell completes `meeting.ogg`, as it would with no kesha script installed
 - AND `kesha ins` + Tab still completes the `install` subcommand
 
-> *Technical Note — `src/cli/completions.ts::completionsCommand`.
-> `src/cli/completions.ts::SHELL_SCRIPTS` maps `bash → kesha.bash`,
+> *Technical Note — `src/cli/completions.ts::completionsCommand`. The script is the
+> bundled `completions/kesha.<shell>` file. An empty stdout on a usage error means a
+> redirected install gesture never writes a partial script that a shell would try to
+> source. `kesha <audio_file>` is the primary invocation, so keeping file-path
+> completion means installing the completions never completes less than the bare
+> shell did. `src/cli/completions.ts::SHELL_SCRIPTS` maps `bash → kesha.bash`,
 > `zsh → kesha.zsh`, `fish → kesha.fish`. Each script is inlined at build time
 > with an `import … with { type: "text" }` declaration rather than read through
 > `import.meta.url`, because that URL escapes the embedded filesystem in the
