@@ -322,8 +322,9 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
     instead of reading it from disk.
 
   Only the npm CLI package and a repository checkout ever worked.
-  `model-plan.json` is unaffected because it is a static import, and
-  `kesha install --plan` was verified working in the compiled binary. An earlier
+  The compiled binary inlines `model-plan.json`, so `kesha install --plan` works
+  there. The three source payloads still missed it until #1429; see the next
+  item. An earlier
   revision of this spec claimed only the Linux packages were affected; that was
   wrong, and Codex review caught it.
 - The Homebrew formula in `packaging/homebrew/Formula/kesha-voice-kit.rb` is a
@@ -344,6 +345,14 @@ Whichever path put `kesha` on the machine, the Engine and models SHALL still arr
   `url`/`sha256`; only the CI copy is rewritten, its `version` pinned from
   `package.json#version` because a `file://` url gives Homebrew nothing to parse
   and the formula's own `--version` assertion requires it.
+
+  That lane tested only the in-repo formula. Until #1429 the release rewrote
+  only the pins in the tap's own formula, whose body had drifted: it never got
+  #915's `completions` and `man`, kept the `parakeet` wrapper #406 removed,
+  and, with Docker and Nix, missed `model-plan.json`, so `kesha install` failed
+  on v2.1.0. The release now publishes the in-repo formula with only its pins
+  rewritten, and `tests/unit/distribution-assets.test.ts` derives the staged
+  set from what `src/` and `bin/` import.
 - The container image publishes on every push to `main`, so the `main`-tagged
   image can be ahead of any released CLI version. Only tag-triggered images
   correspond to a release.

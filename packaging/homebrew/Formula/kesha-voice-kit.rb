@@ -10,7 +10,7 @@ class KeshaVoiceKit < Formula
   depends_on "oven-sh/bun/bun"
 
   def install
-    libexec.install "bin", "src", "completions", "man", "package.json", "bun.lock", "tsconfig.json"
+    libexec.install "bin", "src", "completions", "man", "model-plan.json", "package.json", "bun.lock", "tsconfig.json"
     libexec.install "openclaw.plugin.json", "openclaw-plugin.cjs"
     libexec.install "LICENSE", "NOTICES.md", "README.md"
 
@@ -29,5 +29,6 @@ class KeshaVoiceKit < Formula
     # The commands that read staged assets — a payload missing them still passes --version (#914).
     assert_match "complete -c kesha", shell_output("#{bin}/kesha completions fish")
     assert_match ".TH KESHA 1", shell_output("#{bin}/kesha manpage")
+    assert_match "Kesha install plan", shell_output("#{bin}/kesha install --plan")
   end
 end
