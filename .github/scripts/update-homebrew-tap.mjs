@@ -8,6 +8,8 @@ import { isEntry } from "./script-entry.mjs";
 
 const REPOSITORY = "drakulavich/kesha-voice-kit";
 const FORMULA_REL = "Formula/kesha-voice-kit.rb";
+// The tap gets the whole in-repo formula; its own body is never read (#1429).
+const SOURCE_FORMULA = new URL("../../packaging/homebrew/Formula/kesha-voice-kit.rb", import.meta.url);
 
 export async function sha256ForUrl(url, fetchImpl = fetch) {
   const res = await fetchImpl(url, { redirect: "follow" });
@@ -29,7 +31,7 @@ export async function versionForTag(tag, fetchImpl = fetch) {
   return pkg.version;
 }
 
-export async function buildUpdatedFormula({ tag, formula, fetchImpl = fetch }) {
+export async function buildUpdatedFormula({ tag, formula = readFileSync(SOURCE_FORMULA, "utf8"), fetchImpl = fetch }) {
   if (!isStableTag(tag)) {
     throw new Error(`Homebrew tap updates only support stable vX.Y.Z tags, got: ${tag}`);
   }
@@ -68,7 +70,7 @@ if (isEntry(import.meta.url)) {
   if (!tag || !tapDir) usage();
 
   const formulaPath = join(tapDir, FORMULA_REL);
-  const formula = await buildUpdatedFormula({ tag, formula: readFileSync(formulaPath, "utf8") });
+  const formula = await buildUpdatedFormula({ tag });
 
   mkdirSync(dirname(formulaPath), { recursive: true });
   writeFileSync(formulaPath, formula);
