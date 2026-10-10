@@ -37,7 +37,7 @@ worktree slug branch=slug: root-checkout-only
     [[ "$1" =~ {{ SLUG_PATTERN }} ]] || { echo "refusing: slug must match {{ SLUG_PATTERN }}, got: $1" >&2; exit 2; }
     git fetch origin main
     git worktree add ".worktrees/$1" -b "$2" origin/main
-    (cd ".worktrees/$1" && bun install --frozen-lockfile)
+    (cd ".worktrees/$1" && bun install --frozen-lockfile) || { echo "bun install failed; .worktrees/$1 exists, so finish there with: bun install --frozen-lockfile" >&2; exit 1; }
     echo "==> cd .worktrees/$1 — edit, test, commit and open the PR from there"
 
 # Remove a merged worktree and prune its metadata: just worktree-rm <slug>
