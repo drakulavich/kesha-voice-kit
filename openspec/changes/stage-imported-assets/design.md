@@ -10,7 +10,7 @@ src/voice-inventory.ts  ../model-plan.json                        type: "json"
 src/package-info.ts     ../package.json                           type: "json"
 ```
 
-Bun resolves these when the importing module loads, so an unstaged file fails the first command that loads that module. After #1412 that command is every command.
+Bun resolves these when the importing module loads, so an unstaged file fails the first command that loads that module. After #1412 that includes the main command, so `kesha --version` and `kesha --help` fail; subcommands loaded lazily, such as `completions`, still run.
 
 ```mermaid
 flowchart LR

@@ -1,6 +1,6 @@
 ## Why
 
-Homebrew, the container image and the Nix flake install the CLI from sources. None of them stages `model-plan.json`, yet `src/install-plan.ts` and `src/voice-inventory.ts` have imported it since #659 (2026-07-31). On the published tap formula (v2.1.0), `kesha --version` works, but `kesha install` fails with `Cannot find module '../model-plan.json'`, so Maks can't download the Engine from a Homebrew install. On `main`, #1412 imports `install-plan` from `src/cli/main.ts`, which moves the crash to startup: `kesha --version` fails too. The scheduled `homebrew-formula` CI lane has failed every day since 2026-10-06 (#1429).
+Homebrew, the container image and the Nix flake install the CLI from sources. None of them stages `model-plan.json`, yet `src/install-plan.ts` and `src/voice-inventory.ts` have imported it since #659 (2026-07-31). On the published tap formula (v2.1.0), `kesha --version` works, but `kesha install` fails with `Cannot find module '../model-plan.json'`, so Maks can't download the Engine from a Homebrew install. On `main`, #1412 imports `install-plan` from `src/cli/main.ts`, which moves the crash onto the main command: `kesha --version` and `kesha --help` fail too. The scheduled `homebrew-formula` CI lane has failed every day since 2026-10-06 (#1429).
 
 The same gap opened once before. #914 found `completions/` and `man/` missing from the same three payloads. The guard it left, `tests/unit/distribution-assets.test.ts`, checks a hand-written list of names, and `model-plan.json` was never on it.
 
