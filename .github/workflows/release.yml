@@ -252,6 +252,11 @@ jobs:
       - name: 🍞 Setup Bun workspace
         if: matrix.os != 'macos-14'
         uses: ./.github/actions/setup-bun
+      - name: Apply the release version to the CLI
+        if: matrix.os != 'macos-14'
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node .github/scripts/set-package-version.mjs "$VERSION"
       - name: 🔗 Link the CLI
         if: matrix.os != 'macos-14'
         run: bun link
@@ -301,7 +306,7 @@ jobs:
   # macos-14 CoreML cannot run the vocoder (#678); the Kokoro sentence was measured 20/20 on CPU CoreML, do not swap it (#742).
   darwin-synthesis-smoke:
     name: Smoke (darwin-arm64 synthesis)
-    needs: build
+    needs: [plan, build]
     runs-on: macos-15
     timeout-minutes: 30
     env:
@@ -323,6 +328,10 @@ jobs:
           chmod +x kesha-engine-darwin-arm64 say-avspeech-darwin-arm64 say-avspeech
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
+      - name: Apply the release version to the CLI
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node .github/scripts/set-package-version.mjs "$VERSION"
       - name: 🔗 Link the CLI
         run: bun link
       - name: 🧾 Mark staged engine version
