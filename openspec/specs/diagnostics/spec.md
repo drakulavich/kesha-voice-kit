@@ -23,35 +23,10 @@ no credentials.
 
 ### Requirement: `kesha doctor` produces a read-only diagnostic report
 
-`kesha doctor` SHALL collect and print a structured diagnostic report covering: CLI
-package name and version; Bun runtime version, platform, and architecture; Engine
-binary path, install status, version marker, and the describe document (obtained by
-probing the Engine); Model cache path, existence, total size, and per-component
-breakdown; optional-component install status (VAD, TTS Kokoro, TTS Vosk, FluidAudio
-Kokoro cache, Diarization, Sidecars); the TTS languages staged and the installed Voice
-ids; Stats DB status; Diagnostic log status; a snapshot of known `KESHA_*` environment
-variables; and the four resolved state paths (Model cache, Diagnostic log directory,
-Stats DB, MCP audio directory), each with the source that decided it — `default`,
-`KESHA_HOME`, or the specific variable — as defined by `state-directories`. The
-FluidAudio Kokoro component SHALL report completeness per language: a language whose
-voice pack is absent is listed as missing for that language, and the component SHALL
-NOT report an empty `missing` list while a supported language cannot be synthesized
-from it.
-
-`kesha doctor` SHALL always exit 0, even when components are missing or the Engine
-probe fails. It SHALL never download or modify any file.
-
-Install status for the Engine binary and the Sidecars SHALL be established by running
-them, not by testing that the file exists. A binary that is present but which the OS
-refuses to execute SHALL be reported as corrupt with a reinstall hint, distinctly from
-one that is not installed.
-
-`--json` outputs the same data as 2-space-indented JSON to stdout.
-
-`--redact` replaces secret-pattern key values (keys containing TOKEN, KEY, SECRET,
-PASSWORD, CREDENTIAL, or AUTH) with `[REDACTED]`, rewrites home-directory path
-prefixes to `~`, and strips URL credentials and query strings. Redaction is opt-in
-for `kesha doctor`; it is always-on for `kesha support-bundle`.
+`kesha doctor` SHALL collect and print a structured diagnostic report, SHALL always
+exit 0, even when components are missing or the Engine probe fails, and SHALL never
+download or modify any file. `--json` outputs the same data as 2-space-indented JSON
+to stdout.
 
 #### Scenario: Ira probes a broken CI image
 
@@ -126,73 +101,145 @@ for `kesha doctor`; it is always-on for `kesha support-bundle`.
 > `src/state-paths.ts::resolveStatePaths`; its path values and the `KESHA_HOME` value in the
 > env snapshot pass through that same home-prefix redaction.*
 
+### Requirement: The `kesha doctor` report covers every part of an install
+
+The `kesha doctor` report SHALL cover: CLI package name and version; Bun version,
+platform and architecture; Engine binary path, install status, version marker and
+describe document; Model cache path, existence, total size and per-component
+breakdown; install status of VAD, TTS Kokoro, TTS Vosk, the FluidAudio Kokoro cache,
+Diarization and Sidecars; staged TTS languages and installed Voice ids; Stats DB and Diagnostic log status; and the known `KESHA_*`
+environment variables.
+
+#### Scenario: Maks reads every section of a healthy report
+
+- GIVEN the Engine, ASR models and TTS English are installed
+- WHEN Maks runs `kesha doctor`
+- THEN the report shows the package, runtime, Engine with its version marker and
+  describe document, Model cache with per-component sizes, optional components, TTS
+  languages and Voice ids, Stats DB, Diagnostic log and environment sections
+- AND the process exits 0
+
+#### Scenario: Ira's fresh image has no optional component
+
+- GIVEN only the Engine and ASR models are installed
+- WHEN Ira runs `kesha doctor`
+- THEN VAD, TTS Kokoro, TTS Vosk, Diarization and each Sidecar are still listed, each
+  shown as `missing`
+- AND the process exits 0
+
+> *Technical Note — the describe document is obtained by probing the Engine.
+> Sources: `src/doctor.ts::collectDoctorReport` assembles the sections; optional components come from `src/doctor.ts::collectOptionalComponents`,
+> which always returns every entry and lets `formatComponentState` print `missing`.*
+
+### Requirement: `kesha doctor` names where each kind of state lives
+
+The `kesha doctor` report SHALL name the four resolved state paths (Model cache,
+Diagnostic log directory, Stats DB, MCP audio directory), each with the source that
+decided it (`default`, `KESHA_HOME`, or the specific variable), as defined by
+`state-directories`.
+
+#### Scenario: Maks runs doctor with nothing overridden
+
+- GIVEN no `KESHA_*` state variable is set
+- WHEN Maks runs `kesha doctor --json`
+- THEN `paths.cache`, `paths.logs`, `paths.stats` and `paths.mcpAudio` each carry a
+  path and `source: "default"`
+
+#### Scenario: Only the log directory is overridden
+
+- GIVEN `KESHA_LOG_DIR=/var/log/kesha` is set and `KESHA_HOME` is not
+- WHEN Maks runs `kesha doctor --json`
+- THEN `paths.logs` is `/var/log/kesha` with `source: "KESHA_LOG_DIR"`
+- AND the other three paths keep `source: "default"`
+
+> *Technical Note — sources: `src/doctor.ts::collectPaths`, over the same
+> `src/state-paths.ts::resolveStatePaths` result `kesha status` uses.*
+
+### Requirement: Doctor reports FluidAudio Kokoro completeness per language
+
+The FluidAudio Kokoro component in the `kesha doctor` report SHALL report
+completeness per language: a language whose voice pack is absent is listed as missing
+for that language, and the component SHALL NOT report an empty `missing` list while
+a supported language cannot be synthesized from it.
+
+#### Scenario: Every supported language is staged
+
+- GIVEN darwin-arm64 with the FluidAudio Kokoro voice pack staged for every
+  supported language
+- WHEN Sona runs `kesha doctor`
+- THEN the TTS section reads `Languages missing a voice pack: none`
+
+#### Scenario: A voice pack is missing from an otherwise staged cache
+
+- GIVEN darwin-arm64 with the English ANE chain staged and no Spanish pack
+- WHEN Sona runs `kesha doctor`
+- THEN the FluidAudio Kokoro component reads as incomplete, naming `es`, with a
+  `kesha install --tts` hint
+- AND the process exits 0
+
+> *Technical Note — sources: `src/doctor.ts::collectTts` and the
+> `kokoroAneComponents` entries in `collectOptionalComponents`; the incomplete line is
+> `src/doctor.ts::formatComponentState`.*
+
+### Requirement: Doctor tells a corrupt binary from a missing one
+
+`kesha doctor` SHALL establish install status for the Engine binary and the Sidecars
+by running them, not by testing that the file exists. A binary that is present but
+which the OS refuses to execute SHALL be reported as corrupt with a reinstall hint,
+distinctly from one that is not installed.
+
+#### Scenario: A Sidecar that runs is reported installed
+
+- GIVEN `kesha-textlang` sits beside the Engine and exits non-zero when given no work
+- WHEN Maks runs `kesha doctor --json`
+- THEN that component reports `runnable: true`, because any exit code counts as
+  running
+
+#### Scenario: The Engine binary is present but cannot execute
+
+- GIVEN the Engine binary exists but the OS refuses to execute it
+- WHEN Ira runs `kesha doctor`
+- THEN the Engine is reported as corrupt with a reinstall hint, not as missing
+- AND `engine.runnable` is `false` in `--json` output
+- AND the process exits 0
+
+> *Technical Note — sources: `src/engine-health.ts::probeExecutable`;
+> `src/doctor.ts::sidecarComponent` and `formatEngineBinaryState`/`formatComponentState`
+> map a failed probe to the corrupt state.*
+
+### Requirement: `kesha doctor --redact` strips secrets before a report is shared
+
+`kesha doctor --redact` SHALL replace the values of secret-pattern keys (keys
+containing TOKEN, KEY, SECRET, PASSWORD, CREDENTIAL, or AUTH) with `[REDACTED]`,
+rewrite home-directory path prefixes to `~`, and strip URL credentials and query
+strings. Redaction SHALL be opt-in for `kesha doctor` and always on for
+`kesha support-bundle`.
+
+#### Scenario: Sona redacts a mirror URL carrying a signed query
+
+- GIVEN `KESHA_MODEL_MIRROR=https://mirror.example.com/models?sig=abc` is set
+- WHEN Sona runs `kesha doctor --redact`
+- THEN the env snapshot shows `https://mirror.example.com/models`
+- AND the process exits 0
+
+#### Scenario: Maks runs doctor without the flag
+
+- GIVEN `KESHA_HOME` points under Maks's home directory
+- WHEN Maks runs `kesha doctor` without `--redact`
+- THEN the paths print in full, with no `~` rewrite and no `[REDACTED]` value
+
+> *Technical Note — sources: `src/doctor.ts::isSecretKey`, `redactUrl` and
+> `redactHomePaths`, applied only when the `redact` option is set;
+> `src/support-bundle.ts::createSupportBundle` hardcodes it.*
+
 ### Requirement: `kesha status` shows engine and voice install state
 
 `kesha status` SHALL print a concise install summary: Engine binary path and install
 status; Backend, protocol version, and features (from the describe document); Bun runtime
 version and platform; active Model mirror (when `KESHA_MODEL_MIRROR` is set); and the
-list of installed TTS Voice ids. When an Engine is installed and answers, the Voice ids
-SHALL be the Engine's own inventory (the same list `kesha say --list-voices` prints,
-including FluidAudio Kokoro voices and `macos-*` system voices); when no Engine is
-installed or its inventory probe fails, the list SHALL fall back to what the Model cache
-holds on disk.
-
-`--disk` SHALL additionally print a per-component disk-usage table (Engine, ASR,
-Language ID, VAD, TTS Kokoro, TTS Vosk) and the grand total. The FluidAudio Kokoro
-external cache is reported separately when it exists, because it lives outside
-Kesha's Model cache.
-
-The Engine row, in `kesha status --disk` and in `kesha doctor`'s cache components, SHALL
-size only what Kesha owns. For a managed install (the binary at
-`<Model cache>/engine/bin/`) it covers the whole `<Model cache>/engine` directory. For
-any other binary location — a `KESHA_ENGINE_BIN` override or a read-only Nix store
-path — the row's path SHALL be the binary itself and its size SHALL be the binary plus
-the Sidecars beside it (`say-avspeech`, `kesha-textlang`), each counted only when it is
-(or links to) a regular file; neither command SHALL walk the binary's parent or
-grandparent directory, nor any directory reached through those names. The cache total adds those Engine bytes
-only when they lie outside the Model cache, so nothing is counted twice. The JSON
-shape does not change.
-
-When the Engine is not installed, `kesha status` prints an actionable setup hint
-(`kesha init` on an interactive TTY, `kesha install` when stderr is piped) and
-exits 0.
-
-`--json` SHALL replace the human-readable rendering with a single JSON object on
-stdout and SHALL print nothing else to stdout. The object SHALL report, at minimum:
-Engine presence as a boolean, the resolved Engine binary path, Backend, protocol
-version, and features, the installed TTS Voice ids, the Bun runtime version, the
-platform and architecture, the active Model mirror, and — when the Engine is
-absent — the same setup hint the human path writes to stderr.
-
-The presence boolean SHALL report only that the Engine binary exists, not that it
-is usable. Backend, protocol version, and features SHALL be grouped under a single
-nested capabilities value so that a binary which cannot report them yields one
-null rather than three, making "can the Engine run" a single check; consumers
-deciding that SHALL require presence AND non-null capabilities. Consumers SHALL be
-able to reach both conclusions from these fields without matching any
-human-readable prose. The nested value's shape and key name SHALL NOT change with
-protocol version 4, so the Raycast extension keeps reading it unmodified.
-
-The `--json` object SHALL also carry a `paths` object naming the resolved Model cache,
-Diagnostic log directory, Stats DB and MCP audio directory, each with the `source`
-that decided it (`default`, `KESHA_HOME`, or the specific variable), so a consumer can
-confirm isolation without reading timestamps; the human rendering SHALL print a
-source only when it is not `default`.
-
-Every documented key SHALL be present in every payload: absent values are null
-(or the empty list for Voice ids), never omitted, so a consumer never has to tell
-a missing key apart from a null value. The payload SHALL also carry the CLI
-version, so a consumer that needs to distinguish payload shapes has the version
-to key off without a second invocation.
-
-Under `--json` the setup hint SHALL NOT also be written to stderr, because it is
-carried in the payload; `--json --disk` SHALL include the per-component disk
-breakdown as structured data, and plain `--json` SHALL omit it, mirroring the
-human flag's scope. When the Engine is absent, `--json --disk` SHALL report the
-disk breakdown as null rather than walking the Model cache, matching the human
-path, which computes disk usage only when the Engine is installed. Both modes SHALL derive their content from one collector, so
-the two renderings can never disagree. `--json` SHALL exit 0 whether or not the
-Engine is installed, matching the human path.
+list of installed TTS Voice ids. When the Engine is not installed, it SHALL print an
+actionable setup hint (`kesha init` on an interactive TTY, `kesha install` when stderr
+is piped) and exit 0.
 
 #### Scenario: Ira checks install state in a script
 
@@ -295,37 +342,218 @@ Engine is installed, matching the human path.
 > Raycast extension reads the nested value at
 > `raycast/src/lib/kesha-bin.ts::readStructuredStatus`.*
 
+### Requirement: `kesha status` lists the Engine's own Voice inventory
+
+When an Engine is installed and answers, the Voice ids `kesha status` lists SHALL be
+the Engine's own inventory (the same list `kesha say --list-voices` prints, including
+FluidAudio Kokoro voices and `macos-*` system voices); when no Engine is installed or
+its inventory probe fails, the list SHALL fall back to what the Model cache holds on
+disk.
+
+#### Scenario: Maks lists voices on Linux with Kokoro installed
+
+- GIVEN an installed Engine on linux-x64 with TTS English staged
+- WHEN Maks runs `kesha status --json`
+- THEN `voices` is exactly the list `kesha say --list-voices` prints
+- AND the process exits 0
+
+#### Scenario: The inventory probe fails
+
+- GIVEN the Engine binary exists but `kesha-engine say --list-voices` fails
+- WHEN Ira runs `kesha status`
+- THEN the Voice ids are read from the Model cache instead
+- AND the process exits 0
+
+> *Technical Note — sources: `src/voice-inventory.ts::installedVoiceIds`, falling back
+> to `cachedVoiceIds`; called from `src/status.ts::collectStatus`.*
+
+### Requirement: `kesha status --disk` reports disk usage per component
+
+`kesha status --disk` SHALL additionally print a per-component disk-usage table
+(Engine, ASR, Language ID, VAD, TTS Kokoro, TTS Vosk) and the grand total, and SHALL
+report the FluidAudio Kokoro external cache separately when it exists.
+
+#### Scenario: Maks checks usage after a full install
+
+- GIVEN the Engine, ASR, Language ID, VAD and TTS models are installed
+- WHEN Maks runs `kesha status --disk`
+- THEN each component has its own row with a size, followed by the grand total
+- AND the process exits 0
+
+#### Scenario: No FluidAudio Kokoro cache exists
+
+- GIVEN a linux-x64 install, where no FluidAudio Kokoro cache is ever created
+- WHEN Maks runs `kesha status --disk`
+- THEN no "External caches" section is printed
+- AND the grand total equals the component total
+
+> *Technical Note — the FluidAudio Kokoro cache is reported apart because it lives
+> outside Kesha's Model cache. Sources: `src/status.ts::showDiskUsage` and
+> `collectDiskUsage`; rows come from `src/cache-layout.ts::cacheComponents`, external
+> roots from `fluidExternalRoots`.*
+
+### Requirement: The Engine row sizes only what Kesha owns
+
+The Engine row SHALL size only what Kesha owns, in `kesha status --disk` and in
+`kesha doctor`'s cache components: the whole `<Model cache>/engine` directory for a
+managed install (the binary at `<Model cache>/engine/bin/`), and otherwise the binary
+itself plus the Sidecars beside it (`say-avspeech`, `kesha-textlang`). Neither command
+SHALL walk the binary's parent or grandparent directory, nor any directory reached
+through those names.
+
+#### Scenario: A managed install is counted once
+
+- GIVEN the Engine binary lives at `<Model cache>/engine/bin/kesha-engine`
+- WHEN Maks runs `kesha status --disk`
+- THEN the Engine row's path is `<Model cache>/engine` and its size covers that
+  whole directory
+- AND the cache total counts those bytes once, because they already lie inside the
+  Model cache
+
+#### Scenario: A Nix-store Engine with a directory where a Sidecar would be
+
+- GIVEN `KESHA_ENGINE_BIN` points at a read-only Nix store binary outside the Model
+  cache, and a `kesha-textlang` entry beside it is a directory
+- WHEN Ira runs `kesha doctor`
+- THEN the Engine row's path is the binary itself and its size is the binary plus
+  `say-avspeech`, with the `kesha-textlang` directory counted as zero
+- AND the cache total adds the Engine bytes, since they lie outside the Model cache
+
+> *Technical Note — a Sidecar counts only when it is (or links to) a regular file. The
+> JSON shape is the same as before the row was narrowed. Sources:
+> `src/cache-layout.ts::engineFootprint`, `regularFileBytes` and `cacheTotalBytes`
+> (#1313, #790).*
+
+### Requirement: `kesha status --json` prints one machine-readable object
+
+`kesha status --json` SHALL replace the human-readable rendering with a single JSON
+object on stdout and print nothing else there. The object SHALL report at least:
+Engine presence as a boolean, the resolved Engine binary path, Backend, protocol
+version and features, the installed TTS Voice ids, the Bun runtime version, platform
+and architecture, the active Model mirror, the CLI version, and, when the Engine is
+absent, the setup hint the human path writes to stderr.
+
+#### Scenario: Maks parses a healthy payload
+
+- GIVEN the Engine is installed
+- WHEN Maks runs `kesha status --json | jq .cliVersion`
+- THEN the CLI version prints, and stdout held nothing but that one object
+- AND the process exits 0
+
+#### Scenario: No mirror is set and no voice is installed
+
+- GIVEN `KESHA_MODEL_MIRROR` is unset and no TTS voice is installed
+- WHEN Maks runs `kesha status --json`
+- THEN `modelMirror` is `null` and `voices` is `[]`, and both keys are present, as
+  every documented key is in every payload
+
+### Requirement: Every documented `kesha status --json` key is present in every payload
+
+Every documented key SHALL be present in every `kesha status --json` payload: an absent value SHALL be `null`, or the empty list for Voice ids, and SHALL never be omitted.
+
+#### Scenario: Ira reads the payload on a runner with no Engine
+
+- GIVEN no Engine is installed and no voices are cached
+- WHEN Ira runs `kesha status --json`
+- THEN `engine.installed` is `false`, `engine.capabilities` and `disk` are present
+  with `null` values, and `voices` is `[]`
+
+#### Scenario: A consumer checks for a key by name
+
+- GIVEN any install state
+- WHEN Sona's script tests `has("modelMirror")` on the payload
+- THEN it is `true`, because no documented key is ever dropped
+
+> *Technical Note — every key is always present so a consumer never has to tell a
+> missing key apart from a null value; the CLI version lets a consumer that needs to
+> distinguish payload shapes key off it without a second invocation. Source:
+> `src/status.ts::StatusReport` and `collectStatus`.*
+
+### Requirement: `kesha status --json` makes "can the Engine run" one check
+
+The `kesha status --json` presence boolean SHALL report only that the Engine binary
+exists, not that it is usable. Backend, protocol version and features SHALL be
+grouped under one nested capabilities value, null when the binary cannot report
+them, so consumers SHALL decide that the Engine can run from presence AND non-null
+capabilities, without matching human-readable prose. The nested value's shape and key
+name SHALL NOT change with protocol version 4.
+
+#### Scenario: Ira gates a job on a healthy Engine
+
+- GIVEN the Engine is installed and its describe document reads cleanly
+- WHEN Ira's script reads `engine.installed` and `engine.capabilities`
+- THEN presence is `true` and capabilities carries the Backend, protocol version and
+  features, so the script proceeds
+
+#### Scenario: Ira gates a job on a missing Engine
+
+- GIVEN no Engine is installed
+- WHEN Ira's script reads the same two fields
+- THEN presence is `false` and capabilities is `null`, so the script stops without
+  parsing any prose
+
+> *Technical Note — grouping makes a binary that cannot report yield one null rather
+> than three. The nested value stays fixed so the Raycast extension keeps reading it
+> unmodified (`raycast/src/lib/kesha-bin.ts::readStructuredStatus`).*
+
+### Requirement: `kesha status --json` names where each kind of state lives
+
+The `kesha status --json` object SHALL carry a `paths` object naming the resolved
+Model cache, Diagnostic log directory, Stats DB and MCP audio directory, each with the
+`source` that decided it (`default`, `KESHA_HOME`, or the specific variable).
+
+#### Scenario: Ira confirms a CI run is isolated
+
+- GIVEN `KESHA_HOME=/tmp/kesha-ci` is set
+- WHEN Ira runs `kesha status --json`
+- THEN every `paths.*.source` reads `"KESHA_HOME"` and every path lies under
+  `/tmp/kesha-ci`
+
+#### Scenario: Maks reads the human rendering with nothing overridden
+
+- GIVEN no `KESHA_*` state variable is set
+- WHEN Maks runs `kesha status`
+- THEN no state path is printed with a source, because the human rendering prints a
+  source only when it is not `default`
+
+> *Technical Note — the `paths` object lets a consumer confirm isolation without
+> reading timestamps. Sources: `src/status.ts::collectStatusPaths`; the human lines
+> are printed in `src/status.ts::renderStatus`.*
+
+### Requirement: `kesha status --json` keeps the human path's scope and exit code
+
+Under `--json` the setup hint SHALL NOT also be written to stderr. `--json --disk`
+SHALL include the per-component disk breakdown as structured data and plain `--json`
+SHALL omit it; when the Engine is absent, `--json --disk` SHALL report the breakdown
+as null without walking the Model cache. Both renderings SHALL come from one
+collector, so they never disagree, and `--json` SHALL exit 0 whether or not the
+Engine is installed.
+
+#### Scenario: Maks asks for disk usage as JSON
+
+- GIVEN the Engine is installed
+- WHEN Maks runs `kesha status --json --disk`
+- THEN `disk` carries the per-component rows and totals
+- AND plain `kesha status --json` reports `disk` as `null`
+
+#### Scenario: Ira pipes status with no Engine
+
+- GIVEN no Engine is installed
+- WHEN Ira runs `kesha status --json 2>err.txt`
+- THEN the payload carries the setup hint and `err.txt` does not repeat it
+- AND the process exits 0
+
+> *Technical Note — the hint stays off stderr because the payload carries it; the
+> disk breakdown follows the human flag's scope, and the human path computes disk usage
+> only when the Engine is installed (#647). Source: `src/status.ts::collectStatus`
+> feeds both `renderStatus` and the JSON writer.*
+
 ### Requirement: `kesha logs` manages privacy-safe NDJSON Diagnostic logs
 
-`kesha logs` SHALL manage the local NDJSON Diagnostic log with the following actions:
-`status` (default), `enable`, `disable`, `mode <off|on|retain-on-failure>`, `path`,
-and `reset`.
-
-The three log modes are:
-- **off**: no events are written.
-- **on**: events are appended to the active log file immediately.
-- **retain-on-failure**: events are buffered in memory per CLI session and flushed to
-  disk only if the session ends with status `failed`; on success the buffer is
-  discarded.
-
-The default mode is `retain-on-failure`.
-
+`kesha logs` SHALL manage the local NDJSON Diagnostic log with the actions `status`
+(default), `enable`, `disable`, `mode <off|on|retain-on-failure>`, `path`, and `reset`.
 `--json` is only valid with the `status` action; combining it with any other action
 SHALL exit 2.
-
-The Diagnostic log allowlist enforces privacy at write time: field names matching
-path, file, filename, message, text, transcript, stdout, stderr, env, token, secret,
-password, key, url, prompt, content, or raw are rejected; string values containing
-path separators, file extensions, domain names, or URL schemes are rejected. Events
-are NDJSON lines with fixed fields `ts`, `level`, `event`, `app_version`, `pid`.
-
-Log files rotate when the active file would exceed `maxBytes` (default 10 MB); up to
-`retain` rotated files are kept (default 5). Rotation naming: `kesha.1.ndjson`,
-`kesha.2.ndjson`, etc.
-
-Log directory: `KESHA_LOG_DIR` when set; otherwise `<KESHA_HOME>/logs` when `KESHA_HOME` is
-set; otherwise `~/Library/Logs/kesha` (macOS), `%LOCALAPPDATA%\kesha\logs` (Windows) or
-`$XDG_STATE_HOME/kesha/logs` (Linux) — the `state-directories` precedence.
 
 #### Scenario: Ira checks log status
 
@@ -376,27 +604,108 @@ set; otherwise `~/Library/Logs/kesha` (macOS), `%LOCALAPPDATA%\kesha\logs` (Wind
 > (path separators, file extensions, domain-like patterns, URL schemes).
 > Reserved field names: `ts`, `level`, `event`, `app_version`, `pid`.*
 
+### Requirement: The Diagnostic log directory follows the state-directories precedence
+
+The log directory SHALL be `KESHA_LOG_DIR` when set; otherwise `<KESHA_HOME>/logs`
+when `KESHA_HOME` is set; otherwise `~/Library/Logs/kesha` (macOS),
+`%LOCALAPPDATA%\kesha\logs` (Windows) or `$XDG_STATE_HOME/kesha/logs` (Linux), the
+`state-directories` precedence.
+
+#### Scenario: An explicit log directory wins
+
+- GIVEN `KESHA_LOG_DIR=/var/log/kesha` and `KESHA_HOME=/tmp/kesha-ci` are both set
+- WHEN Maks runs `kesha logs path`
+- THEN the printed path is `/var/log/kesha/kesha.ndjson`
+
+#### Scenario: Nothing is set on Linux
+
+- GIVEN neither `KESHA_LOG_DIR` nor `KESHA_HOME` is set on linux-x64, and
+  `XDG_STATE_HOME=/home/ira/.state`
+- WHEN Ira runs `kesha logs path`
+- THEN the printed path is `/home/ira/.state/kesha/logs/kesha.ndjson`
+
+> *Technical Note — source: `src/diagnostic-log.ts::resolveDiagnosticLogDir`, which
+> delegates to `src/state-paths.ts::resolveStatePaths`.*
+
+### Requirement: Diagnostic log modes decide when events reach disk
+
+The Diagnostic log SHALL support three modes and default to `retain-on-failure`:
+**off** writes no events; **on** appends each event to the active log file
+immediately; **retain-on-failure** buffers events in memory per CLI session and
+flushes them to disk only if the session ends with status `failed`, discarding the
+buffer on success.
+
+#### Scenario: A failed run leaves its events behind
+
+- GIVEN the mode is `retain-on-failure`
+- WHEN Ira's transcription fails
+- THEN the events buffered during that session are appended to the active log file
+
+#### Scenario: A successful run leaves nothing
+
+- GIVEN the mode is `retain-on-failure`
+- WHEN Maks's transcription succeeds
+- THEN no line is written to the Diagnostic log and the buffer is discarded
+
+> *Technical Note — sources: `src/diagnostic-log.ts::createDiagnosticLogSession`
+> (`event` buffers or appends; `finish` flushes only on `failed`).*
+
+### Requirement: Diagnostic log events pass an allowlist at write time
+
+The Diagnostic log SHALL enforce privacy at write time: field names matching path,
+file, filename, message, text, transcript, stdout, stderr, env, token, secret,
+password, key, url, prompt, content, or raw are rejected, and string values
+containing path separators, file extensions, domain names, or URL schemes are
+rejected. Each event SHALL be one NDJSON line with the fixed fields `ts`, `level`,
+`event`, `app_version`, `pid`.
+
+#### Scenario: A clean event is written with its fixed fields
+
+- GIVEN the mode is `on`
+- WHEN a command logs an event whose fields hold only short identifiers and numbers
+- THEN one NDJSON line is appended carrying `ts`, `level`, `event`, `app_version`
+  and `pid` alongside those fields
+
+#### Scenario: A field named after content is rejected
+
+- GIVEN the mode is `on`
+- WHEN a command tries to log a field named `transcript`
+- THEN that event is dropped and no NDJSON line is written
+
+> *Technical Note — sources: `src/diagnostic-log.ts::buildDiagnosticLogLine` and
+> `validateField`; a rejected field throws and the session's `event` drops the whole
+> event with a debug message.*
+
+### Requirement: Diagnostic log files rotate at a size cap
+
+Diagnostic log files SHALL rotate when the active file would exceed `maxBytes`
+(default 10 MB), keeping up to `retain` rotated files (default 5), named
+`kesha.1.ndjson`, `kesha.2.ndjson` and so on.
+
+#### Scenario: The active file reaches its cap
+
+- GIVEN the active `kesha.ndjson` is one event short of `maxBytes`
+- WHEN the next event would push it past the cap
+- THEN the active file becomes `kesha.1.ndjson` and the event starts a new
+  `kesha.ndjson`
+
+#### Scenario: The rotated set is already full
+
+- GIVEN `kesha.1.ndjson` through `kesha.5.ndjson` exist with the default `retain`
+- WHEN the active file rotates again
+- THEN the oldest, `kesha.5.ndjson`, is deleted and no more than five rotated files
+  remain
+
+> *Technical Note — source: `src/diagnostic-log.ts::rotateIfNeeded`.*
+
 ### Requirement: `kesha stats` manages local anonymous SQLite metrics
 
-`kesha stats` SHALL manage the local SQLite Stats DB with the following actions:
-`status` (default), `enable`, `disable`, `week`, `errors`, `export`, `reset`,
-`vacuum`, and `retention`.
-
-Stats are disabled by default (the DB is not created until `kesha stats enable` is
-called). The Stats DB records command name, timing stages, artifact metadata
-(format, size in bytes, duration, sample rate, channels), and sanitized error
-messages — never transcript text, audio bytes, input file names, or raw paths.
-
-`export` requires a format argument: `json` or `csv`; any other value or omitting
-the format SHALL exit 2. `retention <days>` accepts a positive integer of days or
-`off` for no expiry; any other value SHALL exit 2. Unknown action names SHALL exit 2.
-
-Default retention is 90 days. The DB path is `KESHA_STATS_DB` when set; otherwise
-`<KESHA_HOME>/stats.sqlite` when `KESHA_HOME` is set; otherwise
-`~/Library/Application Support/kesha/stats.sqlite` (macOS),
-`%APPDATA%\kesha\stats.sqlite` (Windows) or `$XDG_DATA_HOME/kesha/stats.sqlite` (Linux) —
-the `state-directories` precedence. `KESHA_STATS_DB` SHALL be documented beside
-`KESHA_LOG_DIR` and `KESHA_HOME`; until this change it existed only in code.
+`kesha stats` SHALL manage the local SQLite Stats DB with the actions `status`
+(default), `enable`, `disable`, `week`, `errors`, `export`, `reset`, `vacuum`, and
+`retention`; unknown action names SHALL exit 2. `export` requires a format argument,
+`json` or `csv`, and `retention <days>` accepts a positive integer of days or `off`
+for no expiry; any other value, or omitting the format, SHALL exit 2. Default
+retention is 90 days.
 
 #### Scenario: Ira checks stats status when disabled
 
@@ -449,6 +758,58 @@ the `state-directories` precedence. `KESHA_STATS_DB` SHALL be documented beside
 > truncates to 300 chars. `export` writes to stdout (not stderr). `vacuum` runs
 > `pragma wal_checkpoint(TRUNCATE)` then `vacuum`.*
 
+### Requirement: Stats stay off until enabled and record no content
+
+Stats SHALL be disabled by default, with no Stats DB created until
+`kesha stats enable` is called. The Stats DB SHALL record only the command name,
+timing stages, artifact metadata (format, size in bytes, duration, sample rate,
+channels), and sanitized error messages, never transcript text, audio bytes, input
+file names, or raw paths.
+
+#### Scenario: An enabled run records its metadata
+
+- GIVEN Maks has run `kesha stats enable`
+- WHEN he transcribes `standup.ogg`
+- THEN `kesha stats export --format json` shows the run with its command, stage
+  timings and the artifact's format, size and duration
+- AND neither `standup.ogg` nor its transcript appears in the export
+
+#### Scenario: Stats were never enabled
+
+- GIVEN `kesha stats enable` has never been run
+- WHEN Ira transcribes a file
+- THEN no Stats DB file is created and nothing is recorded
+
+> *Technical Note — sources: `src/stats.ts::createStatsRecorder` returns a no-op
+> recorder while the DB file is absent; `src/stats.ts::enableStats` creates it.*
+
+### Requirement: The Stats DB location follows the state-directories precedence
+
+The Stats DB path SHALL be `KESHA_STATS_DB` when set; otherwise
+`<KESHA_HOME>/stats.sqlite` when `KESHA_HOME` is set; otherwise
+`~/Library/Application Support/kesha/stats.sqlite` (macOS),
+`%APPDATA%\kesha\stats.sqlite` (Windows) or `$XDG_DATA_HOME/kesha/stats.sqlite`
+(Linux), the `state-directories` precedence. `KESHA_STATS_DB` SHALL be documented
+beside `KESHA_LOG_DIR` and `KESHA_HOME`.
+
+#### Scenario: An explicit Stats DB path wins
+
+- GIVEN `KESHA_STATS_DB=/tmp/kesha-stats.sqlite` and `KESHA_HOME=/tmp/kesha-test` are
+  both set
+- WHEN Maks runs `kesha stats enable`
+- THEN the DB is created at `/tmp/kesha-stats.sqlite`
+
+#### Scenario: Nothing is set on Linux
+
+- GIVEN neither `KESHA_STATS_DB` nor `KESHA_HOME` is set on linux-x64, and
+  `XDG_DATA_HOME=/home/ira/.data`
+- WHEN Ira runs `kesha stats enable`
+- THEN the DB is created at `/home/ira/.data/kesha/stats.sqlite`
+
+> *Technical Note — `KESHA_STATS_DB` existed only in code until the change that added
+> the documentation obligation. Source: `src/stats.ts::resolveStatsDbPath`, which
+> delegates to `src/state-paths.ts::resolveStatePaths`.*
+
 ### Requirement: `kesha support-bundle` creates a redacted diagnostics archive
 
 `kesha support-bundle` SHALL write a `.tar.gz` archive containing:
@@ -460,16 +821,6 @@ the `state-directories` precedence. `KESHA_STATS_DB` SHALL be documented beside
 When `--include-logs` is passed, three additional entries are added under
 `diagnostic-logs/`: `README.txt`, `kesha.ndjson` (a bounded tail of the active log,
 default 64 KB), and `status.json`.
-
-The archive SHALL never contain audio files, transcripts, model files, the Stats DB,
-or any file not in the list above. Redaction is always-on (equivalent to
-`kesha doctor --redact`).
-
-`--output <path>` sets the archive path; the default is
-`kesha-support-bundle-<ISO-timestamp>.tar.gz` in the current directory.
-
-On success the CLI reports the archive path, entry count, and size in bytes to stderr.
-On failure it exits 1 with the error message.
 
 #### Scenario: Sona creates a bundle for a GitHub issue
 
@@ -503,20 +854,64 @@ On failure it exits 1 with the error message.
 > gzip-compressed with Node's `zlib.gzipSync`. The manifest `entries` array lists
 > bare entry names (without the archive root prefix).*
 
+### Requirement: A Support bundle holds only its listed entries, always redacted
+
+A Support bundle SHALL never contain audio files, transcripts, model files, the Stats
+DB, or any file outside its listed entries, and its Redaction SHALL always be on,
+equivalent to `kesha doctor --redact`, whatever flags are passed.
+
+#### Scenario: Sona's bundle is redacted without asking
+
+- GIVEN Sona's Model cache lives under her home directory
+- WHEN she runs `kesha support-bundle` with no other flag
+- THEN the paths in `doctor.json` and `doctor.txt` start with `~/`
+
+#### Scenario: Stats are enabled and logs are requested
+
+- GIVEN Ira has enabled Stats and recorded runs
+- WHEN she runs `kesha support-bundle --include-logs`
+- THEN the archive holds exactly its seven listed entries and no Stats DB file
+
+> *Technical Note — sources: `src/support-bundle.ts::createSupportBundle` builds the
+> fixed entry list and defaults `redact` to true; the CLI command exposes no flag to
+> turn it off.*
+
+### Requirement: `kesha support-bundle` reports where it wrote, or why it could not
+
+`--output <path>` SHALL set the archive path; the default SHALL be
+`kesha-support-bundle-<ISO-timestamp>.tar.gz` in the current directory. On success
+the CLI SHALL report the archive path, entry count, and size in bytes to stderr. On
+failure it SHALL exit 1 with the error message.
+
+#### Scenario: Sona takes the default name
+
+- WHEN Sona runs `kesha support-bundle` in `~/Desktop`
+- THEN the archive is written there as `kesha-support-bundle-<ISO-timestamp>.tar.gz`
+- AND stderr names that path, the entry count and the size in bytes, with nothing on
+  stdout
+
+#### Scenario: The output directory does not exist yet
+
+- WHEN Maks runs `kesha support-bundle --output /tmp/kesha-new/diag.tar.gz` and
+  `/tmp/kesha-new` does not exist
+- THEN the directory is created and the archive is written to that exact path
+
+> *Technical Note — sources: `src/cli/support-bundle.ts::supportBundleCommand` prints
+> the three success lines; `src/support-bundle.ts::createSupportBundle` creates the
+> parent directory and maps write failures through `bundleWriteFailure`.*
+
 ### Requirement: Privacy framing — redaction, allowlists, and size-bucketing are always enforced
 
-Across all diagnostic commands, the CLI SHALL enforce the following privacy boundaries
-as invariants, not options:
+Across all diagnostic commands, the CLI SHALL enforce these privacy boundaries as
+invariants, not options:
 
-1. Diagnostic log field names and values are validated against an allowlist at write
-   time; invalid fields cause the event to be dropped, not silently truncated.
+1. A Diagnostic log event with a field outside the allowlist is dropped at write
+   time, never truncated.
 2. Stats error messages have home and cwd paths replaced with `<path>`, URL query
-   strings redacted, and content-bearing JSON fields redacted before storage;
-   messages are truncated to 300 characters.
-3. Stats artifact records store audio size in bytes and duration — never file names,
+   strings and content-bearing JSON fields redacted, and are cut to 300 characters
+   before storage.
+3. Stats artifact records keep audio size in bytes and duration, never file names,
    full paths, or content.
-4. Support bundles are always redacted and never include audio, transcripts, model
-   files, or the Stats DB, regardless of flags.
 
 #### Scenario: Diagnostic log rejects a path-like field value
 
@@ -538,7 +933,8 @@ as invariants, not options:
 > `src/stats.ts::sanitizeStatsError`, `src/stats.ts::statsPrivacyContract`,
 > `src/stats.ts::artifactFromFile` (records `extname(path)` and `st.size`, not the
 > path itself). Audio size bucketing in `src/stats.ts::summarizeSizeBuckets`:
-> `<1 MB`, `1-10 MB`, `10-100 MB`, `100 MB+`.*
+> `<1 MB`, `1-10 MB`, `10-100 MB`, `100 MB+`. Support bundles are bound by
+> "A Support bundle holds only its listed entries, always redacted".*
 
 ## Open Issues
 
@@ -557,3 +953,7 @@ as invariants, not options:
 - `kesha doctor --json` and `kesha status --json` overlap in what they report but
   do not share a payload type; keeping them consistent is currently a convention,
   not something a test enforces.
+- "On failure it SHALL exit 1" for `kesha support-bundle` disagrees with the code:
+  `src/cli/support-bundle.ts` exits through `exitCodeFor`, so a bad `--output` path
+  (`E_INVALID_ARG`) exits 2, a full disk (`E_INTERNAL`) exits 4, and an uncoded error
+  exits 4. Which of the two is right is unresolved.

@@ -35,9 +35,7 @@ her agent and needs a distinguishable outcome rather than an empty transcript.
 
 ### Requirement: An interrupted command terminates its Engine subprocess and reports the signal in its Exit code
 
-When the CLI receives an interrupt, termination or hangup signal while an Engine subprocess is running, it SHALL terminate that subprocess and SHALL exit with the code conventionally derived from the signal — 130 for interrupt, 143 for termination, 129 for hangup — rather than with the command's own success or failure code. A hangup (the terminal closing) SHALL terminate the Engine tree exactly as a termination does, by forwarding termination to it: the Engine runs detached in its own process group, so the hangup never reaches it on its own. Windows, which has no terminal hangup, installs no hangup handler. This holds for transcription, Language detection, synthesis, recording, both `--list-voices` listings — the CLI command's and the MCP server's — alike, as well as the darwin Kokoro warmup, model installation, and executable health checks.
-
-A run the signal cut short SHALL be reported as the CLI-origin Error code `E_INTERRUPTED`, never as `E_INTERNAL`: an Engine that exits 130 or 143 because the CLI forwarded the signal is a cancellation, not an uncoded failure. The message SHALL name the signal the CLI received — `error [E_INTERRUPTED]: interrupted (SIGINT)` — and SHALL carry no hint to file a bug. A run that still exited 0 keeps its output.
+When the CLI receives an interrupt, termination or hangup signal while an Engine subprocess is running, it SHALL terminate that subprocess and exit with the code derived from the signal (130 interrupt, 143 termination, 129 hangup), not the command's own code. This holds for transcription, Language detection, synthesis, recording, both `--list-voices` listings (the CLI's and the MCP server's), the darwin Kokoro warmup, model installation, and executable health checks.
 
 #### Scenario: Maks interrupts a long transcription
 
@@ -92,6 +90,52 @@ A run the signal cut short SHALL be reported as the CLI-origin Error code `E_INT
 > consult it before reading the exit as a failure. These codes extend the Exit code taxonomy in the Glossary, and
 > `docs/errors.md` lists them for callers scripting the CLI. All three signals are
 > asserted end to end in `tests/integration/cli-contracts.test.ts` (#940).*
+
+### Requirement: A hangup terminates the Engine tree as a termination does
+
+On a hangup (the terminal closing), the CLI SHALL terminate the Engine tree exactly as a termination does, by forwarding termination to it. Windows, which has no terminal hangup, SHALL install no hangup handler.
+
+#### Scenario: Ira's SSH session drops mid-synthesis
+
+- GIVEN Ira is running `kesha say` over SSH with a long text
+- WHEN the connection drops and the shell hangs the CLI up
+- THEN the Engine tree is terminated
+- AND the CLI exits 129 and no Engine process is left running
+
+#### Scenario: Maks interrupts on Windows
+
+- GIVEN Maks runs `kesha` on Windows
+- WHEN the CLI installs its signal handlers
+- THEN it handles interrupt and termination and installs no hangup handler
+- AND Ctrl-C still terminates the Engine and exits 130
+
+> *Technical Note — the Engine runs detached in its own process group, so a
+> hangup never reaches it on its own; the `SIGHUP` handler in
+> `src/process-tree.ts::ensureSignalHandlers` forwards `SIGTERM` to the tree and
+> is skipped on Windows.*
+
+### Requirement: A run cut short by a signal is reported as `E_INTERRUPTED`
+
+A run the signal cut short SHALL be reported as the CLI-origin Error code `E_INTERRUPTED`, never as `E_INTERNAL`, naming the signal the CLI received (`error [E_INTERRUPTED]: interrupted (SIGINT)`) and carrying no hint to file a bug. A run that still exited 0 keeps its output.
+
+#### Scenario: Maks's forwarded termination is a cancellation
+
+- GIVEN Maks's transcription Engine exits 143 because the CLI forwarded a termination signal
+- WHEN the CLI reads that exit
+- THEN stderr reports `error [E_INTERRUPTED]: interrupted (SIGTERM)`
+- AND no `E_INTERNAL` line and no bug-report hint appear
+
+#### Scenario: A synthesis that finished under the signal keeps its file
+
+- GIVEN Maks runs `kesha say "hello" > hello.wav` and the Engine exits 0 just as he presses Ctrl-C
+- WHEN the CLI handles the interrupt
+- THEN `hello.wav` keeps the audio the Engine wrote
+- AND the CLI exits 130
+
+> *Technical Note — an Engine that exits 130 or 143 because the CLI forwarded
+> the signal is a cancellation, not an uncoded failure.
+> `src/process-tree.ts::interruptedRun` turns only a non-zero exit under the
+> recorded signal into `E_INTERRUPTED`.*
 
 ### Requirement: Termination targets the whole process tree, not just the direct child
 
@@ -173,7 +217,7 @@ The CLI SHALL let signal cleanup complete before exiting, so an interrupted comm
 
 ### Requirement: A signal stops the queue, and the CLI exits as soon as its Engine is gone
 
-Once a signal has been received, the CLI SHALL start no further queued file and SHALL spawn no further Engine subprocess, so the only Engine the signal has to terminate is the one that was running. Every file the signal kept from starting SHALL be reported as `E_INTERRUPTED` beside the one it cut short, in stderr and in the `--include-errors` envelope, and the results of files that finished before the signal SHALL still be written. The CLI SHALL then exit with the signal's Exit code as soon as the running Engine is gone, rather than sitting out the force-kill grace period; the grace period remains the ceiling for an Engine that ignores the signal.
+After a signal, the CLI SHALL start no further queued file and spawn no further Engine. Every file the signal kept from starting SHALL be reported as `E_INTERRUPTED` beside the one it cut short, in stderr and in the `--include-errors` envelope; results of files that finished before the signal SHALL still be written. The CLI SHALL then exit with the signal's Exit code as soon as the running Engine is gone; the force-kill grace period is only the ceiling for an Engine that ignores the signal.
 
 #### Scenario: Ira interrupts a batch on its first file
 
@@ -182,6 +226,14 @@ Once a signal has been received, the CLI SHALL start no further queued file and 
 - THEN `b.ogg` and `c.ogg` never start and no second Engine is spawned
 - AND stderr reports all three files as `error [E_INTERRUPTED]: interrupted (SIGINT)`
 - AND the CLI exits 130 well inside the force-kill grace period, leaving no Engine process behind
+
+#### Scenario: Ira keeps the files that finished before the signal
+
+- GIVEN Ira runs `kesha --json --include-errors a.ogg b.ogg c.ogg` and `a.ogg` has finished
+- WHEN she presses Ctrl-C while `b.ogg` is being transcribed
+- THEN the envelope's `results` hold `a.ogg`
+- AND its `errors` carry `E_INTERRUPTED` records for `b.ogg` and `c.ogg`
+- AND the CLI exits 130
 
 #### Scenario: A file finishes under the signal
 
@@ -202,7 +254,8 @@ Once a signal has been received, the CLI SHALL start no further queued file and 
 > `src/process-tree.ts::waitForPendingSignalCleanup` now settles when the last
 > registered process is disposed, not only when the grace timer fires; the timer
 > stays as the backstop that exits a command which never awaits it. Pinned end to
-> end in `tests/integration/cli-contracts.test.ts`.*
+> end in `tests/integration/cli-contracts.test.ts`. Spawning nothing after the
+> signal means the only Engine it has to terminate is the one that was running.*
 
 ### Requirement: A programmatic abort is a distinguishable outcome, not an empty result
 

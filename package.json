@@ -86,7 +86,7 @@
     "bun": ">=1.4.0"
   },
   "devDependencies": {
-    "@fission-ai/openspec": "1.14.0",
+    "@fission-ai/openspec": "1.14.1",
     "@types/bun": "latest",
     "fast-xml-parser": "^5.8.0",
     "typescript": "^7.0.2",

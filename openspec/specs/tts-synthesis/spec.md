@@ -26,26 +26,13 @@ behind one flag surface: Kokoro (Kokoro-82M, 24 kHz), Vosk (Vosk-TTS Russian,
 
 ### Requirement: Synthesize text to speech with pipe-friendly output
 
-The CLI SHALL synthesize the given text (positional argument, or stdin when the
-positional is omitted) and write the audio bytes to stdout, unless `--out
-<path>` is given, in which case the audio is written to that file and stdout
-stays empty. All progress and error output SHALL go to stderr. The text SHALL
-be validated before any voice is resolved and before any subprocess runs: no
-positional argument with a TTY stdin exits 2; an explicitly empty positional
-argument (`kesha say ""`) exits 2 with `E_TEXT_EMPTY` without reading stdin;
-empty or whitespace-only text exits 2 with `E_TEXT_EMPTY`; text longer than
-5000 Unicode characters exits 5 with `E_TEXT_TOO_LONG`; text containing a NUL
-byte exits 2 with `E_INVALID_ARG`. The text SHALL never be passed to a
-subprocess as an argument (text-language detection reads it on stdin), so no
-input length or byte produces a spawn failure or a stack trace. A string-valued
-flag given without a value (`--out`, `--voice`, `--lang`, `--format`, `--rate`,
-`--bitrate`, `--sample-rate`) SHALL be `error [E_INVALID_ARG]: <flag> needs a
-value`, exit 2, with nothing on stdout. An `--out` path that is a character
-device (`/dev/stdout`, `/dev/null`, `/dev/fd/N`) SHALL be refused with
-`E_INVALID_ARG` naming the plain-stdout default, because the Engine's stdout
-is the CLI's pipe and the bytes would be lost; a FIFO or a regular file is
-accepted. The `Synthesizing …` progress line SHALL be printed only after every
-pre-flight check has passed.
+The CLI SHALL synthesize the given text (the positional argument, else stdin)
+and write the audio bytes to stdout, or with `--out
+<path>` to that file, leaving stdout empty. Progress and errors SHALL go to
+stderr. Text and flags SHALL be checked before any voice is resolved or
+subprocess runs, each refusal as its scenario states. The text SHALL never be a
+subprocess argument, so no input causes a spawn failure or stack trace. `Synthesizing …` SHALL print only after every
+check passes.
 
 #### Scenario: Maks pipes a voice note to a file
 
@@ -105,11 +92,19 @@ pre-flight check has passed.
 - THEN stderr reads `error [E_INVALID_ARG]: --out needs a value`
 - AND stdout is empty and the process exits 2 without spawning the Engine
 
+#### Scenario: Every string flag needs a value
+
+- WHEN Ira ends a `kesha say hi` command with any one of `--out`, `--voice`,
+  `--lang`, `--format`, `--rate`, `--bitrate` or `--sample-rate` and no value
+- THEN stderr reads `error [E_INVALID_ARG]: <flag> needs a value` for that flag
+- AND stdout is empty and the process exits 2
+
 #### Scenario: A character device as the output path
 
 - WHEN Maks runs `kesha say "probe" --out /dev/stdout > out.bin`
 - THEN the run fails with `E_INVALID_ARG` telling him to omit `--out` to write to stdout
 - AND `out.bin` is empty and the process exits 2
+- AND `/dev/null` and `/dev/fd/N` are refused the same way
 
 #### Scenario: A FIFO as the output path keeps streaming
 
@@ -123,26 +118,20 @@ pre-flight check has passed.
 > the Engine (`rust/src/tts/mod.rs::MAX_TEXT_CHARS`). TTY guard:
 > `src/cli/say.ts::shouldRejectMissingSayText`. Stdin is trimmed before the
 > empty check (`src/cli/say.ts::resolveText`,
-> `rust/src/cli/say.rs::validate_text`).*
+> `rust/src/cli/say.rs::validate_text`). Text-language detection reads the text
+> on stdin, which is why no input length or byte can fail the spawn. A
+> character-device `--out` is refused because the Engine's stdout is the CLI's
+> pipe and the bytes would be lost; a FIFO or a regular file is accepted.*
 
 ### Requirement: Voice routing resolves --voice, then --lang, then detected language, then the engine default
 
-Voice routing SHALL apply this precedence: an explicit `--voice` wins
-unconditionally; otherwise `--lang` maps the stated language to its default
-voice via `pickVoiceForLang` without running text-language detection;
-otherwise Language detection (text) runs and its result (when confidence is at
-least 0.5) is mapped the same way; otherwise the voice is left unset and the
-Engine uses its Default voice, `en-am_michael`. A `--lang` value with no
-mapped voice SHALL resolve to the engine default rather than re-running
-detection. On darwin-arm64, `ja` and `hi` text whose dominant script is native
-(kana/han, Devanagari) SHALL route to an installed AVSpeech voice for that
-locale, a male one when the machine has it (macOS ships no male `hi-IN` voice, so Hindi
-falls to `Lekha`, a documented exception), because the Kokoro `ja`/`hi`
-voices handle Latin input only; romanized text keeps routing to the Kokoro
-voice. The Voice id scheme is `<lang>-<name>`; the `<lang>` prefix routes to a
-TTS engine (Kokoro, Vosk, or AVSpeech), and an unparseable or unsupported
-Voice id SHALL fail with `E_VOICE_UNKNOWN` and exit 1, the message listing
-every prefix the running build routes.
+Voice routing SHALL apply this precedence: an explicit `--voice` wins; otherwise
+`--lang` maps the stated language to its default voice without running
+Language detection (text), and an unmapped `--lang` gets the Engine default;
+otherwise detection runs and a result with confidence of at least 0.5 maps the
+same way; otherwise the Engine uses its Default voice, `en-am_michael`. An
+unparseable or unsupported Voice id SHALL fail with `E_VOICE_UNKNOWN`, exit 1,
+listing every prefix the build routes.
 
 #### Scenario: Explicit voice beats explicit language
 
@@ -225,20 +214,42 @@ every prefix the running build routes.
 > m01→3, m02→4`, `rust/src/tts/voices.rs::resolve_vosk_ru`); `macos-*` →
 > AVSpeech (suffix forwarded as identifier or language code; empty suffix
 > rejected). Engine default: `DEFAULT_VOICE_ID = "en-am_michael"`
-> (`rust/src/tts/voices.rs::DEFAULT_VOICE_ID`).*
+> (`rust/src/tts/voices.rs::DEFAULT_VOICE_ID`). The `<lang>` prefix of a Voice
+> id picks the TTS engine (Kokoro, Vosk or AVSpeech).*
+
+### Requirement: Native-script Japanese and Hindi route to a system voice on darwin-arm64
+
+On darwin-arm64, Voice routing SHALL send `ja` and `hi` text whose dominant
+script is native (kana/han, Devanagari) to an installed AVSpeech voice for that
+locale, a male one when the machine has it, and SHALL keep romanized text on
+the Kokoro voice.
+
+#### Scenario: Devanagari Hindi speaks through Lekha
+
+- GIVEN Maks's Mac with the `hi-IN` AVSpeech voice `Lekha` and no `--voice` given
+- WHEN Maks runs `kesha say --lang hi "नमस्ते दोस्त"`
+- THEN synthesis uses the `macos-*` voice `Lekha` and exits 0
+- AND this is the documented Hindi exception to male defaults
+
+#### Scenario: Romanized Hindi stays on Kokoro
+
+- GIVEN Maks's Mac with no `--voice` given
+- WHEN Maks runs `kesha say --lang hi "Namaste dost, kaise ho?"`
+- THEN synthesis uses `hi-hm_omega`, not an AVSpeech voice
+
+> *Technical Note — the Kokoro `ja`/`hi` voices handle Latin input only, which
+> is why native-script text needs a system voice. macOS ships no male `hi-IN`
+> voice, so Hindi falls to `Lekha`, a documented exception. Override:
+> `src/voice-routing.ts::nativeScriptOverride` (T2-10).*
 
 ### Requirement: Default voices are male
 
-Every Default voice SHALL be male — Kesha is a male brand voice. The English
-default is `en-am_michael`; the Russian Vosk default is `ru-vosk-m02`; Spanish,
-Italian, and Portuguese default to `es-em_alex`, `it-im_nicola`, and
-`pt-pm_alex`. There are three documented exceptions. French: Kokoro v1.0 ships no
-male French voice, so `fr` defaults to `fr-ff_siwis` (female) until a male
-French voice exists. Russian on darwin-arm64: with no `--voice`, `ru` routes to
-AVSpeech `macos-com.apple.voice.compact.ru-RU.Milena` (female) because it is
-the zero-install path; `--voice ru-vosk-m02` opts into the male Vosk voice. Hindi in
-Devanagari on darwin-arm64: the native-script route takes the only `hi-IN` AVSpeech
-voice macOS ships, `Lekha` (female), because there is no male one.
+Every Default voice SHALL be male: `en-am_michael`, `ru-vosk-m02`,
+`es-em_alex`, `it-im_nicola` and `pt-pm_alex`. There are three documented
+female exceptions: `fr` defaults to `fr-ff_siwis` until a male French voice
+exists; on darwin-arm64, `ru` with no `--voice` routes to AVSpeech
+`macos-com.apple.voice.compact.ru-RU.Milena`, and Hindi in Devanagari routes to
+the AVSpeech voice `Lekha`.
 
 #### Scenario: Default English voice is male
 
@@ -261,25 +272,19 @@ voice macOS ships, `Lekha` (female), because there is no male one.
 > `rust/src/tts/voices.rs::default_voice_for_lang`, with the brand-rule
 > exception comment inline.
 > Female Vosk voices `ru-vosk-f01/f02/f03` stay selectable via explicit
-> `--voice`.*
+> `--voice`. Male because Kesha is a male brand voice. Why each exception:
+> Kokoro v1.0 ships no male French voice; Milena is the zero-install Russian
+> path, and `--voice ru-vosk-m02` opts into the male Vosk voice; macOS ships no
+> male `hi-IN` voice, so `Lekha` is the only one.*
 
 ### Requirement: TTS models are never auto-downloaded
 
-Synthesis SHALL fail loudly — never download — when the required TTS model is
+Synthesis SHALL fail loudly, never download, when the required TTS model is
 not in the Model cache. The failure carries Error code `E_MODEL_MISSING` and an
-actionable `kesha install --tts` hint, and exits 1 — the voice is rejected
-while it is being resolved, before synthesis starts.
-
-On darwin-arm64 the FluidAudio Kokoro voices are not gated by the Model cache,
-so the guarantee rests on a check of its own: before the FluidAudio bridge is
-initialized, synthesis SHALL confirm that every asset the requested voice needs
-— its bundle's model chain, that voice's own pack, and the variant's G2P assets
-— is already on disk, and refuse with `E_MODEL_MISSING` when any is absent.
-Refusing up front is what makes the rule hold there, because upstream's asset
-downloader consults no offline switch and would otherwise fetch a voice pack
-that `kesha install --tts <other-lang>` never staged. The message SHALL name
-the first few missing paths so the gap is identifiable, and the refusal exits 4
-(the `kesha say` code for a coded synthesis failure), not 1.
+actionable `kesha install --tts` hint, and exits 1: the voice is rejected while
+it is being resolved, before synthesis starts. The darwin-arm64 FluidAudio
+Kokoro voices sit outside the Model cache and have a check of their own (next
+requirement).
 
 #### Scenario: Synthesis with installed models stays offline
 
@@ -319,20 +324,43 @@ the first few missing paths so the gap is identifiable, and the refusal exits 4
 > stages: installation spec, "On darwin-arm64, `--tts` stages FluidAudio's
 > Kokoro assets outside the Model cache".*
 
+### Requirement: FluidAudio voice assets are checked on disk before synthesis
+
+On darwin-arm64, before the FluidAudio bridge is initialized, synthesis SHALL
+confirm that every asset the requested voice needs (its bundle's model chain,
+that voice's own pack and the variant's G2P assets) is already on disk, and
+refuse with `E_MODEL_MISSING` when any is absent. The message SHALL name the
+first few missing paths, and the refusal exits 4.
+
+#### Scenario: A staged voice synthesizes offline
+
+- GIVEN a darwin-arm64 machine where `kesha install --tts it` has run
+- WHEN Maks runs `kesha say --voice it-im_nicola "Ciao" --out ciao.wav` with no network
+- THEN `ciao.wav` contains speech and nothing was fetched
+
+#### Scenario: A deleted G2P asset is named, not fetched
+
+- GIVEN a darwin-arm64 install where one G2P asset of the English variant was deleted after `kesha install --tts en`
+- WHEN Ira runs `kesha say --voice en-am_michael "hi"`
+- THEN stderr carries `E_MODEL_MISSING` naming the deleted path
+- AND nothing is downloaded
+
+> *Technical Note — refusing up front is what makes the Never-auto-download
+> rule hold here, because upstream's asset downloader consults no offline
+> switch and would otherwise fetch a voice pack that
+> `kesha install --tts <other-lang>` never staged. Exit 4 is the `kesha say`
+> code for a coded synthesis failure; see Open Issues for the conflict with
+> the exit-code map.*
+
 ### Requirement: Output formats — wav, ogg-opus, flac
 
 The CLI SHALL produce one of three Output formats (TTS): **wav** (default;
 IEEE-float mono at the engine's native sample rate), **ogg-opus** (mono Opus in
-an OGG container; `--bitrate` 6000–510000 bps, default 32000; `--sample-rate`
-one of 8000/12000/16000/24000/48000 Hz, default 24000), and **flac** (lossless
-16-bit, native rate, no encoder knobs). When `--format` is omitted the format
-SHALL be inferred from the `--out` extension (`.wav` → wav; `.ogg`/`.opus`/
-`.oga` → ogg-opus; `.flac` → flac; anything else → wav). `opus` and `ogg`
-SHALL be accepted as aliases for `ogg-opus`. An unknown `--format` value exits
-2, and `--bitrate`/`--sample-rate` with any non-opus format also exit 2. A
-`--bitrate` outside 6000–510000 SHALL be rejected with `E_INVALID_ARG` exit 2
-by the CLI before the spawn and by the Engine before synthesis, never after
-audio has been produced.
+an OGG container), and **flac** (lossless 16-bit, native rate, no encoder
+knobs). Without `--format` the format SHALL follow the `--out` extension
+(`.wav` → wav; `.ogg`/`.opus`/`.oga` → ogg-opus; `.flac` → flac; anything else
+→ wav). `opus` and `ogg` SHALL be aliases for `ogg-opus`. An unknown
+`--format` value exits 2.
 
 #### Scenario: Maks makes a Telegram-ready voice note
 
@@ -384,17 +412,34 @@ audio has been produced.
 > combinations (`src/cli/say.ts::resolveSayFlags`); the Engine repeats the check
 > authoritatively.*
 
+### Requirement: Opus encoder knobs are bounded and checked before synthesis
+
+For ogg-opus, `--bitrate` SHALL accept 6000–510000 bps (default 32000) and
+`--sample-rate` one of 8000/12000/16000/24000/48000 Hz (default 24000).
+`--bitrate` or `--sample-rate` with any non-opus format SHALL exit 2. A
+`--bitrate` out of range SHALL be rejected with `E_INVALID_ARG`, exit 2, by the
+CLI before the spawn and by the Engine before synthesis, never after audio has
+been produced.
+
+#### Scenario: Ira asks for a high-quality note
+
+- WHEN Ira runs `kesha say --format ogg-opus --bitrate 64000 --sample-rate 48000 "done" --out done.ogg`
+- THEN `done.ogg` is mono OGG/Opus at 48 kHz, 64 kbps, and the process exits 0
+
+#### Scenario: The Engine refuses a bitrate the CLI never saw
+
+- WHEN a caller runs `kesha-engine say --format ogg-opus --bitrate 1000 "hi"` directly
+- THEN stderr carries an `error` event with code `E_INVALID_ARG`
+- AND the process exits 2 with no audio on stdout
+
 ### Requirement: Speaking rate is bounded
 
 The CLI SHALL accept `--rate` between 0.5 and 2.0 inclusive (default 1.0) and
 exit 2 for values outside that range or non-numeric values. The Engine SHALL
-enforce the same bounds itself on every door (`say` and `--stdin-loop`),
-answering `E_INVALID_ARG` exit 2 for a non-finite or out-of-range rate before
-any synthesis engine is chosen, so a caller that bypasses the CLI never reaches
-a trap. Any text the Engine can synthesize at rate 1.0 SHALL synthesize at
-every rate in the range: on the darwin-arm64 FluidAudio path the text is
-chunked by a budget that scales with the rate and the chunks are rejoined at
-their seams, so the upstream acoustic-frame cap is never visible to the user.
+enforce the same bounds on every door (`say` and `--stdin-loop`), answering
+`E_INVALID_ARG` exit 2 for a non-finite or out-of-range rate before any
+synthesis engine is chosen. Any text the Engine can synthesize at rate 1.0
+SHALL synthesize at every rate in the range.
 
 #### Scenario: Slower narration
 
@@ -432,31 +477,21 @@ their seams, so the upstream acoustic-frame cap is never visible to the user.
 > clamped to 0.5–2.0 (`rust/src/tts/ssml/rate.rs`). For `macos-*` AVSpeech voices
 > the multiplier is forwarded to the sidecar as `--rate <value>`
 > (`rust/src/tts/avspeech.rs::synthesize`) and mapped piecewise-linearly onto
-> `AVSpeechUtterance.rate` (user 0.5/1.0/2.0 → AVSpeech 0.0/0.5/1.0), #546.*
+> `AVSpeechUtterance.rate` (user 0.5/1.0/2.0 → AVSpeech 0.0/0.5/1.0), #546.
+> The Engine's own check means a caller that bypasses the CLI never reaches a
+> trap. On the darwin-arm64 FluidAudio path the text is chunked by a budget
+> that scales with the rate and the chunks are rejoined at their seams, so the
+> upstream acoustic-frame cap is never visible to the user.*
 
 ### Requirement: SSML subset with strict root and graceful tag degradation
 
-With `--ssml`, the input SHALL be parsed as SSML and SHALL start with a
-`<speak>` root element; anything else fails with `E_SSML_INVALID`. Every parse
-error, including a malformed attribute value such as `<break time="abc"/>`,
-SHALL be `E_SSML_INVALID` naming the tag and the accepted forms, never
-`E_INTERNAL`. Supported tags: `<break time="...">` (silence, default 250 ms,
-capped at 30 s), `<say-as interpret-as="characters">` (letter-by-letter
-spelling), `<phoneme alphabet="ipa" ph="...">` (bypasses G2P where the engine
-accepts IPA; `alphabet` defaults to ipa), `<emphasis>` (stress hint;
-`level="none"` strips `+` stress markers), and `<prosody rate="...">` when it
-wraps the entire utterance. A `<break>` SHALL add exactly the silence it asks
-for: the synthesized runs on either side are trimmed of the engine's own edge
-padding before the silence is inserted, so ten `500ms` breaks add about five
-seconds, not nine. On an engine with no IPA input (darwin-arm64 FluidAudio
-Kokoro) `<phoneme>` SHALL be stripped with one stderr warning and its wrapped
-text spoken. CDATA sections SHALL be spoken as text. A document with no
-speakable content after parsing SHALL fail with `E_TEXT_EMPTY`. Unknown tags
-SHALL emit one stderr warning per tag name and be stripped with their text
-content preserved. `<!DOCTYPE>` anywhere in the document SHALL be rejected
-(`E_SSML_INVALID`), as SHALL relative-percent prosody rates (`+25%`/`-25%`).
-AVSpeech (`macos-*`) voices SHALL reject `--ssml` entirely with
-`E_SSML_UNSUPPORTED`.
+With `--ssml`, the input SHALL be parsed as SSML with a `<speak>` root
+element; anything else fails with `E_SSML_INVALID`. Every parse error, a
+malformed attribute such as `<break time="abc"/>` included, SHALL be
+`E_SSML_INVALID` naming the tag and the accepted forms, never `E_INTERNAL`.
+`<!DOCTYPE>` anywhere and relative-percent prosody rates (`+25%`/`-25%`) SHALL
+be rejected the same way. AVSpeech (`macos-*`) voices SHALL reject `--ssml`
+with `E_SSML_UNSUPPORTED`.
 
 #### Scenario: Maks adds a pause and a phoneme override
 
@@ -542,32 +577,70 @@ AVSpeech (`macos-*`) voices SHALL reject `--ssml` entirely with
 > (internal G2P only) and reads `<say-as characters>` content as plain text
 > (`rust/src/tts/say.rs::FluidKokoroSink`).*
 
+### Requirement: Supported SSML tags shape the audio
+
+Under `--ssml` the Engine SHALL honor `<break time>` (silence, default 250 ms,
+capped at 30 s), `<say-as interpret-as="characters">` (letter by letter),
+`<phoneme alphabet="ipa" ph>` (bypasses G2P where the engine accepts IPA;
+`alphabet` defaults to ipa), `<emphasis>` (`level="none"` strips `+`
+markers) and `<prosody rate>` wrapping the whole
+utterance. On an engine with no IPA input (darwin-arm64 FluidAudio Kokoro)
+`<phoneme>` SHALL be stripped with one stderr warning and its text spoken.
+
+#### Scenario: Sona spells an initialism with say-as
+
+- WHEN Sona runs `kesha say --ssml '<speak><say-as interpret-as="characters">abc</say-as></speak>'`
+- THEN the audio spells "a", "b", "c" letter by letter and the process exits 0
+
+#### Scenario: A phoneme in another alphabet
+
+- WHEN Maks passes `<speak><phoneme alphabet="x-sampa" ph="kES@">Kesha</phoneme></speak>`
+- THEN stderr warns that the alphabet is not supported
+- AND `Kesha` is spoken from its text and the process exits 0
+
+### Requirement: Unknown SSML content degrades to its text
+
+Under `--ssml`, an unknown tag SHALL emit one stderr warning per tag name and
+be stripped with its text content kept, and CDATA sections SHALL be spoken as
+text. A document with no speakable content after parsing SHALL fail with
+`E_TEXT_EMPTY`.
+
+#### Scenario: Two unsupported audio tags keep their words
+
+- WHEN Sona passes `<speak><audio src="x.wav">fallback words</audio> and <audio src="y.wav">more</audio></speak>`
+- THEN stderr warns once that `<audio>` is not supported
+- AND "fallback words and more" is synthesized
+
+#### Scenario: A document with nothing to speak
+
+- WHEN Ira runs `kesha say --ssml '<speak></speak>'`
+- THEN the run fails with `E_TEXT_EMPTY` and exits 2
+
+### Requirement: An SSML break adds exactly the silence it asks for
+
+A `<break>` SHALL add exactly the silence it asks for, with the engine's own
+edge padding trimmed from the synthesized runs on either side, so the break
+length is the only gap.
+
+#### Scenario: Ten half-second breaks add five seconds
+
+- WHEN Maks puts ten `<break time="500ms"/>` between eleven words on `en-am_michael`
+- THEN the file is about five seconds longer than the same words without breaks, not nine
+
+#### Scenario: A break over the cap
+
+- WHEN Ira passes `<speak>one <break time="60s"/> two</speak>`
+- THEN the silence between the words lasts 30 s, the cap
+
 ### Requirement: Text normalization expands acronyms and numbers per language
 
 Normalization SHALL run before G2P. English: uppercase tokens of 2–5
 characters are letter-spelled unless they appear on the English stop-list or in
 the IPA lexicon (which supplies a fixed pronunciation); currency amounts
 (`$`, `€`, `£` followed by digits, with an optional decimal part) and
-comma-grouped integers (`1,234,567`) are verbalized with their unit ("one
-thousand two hundred thirty four dollars and fifty six cents") before the text
-reaches any English engine, including the darwin-arm64 FluidAudio handoff, and
-exactly once on every path. Russian (`ru-vosk-*`): all-caps Cyrillic tokens of
-2–5 letters are letter-spelled when they fail the pronounceability heuristic
-(strict consonant-vowel alternation reads as a word) and are not on the
-Russian stop-list; a phone-shaped token (leading `+` or `8`, ten or more
-digits separated by spaces, hyphens or parentheses) is read digit by digit as
-one token, while ranges such as «10-15» keep their cardinal reading.
-Spanish/French/Italian/Portuguese: integers 0–999,999 are expanded to words and
-2–5-character uppercase acronyms are letter-spelled with that language's
-letter names, with per-language stop-lists exempting word-acronyms.
-`--no-expand-abbrev` SHALL disable the automatic letter-spelling for Russian
-and for English on ONNX Kokoro builds — but the English IPA lexicon still
-fires, and `<say-as interpret-as="characters">` still works. On every other
-path — FluidAudio Kokoro, `macos-*` AVSpeech, and the Romance normalizer that
-runs inside CharsiuG2P — expansion belongs to an engine that offers no
-suppression knob, and the Engine SHALL emit a `warn` event on the Event stream
-rather than accept the flag silently; the CLI SHALL render that warning on
-stderr on a successful run.
+comma-grouped integers (`1,234,567`) are verbalized with their unit before the
+text reaches any English engine, including the darwin-arm64 FluidAudio
+handoff, and exactly once on every path.
 
 #### Scenario: English initialism is letter-spelled, lexicon word is not
 
@@ -624,6 +697,7 @@ stderr on a successful run.
 - WHEN Ira runs `kesha say --voice en-am_michael 'It costs $1,234.56' --out n.wav`
 - THEN `n.wav` round-trips through ASR with the amount and the word "dollars"
 - AND `$5` is read as "five dollars"
+- AND `$1,234.56` reads "one thousand two hundred thirty four dollars and fifty six cents"
 
 #### Scenario: A formatted Russian phone number is read digit by digit
 
@@ -658,26 +732,78 @@ stderr on a successful run.
 > `src/synth.ts` once carried (`applyNoExpandAbbrev`) is replaced by the
 > generic `validateArgv` in `src/engine/describe.ts`.*
 
+### Requirement: Russian normalization spells initialisms and reads phone numbers digit by digit
+
+For `ru-vosk-*` voices, Normalization SHALL letter-spell an all-caps Cyrillic
+token of 2–5 letters that fails the pronounceability heuristic (strict
+consonant-vowel alternation reads as a word) and is not on the Russian
+stop-list. It SHALL read a phone-shaped token (leading `+` or `8`, ten or more
+digits separated by spaces, hyphens or parentheses) digit by digit as one
+token, while ranges such as «10-15» keep their cardinal reading.
+
+#### Scenario: Maks names a ministry
+
+- WHEN Maks runs `kesha say --voice ru-vosk-m02 "Звонили из МВД" --out m.wav`
+- THEN `МВД` is spelled letter by letter ("эм вэ дэ") and the process exits 0
+
+#### Scenario: A stop-listed capital word is read as a word
+
+- WHEN Maks runs `kesha say --voice ru-vosk-m02 "ДА ЧТО ВЫ"`
+- THEN `ДА`, `ЧТО` and `ВЫ` are read as words, not spelled
+
+### Requirement: Spanish, French, Italian and Portuguese normalization expands numbers and acronyms
+
+For Spanish, French, Italian and Portuguese, Normalization SHALL expand
+integers 0–999,999 to words and letter-spell 2–5-character uppercase acronyms
+with that language's letter names, except the word-acronyms on that
+language's stop-list.
+
+#### Scenario: Ira narrates an Italian headline
+
+- WHEN Ira runs `kesha say --voice it-im_nicola "La RAI ha 3 canali"`
+- THEN `3` is read as "tre" and `RAI` is spelled with Italian letter names
+- AND the process exits 0
+
+#### Scenario: Stop-listed and long acronyms in Portuguese
+
+- WHEN Ira runs `kesha say --voice pt-pm_alex "A FIFA e a UNESCO"`
+- THEN `FIFA` (stop-listed) is read as a word
+- AND `UNESCO` (six letters) passes through unspelled
+
+### Requirement: `--no-expand-abbrev` disables letter-spelling where the engine allows it and warns elsewhere
+
+`--no-expand-abbrev` SHALL disable the automatic letter-spelling for Russian
+and for English on ONNX Kokoro builds, while the English IPA lexicon and
+`<say-as interpret-as="characters">` keep working. On every other path
+(FluidAudio Kokoro, `macos-*` AVSpeech and the Romance normalizer inside
+CharsiuG2P) the Engine SHALL emit a `warn` event on the Event stream instead of
+accepting the flag silently, and the CLI SHALL render it on stderr on a
+successful run.
+
+#### Scenario: Maks keeps a Russian initialism unspelled
+
+- WHEN Maks runs `kesha say --voice ru-vosk-m02 --no-expand-abbrev "ФСБ"`
+- THEN `ФСБ` passes through unspelled and the process exits 0
+
+#### Scenario: The flag on a system voice warns
+
+- WHEN Sona runs `kesha say --voice macos-com.apple.voice.compact.ru-RU.Milena --no-expand-abbrev "ФСБ"`
+- THEN synthesis succeeds with exit 0
+- AND stderr carries one warning that the flag does not apply to this voice
+
+> *Technical Note — expansion on FluidAudio Kokoro, `macos-*` AVSpeech and
+> the Romance normalizer inside CharsiuG2P belongs to an engine that offers no
+> suppression knob, which is why those paths warn instead of honoring the flag.*
+
 ### Requirement: Script gates — unsupported writing systems fail fast
 
-The Engine SHALL classify the input's letters by writing system before inference on
-every arm that phonemizes the text itself (ONNX Kokoro, FluidAudio Kokoro and Vosk),
-after NFKC normalisation so fullwidth Latin counts as Latin, and compare them with the scripts the chosen voice's G2P handles: Latin for `en-*`,
-`es-*`, `fr-*`, `it-*`, `pt-*`, `hi-*` and `ja-*`; Cyrillic for `ru-vosk-*`;
-Han and Latin for `zh-*`. When the dominant script (more than half of the
-letters) is one the voice cannot pronounce, the run SHALL fail before any model
-loads with `E_SCRIPT_UNSUPPORTED` naming the script and the voice, and the hint
-SHALL list installed voices that handle that script (on darwin-arm64 the
-`macos-*` voices for the matching locale). When only a minority of the letters
-are in an unsupported script, synthesis SHALL proceed and one `warn` event
-SHALL name the tokens that will be mispronounced, for every unsupported script the
-text contains. Text with no pronounceable
-content at all (emoji only, punctuation only) and a single token the G2P
-rejects SHALL be `E_SCRIPT_UNSUPPORTED`, never `E_INTERNAL` and never a raw
-library line. Chinese SHALL be supported natively on darwin-arm64 (Han text,
-tone-aware Mandarin G2P, voice `zh-zm_050`). Castilian Spanish (`--lang es-ES`)
-SHALL synthesize with Latin-American phonology (*seseo*) and print a one-time
-stderr note, because the upstream CharsiuG2P export has no Castilian θ tag.
+The Engine SHALL classify the input's letters by writing system, after NFKC
+normalisation, before inference on every arm that phonemizes the text itself
+(ONNX Kokoro, FluidAudio Kokoro and Vosk). When the dominant script (more than
+half of the letters) is one the chosen voice's G2P cannot pronounce, the run
+SHALL fail before any model loads with `E_SCRIPT_UNSUPPORTED` naming the script
+and the voice, and the hint SHALL list installed voices that handle that
+script.
 
 #### Scenario: Maks synthesizes Mandarin on Apple Silicon
 
@@ -732,6 +858,66 @@ stderr note, because the upstream CharsiuG2P export has no Castilian θ tag.
 > and pinyin dictionaries included (`rust/src/models/manifest.rs::ANE_ZH_FILES`,
 > `ANE_ZH_G2P_ASSETS`, #823).*
 
+### Requirement: Each voice family has a fixed set of scripts its G2P handles
+
+The script gate SHALL treat `en-*`, `es-*`, `fr-*`, `it-*`, `pt-*`, `hi-*` and
+`ja-*` voices as Latin, `ru-vosk-*` as Cyrillic, and `zh-*` as Han and Latin,
+with fullwidth Latin counting as Latin. Chinese SHALL be supported natively on
+darwin-arm64 (Han text, tone-aware Mandarin G2P, voice `zh-zm_050`). On
+darwin-arm64 the hint for an unsupported script SHALL name the `macos-*`
+voices for the matching locale.
+
+#### Scenario: Mandarin with a Latin product name
+
+- WHEN Maks runs `kesha say --voice zh-zm_050 "我用 Kesha"` on darwin-arm64
+- THEN synthesis proceeds with no script warning and exits 0
+
+#### Scenario: Fullwidth Latin on an English voice
+
+- WHEN Sona runs `kesha say --voice en-am_michael "ｈｅｌｌｏ"`
+- THEN the text passes the gate as Latin and synthesis exits 0
+
+### Requirement: Minority and unpronounceable scripts are reported, never internal errors
+
+Synthesis SHALL proceed when only a minority of the letters are in a script the
+voice cannot pronounce, and one `warn` event SHALL name the tokens
+that will be mispronounced, for every such script the text contains. Text with
+no pronounceable content at all (emoji only, punctuation only) and a single
+token the G2P rejects SHALL be `E_SCRIPT_UNSUPPORTED`, never `E_INTERNAL` and
+never a raw library line.
+
+#### Scenario: An English sentence quoting a Russian word
+
+- WHEN Ira runs `kesha say --voice en-am_michael "Maks always says привет to the team"`
+- THEN synthesis proceeds and exits 0
+- AND stderr carries one warning naming `привет`
+
+#### Scenario: Punctuation-only text
+
+- WHEN Sona runs `kesha say --voice en-am_michael "?!..."`
+- THEN stderr carries exactly one `error [E_SCRIPT_UNSUPPORTED]: …` line
+- AND no raw engine line appears
+
+### Requirement: Castilian Spanish synthesizes with Latin-American phonology and a note
+
+Castilian Spanish (`--lang es-ES`) SHALL synthesize with Latin-American
+phonology (*seseo*) and print a one-time stderr note saying so.
+
+#### Scenario: Ira narrates a Castilian place name
+
+- GIVEN Ira's Linux runner
+- WHEN Ira runs `kesha say --voice es-em_alex --lang es-ES "Zaragoza y Cáceres" --out z.wav`
+- THEN `z.wav` contains speech and the process exits 0
+- AND stderr carries the Castilian note exactly once
+
+#### Scenario: Latin-American Spanish prints no note
+
+- WHEN Ira runs `kesha say --voice es-em_alex --lang es-MX "cielo"`
+- THEN stderr carries no Castilian note
+
+> *Technical Note — the upstream CharsiuG2P export has no Castilian θ tag
+> (#511), so θ cannot be produced.*
+
 ### Requirement: List installed voices
 
 `kesha say --list-voices` SHALL print one installed Voice id per line, sorted,
@@ -739,10 +925,7 @@ to stdout and exit 0. The list covers Kokoro voices (the FluidAudio catalog on
 darwin-arm64; cached `.bin` packs elsewhere), the five Vosk Russian speakers
 when the Vosk model is installed, and the OS-provided `macos-*` voices on
 macOS. With nothing installed stdout SHALL be empty, the `kesha install --tts`
-hint SHALL be emitted as a `progress` event on stderr, and the process SHALL
-still exit 0: stdout is the list, and a sentence there is a Voice id to every
-consumer of the list — the MCP `list_voices` tool reported it as one voice with
-an unknown model and no language (#1168).
+hint SHALL be a `progress` event on stderr, and the process SHALL still exit 0.
 
 #### Scenario: Maks lists voices on Apple Silicon
 
@@ -767,26 +950,20 @@ an unknown model and no language (#1168).
 > progress event, so a fresh machine prints nothing and exits 0. Partial Vosk
 > installs advertise no `ru-vosk-*` voices (same cache gate as synthesis).
 > AVSpeech enumeration is best-effort: a missing Sidecar still shows
-> Kokoro/Vosk voices.*
+> Kokoro/Vosk voices. The hint stays off stdout because stdout is the list,
+> and a sentence there is a Voice id to every consumer of the list: the MCP
+> `list_voices` tool reported it as one voice with an unknown model and no
+> language (#1168).*
 
 ### Requirement: Exit codes distinguish failure classes
 
-`kesha say` SHALL exit 0 on success, 1 for an operational failure (an unknown
-or uninstalled voice, a model or sidecar absent from where the run looks for
-it, on every engine path alike), 2 for invalid input (bad flags, a flag
-without a value, empty text, malformed flag combinations, malformed SSML, an
-unwritable or device `--out`, a rate or bitrate out of range), 4 for a failure
-raised during synthesis that the caller could not have avoided (an unsupported
-script or SSML on this engine, an uncoded internal failure), and 5 when the
-text exceeds the length limit. The Error code says what went wrong; the exit
-code is derived from the code's class, not from how far the run got, so
-`E_MODEL_MISSING` exits 1 whether Vosk or the darwin-arm64 FluidAudio
-pre-check raised it. The CLI SHALL propagate the Engine's exit code unchanged
-(`KeshaError.exitCode`); CLI-side pre-checks use the same map. A missing or
-non-executable `say-avspeech` sidecar SHALL be `E_SIDECAR_MISSING` (exit 1)
-naming the expected path beside the Engine binary, never a build-machine path;
-a `macos-*` voice the machine has not downloaded SHALL be `E_VOICE_UNKNOWN`
-(exit 1) with a hint naming System Settings and `--list-voices`.
+`kesha say` SHALL exit 0 on success; 1 for an operational failure (an unknown
+or uninstalled voice, a model or sidecar missing where the run looks, on
+every engine path); 2 for invalid input (bad, valueless or conflicting flags,
+empty text, malformed SSML, an unwritable or device `--out`, a
+rate or bitrate out of range); 4 for a synthesis failure the caller could not
+avoid (an unsupported script or SSML on this engine, an uncoded internal
+failure); and 5 when the text exceeds the length limit.
 
 #### Scenario: Exit-code contract in a script
 
@@ -840,6 +1017,46 @@ a `macos-*` voice the machine has not downloaded SHALL be `E_VOICE_UNKNOWN`
 > `SayError` did, and
 > `src/synth.ts::say` pre-checks empty text (2) and the length limit (5).*
 
+### Requirement: The exit code follows the Error code's class
+
+The Exit code SHALL be derived from the Error code's class, not from how far
+the run got, so `E_MODEL_MISSING` exits 1 whether Vosk or the darwin-arm64
+FluidAudio pre-check raised it. The CLI SHALL propagate the Engine's exit code
+unchanged (`KeshaError.exitCode`), and its own pre-checks SHALL use the same
+map.
+
+#### Scenario: The CLI and the Engine agree on the length limit
+
+- WHEN Sona calls `say()` with a 6000-character string, and Ira pipes the same text to `kesha-engine say` directly
+- THEN both fail with `E_TEXT_TOO_LONG` and Exit code 5
+
+#### Scenario: An Engine refusal reaches the caller unchanged
+
+- WHEN the Engine refuses `kesha say --voice xx-none "hi"` with `E_VOICE_UNKNOWN`
+- THEN `kesha say` exits 1, the Engine's own code
+- AND `say()` rejects with a `KeshaError` whose `exitCode` is 1
+
+### Requirement: Missing AVSpeech pieces name their remedy
+
+A missing or non-executable `say-avspeech` Sidecar SHALL be
+`E_SIDECAR_MISSING` (exit 1) naming the expected path beside the Engine
+binary, never a build-machine path. A `macos-*` voice the machine has not
+downloaded SHALL be `E_VOICE_UNKNOWN` (exit 1) with a hint naming System
+Settings and `--list-voices`.
+
+#### Scenario: A downloaded system voice speaks
+
+- GIVEN Maks's Mac with `say-avspeech` beside the Engine binary
+- WHEN Maks runs `kesha say --voice macos-com.apple.voice.compact.ru-RU.Milena "Привет" --out p.wav`
+- THEN `p.wav` contains speech and the process exits 0
+
+#### Scenario: A sidecar that is not executable
+
+- GIVEN `say-avspeech` beside the Engine binary lost its execute bit
+- WHEN Ira runs `kesha say --voice macos-com.apple.voice.compact.en-US.Samantha "hi"`
+- THEN the run fails with `E_SIDECAR_MISSING` naming the path beside the Engine binary
+- AND the process exits 1
+
 ## Open Issues
 
 - **French default voice is female** (`fr-ff_siwis`) — documented brand-rule
@@ -850,3 +1067,8 @@ a `macos-*` voice the machine has not downloaded SHALL be `E_VOICE_UNKNOWN`
 - **Hindi/Japanese native scripts** fail fast with `E_SCRIPT_UNSUPPORTED` on
   the darwin-arm64 FluidAudio build and have no voices at all on ONNX
   platforms; ja/hi are a future ONNX-CharsiuG2P effort.
+- **FluidAudio pre-check exit code** — "FluidAudio voice assets are checked on
+  disk before synthesis" and the scenario "Mandarin voice on an
+  English-only Apple Silicon install" say the refusal exits 4, while "The exit
+  code follows the Error code's class" and
+  `rust/src/cli/say.rs::exit_code_for_tts_err` map `E_MODEL_MISSING` to 1.

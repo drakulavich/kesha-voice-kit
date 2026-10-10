@@ -21,20 +21,15 @@ stdin/stdout.
 ## Requirements
 ### Requirement: `kesha mcp` starts a named MCP stdio server
 
-The CLI SHALL start an MCP server named `kesha-voice-kit` over stdio and block
-until the client disconnects. The server version matches the CLI package
-version. At server start, audio files older than 24 hours in the MCP audio
-directory are swept.
-
-The server exposes four tools (`transcribe_audio`, `synthesize_speech`,
+The CLI SHALL start an MCP server named `kesha-voice-kit` over stdio, at the
+CLI package version, and block until the client disconnects. The server
+exposes four tools (`transcribe_audio`, `synthesize_speech`,
 `list_voices`, `list_languages`) and one resource template
 (`kesha-audio://{file}`).
 
-When the client's side of stdin reaches EOF — the client exited, crashed or
-closed the pipe — the server SHALL stop even while a tool call is outstanding:
-the in-flight call is cancelled, the Engine subprocess it started is
-terminated, and the process exits rather than being reparented to init with a
-running Engine.
+When stdin reaches EOF, the server SHALL stop even while a tool call is
+outstanding: it cancels the in-flight call, terminates the Engine subprocess
+that call started, and exits.
 
 #### Scenario: Sona configures kesha mcp in her agent
 
@@ -66,7 +61,9 @@ running Engine.
 > aborts every in-flight request handler and, through the forwarded signal,
 > terminates its Engine. `sweepOldAudio()` runs at server creation, and the
 > server name is `"kesha-voice-kit"` — both inside
-> `src/mcp/server.ts::createKeshaMcpServer`.*
+> `src/mcp/server.ts::createKeshaMcpServer`. Stdin reaches EOF when the client
+> exits, crashes or closes the pipe; stopping then keeps the server from being
+> reparented to init with a running Engine.*
 
 ### Requirement: A cancelled tool call stops the Engine it started
 
@@ -104,12 +101,11 @@ When an MCP client cancels an in-flight `transcribe_audio` or `synthesize_speech
 ### Requirement: `transcribe_audio` transcribes a local audio file
 
 The `transcribe_audio` tool SHALL accept a `path` (string, required) and
-`timestamps` (boolean, optional). When the file does not exist, it SHALL return
-`isError: true` without throwing. When transcription succeeds, the tool returns
-`structuredContent` with `text` (string) and `segments` (array). Without
-`timestamps`, `segments` is an empty array. With `timestamps`, each segment
-carries numeric `start`, `end`, and `text`; an optional `speaker` number is
-included when diarization was requested by the engine. The tool's
+`timestamps` (boolean, optional), and SHALL return `isError: true` without
+throwing when the file does not exist. On success it returns
+`structuredContent` with `text` (string) and `segments` (array): empty without
+`timestamps`, otherwise each segment carries numeric `start`, `end`, and
+`text`, plus an optional `speaker` number when diarization was requested.
 `annotations.readOnlyHint` is `true`.
 
 #### Scenario: Sona transcribes a meeting recording
@@ -141,24 +137,11 @@ included when diarization was requested by the engine. The tool's
 ### Requirement: `synthesize_speech` produces an audio file and returns a resource link
 
 The `synthesize_speech` tool SHALL accept `text` (string, min length 1),
-`voice` (string, optional — auto-routes when omitted, defaulting to
-`en-am_michael` for English and `ru-vosk-m02` for Russian), `rate` (number,
-optional, 0.5–2.0), and `format` (`"wav"` | `"ogg-opus"` | `"flac"`, optional,
-default `"wav"`).
-
-The tool SHALL:
-1. Validate `rate` and return `isError: true` when it is outside `[0.5, 2.0]`.
-2. Synthesize audio via the Engine and write it to a UUID-named file in
-   the MCP audio directory (`<tmpdir>/kesha-mcp/` by default, `<KESHA_HOME>/mcp-audio/`
-   when `KESHA_HOME` is set; `state-directories`) with permissions `0600`.
-3. Return a `resource_link` content item with URI `kesha-audio://<filename>`
-   and a text summary of the synthesis.
-4. Return `structuredContent` with `uri`, `path`, `format`, `voice`, and
-   `bytes`. `voice` SHALL be the Voice id that actually synthesized the audio —
-   the caller's when one was given, the auto-routed one otherwise — and SHALL be
-   valid input to a follow-up call, never a placeholder.
-
-`annotations.readOnlyHint` is `false`.
+`voice` (string, optional, auto-routed when omitted), `rate` (number, optional,
+0.5–2.0; outside it, `isError: true`), and `format` (`"wav"` | `"ogg-opus"` |
+`"flac"`, optional, default `"wav"`). It returns a `resource_link` content item with URI `kesha-audio://<filename>`
+and a text summary, and `structuredContent` with `uri`, `path`, `format`,
+`voice`, and `bytes`. `annotations.readOnlyHint` is `false`.
 
 #### Scenario: Sona synthesizes an English announcement
 
@@ -206,6 +189,57 @@ The tool SHALL:
 > the engine is spawned by `src/voice-routing.ts::resolveSayVoice` — the same
 > function `kesha say` uses — falling back to `DEFAULT_VOICE_ID`, and passed to
 > the engine explicitly so the reported id is the one that spoke (#942).*
+
+### Requirement: `synthesize_speech` writes each file privately to the MCP audio directory
+
+The `synthesize_speech` tool SHALL write the synthesized audio to a UUID-named
+file with permissions `0600` in the MCP audio directory: `<tmpdir>/kesha-mcp/`
+by default, `<KESHA_HOME>/mcp-audio/` when `KESHA_HOME` is set
+(`state-directories`).
+
+#### Scenario: Sona synthesizes with the default home
+
+- GIVEN `KESHA_HOME` is not set
+- WHEN Sona calls `synthesize_speech` with `{ text: "Meeting starts now." }`
+- THEN `structuredContent.path` is a `<uuid>.wav` file in `<tmpdir>/kesha-mcp/`
+- AND the file has permissions `0600`
+
+#### Scenario: Two calls never share a file
+
+- GIVEN Sona calls `synthesize_speech` twice with the same text
+- WHEN both calls return
+- THEN their `structuredContent.path` values differ
+- AND both files exist with permissions `0600`
+
+> *Technical Note — `src/mcp/audio-output.ts::allocAudioPath` names the file
+> `<uuid>.<ext>` under the directory from `src/state-paths.ts::resolveStatePaths`;
+> `src/mcp/tools.ts::registerTools` applies `chmodSync(outPath, 0o600)`. The
+> `KESHA_HOME` case is the "Sona runs the server under an isolated home"
+> scenario of "Old MCP audio files are swept at server start".*
+
+### Requirement: `synthesize_speech` reports the Voice id that spoke
+
+`structuredContent.voice` from `synthesize_speech` SHALL be the Voice id that
+actually synthesized the audio: the caller's when one was given, the
+auto-routed one otherwise. It SHALL be valid input to a follow-up call, never a
+placeholder.
+
+#### Scenario: Sona names the voice
+
+- WHEN Sona calls `synthesize_speech` with `{ text: "Hello", voice: "en-am_michael" }`
+- THEN `structuredContent.voice` is `en-am_michael`
+
+#### Scenario: Sona reuses an auto-routed Russian voice
+
+- GIVEN a Linux build with the Russian Vosk-TTS model installed
+- WHEN Sona calls `synthesize_speech` with Russian text and no `voice`
+- THEN `structuredContent.voice` is `ru-vosk-m02`
+- AND a follow-up call passing that `voice` succeeds with the same voice
+
+> *Technical Note — auto-routing is `src/voice-routing.ts::resolveSayVoice`,
+> which defaults English to `en-am_michael` and Russian to `ru-vosk-m02` off
+> darwin (Milena on darwin). The resolved id is passed to the engine
+> explicitly, so the reported id is the one that spoke (#942).*
 
 ### Requirement: `list_voices` returns installed voice metadata
 

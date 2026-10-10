@@ -213,7 +213,7 @@ The published container image SHALL run the CLI as a non-root user, resolve the 
 
 ### Requirement: The Nix flake is an alternate build path, and never a release gate
 
-The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `x86_64-linux` from the `portable` profile, adding `system_tts` on darwin so the AVSpeech Sidecar is exercised, and MAY define the CLI pointed at the Engine the same flake built. Only the Engine derivation (`.#kesha-engine`) SHALL be presented as a usable Nix path; the CLI derivation (`.#kesha`) SHALL NOT be documented as a working install method while its dependency derivation's output hash is an unpopulated placeholder. No published artifact SHALL depend on the flake, so a flake that does not build blocks nothing.
+The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `x86_64-linux` from the `portable` profile, adding `system_tts` on darwin, and MAY define the CLI pointed at the Engine the same flake built. Only the Engine derivation (`.#kesha-engine`) SHALL be presented as a usable Nix path; the CLI derivation (`.#kesha`) SHALL NOT be documented as a working install method while its dependency derivation's output hash is an unpopulated placeholder.
 
 #### Scenario: Maks builds the Engine through Nix
 
@@ -249,7 +249,29 @@ The Nix flake SHALL define a from-source Engine build for `aarch64-darwin` and `
 > `nix build .#kesha-engine` as usable and mark the CLI path as not yet
 > available (#946). CLAUDE.md states the flake is not a CI gate; `nix-build.yml`
 > builds `.#kesha-engine` only, on a pull request that touches the flake and
-> weekly, and stays a standalone workflow outside the required checks.*
+> weekly, and stays a standalone workflow outside the required checks.
+> `system_tts` is added on darwin so the AVSpeech Sidecar is exercised.*
+
+### Requirement: No published artifact depends on the Nix flake
+
+No published artifact SHALL depend on the Nix flake, so a flake that does not build blocks nothing.
+
+#### Scenario: A release runs while the flake is broken
+
+- GIVEN `nix build .#kesha-engine` fails on `main`
+- WHEN a stable tag is pushed
+- THEN the release workflow publishes the CLI package and the Engine assets
+- AND none of its jobs builds or reads the flake
+
+#### Scenario: A pull request breaks the flake
+
+- GIVEN a pull request changes `flake.nix` so it no longer builds
+- WHEN `nix-build.yml` fails on that pull request
+- THEN no required check fails
+- AND the pull request can still merge on its required checks
+
+> *Technical Note — `nix-build.yml` is a standalone workflow outside the required checks;
+> `.github/workflows/release.yml` has no Nix job.*
 
 ### Requirement: The MCP registry manifest names a published CLI version
 
