@@ -358,7 +358,8 @@ singleton resolves for itself, which no models root can move.
 
 #### Scenario: Maks moves the Model cache after staging English
 
-- GIVEN English TTS is staged and the shared G2P assets sit at their fixed path
+- GIVEN English TTS is staged under the Model cache, no Kokoro ANE bundle exists under
+  FluidAudio's own default directory, and the shared G2P assets sit at their fixed path
 - WHEN Maks points `KESHA_CACHE_DIR` at a new directory and runs `kesha install --tts en`
 - THEN the English ANE chain is staged under the new models root
 - AND the shared G2P assets stay at their fixed path and are not downloaded again
