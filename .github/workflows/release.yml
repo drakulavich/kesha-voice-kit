@@ -368,6 +368,10 @@ jobs:
           name: kesha-engine-linux-x64
           path: engine-artifact
       - uses: ./.github/actions/setup-bun
+      - name: Apply the release version to the CLI
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: node .github/scripts/set-package-version.mjs "$VERSION"
       - name: Round-trip the artifact through an isolated user path
         env:
           ASSET_DIR: ${{ github.workspace }}/engine-artifact
