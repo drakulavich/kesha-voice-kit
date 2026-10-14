@@ -339,7 +339,7 @@ jobs:
 
       # check:recipes parses `just --dump`; without a `just` here it fails loudly rather than
       # skipping, which is the point — a silently-skipped gate is the drift it exists to catch.
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: just@1.58.0
 
@@ -472,7 +472,7 @@ jobs:
       - name: 📤 Upload test results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-${{ matrix.os }}
           path: test-results/unit-${{ matrix.os }}.xml
@@ -522,7 +522,7 @@ jobs:
       - name: 📤 Upload TS coverage
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-ts
           path: coverage/ts
@@ -572,7 +572,7 @@ jobs:
       - name: 📤 Upload test results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-integration
           path: test-results/integration.xml
@@ -654,7 +654,7 @@ jobs:
       - name: 📤 Upload test results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-integration-full
           path: test-results/integration-full.xml
@@ -844,7 +844,7 @@ jobs:
       - name: 📤 Upload test results
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-tts-e2e
           path: test-results/tts-e2e.xml
@@ -871,7 +871,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: 📦 Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # 26 is what the extension is developed and verified against.
           # Not 20: `@raycast/api` >= 1.104 declares `node >=22.22.2`, so
@@ -1057,7 +1057,7 @@ jobs:
       # JUnit XML via the `ci` profile (see rust/.config/nextest.toml).
       # taiki-e/install-action caches a prebuilt binary per OS/arch so
       # the install is ~1s on warm cache.
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: nextest
 
@@ -1080,7 +1080,7 @@ jobs:
       # darwin-only break is caught before a release tag builds it.
       # The feature set lives in the `verify-darwin-full` recipe, so CI and the local
       # gate cannot drift apart (#797) — hence a `just` on PATH for this lane.
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         if: matrix.os == 'macos-14'
         with:
           tool: just@1.58.0
@@ -1108,7 +1108,7 @@ jobs:
       - name: 📤 Upload JUnit
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-junit-${{ matrix.os }}
           path: rust/target/nextest/ci/junit.xml
@@ -1163,11 +1163,11 @@ jobs:
         with:
           extra-components: llvm-tools-preview
 
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: nextest
 
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: cargo-llvm-cov
 
@@ -1201,7 +1201,7 @@ jobs:
       - name: 📤 Upload Ubuntu JUnit
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-junit-ubuntu-latest
           path: rust/target/nextest/ci/junit.xml
@@ -1229,7 +1229,7 @@ jobs:
       - name: 📤 Upload Rust coverage
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-rust
           path: coverage/rust
@@ -1254,7 +1254,7 @@ jobs:
       - uses: ./.github/actions/setup-rust
         with:
           shared-key: linux
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: nextest
       - name: Check formatting
@@ -1319,7 +1319,7 @@ jobs:
         with:
           xcode-version: "16.2"
       - uses: ./.github/actions/setup-rust
-      - uses: taiki-e/install-action@4cef1412cce204788f482e778a0b9187f9626a29 # v2.87.21
+      - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
         with:
           tool: nextest
 
@@ -1349,7 +1349,7 @@ jobs:
       - name: 📤 Upload JUnit
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: rust-junit-coreml-regression
           path: rust/target/nextest/ci/junit.xml
