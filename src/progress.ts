@@ -42,6 +42,7 @@ export function createPercentProgress(
 ): {
   finish(finalLabel: string): void;
   interrupt(writeLine: () => void): void;
+  status(line: string): void;
   stop(): void;
 } {
   const isTTY = process.stderr.isTTY;
@@ -55,6 +56,9 @@ export function createPercentProgress(
       interrupt(writeLine: () => void) {
         writeLine();
       },
+      status(line: string) {
+        process.stderr.write(`${line}\n`);
+      },
       stop() {},
     };
   }
@@ -66,14 +70,19 @@ export function createPercentProgress(
   let timer: Timer | undefined;
   let stopped = false;
   let firstRender = true;
+  let statusText = "";
 
   const render = () => {
     if (stopped) return;
     const percent = firstRender ? 0 : estimatePercent(performance.now() - startedAt, estimatedTotalMs);
     firstRender = false;
-    const line = formatPercentProgress(label, percent);
+    const full = formatPercentProgress(label, percent) + (statusText ? `  ${statusText}` : "");
+    // A row wider than the terminal wraps, and `\r` then repaints only its last part.
+    const columns = process.stderr.columns;
+    const line = columns ? full.slice(0, columns - 1) : full;
+    const pad = lastLineLength > line.length ? " ".repeat(lastLineLength - line.length) : "";
     lastLineLength = line.length;
-    process.stderr.write(`\r${line}`);
+    process.stderr.write(`\r${line}${pad}`);
   };
 
   const clearLine = (stopTimer: boolean) => {
@@ -105,6 +114,14 @@ export function createPercentProgress(
       writeLine();
       render();
       timer = setInterval(render, intervalMs);
+    },
+    status(line: string) {
+      if (stopped) {
+        process.stderr.write(`${line}\n`);
+        return;
+      }
+      statusText = line;
+      render();
     },
     stop() {
       clearLine(true);

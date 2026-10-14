@@ -148,6 +148,62 @@ describe("createPercentProgress", () => {
     }
   });
 
+  test("TTY status repaints the bar's row instead of leaving a line per event (#1441)", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const originalWrite = process.stderr.write;
+    const writes: string[] = [];
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const progress = createPercentProgress("Transcribing file.wav", { intervalMs: 10_000 });
+      progress.status("transcribe: transcribing segment 10 of 22");
+      progress.status("transcribe: done");
+      progress.finish("Transcribed file.wav");
+
+      const combined = writes.join("");
+      expect(combined).toMatch(/\rTranscribing file\.wav {2}\[░+\] \d+% {2}transcribe: transcribing segment 10 of 22/);
+      expect(combined).not.toContain("segment 10 of 22\n");
+      const longer = writes.find((w) => w.includes("segment 10 of 22"))!;
+      const shorter = writes.find((w) => w.includes("transcribe: done"))!;
+      expect(shorter.length).toBe(longer.length);
+      expect(combined.split("\n")).toHaveLength(2);
+      expect(combined).toEndWith("\rTranscribed file.wav  [████████████████████] 100%\n");
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+  });
+
+  test("non-TTY status keeps one line per event", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const originalWrite = process.stderr.write;
+    const writes: string[] = [];
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: false, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const progress = createPercentProgress("Transcribing file.wav");
+      progress.status("transcribe: transcribing segment 1 of 2");
+      progress.status("transcribe: transcribing segment 2 of 2");
+      progress.finish("Transcribed file.wav");
+
+      const combined = writes.join("");
+      expect(combined).toContain("transcribe: transcribing segment 1 of 2\ntranscribe: transcribing segment 2 of 2\n");
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+  });
+
   test("TTY interrupt after stop writes without restarting the timer", () => {
     const originalIsTTY = process.stderr.isTTY;
     const originalWrite = process.stderr.write;
