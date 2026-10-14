@@ -74,7 +74,7 @@ with the pre-flight codes and Exit codes the scenarios below name; missing
 - THEN the promise rejects with a `KeshaError` (`err.code === "E_ENGINE_SPAWN"`,
   `err.exitCode === 1`)
 - AND its message carries an actionable setup hint ending in `--tts` — the verb
-  is `kesha init` on an interactive TTY and `kesha install` when stderr is piped
+  is `kesha init` when stdin, stdout and stderr are terminals and `kesha install` otherwise
 
 #### Scenario: Writing to a file
 
