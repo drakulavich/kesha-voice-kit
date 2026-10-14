@@ -798,13 +798,25 @@ describe("CLI contracts", () => {
     expectContract(run, {
       exitCode: 2,
       stdoutEmpty: true,
-      stderrContains: [`${target}: error [E_INVALID_ARG]: is a directory (expected an audio file)`],
+      stderrContains: [
+        `${target}: error [E_INVALID_ARG]: is a directory (expected an audio file)`,
+        `hint: pass the audio files in it instead, e.g. kesha ${target}/*.ogg`,
+      ],
       stderrNotContains: ["fake engine should not have been invoked", "Transcribing", "%"],
     });
 
     const { events } = readDiagnosticLog(env.KESHA_LOG_DIR);
     expect(events.map((event) => event.event)).toEqual(["command.start", "input.invalid", "command.finish"]);
     expect(events[1]).toMatchObject({ command: "transcribe", error_code: "E_INVALID_ARG" });
+
+    const spaced = join(makeTempDir("kesha-cli-contract-dir-spaced-"), "voice notes");
+    mkdirSync(spaced);
+    const spacedRun = await runCli([spaced], { env });
+    expect(spacedRun.stderr).toContain(`e.g. kesha '${spaced}'/*.ogg`);
+    const apostrophe = join(makeTempDir("kesha-cli-contract-dir-apostrophe-"), "it's");
+    mkdirSync(apostrophe);
+    const apostropheRun = await runCli([apostrophe], { env });
+    expect(apostropheRun.stderr).toContain(`e.g. kesha '${apostrophe.replace("'", `'\\''`)}'/*.ogg`);
 
     const jsonRun = await runCli(["--json", "--include-errors", target], { env });
     expect(jsonRun.exitCode).toBe(2);

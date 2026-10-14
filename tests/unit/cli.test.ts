@@ -3,7 +3,7 @@ import { parseArgs, renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
 import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, detectTextLanguageFallback, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat, TranscribeResult } from "../../src/cli";
-import { MAIN_VAD_ARGS, normalizeMainCommandArgs } from "../../src/cli/main";
+import { folderGlobHint, MAIN_VAD_ARGS, normalizeMainCommandArgs } from "../../src/cli/main";
 
 function normalizeUsage(usage: string): string {
   return usage
@@ -294,7 +294,7 @@ OPTIONS
       --lang=<lang>    Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch
             --debug    Trace engine subprocess calls on stderr (or KESHA_DEBUG=1) (Default: false)
               --vad    Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s. (Default: false)
-           --no-vad    Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers (Default: false)
+           --no-vad    Skip VAD and transcribe the whole file in one pass; audio measured at 24 minutes or more is refused. Incompatible with --speakers (Default: false)
         -q, --quiet    Suppress progress output; print only results and errors (Default: false)
          --no-color    Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true) (Default: false)`);
   });
@@ -823,5 +823,24 @@ describe("validateTranscribeArgs guards", () => {
     expect(
       expectAccepted({ speakers: true, json: true }, ["--speakers", "--json"], okFmt("json")).vadMode,
     ).toBe("auto");
+  });
+});
+
+describe("folderGlobHint (#1385)", () => {
+  test("a plain folder is suggested as is, without its trailing slash", () => {
+    expect(folderGlobHint("voice-notes/")).toBe("kesha voice-notes/*.ogg");
+  });
+
+  test("a folder starting with - gets ./ so the pasted path is not read as a flag", () => {
+    expect(folderGlobHint("-notes")).toBe("kesha ./-notes/*.ogg");
+  });
+
+  test.skipIf(process.platform === "win32")("a trailing backslash is part of the name outside Windows", () => {
+    expect(folderGlobHint("notes\\")).toBe("kesha 'notes\\'/*.ogg");
+  });
+
+  test("quotes spaces and escapes apostrophes", () => {
+    expect(folderGlobHint("voice notes")).toBe("kesha 'voice notes'/*.ogg");
+    expect(folderGlobHint("it's")).toBe("kesha 'it'\\''s'/*.ogg");
   });
 });

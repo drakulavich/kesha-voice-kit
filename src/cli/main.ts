@@ -295,6 +295,14 @@ type ProcessFileSuccess = { ok: true; result: TranscribeResult };
 type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord; exitCode: number };
 
 /** An argument the CLI itself rejected exits by its code (2); every runtime failure keeps the batch's operational 1 (S9-F1). */
+/** `kesha <dir>/*.ogg`, pasteable: a name starting with `-` would parse as a flag, and only Windows separates with `\`. */
+export function folderGlobHint(dir: string): string {
+  const trimmed = dir.replace(process.platform === "win32" ? /[\\/]+$/ : /\/+$/, "");
+  const path = trimmed.startsWith("-") ? `./${trimmed}` : trimmed;
+  const quoted = /^[\w./-]+$/.test(path) ? path : `'${path.replaceAll("'", `'\\''`)}'`;
+  return `kesha ${quoted}/*.ogg`;
+}
+
 function failureExitCode(err: unknown): number {
   const usage = err instanceof KeshaError && err.origin === "cli" && err.code === "E_INVALID_ARG";
   return usage ? exitCodeFor(err) : 1;
@@ -320,7 +328,9 @@ async function processFile(
   }
 
   if (isDirectoryPath(file)) {
-    const err = new KeshaError("E_INVALID_ARG", "is a directory (expected an audio file)");
+    const err = new KeshaError("E_INVALID_ARG", "is a directory (expected an audio file)", {
+      hint: `pass the audio files in it instead, e.g. ${folderGlobHint(file)}`,
+    });
     stats.recordError("input", err, err.code);
     diagnosticLog.event("input.invalid", {
       command: "transcribe",
@@ -451,7 +461,7 @@ export const MAIN_VAD_ARGS = {
   "no-vad": {
     type: "boolean",
     description:
-      "Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers",
+      "Skip VAD and transcribe the whole file in one pass; audio measured at 24 minutes or more is refused. Incompatible with --speakers",
     default: false,
   },
 } as const;

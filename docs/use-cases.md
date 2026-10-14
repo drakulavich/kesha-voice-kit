@@ -46,12 +46,11 @@ kesha --json voice.ogg
 **Batch transcribe a folder of voice notes:**
 
 ```bash
-mkdir -p transcripts
-for f in voice-notes/*.ogg; do
-  kesha --json "$f" > "transcripts/$(basename "$f" .ogg).json"
-done
-# → transcripts/voice-1.json, voice-2.json, ...
+kesha --json voice-notes/*.ogg > transcripts.json
+# → one JSON array, one entry per file
 ```
+
+One call for the whole folder is about twice as fast as one call per file, since the CLI starts once.
 
 💡 **Tips:**
 
