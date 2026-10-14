@@ -276,6 +276,9 @@ export async function streamResponseToFile(
   return bytes;
 }
 
+// Whatever was painted on the row before, by this bar or another, would show past a shorter frame (#1440).
+const ERASE_TO_EOL = "\x1b[K";
+
 export function createProgressBar(label: string, totalBytes: number): {
   update(downloadedBytes: number): void;
   finish(): void;
@@ -303,11 +306,11 @@ export function createProgressBar(label: string, totalBytes: number): {
       if (pct === lastPct) return;
       lastPct = pct;
       const line = formatProgressBar(label, current, totalBytes);
-      process.stderr.write(`\r${line}`);
+      process.stderr.write(`\r${line}${ERASE_TO_EOL}`);
     },
     finish() {
       const line = formatProgressBar(label, totalBytes, totalBytes);
-      process.stderr.write(`\r${line}\n`);
+      process.stderr.write(`\r${line}${ERASE_TO_EOL}\n`);
     },
   };
 }

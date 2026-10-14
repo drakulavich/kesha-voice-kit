@@ -230,6 +230,30 @@ describe("createProgressBar", () => {
       process.stderr.write = originalWrite;
     }
   });
+
+  test("every TTY frame erases the rest of the row, so a shorter frame leaves no stray characters (#1440)", () => {
+    const originalIsTTY = process.stderr.isTTY;
+    const writes: string[] = [];
+    const originalWrite = process.stderr.write;
+
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+
+      const bar = createProgressBar("Text-lang sidecar", 100_000);
+      bar.update(50_000);
+      bar.finish();
+
+      expect(writes.length).toBeGreaterThan(1);
+      for (const frame of writes) expect(frame.replace(/\n$/, "")).toEndWith("\x1b[K");
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+  });
 });
 
 describe("estimatePercent", () => {
