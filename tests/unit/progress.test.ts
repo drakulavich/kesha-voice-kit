@@ -148,35 +148,70 @@ describe("createPercentProgress", () => {
     }
   });
 
-  test("TTY status repaints the bar's row instead of leaving a line per event (#1441)", () => {
+  /** Runs `body` against a fake TTY stderr `columns` wide and returns every write. */
+  function inTerminal(columns: number, body: () => void): string[] {
     const originalIsTTY = process.stderr.isTTY;
+    const originalColumns = process.stderr.columns;
     const originalWrite = process.stderr.write;
     const writes: string[] = [];
-
     try {
       Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      Object.defineProperty(process.stderr, "columns", { value: columns, configurable: true });
       process.stderr.write = ((chunk: string) => {
         writes.push(chunk);
         return true;
       }) as typeof process.stderr.write;
+      body();
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+      Object.defineProperty(process.stderr, "columns", { value: originalColumns, configurable: true });
+      process.stderr.write = originalWrite;
+    }
+    return writes;
+  }
 
+  const frames = (writes: string[]) => writes.filter((w) => w.startsWith("\r") && w.endsWith("\x1b[K") && w.length > 4);
+  const shown = (frame: string) => frame.slice(1, -"\x1b[K".length);
+
+  test("TTY status repaints the bar's row instead of leaving a line per event (#1441)", () => {
+    const writes = inTerminal(200, () => {
       const progress = createPercentProgress("Transcribing file.wav", { intervalMs: 10_000 });
       progress.status("transcribe: transcribing segment 10 of 22");
       progress.status("transcribe: done");
       progress.finish("Transcribed file.wav");
+    });
 
-      const combined = writes.join("");
-      expect(combined).toMatch(/\rTranscribing file\.wav {2}\[░+\] \d+% {2}transcribe: transcribing segment 10 of 22/);
-      expect(combined).not.toContain("segment 10 of 22\n");
-      const longer = writes.find((w) => w.includes("segment 10 of 22"))!;
-      const shorter = writes.find((w) => w.includes("transcribe: done"))!;
-      expect(shorter.length).toBe(longer.length);
-      expect(combined.split("\n")).toHaveLength(2);
-      expect(combined).toEndWith("\rTranscribed file.wav  [████████████████████] 100%\n");
-    } finally {
-      Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
-      process.stderr.write = originalWrite;
-    }
+    const combined = writes.join("");
+    expect(combined).toMatch(/\rTranscribing file\.wav {2}\[░+\] \d+% {2}transcribe: transcribing segment 10 of 22\x1b\[K/);
+    expect(combined).toMatch(/transcribe: done\x1b\[K/);
+    expect(combined).not.toContain("segment 10 of 22\n");
+    expect(combined.split("\n")).toHaveLength(2);
+    expect(combined).toEndWith("Transcribed file.wav  [████████████████████] 100%\n");
+  });
+
+  test("in a narrow terminal the file name gives way, so the engine message stays and the row never wraps", () => {
+    const label = `Transcribing ${"/very/long/path/to/".repeat(4)}語音メモ.ogg`;
+    const writes = inTerminal(70, () => {
+      const progress = createPercentProgress(label, { intervalMs: 10_000 });
+      progress.status("transcribe: loading the speech model");
+      progress.stop();
+    });
+
+    const rows = frames(writes).map(shown);
+    expect(rows.at(-1)).toContain("transcribe: loading the speech model");
+    for (const row of rows) expect(Bun.stringWidth(row)).toBeLessThanOrEqual(69);
+  });
+
+  test("wide characters count as two columns when the row is cut", () => {
+    const writes = inTerminal(50, () => {
+      const progress = createPercentProgress("語".repeat(30), { intervalMs: 10_000 });
+      progress.stop();
+    });
+
+    const rows = frames(writes).map(shown);
+    expect(rows.length).toBeGreaterThan(0);
+    for (const row of rows) expect(Bun.stringWidth(row)).toBeLessThanOrEqual(49);
+    expect(rows[0]).toContain("語…");
   });
 
   test("non-TTY status keeps one line per event", () => {
@@ -346,7 +381,7 @@ describe("the live bar cleans up after itself", () => {
       progress.finish("Done");
     });
 
-    expect(out).toContain(`\r${" ".repeat(liveLine.length)}\r`);
+    expect(out).toContain(`${liveLine}\x1b[K\r\x1b[KDone`);
     expect(out.endsWith("Done  [████████████████████] 100%\n")).toBe(true);
   });
 
@@ -356,7 +391,7 @@ describe("the live bar cleans up after itself", () => {
       progress.stop();
     });
 
-    expect(out).toBe(`\r${liveLine}\r${" ".repeat(liveLine.length)}\r`);
+    expect(out).toBe(`\r${liveLine}\x1b[K\r\x1b[K`);
   });
 });
 

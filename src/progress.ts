@@ -36,6 +36,20 @@ export function estimatePercent(elapsedMs: number, estimatedTotalMs: number): nu
   return Math.max(1, Math.min(99, Math.floor((elapsedMs / targetMs) * 99)));
 }
 
+const ERASE_TO_EOL = "\x1b[K";
+
+/** Cuts `text` to `max` terminal columns, ending in `…` when cut; wide (CJK) characters count as two. */
+function fitWidth(text: string, max: number): string {
+  if (Bun.stringWidth(text) <= max) return text;
+  if (max <= 0) return "";
+  let out = "";
+  for (const ch of text) {
+    if (Bun.stringWidth(`${out}${ch}…`) > max) break;
+    out += ch;
+  }
+  return `${out}…`;
+}
+
 export function createPercentProgress(
   label: string,
   options: { estimatedTotalMs?: number; intervalMs?: number } = {},
@@ -66,7 +80,7 @@ export function createPercentProgress(
   const intervalMs = options.intervalMs ?? 250;
   const estimatedTotalMs = options.estimatedTotalMs ?? DEFAULT_ESTIMATED_PROGRESS_MS;
   const startedAt = performance.now();
-  let lastLineLength = 0;
+  let painted = false;
   let timer: Timer | undefined;
   let stopped = false;
   let firstRender = true;
@@ -76,13 +90,13 @@ export function createPercentProgress(
     if (stopped) return;
     const percent = firstRender ? 0 : estimatePercent(performance.now() - startedAt, estimatedTotalMs);
     firstRender = false;
-    const full = formatPercentProgress(label, percent) + (statusText ? `  ${statusText}` : "");
-    // A row wider than the terminal wraps, and `\r` then repaints only its last part.
+    const rest = formatPercentProgress("", percent) + (statusText ? `  ${statusText}` : "");
+    // A row wider than the terminal wraps, and `\r` then repaints only its last part; the file name gives way first.
     const columns = process.stderr.columns;
-    const line = columns ? full.slice(0, columns - 1) : full;
-    const pad = lastLineLength > line.length ? " ".repeat(lastLineLength - line.length) : "";
-    lastLineLength = line.length;
-    process.stderr.write(`\r${line}${pad}`);
+    const name = columns ? fitWidth(label, columns - 1 - Bun.stringWidth(rest)) : label;
+    const line = columns ? fitWidth(name + rest, columns - 1) : name + rest;
+    painted = true;
+    process.stderr.write(`\r${line}${ERASE_TO_EOL}`);
   };
 
   const clearLine = (stopTimer: boolean) => {
@@ -91,9 +105,9 @@ export function createPercentProgress(
       clearInterval(timer);
       timer = undefined;
     }
-    if (lastLineLength > 0) {
-      process.stderr.write(`\r${" ".repeat(lastLineLength)}\r`);
-      lastLineLength = 0;
+    if (painted) {
+      process.stderr.write(`\r${ERASE_TO_EOL}`);
+      painted = false;
     }
   };
 
