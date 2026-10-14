@@ -2,6 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
+import { registerTools } from "../../src/mcp/tools";
 
 async function call(args: Record<string, unknown>) {
   const server = createKeshaMcpServer();
@@ -16,7 +17,7 @@ describe("synthesize_speech errors", () => {
   test("rate out of range or NaN is isError", async () => {
     const outOfRange = await call({ text: "hi", rate: 9 });
     expect(outOfRange.isError).toBe(true);
-    expect((outOfRange.content as Array<{ text: string }>)[0]?.text).toMatch(/rate/i);
+    expect((outOfRange.content as Array<{ text: string }>)[0]?.text).toBe("error [E_INVALID_ARG]: rate 9 out of range (0.5-2.0)");
 
     const nanRate = await call({ text: "hi", rate: NaN });
     expect(nanRate.isError).toBe(true);
@@ -33,5 +34,20 @@ describe("synthesize_speech errors", () => {
       if (prev === undefined) delete process.env.KESHA_CACHE_DIR;
       else process.env.KESHA_CACHE_DIR = prev;
     }
+  });
+});
+
+describe("a call cancelled before it starts (#1381)", () => {
+  type Handler = (args: Record<string, unknown>, extra: { signal: AbortSignal }) => Promise<{ isError?: boolean; content: Array<{ text: string }> }>;
+  const handlers: Record<string, Handler> = {};
+  registerTools({
+    registerTool: (name: string, _config: unknown, handler: Handler) => (handlers[name] = handler),
+    registerResource: () => {},
+  } as never);
+
+  test.each(["synthesize_speech", "transcribe_audio"])("%s reports E_INTERRUPTED", async (name) => {
+    const res = await handlers[name]!({ text: "hi", path: "/x.ogg" }, { signal: AbortSignal.abort() });
+    expect(res.isError).toBe(true);
+    expect(res.content[0]?.text).toBe("error [E_INTERRUPTED]: request cancelled");
   });
 });
