@@ -123,6 +123,20 @@ check passes.
 > character-device `--out` is refused because the Engine's stdout is the CLI's
 > pipe and the bytes would be lost; a FIFO or a regular file is accepted.*
 
+### Requirement: Emoji are not read aloud
+
+The CLI SHALL drop emoji from the text before synthesis on every voice, keeping
+`©`, `®` and `™`. Text made of emoji alone SHALL reach the Engine unchanged.
+
+#### Scenario: An emoji in a Russian reply
+
+- WHEN Ira runs `kesha say "Ты сегодня придёшь? 😊 Если нет, напиши"`
+- THEN the voice speaks the sentence and nothing for the emoji
+
+> *Technical Note — `src/synth.ts::dropEmoji` removes `\p{RGI_Emoji}` and
+> any other `\p{Extended_Pictographic}` code point (#1388). Emoji-only text is
+> left to the Engine as before (see the Emoji-only text scenario).*
+
 ### Requirement: Voice routing resolves --voice, then --lang, then detected language, then the engine default
 
 Voice routing SHALL apply this precedence: an explicit `--voice` wins; otherwise

@@ -299,4 +299,17 @@ describe("kesha say (CLI)", () => {
     const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "hello   world"]);
     expect(spoken).toBe("hello   world");
   });
+
+  it("drops emoji before synthesis and keeps © ® ™ (#1388)", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`,
+      "Придёшь? 😊 👍🏽 🇷🇺 👨‍👩‍👧 ❤️ © Acme™ ® 1️⃣",
+    ]);
+    expect(spoken).toBe("Придёшь?      © Acme™ ® ");
+  });
+
+  it("passes emoji-only text through, so the engine refuses it as before", async () => {
+    const spoken = await spokenText((dir) => ["--voice", "en-am_michael", "--out", `${dir}/r.wav`, "🎉"]);
+    expect(spoken).toBe("🎉");
+  });
 });

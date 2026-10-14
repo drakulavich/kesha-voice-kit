@@ -102,6 +102,18 @@ export function engineCrashMessage(
   return `${base}.`;
 }
 
+// ©, ® and ™ stay: read aloud they still mean something.
+const EMOJI = /\p{RGI_Emoji}|[\p{Extended_Pictographic}--[©®™]]/gv;
+
+/**
+ * Emoji are decoration in a reply; a voice would read out their Unicode names (#1388).
+ * Emoji-only text goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
+ */
+export function dropEmoji(text: string): string {
+  const spoken = text.replace(EMOJI, "");
+  return spoken.trim().length > 0 ? spoken : text;
+}
+
 /**
  * The text contract both doors enforce, before anything that costs a subprocess.
  * Throws `KeshaError`; the CLI runs it before voice routing, `say()` for programmatic callers.
@@ -133,7 +145,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   for (const warning of warnings) log.warn(warning);
   const { exitCode, signalCode, aborted, stdout, events } = await runEngineProcess(getEngineBinPath(), args, {
     stdio: ["pipe", "pipe", "pipe"],
-    stdin: text,
+    stdin: dropEmoji(text),
     readStdout: (stream) => new Response(stream).arrayBuffer(),
     signal: opts.signal,
   });
