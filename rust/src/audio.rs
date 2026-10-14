@@ -15,6 +15,9 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
 use crate::coded_bail;
+
+// Keep in step with the symphonia features in rust/Cargo.toml.
+const SUPPORTED_AUDIO: &str = "ogg, opus, mp3, m4a, aac, wav, flac, aiff and webm";
 use crate::errors::{CodedContext, ErrorCode};
 
 pub(crate) const TARGET_SAMPLE_RATE: u32 = 16000;
@@ -84,9 +87,15 @@ fn open_format(path: &Path) -> Result<OpenedTrack> {
             MetadataOptions::default(),
         )
     }) {
-        Ok(probed) => probed
-            .with_context(|| format!("unsupported audio format: {}", path.display()))
-            .coded(ErrorCode::BadAudio)?,
+        Ok(Ok(probed)) => probed,
+        Ok(Err(e)) => {
+            crate::dtrace!("audio::probe_failed path={} err={e}", path.display());
+            coded_bail!(
+                ErrorCode::BadAudio,
+                "unsupported audio format: {}; Kesha reads {SUPPORTED_AUDIO}",
+                path.display()
+            )
+        }
         Err(panic) => coded_bail!(
             ErrorCode::BadAudio,
             "malformed audio header in: {}: {panic}; re-export the file",

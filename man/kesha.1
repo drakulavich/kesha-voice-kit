@@ -82,7 +82,7 @@ Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)
 Force Silero VAD preprocessing (kesha install \-\-vad first). Without this, VAD auto\-engages on audio ≥ 120s.
 .TP
 .B \-\-no\-vad
-Force full\-file ASR for short/medium files; long audio fails early. Incompatible with \-\-speakers
+Skip VAD and transcribe the whole file in one pass; audio measured at 24 minutes or more is refused. Incompatible with \-\-speakers
 .TP
 .B \-\-quiet
 Suppress progress output; print only results and errors
