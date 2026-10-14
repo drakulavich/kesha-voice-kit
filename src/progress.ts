@@ -36,6 +36,7 @@ export function estimatePercent(elapsedMs: number, estimatedTotalMs: number): nu
   return Math.max(1, Math.min(99, Math.floor((elapsedMs / targetMs) * 99)));
 }
 
+// Whatever was painted on the row before, by this bar or another, would show past a shorter frame (#1440).
 const ERASE_TO_EOL = "\x1b[K";
 
 /** Cuts `text` to `max` terminal columns, ending in `…` when cut; wide (CJK) characters count as two. */
@@ -306,9 +307,6 @@ export async function streamResponseToFile(
   progress.finish();
   return bytes;
 }
-
-// Whatever was painted on the row before, by this bar or another, would show past a shorter frame (#1440).
-const ERASE_TO_EOL = "\x1b[K";
 
 export function createProgressBar(label: string, totalBytes: number): {
   update(downloadedBytes: number): void;
