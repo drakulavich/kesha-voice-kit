@@ -295,6 +295,10 @@ type ProcessFileSuccess = { ok: true; result: TranscribeResult };
 type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord; exitCode: number };
 
 /** An argument the CLI itself rejected exits by its code (2); every runtime failure keeps the batch's operational 1 (S9-F1). */
+function shellQuote(path: string): string {
+  return /^[\w./~-]+$/.test(path) ? path : `'${path.replaceAll("'", `'\\''`)}'`;
+}
+
 function failureExitCode(err: unknown): number {
   const usage = err instanceof KeshaError && err.origin === "cli" && err.code === "E_INVALID_ARG";
   return usage ? exitCodeFor(err) : 1;
@@ -321,7 +325,7 @@ async function processFile(
 
   if (isDirectoryPath(file)) {
     const err = new KeshaError("E_INVALID_ARG", "is a directory (expected an audio file)", {
-      hint: `pass the audio files in it instead, e.g. kesha ${file.replace(/[\\/]+$/, "")}/*.ogg`,
+      hint: `pass the audio files in it instead, e.g. kesha ${shellQuote(file.replace(/[\\/]+$/, ""))}/*.ogg`,
     });
     stats.recordError("input", err, err.code);
     diagnosticLog.event("input.invalid", {
@@ -453,7 +457,7 @@ export const MAIN_VAD_ARGS = {
   "no-vad": {
     type: "boolean",
     description:
-      "Skip VAD and transcribe the whole file in one pass; audio over 24 minutes is refused. Incompatible with --speakers",
+      "Skip VAD and transcribe the whole file in one pass; audio of 24 minutes or more is refused. Incompatible with --speakers",
     default: false,
   },
 } as const;

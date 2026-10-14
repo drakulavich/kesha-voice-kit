@@ -26,7 +26,7 @@ complete -c kesha -n '__fish_use_subcommand' -l format -r -d 'Output format: tra
 complete -c kesha -n '__fish_use_subcommand' -l lang -r -d 'Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch'
 complete -c kesha -n '__fish_use_subcommand' -l debug -d 'Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)'
 complete -c kesha -n '__fish_use_subcommand' -l vad -d 'Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.'
-complete -c kesha -n '__fish_use_subcommand' -l no-vad -d 'Skip VAD and transcribe the whole file in one pass; audio over 24 minutes is refused. Incompatible with --speakers'
+complete -c kesha -n '__fish_use_subcommand' -l no-vad -d 'Skip VAD and transcribe the whole file in one pass; audio of 24 minutes or more is refused. Incompatible with --speakers'
 complete -c kesha -n '__fish_use_subcommand' -l quiet -d 'Suppress progress output; print only results and errors'
 complete -c kesha -n '__fish_use_subcommand' -l no-color -d 'Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)'
 complete -c kesha -n '__fish_seen_subcommand_from completions' -l help -d 'Show help'

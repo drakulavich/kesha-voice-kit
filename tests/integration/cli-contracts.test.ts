@@ -809,6 +809,11 @@ describe("CLI contracts", () => {
     expect(events.map((event) => event.event)).toEqual(["command.start", "input.invalid", "command.finish"]);
     expect(events[1]).toMatchObject({ command: "transcribe", error_code: "E_INVALID_ARG" });
 
+    const spaced = join(makeTempDir("kesha-cli-contract-dir-spaced-"), "voice notes");
+    mkdirSync(spaced);
+    const spacedRun = await runCli([spaced], { env });
+    expect(spacedRun.stderr).toContain(`e.g. kesha '${spaced}'/*.ogg`);
+
     const jsonRun = await runCli(["--json", "--include-errors", target], { env });
     expect(jsonRun.exitCode).toBe(2);
     const parsed = JSON.parse(jsonRun.stdout);
