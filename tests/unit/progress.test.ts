@@ -497,17 +497,17 @@ describe("createLiveStatus", () => {
       s.update("Listening... 1s");
       s.update("Listening... 2s");
     });
-    expect(out).toBe("\rListening... 1s\rListening... 2s");
+    expect(out).toBe("\rListening... 1s\x1b[K\rListening... 2s\x1b[K");
     expect(out).not.toContain("\n");
   });
 
-  /** A shorter line must not leave the tail of the longer one behind (`99%` over `100%`). */
-  test("pads over the remainder of a longer previous line", () => {
+  /** A shorter line, including the first frame over a row someone else painted, must not leave the old tail behind (#1450). */
+  test("erases to the end of the row on every frame", () => {
     const out = capture(true, (s) => {
       s.update("downloading 100.0MB");
       s.update("done");
     });
-    expect(out.endsWith("\rdone               ")).toBe(true);
+    expect(out).toBe("\rdownloading 100.0MB\x1b[K\rdone\x1b[K");
   });
 
   test("clear erases the painted row and is idempotent", () => {
@@ -516,7 +516,7 @@ describe("createLiveStatus", () => {
       s.clear();
       s.clear();
     });
-    expect(out).toBe("\rabc\r   \r");
+    expect(out).toBe("\rabc\x1b[K\r\x1b[K");
   });
 
   /** `--quiet` (#526) silences progress chatter, and a row repainted over it would be the loudest thing left. */
@@ -535,7 +535,7 @@ describe("createLiveStatus", () => {
       s.update("Listening... 4s");
       process.emit("exit", 0);
     });
-    expect(out).toBe("\rListening... 4s\r               \r");
+    expect(out).toBe("\rListening... 4s\x1b[K\r\x1b[K");
   });
 
   test("repeated paint-and-clear cycles do not accumulate exit handlers", () => {
