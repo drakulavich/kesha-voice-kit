@@ -378,10 +378,13 @@ describe("estimatePercent", () => {
 
 function withCapturedStderr(isTTY: boolean, fn: () => void): string {
   const originalIsTTY = process.stderr.isTTY;
+  const originalColumns = process.stderr.columns;
   const originalWrite = process.stderr.write;
   const writes: string[] = [];
   try {
     Object.defineProperty(process.stderr, "isTTY", { value: isTTY, configurable: true });
+    // Wide enough that no row is cut, whatever terminal runs the suite.
+    Object.defineProperty(process.stderr, "columns", { value: 200, configurable: true });
     process.stderr.write = ((chunk: string) => {
       writes.push(chunk);
       return true;
@@ -390,6 +393,7 @@ function withCapturedStderr(isTTY: boolean, fn: () => void): string {
   } finally {
     process.stderr.write = originalWrite;
     Object.defineProperty(process.stderr, "isTTY", { value: originalIsTTY, configurable: true });
+    Object.defineProperty(process.stderr, "columns", { value: originalColumns, configurable: true });
   }
   return writes.join("");
 }
@@ -549,5 +553,27 @@ describe("createLiveStatus", () => {
       s.clear();
     });
     expect(out).toBe("");
+  });
+});
+
+describe("a cut row keeps whole characters", () => {
+  test("a flag at the cut is dropped whole, never split into one regional indicator", () => {
+    const original = { isTTY: process.stderr.isTTY, columns: process.stderr.columns, write: process.stderr.write };
+    const writes: string[] = [];
+    try {
+      Object.defineProperty(process.stderr, "isTTY", { value: true, configurable: true });
+      Object.defineProperty(process.stderr, "columns", { value: 34, configurable: true });
+      process.stderr.write = ((chunk: string) => {
+        writes.push(chunk);
+        return true;
+      }) as typeof process.stderr.write;
+      createPercentProgress("🇺🇸🇨🇦🇺🇸🇨🇦", { intervalMs: 10_000 }).stop();
+    } finally {
+      Object.defineProperty(process.stderr, "isTTY", { value: original.isTTY, configurable: true });
+      Object.defineProperty(process.stderr, "columns", { value: original.columns, configurable: true });
+      process.stderr.write = original.write;
+    }
+    const row = writes[0]!;
+    expect(row).toMatch(/^\r(?:🇺🇸|🇨🇦)+… {2}\[/u);
   });
 });

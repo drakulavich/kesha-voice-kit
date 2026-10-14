@@ -44,9 +44,9 @@ function fitWidth(text: string, max: number): string {
   if (Bun.stringWidth(text) <= max) return text;
   if (max <= 0) return "";
   let out = "";
-  for (const ch of text) {
-    if (Bun.stringWidth(`${out}${ch}…`) > max) break;
-    out += ch;
+  for (const { segment } of new Intl.Segmenter().segment(text)) {
+    if (Bun.stringWidth(`${out}${segment}…`) > max) break;
+    out += segment;
   }
   return `${out}…`;
 }
