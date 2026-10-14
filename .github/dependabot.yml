@@ -29,9 +29,11 @@ updates:
   # opens a monthly checklist issue for the manual `cargo update` pass.
   # Revisit Dependabot once it ships a fix upstream.
 
-  # Workflow action versions across .github/workflows/*.
+  # Action versions in .github/workflows/* and the composite actions under .github/actions/*.
   - package-ecosystem: github-actions
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
