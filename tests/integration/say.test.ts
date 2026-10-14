@@ -299,4 +299,56 @@ describe("kesha say (CLI)", () => {
     const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "hello   world"]);
     expect(spoken).toBe("hello   world");
   });
+
+  it("drops emoji before synthesis and keeps © ® ™ (#1388)", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`,
+      "Придёшь? 😊 👍🏽 🇷🇺 👨‍👩‍👧 ❤️ © Acme™ ® 1️⃣",
+    ]);
+    expect(spoken).toBe("Придёшь?      © Acme™ ® ");
+  });
+
+  it("keeps © ® ™ in their emoji presentation too", async () => {
+    const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "©️ Acme™️ ®️"]);
+    expect(spoken).toBe("© Acme™ ®");
+  });
+
+  it("passes emoji-only text through, so the engine refuses it as before", async () => {
+    const spoken = await spokenText((dir) => ["--voice", "en-am_michael", "--out", `${dir}/r.wav`, "🎉"]);
+    expect(spoken).toBe("🎉");
+  });
+
+  it("reads angle brackets in plain text as text, not tags", async () => {
+    const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "< 3 > 😊"]);
+    expect(spoken).toBe("< 3 > ");
+  });
+
+  it("drops emoji inside SSML CDATA, where the CDATA is the speech", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[Hello 😊]]></speak>",
+    ]);
+    expect(spoken).toBe("<speak><![CDATA[Hello ]]></speak>");
+  });
+
+  it("drops emoji written as SSML character references, flags spelled across two included, and keeps ©", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`,
+      "<speak>Done &#x1F389; &#x1F1F7;&#x1F1FA; &#169; &#60;</speak>",
+    ]);
+    expect(spoken).toBe("<speak>Done   © &#60;</speak>");
+  });
+
+  it("leaves a character reference inside CDATA alone: it is literal text there", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[a > b &#x1F60A;]]></speak>",
+    ]);
+    expect(spoken).toBe("<speak><![CDATA[a > b &#x1F60A;]]></speak>");
+  });
+
+  it("passes emoji-only SSML through: tags are not speech", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak>🎉</speak>",
+    ]);
+    expect(spoken).toBe("<speak>🎉</speak>");
+  });
 });

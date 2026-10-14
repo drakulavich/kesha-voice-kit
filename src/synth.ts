@@ -102,6 +102,42 @@ export function engineCrashMessage(
   return `${base}.`;
 }
 
+// ©, ® and ™ stay, emoji presentation (U+FE0F) or not: read aloud they still mean something.
+const KEPT_SYMBOL = /([©®™])️/g;
+const EMOJI = /\p{RGI_Emoji}|[\p{Extended_Pictographic}--[©®™]]/gv;
+
+/**
+ * Emoji are decoration in a reply; a voice would read out their Unicode names (#1388).
+ * Emoji-only text, SSML tags aside, goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
+ */
+export function dropEmoji(text: string, ssml = false): string {
+  const spoken = (ssml ? decodeCharRefs(text) : text).replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
+  const speech = ssml ? spoken.replace(CDATA, "$1").replace(/<[^>]*>/g, "") : spoken;
+  return speech.trim().length > 0 ? spoken : text;
+}
+
+const CDATA = /<!\[CDATA\[([\s\S]*?)\]\]>/g;
+const NUMERIC_REF = /&#(?:x([0-9a-f]+)|(\d+));/gi;
+
+/**
+ * The engine decodes SSML character references, so `&#x1F60A;` is an emoji too. Decoding them first lets the
+ * emoji filter see sequences spelled across references; CDATA keeps its text literal, and markup characters stay escaped.
+ */
+function decodeCharRefs(ssml: string): string {
+  return ssml
+    .split(/(<!\[CDATA\[[\s\S]*?\]\]>)/)
+    .map((part) =>
+      part.startsWith("<![CDATA[")
+        ? part
+        : part.replace(NUMERIC_REF, (ref, hex?: string, dec?: string) => {
+            const cp = hex !== undefined ? parseInt(hex, 16) : Number(dec);
+            const plain = cp >= 0x20 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) && !`<>&'"`.includes(String.fromCodePoint(cp));
+            return plain ? String.fromCodePoint(cp) : ref;
+          }),
+    )
+    .join("");
+}
+
 /**
  * The text contract both doors enforce, before anything that costs a subprocess.
  * Throws `KeshaError`; the CLI runs it before voice routing, `say()` for programmatic callers.
@@ -133,7 +169,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   for (const warning of warnings) log.warn(warning);
   const { exitCode, signalCode, aborted, stdout, events } = await runEngineProcess(getEngineBinPath(), args, {
     stdio: ["pipe", "pipe", "pipe"],
-    stdin: text,
+    stdin: dropEmoji(text, opts.ssml),
     readStdout: (stream) => new Response(stream).arrayBuffer(),
     signal: opts.signal,
   });
