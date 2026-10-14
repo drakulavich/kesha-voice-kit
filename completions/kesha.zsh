@@ -35,7 +35,7 @@ _kesha() {
       '--lang=[Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch]:lang:' \
       '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]' \
       '--vad[Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.]' \
-      '--no-vad[Skip VAD and transcribe the whole file in one pass; audio of 24 minutes or more is refused. Incompatible with --speakers]' \
+      '--no-vad[Skip VAD and transcribe the whole file in one pass; audio measured at 24 minutes or more is refused. Incompatible with --speakers]' \
       '--quiet[Suppress progress output; print only results and errors]' \
       '--no-color[Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)]'
     else
@@ -154,7 +154,7 @@ _kesha() {
       '--lang=[Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch]:lang:' \
       '--debug[Trace engine subprocess calls on stderr (or KESHA_DEBUG=1)]' \
       '--vad[Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.]' \
-      '--no-vad[Skip VAD and transcribe the whole file in one pass; audio of 24 minutes or more is refused. Incompatible with --speakers]' \
+      '--no-vad[Skip VAD and transcribe the whole file in one pass; audio measured at 24 minutes or more is refused. Incompatible with --speakers]' \
       '--quiet[Suppress progress output; print only results and errors]' \
       '--no-color[Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true)]' \
       '*:audio file:_files'
