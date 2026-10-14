@@ -161,6 +161,9 @@
     { "relPath": "g2pw/g2pw.mlmodelc/weights/weight.bin", "sizeBytes": 159294962 }
   ],
   "aneZhG2p": [
+    { "relPath": "g2p/jieba_hmm_emit.bin", "sizeBytes": 292640 },
+    { "relPath": "g2p/jieba_hmm_start.bin", "sizeBytes": 16 },
+    { "relPath": "g2p/jieba_hmm_trans.bin", "sizeBytes": 64 },
     { "relPath": "g2p/pinyin_phrases.bin", "sizeBytes": 9552083 },
     { "relPath": "g2p/pinyin_single.bin", "sizeBytes": 480169 }
   ],

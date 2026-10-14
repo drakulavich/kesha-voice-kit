@@ -60,6 +60,7 @@ pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<
         let zh = fluidaudio_ane_zh_kokoro_dir()?;
         stage_into(&zh, ANE_ZH_FILES, no_cache)?;
         stage_into(&zh, ANE_ZH_G2P_ASSETS, no_cache)?;
+        stage_into(&zh, ANE_ZH_HMM_ASSETS, no_cache)?;
     }
     Ok(())
 }
@@ -75,7 +76,9 @@ pub fn stage_fluidaudio_kokoro_assets(langs: &[&str], no_cache: bool) -> Result<
 /// what is missing instead of guessing.
 ///
 /// The required set is derived from the staging manifests themselves, so a
-/// manifest change cannot leave the check behind.
+/// manifest change cannot leave the check behind. The one staged list it skips
+/// on purpose is [`ANE_ZH_HMM_ASSETS`]: without it Mandarin falls back to FMM
+/// segmentation instead of failing (#1453).
 #[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub fn missing_kokoro_assets(lang: &str, voice: &str) -> Vec<PathBuf> {
     // The empty returns below ("nothing missing") are safe ONLY because the same
@@ -370,6 +373,22 @@ mod tts_tests {
                 "{lang}/{voice} should be complete"
             );
         }
+    }
+
+    /// A zh install from before #1453 has no jieba HMM tables; it must keep
+    /// synthesizing (on FMM) rather than be told to reinstall.
+    #[cfg(all(system_kokoro, target_arch = "aarch64"))]
+    #[test]
+    fn mandarin_does_not_require_the_jieba_hmm_tables() {
+        let tmp = tempfile::tempdir().unwrap();
+        let bundle = tmp.path().join("bundle");
+        stage_fixture(&bundle, &bundle, "zh", "zm_050");
+        for f in ANE_ZH_HMM_ASSETS {
+            let _ = fs::remove_file(bundle.join(f.rel_path));
+            assert!(!bundle.join(f.rel_path).exists());
+        }
+
+        assert!(missing_kokoro_assets_in(&bundle, &bundle, "zh", "zm_050").is_empty());
     }
 
     /// The hole this preflight exists to close: `kesha install --tts en` leaves

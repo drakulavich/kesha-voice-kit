@@ -922,10 +922,6 @@ macro_rules! ane_zh_asset {
 /// The Mandarin pinyin dictionaries. Split from [`ANE_ZH_FILES`] because they
 /// are the one group whose local path differs from its remote path: upstream
 /// publishes them under `ANE-zh/assets/` and reads them from `<repoDir>/g2p/`.
-///
-/// The jieba HMM tables `ensureMandarinJiebaHmm` also wants are not staged —
-/// upstream first published them at this pin (FluidAudio#919) and kesha does
-/// not stage them yet, so that fetch fails and segmentation falls back to FMM.
 #[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub(super) const ANE_ZH_G2P_ASSETS: &[ModelFile] = &[
     ane_zh_asset!(
@@ -937,6 +933,28 @@ pub(super) const ANE_ZH_G2P_ASSETS: &[ModelFile] = &[
         "g2p/pinyin_single.bin",
         "ANE-zh/assets/pinyin_single.bin",
         "6afc4165be18718ab64ca623044ea1dfef30e7b652e59917967bd752b7c9d73f"
+    ),
+];
+
+/// The jieba HMM tables, staged beside the pinyin dictionaries but kept out of
+/// [`ANE_ZH_G2P_ASSETS`] so `missing_kokoro_assets` does not require them: a zh
+/// install from before #1453 lacks them and still synthesizes, on FMM.
+#[cfg(all(system_kokoro, target_arch = "aarch64"))]
+pub(super) const ANE_ZH_HMM_ASSETS: &[ModelFile] = &[
+    ane_zh_asset!(
+        "g2p/jieba_hmm_emit.bin",
+        "ANE-zh/assets/jieba_hmm_emit.bin",
+        "40462d336a6cd0b28cf644e1953c5b1f51791f60af8573dbdfbbf2241bc9f8bd"
+    ),
+    ane_zh_asset!(
+        "g2p/jieba_hmm_start.bin",
+        "ANE-zh/assets/jieba_hmm_start.bin",
+        "2520ce1008bb3803a000998d623b3fdb487a07309426e129567ce4e8dcc9a7c8"
+    ),
+    ane_zh_asset!(
+        "g2p/jieba_hmm_trans.bin",
+        "ANE-zh/assets/jieba_hmm_trans.bin",
+        "c70b88ddbe0416844bd742861c5d3d339c4356212c477ab9096f74e2209091a7"
     ),
 ];
 
@@ -1069,7 +1087,11 @@ mod manifest_tests {
             assert_plan_paths(&plan, "kokoroG2p", KOKORO_G2P_FILES);
             assert_plan_paths(&plan, "aneVoices", ANE_KOKORO_VOICES);
             assert_plan_paths(&plan, "aneZh", ANE_ZH_FILES);
-            assert_plan_paths(&plan, "aneZhG2p", ANE_ZH_G2P_ASSETS);
+            assert_plan_paths(
+                &plan,
+                "aneZhG2p",
+                &[ANE_ZH_HMM_ASSETS, ANE_ZH_G2P_ASSETS].concat(),
+            );
         }
 
         #[cfg(all(feature = "tts", not(all(system_kokoro, target_arch = "aarch64"))))]
@@ -1338,6 +1360,7 @@ mod manifest_tests {
                 ANE_EN_FILES,
                 ANE_ZH_FILES,
                 ANE_ZH_G2P_ASSETS,
+                ANE_ZH_HMM_ASSETS,
                 KOKORO_G2P_FILES,
             ] {
                 for f in manifest {
@@ -1493,6 +1516,16 @@ mod tts_tests {
                 "Mandarin G2P is missing {required}"
             );
         }
+        for required in [
+            "g2p/jieba_hmm_emit.bin",
+            "g2p/jieba_hmm_start.bin",
+            "g2p/jieba_hmm_trans.bin",
+        ] {
+            assert!(
+                has(ANE_ZH_HMM_ASSETS, required),
+                "Mandarin HMM set is missing {required}"
+            );
+        }
     }
 
     /// Same pin discipline the rest of the manifest gets: 64 hex chars, on
@@ -1505,6 +1538,7 @@ mod tts_tests {
             ANE_EN_FILES,
             ANE_ZH_FILES,
             ANE_ZH_G2P_ASSETS,
+            ANE_ZH_HMM_ASSETS,
             KOKORO_G2P_FILES,
         ] {
             assert!(!manifest.is_empty());
