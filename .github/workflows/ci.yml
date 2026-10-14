@@ -449,7 +449,7 @@ jobs:
       - name: 🔍 Type check
         if: matrix.os == 'ubuntu-latest'
         shell: bash
-        run: bunx tsc --noEmit
+        run: bun check
 
       - name: 🔢 Check version drift (package.json + Cargo.toml)
         if: matrix.os == 'ubuntu-latest'
@@ -539,7 +539,7 @@ jobs:
     # coverage lives in `integration-tests-full` below, gated to engine/model
     # changes + nightly.
     #
-    # Fail-fast: gate on `unit-tests` so a `tsc --noEmit` failure cancels
+    # Fail-fast: gate on `unit-tests` so a `bun check` failure cancels
     # this lane. Safe because `integration` is a strict subset of `code`
     # (see filter design above) — when `integration == 'true'`,
     # `code == 'true'`, so `unit-tests` is never `skipped` here and the

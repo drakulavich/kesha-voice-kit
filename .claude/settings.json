@@ -28,7 +28,7 @@
       "Bash(bun run test*)",
       "Bash(bun install)",
       "Bash(bun link)",
-      "Bash(bunx tsc*)",
+      "Bash(bun check*)",
       "Bash(clawhub inspect *)",
       "Bash(cat *)",
       "Bash(ls *)",

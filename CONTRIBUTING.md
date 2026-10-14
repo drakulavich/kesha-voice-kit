@@ -63,13 +63,13 @@ where tests live, and a "where to change X" table.
 ## Development
 
 ```bash
-bun run check       # tsc + versions + recipes + test:cli-fast (the fast path; needs just)
+bun run check:fast  # type check + versions + recipes + test:cli-fast (the fast path; needs just)
 just test           # bun unit + integration tests
-bun run lint        # bunx tsc --noEmit
+bun run lint        # bun check (type check)
 just smoke-test     # bun link → kesha install → run against fixtures
 ```
 
-**Keep the fast path sacred.** `bun run check` (and `bun run test:cli-fast`)
+**Keep the fast path sacred.** `bun run check:fast` (and `bun run test:cli-fast`)
 must stay free of engine downloads, model installs, and heavy e2e. Use it for
 every CLI-only change. Real-engine e2e, TTS e2e, diarization, and smoke tests
 are not on this path: `just test` runs unit plus `tests/integration/` (real-
@@ -78,7 +78,7 @@ engine cases self-skip, on two different gates — see
 is the explicit install-and-fixtures path, and TTS e2e / diarization live in
 CI. Do not pull network or multi-GB dependencies into the fast loop.
 
-Use `bun run check` for a quick local confidence pass before
+Use `bun run check:fast` for a quick local confidence pass before
 opening small CLI-only PRs. It avoids the engine-backed E2E lanes while still
 covering command routing, stdout/stderr contracts, help goldens, and wrapper
 validation.
@@ -196,7 +196,7 @@ kesha-voice-kit/
 
 | Path | Command | What it is for |
 |------|---------|----------------|
-| **Fast (sacred)** | `bun run check` / `bun run test:cli-fast` | Design feedback while coding. No engine download, no models, no network. Keep it that way; do not confuse it with `just check`, which runs all integration tests. |
+| **Fast (sacred)** | `bun run check:fast` / `bun run test:cli-fast` | Design feedback while coding. No engine download, no models, no network. Keep it that way; do not confuse it with `just check`, which runs all integration tests. |
 | **Full local** | `just test` | Unit + `tests/integration/`. Fake-engine suites always run; real-engine e2e runs only where its own gate is satisfied — `kesha install` covers `e2e-engine`/`mcp-e2e`, not the synthesis suites. This recipe never downloads the 2.4 GB bundle. |
 | **Smoke / release** | `just smoke-test` | Real install + fixtures. Explicit and slower. |
 | **CI** | `ci.yml` | Authoritative gates; model-heavy jobs are path-filtered or self-skipping. |

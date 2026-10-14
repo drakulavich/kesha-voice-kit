@@ -26,4 +26,4 @@
 - [ ] `grep -c model-plan.json packaging/homebrew/Formula/kesha-voice-kit.rb Dockerfile flake.nix` prints at least 1 for each file
 - [ ] The `homebrew-formula` CI lane is green on the PR head, with `kesha install --plan` in its `brew test` log
 - [ ] The scheduled CI run on `main` after the merge has `homebrew-formula` green
-- [ ] `bun run check` and `openspec validate stage-imported-assets --strict` pass
+- [ ] `bun run check:fast` and `openspec validate stage-imported-assets --strict` pass

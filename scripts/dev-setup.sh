@@ -136,7 +136,7 @@ run "Models are install-only: kesha install  (+ --tts / --vad / --diarize)"
 
 echo
 if [ "$missing_system" -eq 0 ]; then
-  bold "All toolchains + system libraries present. Try: bun run check"
+  bold "All toolchains + system libraries present. Try: bun run check:fast"
 else
   bold "Install the TODO items above, then re-run: bash scripts/dev-setup.sh"
 fi
