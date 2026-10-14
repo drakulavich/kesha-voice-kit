@@ -59,10 +59,11 @@ export function registerTools(server: McpServer): void {
     },
     async ({ text, voice, rate, format }, extra) => {
       if (extra.signal?.aborted) {
-        return { isError: true, content: [{ type: "text" as const, text: "request cancelled" }] };
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) }] };
       }
       if (rate !== undefined && !(rate >= 0.5 && rate <= 2.0)) {
-        return { isError: true, content: [{ type: "text" as const, text: `rate ${rate} out of range (0.5-2.0)` }] };
+        const err = new KeshaError("E_INVALID_ARG", `rate ${rate} out of range (0.5-2.0)`);
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(err) }] };
       }
       const fmt: SayFormat = format ?? "wav";
       const outPath = allocAudioPath(fmt);
@@ -121,7 +122,7 @@ export function registerTools(server: McpServer): void {
     },
     async ({ path, timestamps }, extra) => {
       if (extra.signal?.aborted) {
-        return { isError: true, content: [{ type: "text" as const, text: "request cancelled" }] };
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) }] };
       }
       if (!existsSync(path)) {
         const hint = isAbsolute(path)
