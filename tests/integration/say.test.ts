@@ -133,7 +133,7 @@ describe("kesha say (CLI)", () => {
   });
 
   it("shows install hint when engine not installed (empty cache)", async () => {
-    const dir = `/tmp/kesha-empty-${Date.now()}-${Math.random()}`;
+    const dir = tempDir("kesha-empty-");
     const proc = spawn(["bun", CLI_PATH, "say", "Hello"], {
       env: { ...process.env, KESHA_CACHE_DIR: dir, HOME: dir },
       stdout: "pipe",
@@ -148,7 +148,7 @@ describe("kesha say (CLI)", () => {
 
   for (const tc of SAY_OUT_DIAGNOSTIC_CASES) {
     it(tc.name, async () => {
-      const dir = `/tmp/kesha-fake-engine-${Date.now()}-${Math.random()}`;
+      const dir = tempDir("kesha-fake-engine-");
       const enginePath = await createFakeEngine(dir);
       const outPath = `${dir}/${tc.outputName}`;
       const logDir = `${dir}/logs`;
@@ -205,7 +205,7 @@ describe("kesha say (CLI)", () => {
   }
 
   it("--verbose --out does not duplicate timing output", async () => {
-    const dir = `/tmp/kesha-fake-engine-${Date.now()}-${Math.random()}`;
+    const dir = tempDir("kesha-fake-engine-");
     const enginePath = await createFakeEngine(dir);
     const outPath = `${dir}/reply.wav`;
     const proc = spawn([
@@ -237,7 +237,7 @@ describe("kesha say (CLI)", () => {
   });
 
   it("--no-expand-abbrev reaches the engine and its ignored-flag warning reaches the user", async () => {
-    const dir = `/tmp/kesha-abbrev-engine-${Date.now()}-${Math.random()}`;
+    const dir = tempDir("kesha-abbrev-engine-");
     const enginePath = await createAbbrevWarningEngine(dir);
     const outPath = `${dir}/reply.wav`;
     const proc = spawn([
@@ -262,7 +262,7 @@ describe("kesha say (CLI)", () => {
   });
 
   it("rejects invalid flags before spawning the engine", async () => {
-    const dir = `/tmp/kesha-fail-engine-${Date.now()}-${Math.random()}`;
+    const dir = tempDir("kesha-fail-engine-");
     const enginePath = await createFailingEngine(dir);
     const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", "--rate", "fast", "Hello"], {
       env: {
