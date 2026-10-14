@@ -238,8 +238,8 @@ strings. Redaction SHALL be opt-in for `kesha doctor` and always on for
 status; Backend, protocol version, and features (from the describe document); Bun runtime
 version and platform; active Model mirror (when `KESHA_MODEL_MIRROR` is set); and the
 list of installed TTS Voice ids. When the Engine is not installed, it SHALL print an
-actionable setup hint (`kesha init` on an interactive TTY, `kesha install` when stderr
-is piped) and exit 0.
+actionable setup hint (`kesha init` when stdin, stdout and stderr are terminals, `kesha install`
+otherwise) and exit 0.
 
 #### Scenario: Ira checks install state in a script
 
@@ -267,8 +267,8 @@ is piped) and exit 0.
 - GIVEN no Engine is installed
 - WHEN Ira runs `kesha status`
 - THEN the output shows a red cross for the Engine binary
-- AND an actionable setup hint is printed — `kesha init` on an interactive TTY,
-  `kesha install` when stderr is piped (`installHint()`, `src/status.ts::engineHint`)
+- AND an actionable setup hint is printed — `kesha init` when stdin, stdout and stderr are terminals,
+  `kesha install` otherwise (`installHint()`, `src/status.ts::engineHint`)
 - AND the process exits 0
 
 #### Scenario: Ira asks for disk usage with no Engine installed

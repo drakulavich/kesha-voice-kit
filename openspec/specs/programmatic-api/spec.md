@@ -74,7 +74,7 @@ with the pre-flight codes and Exit codes the scenarios below name; missing
 - THEN the promise rejects with a `KeshaError` (`err.code === "E_ENGINE_SPAWN"`,
   `err.exitCode === 1`)
 - AND its message carries an actionable setup hint ending in `--tts` — the verb
-  is `kesha init` on an interactive TTY and `kesha install` when stderr is piped
+  is `kesha init` when stdin, stdout and stderr are terminals and `kesha install` otherwise
 
 #### Scenario: Writing to a file
 
@@ -101,7 +101,7 @@ with the pre-flight codes and Exit codes the scenarios below name; missing
 > `MAX_TEXT_CHARS = 5000` Unicode code points; the text pre-flight is `validateSayText`, which the
 > CLI runs too. Engine-not-installed throws `E_ENGINE_SPAWN` with exit code 1;
 > its message embeds `installHint("--tts")` (`src/install-hint.ts`) — `kesha init
-> --tts` when `process.stderr.isTTY`, `kesha install --tts` otherwise — and it
+> --tts` when stdin, stdout and stderr are all terminals, `kesha install --tts` otherwise — and it
 > carries no separate `hint`, because `kesha say` prints the same error and its
 > output does not change. The `noExpandAbbrev` drop is schema-driven in
 > `src/engine/describe.ts::validateArgv`, per the `whenUngated: drop` rule of the
