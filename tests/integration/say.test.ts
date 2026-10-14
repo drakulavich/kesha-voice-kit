@@ -330,11 +330,19 @@ describe("kesha say (CLI)", () => {
     expect(spoken).toBe("<speak><![CDATA[Hello ]]></speak>");
   });
 
-  it("drops emoji written as SSML character references and keeps ©", async () => {
+  it("drops emoji written as SSML character references, flags spelled across two included, and keeps ©", async () => {
     const spoken = await spokenText((dir) => [
-      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak>Done &#x1F389; &#169;</speak>",
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`,
+      "<speak>Done &#x1F389; &#x1F1F7;&#x1F1FA; &#169; &#60;</speak>",
     ]);
-    expect(spoken).toBe("<speak>Done  &#169;</speak>");
+    expect(spoken).toBe("<speak>Done   © &#60;</speak>");
+  });
+
+  it("leaves a character reference inside CDATA alone: it is literal text there", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[a > b &#x1F60A;]]></speak>",
+    ]);
+    expect(spoken).toBe("<speak><![CDATA[a > b &#x1F60A;]]></speak>");
   });
 
   it("passes emoji-only SSML through: tags are not speech", async () => {

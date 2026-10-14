@@ -111,20 +111,31 @@ const EMOJI = /\p{RGI_Emoji}|[\p{Extended_Pictographic}--[©®™]]/gv;
  * Emoji-only text, SSML tags aside, goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
  */
 export function dropEmoji(text: string, ssml = false): string {
-  const stripped = (s: string) => s.replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
-  // The engine decodes SSML character references, so an emoji can arrive as `&#x1F60A;`.
-  const decoded = ssml ? text.replace(NUMERIC_REF, (ref, hex?: string, dec?: string) => emojiRef(ref, hex, dec, stripped)) : text;
-  const spoken = stripped(decoded);
-  const speech = ssml ? spoken.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/<[^>]*>/g, "") : spoken;
+  const spoken = (ssml ? decodeCharRefs(text) : text).replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
+  const speech = ssml ? spoken.replace(CDATA, "$1").replace(/<[^>]*>/g, "") : spoken;
   return speech.trim().length > 0 ? spoken : text;
 }
 
+const CDATA = /<!\[CDATA\[([\s\S]*?)\]\]>/g;
 const NUMERIC_REF = /&#(?:x([0-9a-f]+)|(\d+));/gi;
 
-function emojiRef(ref: string, hex: string | undefined, dec: string | undefined, stripped: (s: string) => string): string {
-  const codePoint = hex !== undefined ? parseInt(hex, 16) : Number(dec);
-  if (codePoint > 0x10ffff) return ref;
-  return stripped(String.fromCodePoint(codePoint)) === "" ? "" : ref;
+/**
+ * The engine decodes SSML character references, so `&#x1F60A;` is an emoji too. Decoding them first lets the
+ * emoji filter see sequences spelled across references; CDATA keeps its text literal, and markup characters stay escaped.
+ */
+function decodeCharRefs(ssml: string): string {
+  return ssml
+    .split(/(<!\[CDATA\[[\s\S]*?\]\]>)/)
+    .map((part) =>
+      part.startsWith("<![CDATA[")
+        ? part
+        : part.replace(NUMERIC_REF, (ref, hex?: string, dec?: string) => {
+            const cp = hex !== undefined ? parseInt(hex, 16) : Number(dec);
+            const plain = cp >= 0x20 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) && !`<>&'"`.includes(String.fromCodePoint(cp));
+            return plain ? String.fromCodePoint(cp) : ref;
+          }),
+    )
+    .join("");
 }
 
 /**
