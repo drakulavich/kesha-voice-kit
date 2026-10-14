@@ -572,7 +572,7 @@ exit 2
   printf '%s\\n' 'hello this is my transcript'`,
     );
     const out = await withEngineEnv(engine, () => captureTerminal(() => recordEngine({ live: true }, 10)));
-    expect(out).toContain(`\rListening... 1s\r${" ".repeat(15)}\rhello this is my transcript`);
+    expect(out).toContain("\rListening... 1s\x1b[K\r\x1b[Khello this is my transcript");
   });
 
   /**
