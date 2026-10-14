@@ -179,12 +179,12 @@ export function parseManifestEntries(source: string): ManifestEntry[] {
  * Mandarin ANE bundles pin 36 of the same rel_paths to different URLs, so the deduped map
  * would measure one bundle against the other (#1096).
  */
-export const GROUP_MANIFEST_CONST: Record<string, string> = {
-  aneEn: "ANE_EN_FILES",
-  aneVoices: "ANE_KOKORO_VOICES",
-  aneZh: "ANE_ZH_FILES",
-  aneZhG2p: "ANE_ZH_G2P_ASSETS",
-  kokoroG2p: "KOKORO_G2P_FILES",
+export const GROUP_MANIFEST_CONST: Record<string, string[]> = {
+  aneEn: ["ANE_EN_FILES"],
+  aneVoices: ["ANE_KOKORO_VOICES"],
+  aneZh: ["ANE_ZH_FILES"],
+  aneZhG2p: ["ANE_ZH_G2P_ASSETS", "ANE_ZH_HMM_ASSETS"],
+  kokoroG2p: ["KOKORO_G2P_FILES"],
 };
 
 /** One `&[ModelFile]` const with the macro definitions its entries expand through. */
@@ -204,10 +204,15 @@ function manifestConstSource(source: string, name: string): string | null {
 
 /** The URL map a plan group must be resolved against, or null when the whole-source map is right for it. */
 export function manifestUrlsForGroup(source: string, group: string): Map<string, string> | null {
-  const constName = GROUP_MANIFEST_CONST[group.split(".")[0] ?? ""];
-  if (!constName) return null;
-  const scoped = manifestConstSource(source, constName);
-  return scoped === null ? null : parseManifestUrls(scoped);
+  const constNames = GROUP_MANIFEST_CONST[group.split(".")[0] ?? ""];
+  if (!constNames) return null;
+  const urls = new Map<string, string>();
+  for (const name of constNames) {
+    const scoped = manifestConstSource(source, name);
+    if (scoped === null) return null;
+    for (const [relPath, url] of parseManifestUrls(scoped)) urls.set(relPath, url);
+  }
+  return urls;
 }
 
 /** `rel_path` → `url` for every `ModelFile` the models sources pin, `cfg` gating included. */
