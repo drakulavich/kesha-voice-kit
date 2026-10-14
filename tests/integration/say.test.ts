@@ -308,8 +308,20 @@ describe("kesha say (CLI)", () => {
     expect(spoken).toBe("Придёшь?      © Acme™ ® ");
   });
 
+  it("keeps © ® ™ in their emoji presentation too", async () => {
+    const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "©️ Acme™️ ®️"]);
+    expect(spoken).toBe("© Acme™ ®");
+  });
+
   it("passes emoji-only text through, so the engine refuses it as before", async () => {
     const spoken = await spokenText((dir) => ["--voice", "en-am_michael", "--out", `${dir}/r.wav`, "🎉"]);
     expect(spoken).toBe("🎉");
+  });
+
+  it("passes emoji-only SSML through: tags are not speech", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak>🎉</speak>",
+    ]);
+    expect(spoken).toBe("<speak>🎉</speak>");
   });
 });

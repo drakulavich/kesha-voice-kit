@@ -102,16 +102,17 @@ export function engineCrashMessage(
   return `${base}.`;
 }
 
-// ©, ® and ™ stay: read aloud they still mean something.
+// ©, ® and ™ stay, emoji presentation (U+FE0F) or not: read aloud they still mean something.
+const KEPT_SYMBOL = /([©®™])️/g;
 const EMOJI = /\p{RGI_Emoji}|[\p{Extended_Pictographic}--[©®™]]/gv;
 
 /**
  * Emoji are decoration in a reply; a voice would read out their Unicode names (#1388).
- * Emoji-only text goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
+ * Emoji-only text, SSML tags aside, goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
  */
 export function dropEmoji(text: string): string {
-  const spoken = text.replace(EMOJI, "");
-  return spoken.trim().length > 0 ? spoken : text;
+  const spoken = text.replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
+  return spoken.replace(/<[^>]*>/g, "").trim().length > 0 ? spoken : text;
 }
 
 /**
