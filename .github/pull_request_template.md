@@ -14,7 +14,7 @@
 
 ## Checklist
 
-- [ ] `bun run check` passes (lint + version drift + fast tests)
+- [ ] `bun run check:fast` passes (lint + version drift + fast tests)
 - [ ] Tests added/updated for the change
 - [ ] Rust changes: `cd rust && cargo fmt && cargo clippy --all-targets -- -D warnings`
 - [ ] Docs/CHANGELOG updated if user-facing

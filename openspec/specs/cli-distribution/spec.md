@@ -95,7 +95,7 @@ The CLI package SHALL declare Bun >= 1.4.0 as its required runtime, and every wr
 > *Technical Note — `package.json#engines.bun` is `>=1.4.0`.
 > `packaging/homebrew/Formula/kesha-voice-kit.rb` declares
 > `depends_on "oven-sh/bun/bun"`. The `Dockerfile` pins
-> `oven/bun:1.4.2-slim`. The Linux binary is compiled for `bun-linux-x64`
+> `oven/bun:1.4.3-slim`. The Linux binary is compiled for `bun-linux-x64`
 > (glibc); `docs/distribution.md` states the musl limitation and points at the
 > container image.*
 
@@ -299,7 +299,7 @@ The MCP registry manifest SHALL name the npm CLI package and a version equal to 
 > `packages[0].version`, `registryType: npm`, `transport: stdio`, and the
 > positional `mcp` argument. `.github/scripts/check-versions.ts` reads it and
 > exits non-zero on drift or on an unreadable file; run as
-> `bun run check:versions`, part of `bun run check`.*
+> `bun run check:versions`, part of `bun run check:fast`.*
 
 ### Requirement: No distribution path downloads the Engine or models
 
