@@ -318,6 +318,11 @@ describe("kesha say (CLI)", () => {
     expect(spoken).toBe("🎉");
   });
 
+  it("reads angle brackets in plain text as text, not tags", async () => {
+    const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "< 3 > 😊"]);
+    expect(spoken).toBe("< 3 > ");
+  });
+
   it("passes emoji-only SSML through: tags are not speech", async () => {
     const spoken = await spokenText((dir) => [
       "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak>🎉</speak>",

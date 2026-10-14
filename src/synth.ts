@@ -110,9 +110,10 @@ const EMOJI = /\p{RGI_Emoji}|[\p{Extended_Pictographic}--[©®™]]/gv;
  * Emoji are decoration in a reply; a voice would read out their Unicode names (#1388).
  * Emoji-only text, SSML tags aside, goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
  */
-export function dropEmoji(text: string): string {
+export function dropEmoji(text: string, ssml = false): string {
   const spoken = text.replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
-  return spoken.replace(/<[^>]*>/g, "").trim().length > 0 ? spoken : text;
+  const speech = ssml ? spoken.replace(/<[^>]*>/g, "") : spoken;
+  return speech.trim().length > 0 ? spoken : text;
 }
 
 /**
@@ -146,7 +147,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   for (const warning of warnings) log.warn(warning);
   const { exitCode, signalCode, aborted, stdout, events } = await runEngineProcess(getEngineBinPath(), args, {
     stdio: ["pipe", "pipe", "pipe"],
-    stdin: dropEmoji(text),
+    stdin: dropEmoji(text, opts.ssml),
     readStdout: (stream) => new Response(stream).arrayBuffer(),
     signal: opts.signal,
   });
