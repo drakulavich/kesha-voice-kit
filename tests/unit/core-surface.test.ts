@@ -16,8 +16,8 @@ function specExportedTypeNames(): string[] {
   return [...sentence[1]!.matchAll(/`([A-Za-z0-9_]+)`/g)].map((m) => m[1]!);
 }
 
-function missingExportNames(tscOutput: string): string[] {
-  return [...tscOutput.matchAll(/has no exported member '([A-Za-z0-9_]+)'/g)].map((m) => m[1]!);
+function missingExportNames(checkOutput: string): string[] {
+  return [...checkOutput.matchAll(/has no exported member '([A-Za-z0-9_]+)'/g)].map((m) => m[1]!);
 }
 
 /** The probe must resolve through the published `./core` entry point, not an implementation path, or it keeps passing after `package.json#exports["./core"]` regresses. */
@@ -78,7 +78,7 @@ describe("core surface", () => {
     const dir = tempDir("core-surface-");
     const tsconfigPath = writeProbeProject(dir, typeNames);
 
-    const proc = Bun.spawn(["bun", "x", "tsc", "--noEmit", "-p", tsconfigPath], {
+    const proc = Bun.spawn([process.execPath, "check", "--no-pretty", "-p", tsconfigPath], {
       cwd: REPO_ROOT,
       stdout: "pipe",
       stderr: "pipe",
