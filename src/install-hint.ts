@@ -7,6 +7,8 @@
 // `--no-cache`) — they preselect modules in the interactive wizard rather than
 // being install-only flags. Source of truth: `src/cli/init.ts::initCommand.args`.
 export function installHint(...flags: string[]): string {
-  const verb = process.stderr.isTTY ? "kesha init" : "kesha install";
+  // `kesha init` refuses unless stdin and stdout are terminals (#1373), so a piped run gets `install` (#1380).
+  const interactive = process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY;
+  const verb = interactive ? "kesha init" : "kesha install";
   return [verb, ...flags].join(" ");
 }
