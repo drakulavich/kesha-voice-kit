@@ -323,6 +323,20 @@ describe("kesha say (CLI)", () => {
     expect(spoken).toBe("< 3 > ");
   });
 
+  it("drops emoji inside SSML CDATA, where the CDATA is the speech", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[Hello 😊]]></speak>",
+    ]);
+    expect(spoken).toBe("<speak><![CDATA[Hello ]]></speak>");
+  });
+
+  it("drops emoji written as SSML character references and keeps ©", async () => {
+    const spoken = await spokenText((dir) => [
+      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak>Done &#x1F389; &#169;</speak>",
+    ]);
+    expect(spoken).toBe("<speak>Done  &#169;</speak>");
+  });
+
   it("passes emoji-only SSML through: tags are not speech", async () => {
     const spoken = await spokenText((dir) => [
       "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak>🎉</speak>",
