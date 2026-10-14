@@ -813,6 +813,10 @@ describe("CLI contracts", () => {
     mkdirSync(spaced);
     const spacedRun = await runCli([spaced], { env });
     expect(spacedRun.stderr).toContain(`e.g. kesha '${spaced}'/*.ogg`);
+    const apostrophe = join(makeTempDir("kesha-cli-contract-dir-apostrophe-"), "it's");
+    mkdirSync(apostrophe);
+    const apostropheRun = await runCli([apostrophe], { env });
+    expect(apostropheRun.stderr).toContain(`e.g. kesha '${apostrophe.replace("'", `'\\''`)}'/*.ogg`);
 
     const jsonRun = await runCli(["--json", "--include-errors", target], { env });
     expect(jsonRun.exitCode).toBe(2);

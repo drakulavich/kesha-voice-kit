@@ -296,7 +296,7 @@ type ProcessFileFailure = { ok: false; error: TranscribeErrorRecord; exitCode: n
 
 /** An argument the CLI itself rejected exits by its code (2); every runtime failure keeps the batch's operational 1 (S9-F1). */
 function shellQuote(path: string): string {
-  return /^[\w./~-]+$/.test(path) ? path : `'${path.replaceAll("'", `'\\''`)}'`;
+  return /^[\w./-]+$/.test(path) ? path : `'${path.replaceAll("'", `'\\''`)}'`;
 }
 
 function failureExitCode(err: unknown): number {
