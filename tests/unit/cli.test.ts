@@ -294,7 +294,7 @@ OPTIONS
       --lang=<lang>    Expected language code, e.g. en or en-us (see docs/languages.md); warn if mismatch
             --debug    Trace engine subprocess calls on stderr (or KESHA_DEBUG=1) (Default: false)
               --vad    Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s. (Default: false)
-           --no-vad    Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers (Default: false)
+           --no-vad    Skip VAD and transcribe the whole file in one pass; audio over 24 minutes is refused. Incompatible with --speakers (Default: false)
         -q, --quiet    Suppress progress output; print only results and errors (Default: false)
          --no-color    Disable ANSI colors (also via NO_COLOR=1; auto-off when CI=true) (Default: false)`);
   });

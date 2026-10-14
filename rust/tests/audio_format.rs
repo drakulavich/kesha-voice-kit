@@ -98,6 +98,15 @@ fn ensure_audio_track_bails_on_unsupported_container() {
         msg.contains("unsupported audio format"),
         "expected clear format error, got: {msg}"
     );
+    // #1385: the user gets the formats to use, not the decoder's internals.
+    assert!(
+        msg.contains("Kesha reads ogg"),
+        "expected the supported formats, got: {msg}"
+    );
+    assert!(
+        !msg.contains("format reader"),
+        "decoder internals leaked: {msg}"
+    );
 }
 
 #[test]

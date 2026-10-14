@@ -320,7 +320,9 @@ async function processFile(
   }
 
   if (isDirectoryPath(file)) {
-    const err = new KeshaError("E_INVALID_ARG", "is a directory (expected an audio file)");
+    const err = new KeshaError("E_INVALID_ARG", "is a directory (expected an audio file)", {
+      hint: `pass the audio files in it instead, e.g. kesha ${file.replace(/[\\/]+$/, "")}/*.ogg`,
+    });
     stats.recordError("input", err, err.code);
     diagnosticLog.event("input.invalid", {
       command: "transcribe",
@@ -451,7 +453,7 @@ export const MAIN_VAD_ARGS = {
   "no-vad": {
     type: "boolean",
     description:
-      "Force full-file ASR for short/medium files; long audio fails early. Incompatible with --speakers",
+      "Skip VAD and transcribe the whole file in one pass; audio over 24 minutes is refused. Incompatible with --speakers",
     default: false,
   },
 } as const;
