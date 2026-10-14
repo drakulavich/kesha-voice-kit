@@ -36,12 +36,28 @@ export function estimatePercent(elapsedMs: number, estimatedTotalMs: number): nu
   return Math.max(1, Math.min(99, Math.floor((elapsedMs / targetMs) * 99)));
 }
 
+// Whatever was painted on the row before, by this bar or another, would show past a shorter frame (#1440).
+const ERASE_TO_EOL = "\x1b[K";
+
+/** Cuts `text` to `max` terminal columns, ending in `…` when cut; wide (CJK) characters count as two. */
+function fitWidth(text: string, max: number): string {
+  if (Bun.stringWidth(text) <= max) return text;
+  if (max <= 0) return "";
+  let out = "";
+  for (const { segment } of new Intl.Segmenter().segment(text)) {
+    if (Bun.stringWidth(`${out}${segment}…`) > max) break;
+    out += segment;
+  }
+  return `${out}…`;
+}
+
 export function createPercentProgress(
   label: string,
   options: { estimatedTotalMs?: number; intervalMs?: number } = {},
 ): {
   finish(finalLabel: string): void;
   interrupt(writeLine: () => void): void;
+  status(line: string): void;
   stop(): void;
 } {
   const isTTY = process.stderr.isTTY;
@@ -55,6 +71,9 @@ export function createPercentProgress(
       interrupt(writeLine: () => void) {
         writeLine();
       },
+      status(line: string) {
+        process.stderr.write(`${line}\n`);
+      },
       stop() {},
     };
   }
@@ -62,18 +81,23 @@ export function createPercentProgress(
   const intervalMs = options.intervalMs ?? 250;
   const estimatedTotalMs = options.estimatedTotalMs ?? DEFAULT_ESTIMATED_PROGRESS_MS;
   const startedAt = performance.now();
-  let lastLineLength = 0;
+  let painted = false;
   let timer: Timer | undefined;
   let stopped = false;
   let firstRender = true;
+  let statusText = "";
 
   const render = () => {
     if (stopped) return;
     const percent = firstRender ? 0 : estimatePercent(performance.now() - startedAt, estimatedTotalMs);
     firstRender = false;
-    const line = formatPercentProgress(label, percent);
-    lastLineLength = line.length;
-    process.stderr.write(`\r${line}`);
+    const rest = formatPercentProgress("", percent) + (statusText ? `  ${statusText}` : "");
+    // A row wider than the terminal wraps, and `\r` then repaints only its last part; the file name gives way first.
+    const columns = process.stderr.columns;
+    const name = columns ? fitWidth(label, columns - 1 - Bun.stringWidth(rest)) : label;
+    const line = columns ? fitWidth(name + rest, columns - 1) : name + rest;
+    painted = true;
+    process.stderr.write(`\r${line}${ERASE_TO_EOL}`);
   };
 
   const clearLine = (stopTimer: boolean) => {
@@ -82,9 +106,9 @@ export function createPercentProgress(
       clearInterval(timer);
       timer = undefined;
     }
-    if (lastLineLength > 0) {
-      process.stderr.write(`\r${" ".repeat(lastLineLength)}\r`);
-      lastLineLength = 0;
+    if (painted) {
+      process.stderr.write(`\r${ERASE_TO_EOL}`);
+      painted = false;
     }
   };
 
@@ -105,6 +129,14 @@ export function createPercentProgress(
       writeLine();
       render();
       timer = setInterval(render, intervalMs);
+    },
+    status(line: string) {
+      if (stopped) {
+        process.stderr.write(`${line}\n`);
+        return;
+      }
+      statusText = line;
+      render();
     },
     stop() {
       clearLine(true);
@@ -275,9 +307,6 @@ export async function streamResponseToFile(
   progress.finish();
   return bytes;
 }
-
-// Whatever was painted on the row before, by this bar or another, would show past a shorter frame (#1440).
-const ERASE_TO_EOL = "\x1b[K";
 
 export function createProgressBar(label: string, totalBytes: number): {
   update(downloadedBytes: number): void;

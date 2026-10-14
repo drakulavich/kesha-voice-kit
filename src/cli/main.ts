@@ -356,9 +356,8 @@ async function processFile(
   // so the engine's progress has to land while it happens, not once the run is over.
   const showProgressLine = (line: string) => {
     if (log.quietEnabled) return;
-    const write = () => process.stderr.write(`${line}\n`);
-    if (progress) progress.interrupt(write);
-    else write();
+    if (progress) progress.status(line);
+    else process.stderr.write(`${line}\n`);
   };
   try {
     await validateTranscribeRequest({ vad: vadMode, timestamps, speakers, itn });
