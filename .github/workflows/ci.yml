@@ -460,7 +460,7 @@ jobs:
         shell: bash
         env:
           MATRIX_OS: ${{ matrix.os }}
-        run: mkdir -p test-results && bun run test:unit --reporter=junit --reporter-outfile="test-results/unit-$MATRIX_OS.xml"
+        run: mkdir -p test-results && bun run test:unit --randomize --reporter=junit --reporter-outfile="test-results/unit-$MATRIX_OS.xml"
 
       - name: 📊 Test summary
         if: always()
