@@ -227,19 +227,30 @@ describe("engine", () => {
     expect(parseLangResult('{"confidence":0.94}')).toBeNull();
   });
 
+  /** Answers "itn" when the pass was requested and "plain" otherwise, as text or as JSON. */
+  function itnEngine(): string {
+    return writeTranscribingEngine(
+      "kesha-engine-itn-",
+      ["transcribe.segments", "transcribe.itn"],
+      `  case " $* " in *" --itn "*) t=itn ;; *) t=plain ;; esac
+  case " $* " in
+    *" --json "*) printf '{"text":"%s","segments":[{"start":0,"end":1,"text":"%s"}]}\\n' "$t" "$t" ;;
+    *) printf '%s\\n' "$t" ;;
+  esac`,
+    );
+  }
+
   fakeEngineTest("--itn forwards to the engine on the plain-text path", async () => {
-    await withEngineEnv(await argEchoEngine(["transcribe.itn"]), async () => {
-      expect(await transcribeEngine("audio.wav", { itn: true })).toBe("audio.wav --itn");
-      expect(await transcribeEngine("audio.wav", {})).toBe("audio.wav");
+    await withEngineEnv(itnEngine(), async () => {
+      expect(await transcribeEngine("audio.wav", { itn: true })).toBe("itn");
+      expect(await transcribeEngine("audio.wav", {})).toBe("plain");
     });
   });
 
   fakeEngineTest("--itn forwards to the engine on the --json path", async () => {
-    await withEngineEnv(await argEchoEngine(["transcribe.segments", "transcribe.itn"]), async () => {
-      // The arg-echo engine returns argv, not JSON, so the parse failure carries the argv we want to assert on.
-      await expect(transcribeEngineWithSegments("audio.wav", { itn: true })).rejects.toThrow(
-        "audio.wav --json --itn",
-      );
+    await withEngineEnv(itnEngine(), async () => {
+      expect((await transcribeEngineWithSegments("audio.wav", { itn: true })).text).toBe("itn");
+      expect((await transcribeEngineWithSegments("audio.wav", {})).text).toBe("plain");
     });
   });
 
@@ -400,8 +411,16 @@ describe("engine", () => {
   fakeEngineTest("transcribeEngineWithSegments accepts a valid diarize override and parses speakers", async () => {
     const modelPath = tempDir("kesha-diarize-model-");
     mkdirSync(join(modelPath, "Data", "com.apple.CoreML", "weights"), { recursive: true });
+    const engine = writeTranscribingEngine(
+      "kesha-engine-speakers-",
+      ["transcribe.segments", "transcribe.diarize"],
+      `  case " $* " in
+    *" --speakers "*) printf '%s\\n' '{"text":"ok","segments":[{"start":0,"end":1,"text":"ok","speaker":0}]}' ;;
+    *) printf '%s\\n' '{"text":"ok","segments":[{"start":0,"end":1,"text":"ok"}]}' ;;
+  esac`,
+    );
     await withEngineEnv(
-      fakeEngine(["transcribe.segments", "transcribe.diarize"]),
+      engine,
       async () => {
         const out = await transcribeEngineWithSegments("audio.wav", {
           vad: "on",
@@ -448,9 +467,15 @@ describe("engine", () => {
   /** An engine without the capability sends no key; the parser must not invent one — a
    * `words: undefined` still counts as a column to TOON, which prints it as `words` / `null`. */
   fakeEngineTest("transcribeEngineWithSegments leaves words absent, not undefined", async () => {
-    await withEngineEnv(fakeEngine(["transcribe.segments"]), async () => {
+    const payload = JSON.stringify({ text: "ok", segments: [{ start: 0, end: 1, text: "ok" }] });
+    const engine = writeTranscribingEngine(
+      "kesha-engine-nowords-",
+      ["transcribe.segments"],
+      `  printf '%s\\n' '${payload}'`,
+    );
+    await withEngineEnv(engine, async () => {
       const out = await transcribeEngineWithSegments("audio.wav");
-      expect(out.segments[0]).toStrictEqual({ start: 0, end: 1, text: "ok", speaker: 0 });
+      expect(out.segments[0]).toStrictEqual({ start: 0, end: 1, text: "ok" });
     });
   });
 

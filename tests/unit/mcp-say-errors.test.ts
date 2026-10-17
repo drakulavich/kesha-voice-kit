@@ -1,8 +1,10 @@
 import { describe, test, expect } from "bun:test";
+import { readdirSync } from "fs";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { registerTools } from "../../src/mcp/tools";
+import { isolateEngineCache } from "../helpers/fake-engine";
 
 async function call(args: Record<string, unknown>) {
   const server = createKeshaMcpServer();
@@ -24,15 +26,17 @@ describe("synthesize_speech errors", () => {
   });
 
   test("missing models fails loud with install hint and no download", async () => {
-    const prev = process.env.KESHA_CACHE_DIR;
-    process.env.KESHA_CACHE_DIR = "/tmp/kesha-mcp-empty-" + Date.now();
+    const restore = isolateEngineCache();
+    const cache = process.env.KESHA_CACHE_DIR!;
     try {
       const res = await call({ text: "hello", voice: "en-am_michael" });
       expect(res.isError).toBe(true);
-      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(/install --tts|not installed|kesha-engine not installed/i);
+      expect((res.content as Array<{ text: string }>)[0]?.text).toBe(
+        "error [E_ENGINE_SPAWN]: kesha-engine not installed. run: kesha install --tts",
+      );
+      expect(readdirSync(cache)).toEqual([]);
     } finally {
-      if (prev === undefined) delete process.env.KESHA_CACHE_DIR;
-      else process.env.KESHA_CACHE_DIR = prev;
+      restore();
     }
   });
 });

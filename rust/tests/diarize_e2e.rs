@@ -26,12 +26,23 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn say(text: &str, voice: &str, out: &Path) -> bool {
-    Command::new(common::engine_bin())
+    let result = Command::new(common::engine_bin())
         .args(["say", "--voice", voice, "--out", out.to_str().unwrap()])
         .arg(text)
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+        .output()
+        .expect("spawn kesha-engine say");
+    if result.status.success() {
+        return true;
+    }
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    if stderr.contains("install --tts")
+        || stderr.contains("not installed")
+        || stderr.contains("voice pack")
+    {
+        eprintln!("skipping: TTS prerequisite missing (run `kesha install --tts`):\n{stderr}");
+        return false;
+    }
+    panic!("kesha-engine say --voice {voice} failed unexpectedly: {stderr}");
 }
 
 /// Concatenate a list of WAVs (assumed same sample rate / channels / sample
@@ -115,7 +126,6 @@ fn two_speaker_dialogue_yields_two_clusters() {
         "en-am_michael",
         &p1b,
     ) {
-        eprintln!("skipping: TTS voices not installed (run `kesha install --tts`)");
         return;
     }
 

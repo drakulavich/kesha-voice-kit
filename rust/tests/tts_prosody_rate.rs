@@ -46,8 +46,14 @@ fn macos_prosody_rate_ssml_rejected() {
             // Expected: SSML rejection on macOS voices.
             return;
         }
-        eprintln!("skipping: macos voice not available ({stderr})");
-        return;
+        if stderr.contains("is not installed on this Mac") {
+            eprintln!("skipping: macos voice not available ({stderr})");
+            return;
+        }
+        panic!(
+            "expected the SSML rejection, got exit {}: {stderr}",
+            result.status
+        );
     }
     // AVSpeech now accepts SSML — that's a behavior change. The prosody
     // warn-strip arm called out in #236 needs to ship before this test can

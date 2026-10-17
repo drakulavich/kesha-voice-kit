@@ -109,7 +109,7 @@ fn say_reads_stdin_when_no_positional() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert_eq!(&out.stdout[..4], b"RIFF");
+    common::assert_kokoro_speech(&out.stdout, "say_stdin");
 }
 
 // ONNX-path behavior: on darwin-arm64 `system_kokoro` the default en voice
@@ -166,7 +166,7 @@ fn resolves_from_cache_when_installed() {
         "stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert_eq!(&out.stdout[..4], b"RIFF");
+    common::assert_kokoro_speech(&out.stdout, "say_from_cache");
 }
 
 // ONNX-path behavior: on darwin-arm64 `system_kokoro`, `--list-voices` lists the
@@ -336,5 +336,5 @@ fn say_writes_to_file_with_out_flag() {
     // stdout should be empty when --out is set
     assert!(out.stdout.is_empty(), "stdout should be empty with --out");
     let written = std::fs::read(tmp.path()).unwrap();
-    assert_eq!(&written[..4], b"RIFF");
+    common::assert_kokoro_speech(&written, "say_out_file");
 }

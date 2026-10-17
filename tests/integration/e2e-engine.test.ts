@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll } from "bun:test";
-import { engineGate } from "../helpers/model-gate";
+import { engineGate, modelsRequired } from "../helpers/model-gate";
 import { getEngineBinPath, TRANSCRIBE_DIARIZE_FEATURE } from "../../src/engine";
 import { parseDescribe } from "../../src/engine/describe";
 import { parseEventLine } from "../../src/engine/events";
@@ -22,6 +22,11 @@ if (engineGateResult.requiredFailure) {
   test("this lane must ship a functional engine (#741)", () => {
     throw new Error(engineGateResult.requiredFailure!);
   });
+}
+
+function skipUnlessRequired(reason: string): void {
+  if (modelsRequired()) throw new Error(`${reason}, while KESHA_REQUIRE_MODEL_TESTS is set (#741)`);
+  console.warn(reason);
 }
 
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
@@ -132,7 +137,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
     if (!caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE)) {
-      console.warn(`engine lacks ${TRANSCRIBE_DIARIZE_FEATURE}; skipping --speakers e2e`);
+      skipUnlessRequired(`engine lacks ${TRANSCRIBE_DIARIZE_FEATURE}; skipping --speakers e2e`);
       return false;
     }
     return true;
@@ -176,10 +181,9 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
 
     const parsed = JSON.parse(stdout);
     expect(Array.isArray(parsed.segments)).toBe(true);
-    if (parsed.segments.length > 0) {
-      // One cluster ID is fine; locking that speaker field is numeric on every segment (wire shape).
-      expect(parsed.segments.every((s: { speaker?: unknown }) => typeof s.speaker === "number")).toBe(true);
-    }
+    expect(parsed.segments.length).toBeGreaterThan(0);
+    // One cluster ID is fine; locking that speaker field is numeric on every segment (wire shape).
+    expect(parsed.segments.every((s: { speaker?: unknown }) => typeof s.speaker === "number")).toBe(true);
   }, 360_000);
 
   // No total cap: a cold ANE compile takes ~105s and would trip this file's 30s default.
@@ -250,7 +254,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     }
     if (stderr.includes("the adaptive limit")) {
       // A released engine older than #721 still scales one clock; its wording is not this contract.
-      console.warn("engine predates per-phase supervision (#721); skipping cap e2e");
+      skipUnlessRequired("engine predates per-phase supervision (#721); skipping cap e2e");
       return;
     }
 
@@ -265,27 +269,26 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   test("engine transcribes Russian audio", async () => {
     const { stdout, exitCode } = await runEngine(["transcribe", FIXTURE_RU]);
     expect(exitCode).toBe(0);
-    expect(stdout.length).toBeGreaterThan(10);
+    expect(stdout).toContain("транскрипцией");
   }, 60_000);
 
   test("engine transcribe --json returns text and segments", async () => {
     const capsRun = await runEngine(["describe"]);
     const caps = JSON.parse(capsRun.stdout);
     if (!caps.features.includes(TRANSCRIBE_SEGMENTS_FEATURE)) {
-      console.warn(`engine lacks ${TRANSCRIBE_SEGMENTS_FEATURE}; skipping timestamp e2e`);
+      skipUnlessRequired(`engine lacks ${TRANSCRIBE_SEGMENTS_FEATURE}; skipping timestamp e2e`);
       return;
     }
 
     const { stdout, exitCode } = await runEngine(["transcribe", FIXTURE_EN, "--json"]);
     expect(exitCode).toBe(0);
     const parsed = JSON.parse(stdout);
-    expect(parsed.text.length).toBeGreaterThan(10);
+    expect(parsed.text.toLowerCase()).toContain("email");
     expect(Array.isArray(parsed.segments)).toBe(true);
-    if (parsed.segments.length > 0) {
-      expect(parsed.segments[0].start).toBeGreaterThanOrEqual(0);
-      expect(parsed.segments[0].end).toBeGreaterThan(parsed.segments[0].start);
-      expect(parsed.segments[0].text.length).toBeGreaterThan(0);
-    }
+    expect(parsed.segments.length).toBeGreaterThan(0);
+    expect(parsed.segments[0].start).toBeGreaterThanOrEqual(0);
+    expect(parsed.segments[0].end).toBeGreaterThan(parsed.segments[0].start);
+    expect(parsed.segments[0].text.length).toBeGreaterThan(0);
   }, 60_000);
 
   test("word timings track real speech and stay inside their segment (#720)", async () => {

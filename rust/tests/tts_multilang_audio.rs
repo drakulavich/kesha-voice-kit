@@ -69,6 +69,7 @@ fn multilang_paths_or_skip(lang: &str) -> Option<(PathBuf, PathBuf)> {
 }
 
 fn run_corpus_for_lang(lang: &str, sentences: &[String]) {
+    assert!(!sentences.is_empty(), "corpus has no {lang} sentences");
     let Some((model_path, voice_path)) = multilang_paths_or_skip(lang) else {
         return;
     };
@@ -118,28 +119,28 @@ fn run_corpus_for_lang(lang: &str, sentences: &[String]) {
 #[test]
 fn multilang_audio_regression_es() {
     let corpus = load_corpus();
-    let sentences = corpus.get("es").map(Vec::as_slice).unwrap_or(&[]);
+    let sentences = corpus.get("es").expect("corpus has es");
     run_corpus_for_lang("es", sentences);
 }
 
 #[test]
 fn multilang_audio_regression_fr() {
     let corpus = load_corpus();
-    let sentences = corpus.get("fr").map(Vec::as_slice).unwrap_or(&[]);
+    let sentences = corpus.get("fr").expect("corpus has fr");
     run_corpus_for_lang("fr", sentences);
 }
 
 #[test]
 fn multilang_audio_regression_it() {
     let corpus = load_corpus();
-    let sentences = corpus.get("it").map(Vec::as_slice).unwrap_or(&[]);
+    let sentences = corpus.get("it").expect("corpus has it");
     run_corpus_for_lang("it", sentences);
 }
 
 #[test]
 fn multilang_audio_regression_pt() {
     let corpus = load_corpus();
-    let sentences = corpus.get("pt").map(Vec::as_slice).unwrap_or(&[]);
+    let sentences = corpus.get("pt").expect("corpus has pt");
     run_corpus_for_lang("pt", sentences);
 }
 

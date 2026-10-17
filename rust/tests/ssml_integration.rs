@@ -78,8 +78,7 @@ fn break_without_time_uses_default() {
 
 #[test]
 fn unknown_tag_is_stripped_with_warning() {
-    // <prosody> is not supported — should warn + strip, preserve text.
-    let segs = parse(r#"<speak>Hi <prosody rate="fast">there</prosody></speak>"#).unwrap();
+    let segs = parse(r#"<speak>Hi <foo bar="baz">there</foo></speak>"#).unwrap();
     let all_text: String = segs
         .iter()
         .filter_map(|s| match s {
@@ -88,8 +87,12 @@ fn unknown_tag_is_stripped_with_warning() {
         })
         .collect::<Vec<_>>()
         .join(" ");
-    assert!(all_text.contains("Hi"));
-    assert!(all_text.contains("there"));
+    assert!(all_text.contains("Hi"), "{segs:?}");
+    assert!(all_text.contains("there"), "{segs:?}");
+    assert!(
+        !all_text.contains("foo") && !all_text.contains('<'),
+        "{segs:?}"
+    );
 }
 
 #[test]
