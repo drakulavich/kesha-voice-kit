@@ -35,10 +35,8 @@ fn say(text: &str, voice: &str, out: &Path) -> bool {
         return true;
     }
     let stderr = String::from_utf8_lossy(&result.stderr);
-    if stderr.contains("install --tts")
-        || stderr.contains("not installed")
-        || stderr.contains("voice pack")
-    {
+    // "reinstall it: kesha install --tts" is E_MODEL_LOAD, a present but broken model: that panics.
+    if stderr.contains("not installed") || stderr.contains("does not exist") {
         eprintln!("skipping: TTS prerequisite missing (run `kesha install --tts`):\n{stderr}");
         return false;
     }

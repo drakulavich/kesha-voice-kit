@@ -411,9 +411,14 @@ mod tests {
     /// An unwritable temp dir must not let the library line through raw (Codex on #1312).
     #[test]
     fn a_capture_file_that_cannot_be_created_still_keeps_library_lines_off_stderr() {
+        let env_lock = crate::util::test_env::lock();
         let mut returned = None;
         let out = relayed(|| {
-            std::env::set_var("TMPDIR", "/nonexistent/kesha-fluid-stderr");
+            let _tmpdir = crate::util::test_env::EnvGuard::set(
+                &env_lock,
+                "TMPDIR",
+                "/nonexistent/kesha-fluid-stderr",
+            );
             returned = Some(with_relayed_stderr(|| {
                 c_print_stderr(c"[WARN] [FluidAudio.DownloadUtils] Retrying in 1.0s.\n");
                 Ok(1)

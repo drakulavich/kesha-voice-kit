@@ -78,10 +78,8 @@ fn say_rate(exe: &Path, text: &str, voice: &str, rate: &str, out: &Path) -> bool
     // match only the specific "models not installed" prerequisite messages the
     // engine emits — NOT a bare "download" substring, which would also swallow
     // a genuine synthesis regression whose error happens to mention downloads.
-    if stderr.contains("install --tts")
-        || stderr.contains("not installed")
-        || stderr.contains("voice pack")
-    {
+    // "reinstall it: kesha install --tts" is E_MODEL_LOAD, a present but broken model: that panics.
+    if stderr.contains("not installed") || stderr.contains("does not exist") {
         eprintln!(
             "skipping: ANE Kokoro prerequisite missing (run `kesha install --tts`):\n{stderr}"
         );

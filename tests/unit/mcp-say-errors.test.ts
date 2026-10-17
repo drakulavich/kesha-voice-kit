@@ -25,9 +25,11 @@ describe("synthesize_speech errors", () => {
     expect(nanRate.isError).toBe(true);
   });
 
-  test("missing models fails loud with install hint and no download", async () => {
+  test("missing engine fails loud with install hint and no download", async () => {
     const restore = isolateEngineCache();
     const cache = process.env.KESHA_CACHE_DIR!;
+    const stdinTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
     try {
       const res = await call({ text: "hello", voice: "en-am_michael" });
       expect(res.isError).toBe(true);
@@ -36,6 +38,7 @@ describe("synthesize_speech errors", () => {
       );
       expect(readdirSync(cache)).toEqual([]);
     } finally {
+      Object.defineProperty(process.stdin, "isTTY", { value: stdinTTY, configurable: true });
       restore();
     }
   });
