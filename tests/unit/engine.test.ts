@@ -1022,6 +1022,52 @@ exit 2
       expect(await detectAudioLanguageEngine("audio.wav")).toEqual({ code: "ru", confidence: 0.87 });
     });
   });
+
+  /** Parses like the engine's clap: a dash-led token is a flag until `--`, and an unknown one is refused. */
+  function dashStrictEngine(): string {
+    const dir = tempDir("kesha-engine-dash-");
+    const path = join(dir, "kesha-engine");
+    writeFileSync(
+      path,
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ features: ["transcribe.segments"] })}'
+  exit 0
+fi
+cmd=$1
+shift
+file=
+json=
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --) file=$2; break ;;
+    --json) json=1 ;;
+    --vad|--no-vad|--itn|--speakers) ;;
+    -*) printf '%s\\n' "{\\"kind\\":\\"error\\",\\"code\\":\\"E_INVALID_ARG\\",\\"message\\":\\"unexpected argument $1 found\\"}"; exit 2 ;;
+    *) file=$1 ;;
+  esac
+  shift
+done
+case "$cmd" in
+  transcribe) case "$json" in
+    1) printf '{"text":"heard %s","segments":[]}\\n' "$file" ;;
+    *) printf 'heard %s\\n' "$file" ;;
+  esac ;;
+  detect-lang) printf '{"code":"en","confidence":0.9,"file":"%s"}\\n' "$file" ;;
+esac
+`,
+    );
+    chmodSync(path, 0o755);
+    return path;
+  }
+
+  fakeEngineTest("a file name starting with - reaches the engine as a file (#1464)", async () => {
+    await withEngineEnv(dashStrictEngine(), async () => {
+      expect(await transcribeEngine("-dash.wav")).toBe("heard -dash.wav");
+      expect((await transcribeEngineWithSegments("--help.wav")).text).toBe("heard --help.wav");
+      expect(await detectAudioLanguageEngine("-dash.wav")).toEqual({ code: "en", confidence: 0.9 });
+    });
+  });
 });
 
 describe("text language detection degrades loudly (#770)", () => {
