@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeAll } from "bun:test";
 import { spawn } from "bun";
 import { existsSync, mkdirSync, symlinkSync } from "fs";
+import { join } from "path";
+import { tempDir } from "../helpers/temp-dir";
 
 const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
 
@@ -15,7 +17,7 @@ const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
 const SPIKE_MODEL = process.env.KOKORO_MODEL ?? "/tmp/kokoro-spike/model.onnx";
 const SPIKE_VOICE = process.env.KOKORO_VOICE ?? "/tmp/kokoro-spike/am_michael.bin";
 
-const CACHE_DIR = `/tmp/kesha-e2e-${Date.now()}`;
+const CACHE_DIR = tempDir("kesha-e2e-");
 const MODEL_DIR = `${CACHE_DIR}/models/kokoro-82m`;
 const BUILT_ENGINE = `${new URL("../..", import.meta.url).pathname}rust/target/release/kesha-engine`;
 
@@ -68,7 +70,7 @@ describe("kesha say e2e", () => {
   it.skipIf(!SPIKE_AVAILABLE)(
     "writes WAV to --out file",
     async () => {
-      const outPath = `/tmp/kesha-e2e-out-${Date.now()}.wav`;
+      const outPath = join(tempDir("kesha-e2e-out-"), "out.wav");
       const proc = spawnCli(["say", "Hi", "--out", outPath]);
       expect(await proc.exited).toBe(0);
       const bytes = await Bun.file(outPath).arrayBuffer();

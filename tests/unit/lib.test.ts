@@ -55,7 +55,7 @@ async function withEngine<T>(enginePath: string, fn: () => T | Promise<T>): Prom
 describe("transcribe.ts internals", () => {
   it("uses canonical Bun install commands when transcription backend is missing", async () => {
     const saved = process.env.KESHA_ENGINE_BIN;
-    process.env.KESHA_ENGINE_BIN = `/tmp/kesha-missing-engine-${Date.now()}`;
+    process.env.KESHA_ENGINE_BIN = join(tempDir("kesha-missing-engine-"), "missing");
     try {
       let hint = "";
       try {

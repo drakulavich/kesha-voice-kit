@@ -36,7 +36,7 @@ async function withMissingEngine<T>(fn: () => Promise<T>): Promise<T> {
   const prevBin = process.env.KESHA_ENGINE_BIN;
   const prevCache = process.env.KESHA_CACHE_DIR;
   delete process.env.KESHA_ENGINE_BIN;
-  process.env.KESHA_CACHE_DIR = `/tmp/kesha-mcp-empty-${Date.now()}-${Math.random()}`;
+  process.env.KESHA_CACHE_DIR = join(tempDir("kesha-mcp-empty-"), "missing");
   try {
     return await fn();
   } finally {

@@ -316,7 +316,7 @@ describe("engine", () => {
         expect(err.code).toBe("E_INVALID_ARG");
         expect(err.message).toContain("--no-vad");
       },
-      { KESHA_DIARIZE_MODEL_PATH: "/tmp/kesha-missing-diarize-model" },
+      { KESHA_DIARIZE_MODEL_PATH: join(tempDir("kesha-diarize-"), "missing") },
     );
   });
 
@@ -375,7 +375,7 @@ describe("engine", () => {
         expect(err.hint).toContain("kesha install --diarize");
         expect(err.message).toContain("KESHA_DIARIZE_MODEL_PATH set but path does not exist");
       },
-      { KESHA_DIARIZE_MODEL_PATH: "/tmp/kesha-missing-diarize-model" },
+      { KESHA_DIARIZE_MODEL_PATH: join(tempDir("kesha-diarize-"), "missing") },
     );
   });
 

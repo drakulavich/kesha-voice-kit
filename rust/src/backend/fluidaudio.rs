@@ -439,13 +439,21 @@ mod tests {
     /// An unreachable registry and an empty cache make init_asr try a fetch with no network.
     #[test]
     fn a_failed_model_fetch_during_asr_init_reaches_stderr_only_as_events() {
+        use crate::util::test_env::EnvGuard;
         use std::io::{Read, Seek};
         use std::os::fd::AsRawFd;
 
         let home = tempfile::tempdir().expect("scratch home");
-        std::env::set_var("HOME", home.path());
-        std::env::set_var("KESHA_CACHE_DIR", home.path().join("cache"));
-        std::env::set_var("REGISTRY_URL", "http://127.0.0.1:9");
+        let home_path = home.path().to_str().expect("utf-8 temp path");
+        let cache = home.path().join("cache");
+        let env_lock = crate::util::test_env::lock();
+        let _home = EnvGuard::set(&env_lock, "HOME", home_path);
+        let _cache = EnvGuard::set(
+            &env_lock,
+            "KESHA_CACHE_DIR",
+            cache.to_str().expect("utf-8 temp path"),
+        );
+        let _registry = EnvGuard::set(&env_lock, "REGISTRY_URL", "http://127.0.0.1:9");
 
         let mut capture = tempfile::tempfile().expect("capture tempfile");
         // SAFETY: dup of fd 2, restored below before any assertion can panic.

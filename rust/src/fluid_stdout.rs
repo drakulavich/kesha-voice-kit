@@ -477,7 +477,8 @@ mod tests {
     ))]
     #[test]
     fn debug_routes_silenced_chatter_to_stderr_as_debug_events() {
-        std::env::set_var("KESHA_DEBUG", "1");
+        let env_lock = crate::util::test_env::lock();
+        let _debug = crate::util::test_env::EnvGuard::set(&env_lock, "KESHA_DEBUG", "1");
         let mut capture = tempfile::tempfile().expect("capture tempfile");
         let restore = redirect(libc::STDERR_FILENO, &capture);
 
@@ -507,7 +508,8 @@ mod tests {
     ))]
     #[test]
     fn a_reused_debug_sink_has_relayed_a_call_s_chatter_once_settled() {
-        std::env::set_var("KESHA_DEBUG", "1");
+        let env_lock = crate::util::test_env::lock();
+        let _debug = crate::util::test_env::EnvGuard::set(&env_lock, "KESHA_DEBUG", "1");
         let capture = tempfile::NamedTempFile::new().expect("capture file");
         let restore = redirect(libc::STDERR_FILENO, capture.as_file());
 

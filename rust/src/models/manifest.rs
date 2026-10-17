@@ -1200,7 +1200,8 @@ mod manifest_tests {
 
     #[test]
     fn verify_sha256_matches_and_mismatches() -> Result<()> {
-        let tmp = std::env::temp_dir().join("kesha-sha256-test.bin");
+        let dir = tempfile::tempdir()?;
+        let tmp = dir.path().join("kesha-sha256-test.bin");
         fs::write(&tmp, b"hello world")?;
         // `echo -n 'hello world' | shasum -a 256`
         let expected = "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9";
@@ -1208,7 +1209,6 @@ mod manifest_tests {
         assert!(!verify_sha256(&tmp, &"0".repeat(64))?);
         // Uppercase hashes in the manifest would still match (case-insensitive).
         assert!(verify_sha256(&tmp, &expected.to_uppercase())?);
-        let _ = fs::remove_file(&tmp);
         Ok(())
     }
 
