@@ -765,15 +765,21 @@ mod tests {
     ///
     /// Equality is over the parsed mapping, not the bytes: the two files carry
     /// the same table with different JSON formatting, so a byte compare fails on
-    /// whitespace alone. Self-skips until the ANE bundle is staged, since it only
-    /// exists after `kesha install --tts`.
+    /// whitespace alone. Skips without the ANE bundle (staged by `kesha install --tts`)
+    /// unless `KESHA_REQUIRE_ANE_TESTS` is set.
     #[test]
+    #[ignore = "needs `kesha install --tts en`, which no CI runner has; run with `just ane-tests`"]
     fn the_ane_vocab_agrees_with_the_onnx_fixture() {
-        let Ok(ane_dir) = crate::models::fluidaudio_ane_kokoro_dir() else {
-            return;
-        };
-        let staged = ane_dir.join("vocab.json");
+        let staged = crate::models::fluidaudio_ane_kokoro_dir()
+            .expect("FluidAudio cache dir must resolve")
+            .join("vocab.json");
         let Ok(ane_json) = std::fs::read_to_string(&staged) else {
+            let required = std::env::var("KESHA_REQUIRE_ANE_TESTS").unwrap_or_default();
+            assert!(
+                required.is_empty() || required == "0",
+                "KESHA_REQUIRE_ANE_TESTS is set but {} is unreadable; run `kesha install --tts en`",
+                staged.display()
+            );
             return;
         };
         let ane: std::collections::HashMap<String, i64> =
