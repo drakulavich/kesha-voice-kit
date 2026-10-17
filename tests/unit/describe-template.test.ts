@@ -4,15 +4,16 @@ import { describeDocument } from "../helpers/fake-engine";
 import { readRepoFile } from "../helpers/repo";
 
 describe("the fake engine's describe template", () => {
-  // The capability pact is the only describe recording a workflow re-derives from the published binary (#798).
-  const recorded = parseDescribe(JSON.parse(readRepoFile("tests/fixtures/capabilities/darwin-arm64.json")))!;
-
-  test("reproduces the released darwin-arm64 document from its features alone", () => {
-    expect(recorded).not.toBeNull();
-    expect(
-      describeDocument({ backend: recorded.backend, profile: recorded.profile, features: recorded.features, tts: recorded.tts }),
-    ).toEqual(recorded);
-  });
+  // The capability pacts are the only describe recordings a workflow re-derives from the published binary (#798).
+  for (const target of ["darwin-arm64", "linux-x64", "win32-x64"]) {
+    test(`reproduces the released ${target} document from its features alone`, () => {
+      const recorded = parseDescribe(JSON.parse(readRepoFile(`tests/fixtures/capabilities/${target}.json`)))!;
+      expect(recorded).not.toBeNull();
+      expect(
+        describeDocument({ backend: recorded.backend, profile: recorded.profile, features: recorded.features, tts: recorded.tts }),
+      ).toEqual(recorded);
+    });
+  }
 
   test("drops the build-time rows the way the engine does", () => {
     const onnx = describeDocument({ backend: "onnx", profile: "linux", features: ["transcribe", "tts"] });

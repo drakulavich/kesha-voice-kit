@@ -138,6 +138,12 @@ mod tests {
     }
 
     #[test]
+    fn encodes_hello_to_the_fixture_ids() {
+        let t = Tokenizer::load().unwrap();
+        assert_eq!(t.encode("həlˈoʊ"), vec![50, 83, 54, 156, 57, 135]);
+    }
+
+    #[test]
     fn wraps_with_leading_and_trailing_zero() {
         let padded = Tokenizer::pad_to_context(vec![1, 2, 3]);
         assert_eq!(padded, vec![0, 1, 2, 3, 0]);

@@ -7,7 +7,7 @@
  * the artifact users actually get — never hand-edit one. Recording needs no models; the
  * document is assembled at compile time.
  *
- *   bun .github/scripts/record-capability-pacts.ts --binary ./kesha-engine-linux-x64
+ *   bun .github/scripts/record-capability-pacts.ts --binary ./kesha-engine-linux-x64 --version 1.2.3
  *   bun .github/scripts/record-capability-pacts.ts --from-release --check
  *
  * `--from-release` fetches the highest published stable Engine, the one a source checkout's lanes install. `--check` re-derives the
@@ -19,7 +19,6 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { engineTarget, engineTargetEntries, targetKey, type EngineTarget } from "../../src/engine-targets";
-import { engineVersion as packageEngineVersion } from "../../src/package-info";
 
 function newestStableEngine(): string {
   const run = Bun.spawnSync(["bash", join(import.meta.dir, "newest-stable-engine.sh")], { stderr: "inherit" });
@@ -63,13 +62,14 @@ const serialize = (value: unknown): string => `${JSON.stringify(value, null, 2)}
 
 function usage(message: string): never {
   console.error(
-    `${message}\n\nusage: record-capability-pacts.ts (--binary <path> | --from-release) [--target <key>] [--check]`,
+    `${message}\n\nusage: record-capability-pacts.ts (--binary <path> --version <engine version> | --from-release) [--target <key>] [--check]`,
   );
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): { binary: string; target: string; check: boolean; fromRelease: boolean } {
+function parseArgs(argv: string[]): { binary: string; version: string; target: string; check: boolean; fromRelease: boolean } {
   let binary = "";
+  let version = "";
   let target = "";
   let check = false;
   let fromRelease = false;
@@ -83,10 +83,12 @@ function parseArgs(argv: string[]): { binary: string; target: string; check: boo
     else if (arg === "--from-release") fromRelease = true;
     else if (arg === "--binary") binary = operand(arg, argv[++i]);
     else if (arg === "--target") target = operand(arg, argv[++i]);
+    else if (arg === "--version") version = operand(arg, argv[++i]);
     else usage(`unrecognised argument: ${arg}`);
   }
   if (!binary && !fromRelease) usage("pass --binary <path> or --from-release");
   if (binary && fromRelease) usage("--binary and --from-release are mutually exclusive");
+  if (binary && !version) usage("--binary needs --version <engine version the binary was released as>");
   if (!target) {
     if (!engineTarget()) usage(`no published engine target for this host (${targetKey()}); pass --target`);
     target = targetKey();
@@ -96,7 +98,7 @@ function parseArgs(argv: string[]): { binary: string; target: string; check: boo
   if (target !== targetKey()) {
     usage(`--target ${target} cannot be recorded on ${targetKey()}; run it on that target's own OS`);
   }
-  return { binary, target, check, fromRelease };
+  return { binary, version, target, check, fromRelease };
 }
 
 /**
@@ -147,7 +149,7 @@ const RE_RECORD =
   "Re-record per .github/workflows/nightly.yml (capability-pact job): dispatch it with `job: capability-pact` and `record: true`, and " +
   "commit the artifacts it uploads.";
 
-function verify(target: string, binary: string, recorded: string, engineVersion: string): void {
+export function verify(target: string, binary: string, recorded: string, engineVersion: string): void {
   const path = pactPath(target);
   const provenance = provenancePath(target);
   if (!existsSync(path) || !existsSync(provenance)) {
@@ -181,11 +183,11 @@ function verify(target: string, binary: string, recorded: string, engineVersion:
 }
 
 async function main(): Promise<void> {
-  const { binary: given, target, check, fromRelease } = parseArgs(process.argv.slice(2));
+  const { binary: given, version, target, check, fromRelease } = parseArgs(process.argv.slice(2));
   const asset = targetByKey(target);
   if (!asset) usage(`unknown target '${target}' — it has no row in src/engine-targets.ts`);
 
-  const engineVersion = fromRelease ? newestStableEngine() : packageEngineVersion;
+  const engineVersion = fromRelease ? newestStableEngine() : version;
   const binary = fromRelease ? await downloadPinnedBinary(asset, engineVersion) : given;
   const recorded = serialize(await readDescribe(binary));
 
