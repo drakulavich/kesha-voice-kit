@@ -101,6 +101,55 @@ fn input_without_speak_root_errors() {
     assert!(err.to_string().contains("<speak>"), "msg: {err}");
 }
 
+fn assert_ssml_invalid(input: &str, needle: &str) {
+    let err = parse(input).unwrap_err();
+    let msg = format!("{err:#}");
+    assert_eq!(
+        kesha_engine::errors::code_of(&err),
+        kesha_engine::errors::ErrorCode::SsmlInvalid,
+        "{input}: {msg}"
+    );
+    assert!(msg.contains(needle), "{input}: {msg}");
+}
+
+#[test]
+fn a_second_speak_root_errors() {
+    assert_ssml_invalid(
+        "<speak>One two three.</speak><speak>Four five six.</speak>",
+        "content after </speak> (got '<speak>Four five six",
+    );
+}
+
+#[test]
+fn text_after_the_closing_root_errors() {
+    assert_ssml_invalid(
+        "<speak>Keep this.</speak> And this trailing text.",
+        "content after </speak> (got 'And this trailing te",
+    );
+}
+
+#[test]
+fn an_unclosed_tag_errors() {
+    assert_ssml_invalid(
+        r#"<speak>Unclosed <break time="1s"> tag and many more words here"#,
+        "<break> is never closed",
+    );
+}
+
+#[test]
+fn an_unclosed_root_errors() {
+    assert_ssml_invalid("<speak>Hello world", "<speak> is never closed");
+}
+
+#[test]
+fn whitespace_and_comments_after_the_closing_root_are_accepted() {
+    let segs = parse("<speak>Hello world</speak>\n  <!-- note -->\n").unwrap();
+    assert!(
+        matches!(segs.as_slice(), [Segment::Text(s)] if s.contains("Hello world")),
+        "got {segs:?}"
+    );
+}
+
 #[test]
 fn empty_input_errors() {
     assert!(parse("").unwrap_err().to_string().contains("empty"));

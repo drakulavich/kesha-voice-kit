@@ -26,7 +26,7 @@ darwin = ["coreml", "tts", "system_tts", "system_kokoro", "system_diarize", "sys
 # ASR backend selection. Language detection always uses ONNX regardless.
 coreml = ["dep:fluidaudio-rs"]
 onnx = []
-tts = ["dep:thiserror", "dep:ssml-parser", "dep:opusic-sys", "dep:ogg", "dep:flacenc"]
+tts = ["dep:thiserror", "dep:ssml-parser", "dep:quick-xml", "dep:opusic-sys", "dep:ogg", "dep:flacenc"]
 # macOS-only AVSpeechSynthesizer backend for `macos-*` voices (#141).
 # Opt-in — builds a Swift sidecar via swiftc in build.rs. Silently no-op on
 # non-macOS targets even when enabled.
@@ -90,6 +90,7 @@ hound = "3.5"
 thiserror = { version = "2", optional = true }
 sha2 = "0.11"
 ssml-parser = { version = "0.3", optional = true }
+quick-xml = { version = "0.42", optional = true }
 
 # Opus encoding for `kesha say --format ogg-opus` (#223). Encode drives the
 # `opusic-sys` FFI — the SAME libopus `symphonia-adapter-libopus` links for

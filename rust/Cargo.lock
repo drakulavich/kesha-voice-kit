@@ -933,6 +933,7 @@ dependencies = [
  "ogg",
  "opusic-sys",
  "ort",
+ "quick-xml",
  "rayon",
  "rubato",
  "serde",
