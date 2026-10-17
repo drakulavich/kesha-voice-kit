@@ -790,7 +790,7 @@ jobs:
     # Pinned (matches release.yml): this is the only CI lane that
     # builds the engine from source on macOS, and macos-latest's floating
     # Xcode 16.4 fails to link (`clang_rt.osx not found`).
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 20
     permissions:
       contents: read
@@ -1027,7 +1027,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, windows-latest]
+        os: [macos-15, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     env:
@@ -1046,7 +1046,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "16.2"
@@ -1064,7 +1064,7 @@ jobs:
       # Guard against coreml-backend rot: v1.0.0 shipped with broken
       # coreml code because no PR CI job ever tried to build it.
       - name: Check coreml feature
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         shell: bash
         # --all-targets so the `#[cfg(feature = "coreml")]` tests compile here too (#708).
         run: cd rust && cargo check --features coreml --no-default-features --all-targets
@@ -1081,11 +1081,11 @@ jobs:
       # The feature set lives in the `verify-darwin-full` recipe, so CI and the local
       # gate cannot drift apart (#797) — hence a `just` on PATH for this lane.
       - uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         with:
           tool: just@1.58.0
       - name: Lint darwin release feature set (incl. system_kokoro)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         shell: bash
         run: just verify-darwin-full
 
@@ -1282,7 +1282,7 @@ jobs:
   # Provisioned macOS arm64 lane for the FluidAudio TDT decoder-state guard
   # (#592). `transcribe_samples_is_stateless_across_calls` is `#[ignore]` +
   # `coreml`-only because it needs a real Apple Neural Engine AND the cached
-  # Parakeet CoreML bundle — the per-PR macos-14 lane above only *compiles*
+  # Parakeet CoreML bundle — the per-PR macos-15 lane above only *compiles*
   # `coreml` (`cargo check`), so a fluidaudio-rs bump that dropped the upstream
   # stateless-reset fix (FluidInference/fluidaudio-rs#15) would ship the
   # multi-segment "." corruption with no automated failure.
@@ -1292,7 +1292,7 @@ jobs:
   # in Cargo.lock) — not on every PR and not nightly. The CoreML Parakeet
   # bundle is large but cached, so the fetch is a once-per-key seed.
   #
-  # macos-14 is GitHub-hosted Apple Silicon, but it is an `Apple M1 (Virtual)` VM
+  # GitHub-hosted Apple Silicon is an `Apple M1 (Virtual)` VM
   # with **no** Neural Engine (#742 measured `ioreg -c AppleARMIODevice | grep -ci
   # ane` at 0 there against 32 on a real M2), so the ANE-converted Parakeet chain
   # actually executes through BNNS on the CPU. The guard still catches a
@@ -1301,7 +1301,7 @@ jobs:
   coreml-regression:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.coreml == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     env:
       MACOSX_DEPLOYMENT_TARGET: "14.0"

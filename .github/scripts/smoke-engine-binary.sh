@@ -12,7 +12,7 @@ feats | grep -q '"tts"' || {
   echo "expected tts in describe features, got: $caps" >&2
   exit 1
 }
-if [ "${RUNNER_IMAGE:?}" = "macos-14" ]; then
+if [ "${RUNNER_IMAGE:?}" = "macos-15" ]; then
   voices=$("./$binary" say --list-voices)
   echo "$voices" | grep -q '^macos-' || {
     echo "expected at least one macos-* voice, got:" >&2

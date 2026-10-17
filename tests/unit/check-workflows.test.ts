@@ -99,7 +99,7 @@ describe("requirePreUploadSynthesisSmoke", () => {
   });
 
   test("accepts a platform-restricted smoke step", () => {
-    const step = { ...SMOKE, if: "matrix.os != 'macos-14'" };
+    const step = { ...SMOKE, if: "matrix.os != 'macos-15'" };
     expect(requirePreUploadSynthesisSmoke(PATH, job("build", [step, UPLOAD]))).toEqual([]);
   });
 
@@ -303,7 +303,7 @@ describe("forbidFindPipedToHead", () => {
 
   // A dropped check wouldn't show up against the clean repo tree, only against a probe (see above).
   test("the file gate actually runs it", () => {
-    const yaml = "on: push\njobs:\n  smoke:\n    runs-on: macos-14\n    steps:\n      - run: find . -name x | head -1\n";
+    const yaml = "on: push\njobs:\n  smoke:\n    runs-on: macos-15\n    steps:\n      - run: find . -name x | head -1\n";
     const path = join(tempDir("kesha-wf-"), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1088"))).toHaveLength(1);
