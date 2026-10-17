@@ -72,16 +72,8 @@ fn say_rate(exe: &Path, text: &str, voice: &str, rate: &str, out: &Path) -> bool
         return true;
     }
     let stderr = String::from_utf8_lossy(&result.stderr);
-    // Missing-model / missing-voice failures are skips, not regressions —
-    // mirrors diarize_e2e.rs's prerequisite handling. `ane_kokoro_ready()`
-    // already confirmed the model + voice exist before we synthesized, so we
-    // match only the specific "models not installed" prerequisite messages the
-    // engine emits — NOT a bare "download" substring, which would also swallow
-    // a genuine synthesis regression whose error happens to mention downloads.
-    if stderr.contains("install --tts")
-        || stderr.contains("not installed")
-        || stderr.contains("voice pack")
-    {
+    // Only E_MODEL_MISSING is a missing prerequisite; E_MODEL_LOAD (present but broken) panics.
+    if stderr.contains("\"E_MODEL_MISSING\"") {
         eprintln!(
             "skipping: ANE Kokoro prerequisite missing (run `kesha install --tts`):\n{stderr}"
         );

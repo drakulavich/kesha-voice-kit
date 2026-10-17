@@ -644,7 +644,7 @@ jobs:
       - name: 📵 Transcribe offline
         run: |
           bash .github/scripts/offline.sh kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > offline-transcript.json
-          bun .github/scripts/assert-transcript.ts offline-transcript.json
+          bun .github/scripts/assert-transcript.ts offline-transcript.json email
       - name: 🧪 Integration tests (real engine)
         run: mkdir -p test-results && bun run test:integration --reporter=junit --reporter-outfile=test-results/integration-full.xml
         timeout-minutes: 12
@@ -713,7 +713,7 @@ jobs:
         run: |
           kesha status
           kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > /tmp/kesha-linux-smoke.json
-          bun .github/scripts/assert-transcript.ts /tmp/kesha-linux-smoke.json
+          bun .github/scripts/assert-transcript.ts /tmp/kesha-linux-smoke.json email
 
       # Synthesis was unproven on every non-Darwin platform (#464).
       - name: 🗣️ Synthesis round-trip
@@ -763,7 +763,7 @@ jobs:
         run: |
           kesha status
           kesha --json tests/fixtures/benchmark-en/01-check-email.ogg > kesha-win-smoke.json
-          bun .github/scripts/assert-transcript.ts kesha-win-smoke.json
+          bun .github/scripts/assert-transcript.ts kesha-win-smoke.json email
 
       - name: 🗣️ Synthesis round-trip
         shell: bash

@@ -49,7 +49,7 @@ verify_engine_asset() {
   "$KESHA_COMMAND" install --onnx --tts en 2>&1 | tee "$scratch/install.log"
   bun "$repo_root/.github/scripts/assert-install-warmup.ts" "$scratch/install.log"
   "$KESHA_COMMAND" --json "$repo_root/tests/fixtures/benchmark-en/01-check-email.ogg" > "$scratch/transcript.json"
-  bun "$repo_root/.github/scripts/assert-transcript.ts" "$scratch/transcript.json"
+  bun "$repo_root/.github/scripts/assert-transcript.ts" "$scratch/transcript.json" email
   bun "$repo_root/.github/scripts/smoke-synthesis.ts" "$scratch/synthesis"
 }
 
@@ -86,7 +86,7 @@ run_npm() {
   "$kesha" install --onnx 2>&1 | tee "$scratch/install.log"
   bun "$repo_root/.github/scripts/assert-install-warmup.ts" "$scratch/install.log"
   "$kesha" --json "$repo_root/tests/fixtures/benchmark-en/01-check-email.ogg" > "$scratch/transcript.json"
-  bun "$repo_root/.github/scripts/assert-transcript.ts" "$scratch/transcript.json"
+  bun "$repo_root/.github/scripts/assert-transcript.ts" "$scratch/transcript.json" email
 
   echo "npm smoke passed: package=$package version=$VERSION"
 }

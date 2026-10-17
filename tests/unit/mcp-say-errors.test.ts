@@ -1,10 +1,10 @@
 import { describe, test, expect } from "bun:test";
-import { join } from "path";
+import { readdirSync } from "fs";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { registerTools } from "../../src/mcp/tools";
-import { tempDir } from "../helpers/temp-dir";
+import { isolateEngineCache } from "../helpers/fake-engine";
 
 async function call(args: Record<string, unknown>) {
   const server = createKeshaMcpServer();
@@ -25,16 +25,21 @@ describe("synthesize_speech errors", () => {
     expect(nanRate.isError).toBe(true);
   });
 
-  test("missing models fails loud with install hint and no download", async () => {
-    const prev = process.env.KESHA_CACHE_DIR;
-    process.env.KESHA_CACHE_DIR = join(tempDir("kesha-mcp-empty-"), "missing");
+  test("missing engine fails loud with install hint and no download", async () => {
+    const restore = isolateEngineCache();
+    const cache = process.env.KESHA_CACHE_DIR!;
+    const stdinTTY = process.stdin.isTTY;
+    Object.defineProperty(process.stdin, "isTTY", { value: false, configurable: true });
     try {
       const res = await call({ text: "hello", voice: "en-am_michael" });
       expect(res.isError).toBe(true);
-      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(/install --tts|not installed|kesha-engine not installed/i);
+      expect((res.content as Array<{ text: string }>)[0]?.text).toBe(
+        "error [E_ENGINE_SPAWN]: kesha-engine not installed. run: kesha install --tts",
+      );
+      expect(readdirSync(cache)).toEqual([]);
     } finally {
-      if (prev === undefined) delete process.env.KESHA_CACHE_DIR;
-      else process.env.KESHA_CACHE_DIR = prev;
+      Object.defineProperty(process.stdin, "isTTY", { value: stdinTTY, configurable: true });
+      restore();
     }
   });
 });
