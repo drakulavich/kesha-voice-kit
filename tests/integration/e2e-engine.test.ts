@@ -105,7 +105,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(caps.features).toContain("detect-lang");
   });
 
-  // The only live anchor for the TS mirror of gate_rows(): the unit pin is a recorded fixture nothing regenerates.
+  // The only live anchor for the TS mirror of gate_rows(): the unit pins are pacts nightly re-records only from a published release.
   test("describe is the fake engine's template for its own backend, profile and features", async () => {
     const { stdout, exitCode } = await runEngine(["describe"]);
     expect(exitCode).toBe(0);
