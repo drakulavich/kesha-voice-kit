@@ -27,6 +27,12 @@ only; it never includes the Stats SQLite database.
 
 By default, Stats prunes rows older than 90 days before writing or exporting
 data. Use `kesha stats retention <days>` to change the TTL or `kesha stats
-retention off` to disable TTL pruning. `kesha stats reset` deletes recorded
-runs, artifacts, timings, and errors while preserving settings such as enabled
-state and retention.
+retention off` to disable TTL pruning; `<days>` is a whole number from 1 to
+100000000. `kesha stats reset` deletes recorded runs, artifacts, timings, and
+errors while preserving settings such as enabled state and retention.
+
+If the database file cannot be opened (it is not SQLite, or it is damaged),
+every `kesha stats` action, `disable` and `reset` included, fails with
+`E_INTERNAL` naming the file, and each `kesha` run warns once that it is
+continuing without Stats. Delete the named file to start over; Stats stays off
+until `kesha stats enable` creates a new database.
