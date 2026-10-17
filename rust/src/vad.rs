@@ -18,6 +18,8 @@ use ort::session::Session;
 use ort::value::Value;
 use std::path::Path;
 
+use crate::errors::{CodedContext, ErrorCode};
+
 pub const SAMPLE_RATE: u32 = 16_000;
 /// 32 ms @ 16 kHz — Silero v5's mandated hop for 16 kHz audio.
 const FRAME_SAMPLES: usize = 512;
@@ -134,7 +136,8 @@ impl VadDetector {
                     "failed to load Silero VAD from {} — run `kesha install --vad` first",
                     model_path.display()
                 )
-            })?;
+            })
+            .coded(ErrorCode::ModelLoad)?;
         Ok(Self { session })
     }
 
@@ -304,6 +307,21 @@ fn ms_to_samples_ceil(ms: u32, sample_rate: u32) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_corrupt_model_file_fails_to_load_as_a_model_error() {
+        let tmp = tempfile::tempdir().expect("temp vad dir");
+        let path = tmp.path().join("silero_vad.onnx");
+        std::fs::write(&path, vec![0xFF_u8; 1000]).expect("write corrupt model");
+        let err = VadDetector::load(&path)
+            .err()
+            .expect("1000 bytes of 0xFF are not an ONNX model");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelLoad);
+        assert!(
+            format!("{err:#}").contains(&path.display().to_string()),
+            "load failure must name the file: {err:#}"
+        );
+    }
 
     fn cfg() -> VadConfig {
         VadConfig::default()
