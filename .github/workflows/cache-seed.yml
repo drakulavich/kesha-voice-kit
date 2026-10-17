@@ -101,7 +101,7 @@ jobs:
   parakeet:
     name: Parakeet CoreML models
     # Without a main-scoped copy, coreml-regression's PR-scoped entry is unreadable (#675).
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 40
     env:
       MACOSX_DEPLOYMENT_TARGET: "14.0"

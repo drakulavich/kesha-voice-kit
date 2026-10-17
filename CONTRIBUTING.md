@@ -257,7 +257,7 @@ Handy loops:
   `integration-tests` (macos-latest, no engine install) + path-filtered
   `integration-tests-full`, `tts-e2e`, and `raycast-lint`.
 - `ci.yml`'s Rust lanes (`🧪 Rust Tests`) — run on PRs touching `rust/**`: nextest plus fmt/clippy,
-  and macos-14 also runs the CoreML `cargo check --all-targets` and
+  and macos-15 also runs the CoreML `cargo check --all-targets` and
   `just verify-darwin-full` feature set.
 - `release.yml` — the only workflow that publishes. A stable `vX.Y.Z` tag,
   a dispatched beta or alpha, or a merge to `main` labelled `alpha` builds,

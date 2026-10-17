@@ -180,7 +180,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             features: darwin
             binary: kesha-engine-darwin-arm64
@@ -202,7 +202,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Select Xcode 16 (Swift 6)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
         with:
           xcode-version: "16.2"
@@ -232,12 +232,12 @@ jobs:
           cp "$src" "$ENGINE_BINARY"
 
       - name: Stage AVSpeech sidecar (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         env:
           ENGINE_TARGET: ${{ matrix.target }}
         run: bash .github/scripts/stage-darwin-sidecar.sh say-avspeech "system_tts feature may not have compiled"
       - name: Stage kesha-textlang sidecar (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         env:
           ENGINE_TARGET: ${{ matrix.target }}
         run: bash .github/scripts/stage-darwin-sidecar.sh kesha-textlang "build.rs::build_text_lang_helper may have failed"
@@ -248,24 +248,24 @@ jobs:
           RUNNER_IMAGE: ${{ matrix.os }}
         run: bash .github/scripts/smoke-engine-binary.sh
 
-      # darwin synthesises in `darwin-synthesis-smoke` instead — macos-14's CoreML cannot run the vocoder (#678).
+      # darwin synthesises in `darwin-synthesis-smoke` instead (#678).
       - name: 🍞 Setup Bun workspace
-        if: matrix.os != 'macos-14'
+        if: matrix.os != 'macos-15'
         uses: ./.github/actions/setup-bun
       - name: Apply the release version to the CLI
-        if: matrix.os != 'macos-14'
+        if: matrix.os != 'macos-15'
         env:
           VERSION: ${{ needs.plan.outputs.version }}
         run: node .github/scripts/set-package-version.mjs "$VERSION"
       - name: 🔗 Link the CLI
-        if: matrix.os != 'macos-14'
+        if: matrix.os != 'macos-15'
         run: bun link
       # Load-bearing: on a version mismatch `installEngine` fetches the published engine, whose tag does not exist yet.
       - name: 🧾 Mark staged engine version
-        if: matrix.os != 'macos-14'
+        if: matrix.os != 'macos-15'
         run: bun .github/scripts/mark-engine-version.ts
       - name: 🔊 Install English TTS models
-        if: matrix.os != 'macos-14'
+        if: matrix.os != 'macos-15'
         uses: ./.github/actions/install-kesha-backend
         with:
           cache-path: .kesha-ci-cache
@@ -276,11 +276,11 @@ jobs:
           cache-write: "false"
       # `install --tts en` already fetched the ASR models, so transcribing the synthesis back costs no download.
       - name: 🗣️ Pre-upload synthesis round trip
-        if: matrix.os != 'macos-14'
+        if: matrix.os != 'macos-15'
         run: bun .github/scripts/smoke-synthesis.ts synthesis-smoke
 
       - name: Inspect macOS dynamic deps
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         env:
           ENGINE_BINARY: ${{ matrix.binary }}
         run: otool -L "$ENGINE_BINARY" && otool -l "$ENGINE_BINARY" | grep -A2 LC_RPATH || true
@@ -291,19 +291,19 @@ jobs:
           name: ${{ matrix.binary }}
           path: ${{ matrix.binary }}
       - name: Upload AVSpeech sidecar (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: say-avspeech-darwin-arm64
           path: say-avspeech-darwin-arm64
       - name: Upload kesha-textlang sidecar (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: kesha-textlang-darwin-arm64
           path: kesha-textlang-darwin-arm64
 
-  # macos-14 CoreML cannot run the vocoder (#678); the Kokoro sentence was measured 20/20 on CPU CoreML, do not swap it (#742).
+  # The Kokoro sentence was measured 20/20 on CPU CoreML, do not swap it (#742).
   darwin-synthesis-smoke:
     name: Smoke (darwin-arm64 synthesis)
     needs: [plan, build]
