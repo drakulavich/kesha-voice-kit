@@ -2655,6 +2655,51 @@ exit 2
     });
   });
 
+  test("stats retention past the earliest representable date exits 2 and keeps the saved value (#1469)", async () => {
+    const env = isolatedEnv();
+    expectContract(await runCli(["stats", "retention", "100000000"], { env }), { exitCode: 0 });
+
+    const tooLarge = await runCli(["stats", "retention", "100000001"], { env });
+    expectContract(tooLarge, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: ["error [E_INVALID_ARG]: usage: kesha stats retention <days|off>", "100000000"],
+      stderrNotContains: ["    at "],
+    });
+
+    expectContract(await runCli(["stats", "retention"], { env }), {
+      exitCode: 0,
+      stdoutContains: ["Kesha Stats retention: 100000000 day(s)"],
+    });
+  });
+
+  test("a stored retention past the earliest representable date does not break export (#1469)", async () => {
+    const env = { ...isolatedEnv(), KESHA_STATS_RETENTION_DAYS: "99999999999" };
+    expectContract(await runCli(["stats", "enable"], { env }), { exitCode: 0 });
+    const exported = await runCli(["stats", "export", "--format", "json"], { env });
+    expectContract(exported, { exitCode: 0, stderrNotContains: ["RangeError"] });
+  });
+
+  test("a Stats database that is not SQLite gives a coded error naming the file, never a stack trace (#1469)", async () => {
+    const env = isolatedEnv();
+    writeFileSync(env.KESHA_STATS_DB, "this is not a sqlite database\n".repeat(200));
+
+    for (const action of ["disable", "reset", "status"]) {
+      expectContract(await runCli(["stats", action], { env }), {
+        exitCode: 4,
+        stdoutEmpty: true,
+        stderrContains: [`error [E_INTERNAL]: cannot open the Kesha Stats database ${env.KESHA_STATS_DB}`, `delete ${env.KESHA_STATS_DB}`],
+        stderrNotContains: ["    at "],
+      });
+    }
+
+    const transcribe = await runCli([join(dirname(env.KESHA_STATS_DB), "missing.wav")], { env });
+    expectContract(transcribe, {
+      exitCode: 1,
+      stderrContains: [`warning: failed to write Kesha Stats at ${env.KESHA_STATS_DB}`],
+    });
+  });
+
   test("--plan previews the overridden engine version and downloads nothing (#738)", async () => {
     const dir = makeTempDir("kesha-cli-contract-engine-version-");
     const enginePath = createFailingEngine(dir);
