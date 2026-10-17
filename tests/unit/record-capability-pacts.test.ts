@@ -67,4 +67,13 @@ describe("record-capability-pacts arguments", () => {
     );
     expect(run.exitCode).toBe(2);
   });
+
+  test("refuses --from-release with a --version it would ignore", () => {
+    const run = Bun.spawnSync(
+      [process.execPath, join(import.meta.dir, "..", "..", ".github", "scripts", "record-capability-pacts.ts"), "--from-release", "--version", "1.2.3"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr.toString()).toContain("drop --version");
+  });
 });

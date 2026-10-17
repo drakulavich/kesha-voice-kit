@@ -89,6 +89,7 @@ function parseArgs(argv: string[]): { binary: string; version: string; target: s
   if (!binary && !fromRelease) usage("pass --binary <path> or --from-release");
   if (binary && fromRelease) usage("--binary and --from-release are mutually exclusive");
   if (binary && !version) usage("--binary needs --version <engine version the binary was released as>");
+  if (fromRelease && version) usage("--from-release records the newest stable release; drop --version");
   if (!target) {
     if (!engineTarget()) usage(`no published engine target for this host (${targetKey()}); pass --target`);
     target = targetKey();
