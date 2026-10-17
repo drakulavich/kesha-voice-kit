@@ -35,8 +35,8 @@ fn say(text: &str, voice: &str, out: &Path) -> bool {
         return true;
     }
     let stderr = String::from_utf8_lossy(&result.stderr);
-    // "reinstall it: kesha install --tts" is E_MODEL_LOAD, a present but broken model: that panics.
-    if stderr.contains("not installed") || stderr.contains("does not exist") {
+    // Only E_MODEL_MISSING is a missing prerequisite; E_MODEL_LOAD (present but broken) panics.
+    if stderr.contains("\"E_MODEL_MISSING\"") {
         eprintln!("skipping: TTS prerequisite missing (run `kesha install --tts`):\n{stderr}");
         return false;
     }
