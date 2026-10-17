@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { existsSync, mkdirSync, statSync, symlinkSync } from "fs";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { modelsRequired } from "../helpers/model-gate";
+import { tempDir } from "../helpers/temp-dir";
 
 /**
  * The MCP synthesis contract: a `synthesize_speech` call routes to the engine, and what
@@ -47,7 +48,7 @@ if (!AVAILABLE && LANE_PROMISED_KOKORO) {
   });
 }
 
-const CACHE_DIR = `/tmp/kesha-mcp-synth-${process.pid}-${Date.now()}`;
+const CACHE_DIR = tempDir("kesha-mcp-synth-");
 const MODEL_DIR = `${CACHE_DIR}/models/kokoro-82m`;
 
 beforeAll(() => {

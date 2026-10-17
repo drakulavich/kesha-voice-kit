@@ -1,8 +1,10 @@
 import { describe, test, expect } from "bun:test";
+import { join } from "path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { registerTools } from "../../src/mcp/tools";
+import { tempDir } from "../helpers/temp-dir";
 
 async function call(args: Record<string, unknown>) {
   const server = createKeshaMcpServer();
@@ -25,7 +27,7 @@ describe("synthesize_speech errors", () => {
 
   test("missing models fails loud with install hint and no download", async () => {
     const prev = process.env.KESHA_CACHE_DIR;
-    process.env.KESHA_CACHE_DIR = "/tmp/kesha-mcp-empty-" + Date.now();
+    process.env.KESHA_CACHE_DIR = join(tempDir("kesha-mcp-empty-"), "missing");
     try {
       const res = await call({ text: "hello", voice: "en-am_michael" });
       expect(res.isError).toBe(true);

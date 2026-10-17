@@ -568,18 +568,23 @@ mod tests {
     fn vad_model_path_or_skip_fails_loudly_when_required_and_missing() {
         let missing =
             std::env::temp_dir().join(format!("kesha-vad-local-gate-{}", std::process::id()));
-        std::env::set_var("VAD_MODEL", missing.join("silero_vad.onnx"));
-        std::env::remove_var("KESHA_REQUIRE_VAD_TESTS");
+        use crate::util::test_env::EnvGuard;
+
+        let model = missing.join("silero_vad.onnx");
+        let env_lock = crate::util::test_env::lock();
+        let _model = EnvGuard::set(
+            &env_lock,
+            "VAD_MODEL",
+            model.to_str().expect("utf-8 temp path"),
+        );
+        let _unrequired = EnvGuard::unset(&env_lock, "KESHA_REQUIRE_VAD_TESTS");
         assert!(
             vad_model_path_or_skip("probe").is_none(),
             "an unstaged laptop must still skip"
         );
 
-        std::env::set_var("KESHA_REQUIRE_VAD_TESTS", "1");
+        let _required = EnvGuard::set(&env_lock, "KESHA_REQUIRE_VAD_TESTS", "1");
         let outcome = std::panic::catch_unwind(|| vad_model_path_or_skip("probe"));
-
-        std::env::remove_var("KESHA_REQUIRE_VAD_TESTS");
-        std::env::remove_var("VAD_MODEL");
 
         assert!(
             outcome.is_err(),
