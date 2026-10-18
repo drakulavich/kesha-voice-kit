@@ -183,8 +183,12 @@ function withStatsDb<T>(fn: (db: Database) => T): T {
   try {
     db = openStatsDatabase(dbPath);
   } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    const corrupt = code === "SQLITE_NOTADB" || code === "SQLITE_CORRUPT";
     throw new KeshaError("E_INTERNAL", `cannot open the Kesha Stats database ${dbPath}: ${errorMessage(err)}`, {
-      hint: `delete ${dbPath} to start over; Stats stays off until \`kesha stats enable\` creates a new one.`,
+      hint: corrupt
+        ? `delete ${dbPath} to start over; Stats stays off until \`kesha stats enable\` creates a new one.`
+        : `check that ${dbPath} and its folder can be read and written, or point KESHA_STATS_DB at another file.`,
     });
   }
   try {

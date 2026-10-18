@@ -31,8 +31,10 @@ retention off` to disable TTL pruning; `<days>` is a whole number from 1 to
 100000000. `kesha stats reset` deletes recorded runs, artifacts, timings, and
 errors while preserving settings such as enabled state and retention.
 
-If the database file cannot be opened (it is not SQLite, or it is damaged),
-every `kesha stats` action, `disable` and `reset` included, fails with
-`E_INTERNAL` naming the file, and each `kesha` run warns once that it is
-continuing without Stats. Delete the named file to start over; Stats stays off
-until `kesha stats enable` creates a new database.
+If the database file cannot be opened, every `kesha stats` action, `disable`
+and `reset` included, fails with `E_INTERNAL` naming the file, and each
+`kesha` run warns once that it is continuing without Stats. When the file is
+not SQLite or is damaged, delete it to start over; Stats stays off until
+`kesha stats enable` creates a new database. Any other failure, such as a
+permission error or a read-only disk, leaves the file alone: make the file and
+its folder readable and writable, or point `KESHA_STATS_DB` at another file.

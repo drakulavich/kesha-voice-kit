@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
+import { Database } from "bun:sqlite";
 import { MAX_TEXT_CHARS } from "../../src/synth";
 import {
   chmodSync,
@@ -2673,11 +2674,34 @@ exit 2
     });
   });
 
-  test("a stored retention past the earliest representable date does not break export (#1469)", async () => {
-    const env = { ...isolatedEnv(), KESHA_STATS_RETENTION_DAYS: "99999999999" };
+  test("a saved retention past the earliest representable date falls back to the default (#1469)", async () => {
+    const env = { ...isolatedEnv(), KESHA_STATS_RETENTION_DAYS: "" };
     expectContract(await runCli(["stats", "enable"], { env }), { exitCode: 0 });
+    const db = new Database(env.KESHA_STATS_DB);
+    db.query("insert or replace into settings (key, value) values ('retention_days', '99999999999')").run();
+    db.close();
+
     const exported = await runCli(["stats", "export", "--format", "json"], { env });
     expectContract(exported, { exitCode: 0, stderrNotContains: ["RangeError"] });
+    expect(() => JSON.parse(exported.stdout)).not.toThrow();
+    expectContract(await runCli(["stats", "retention"], { env }), {
+      exitCode: 0,
+      stdoutContains: ["Kesha Stats retention: 90 day(s)"],
+    });
+  });
+
+  test("a Stats database that cannot be opened for another reason names the file without telling the user to delete it (#1469)", async () => {
+    const env = isolatedEnv();
+    const notADir = join(dirname(env.KESHA_STATS_DB), "a-file");
+    writeFileSync(notADir, "");
+    const dbPath = join(notADir, "stats.sqlite");
+
+    expectContract(await runCli(["stats", "disable"], { env: { ...env, KESHA_STATS_DB: dbPath } }), {
+      exitCode: 4,
+      stdoutEmpty: true,
+      stderrContains: [`error [E_INTERNAL]: cannot open the Kesha Stats database ${dbPath}`],
+      stderrNotContains: ["delete", "    at "],
+    });
   });
 
   test("a Stats database that is not SQLite gives a coded error naming the file, never a stack trace (#1469)", async () => {
