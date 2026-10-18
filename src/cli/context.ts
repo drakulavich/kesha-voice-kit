@@ -34,7 +34,8 @@ function stripBooleanFlag(
   const valuedPrefixes = names.filter((n) => n.startsWith("--")).map((n) => `${n}=`);
   let value = false;
   const cleaned: string[] = [];
-  for (const arg of rawArgs) {
+  const end = rawArgs.indexOf("--");
+  for (const arg of end === -1 ? rawArgs : rawArgs.slice(0, end)) {
     if (names.includes(arg)) {
       value = true;
     } else if (valuedPrefixes.some((prefix) => arg.startsWith(prefix))) {
@@ -43,7 +44,7 @@ function stripBooleanFlag(
       cleaned.push(arg);
     }
   }
-  return { value, rawArgs: cleaned };
+  return { value, rawArgs: end === -1 ? cleaned : [...cleaned, ...rawArgs.slice(end)] };
 }
 
 /**
