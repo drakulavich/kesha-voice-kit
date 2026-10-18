@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { LANG_CONFIDENCE_FLOOR, routeLanguage } from "../../src/language-routing";
+import {
+  LANG_CONFIDENCE_FLOOR,
+  routeLanguage,
+  UNSUPPORTED_AUDIO_LANGUAGE_CONFIDENCE,
+  unsupportedAudioLanguageWarning,
+} from "../../src/language-routing";
 
 describe("routeLanguage (Exploratory S11-2)", () => {
   test("an Engine text result names lang whatever its score: its scale is not tinyld's", () => {
@@ -53,5 +58,36 @@ describe("routeLanguage audio floor (Exploratory S11-4)", () => {
     const route = routeLanguage({ audioLanguage: { code: "nn", confidence: 0.267 } });
     expect(route.lang).toBe("");
     expect(route.belowFloor.audio).toBe(true);
+  });
+});
+
+describe("audio language outside the ASR set (#1463)", () => {
+  const zhAudio = { code: "zh", confidence: 0.999984 };
+  const viFromGibberish = { code: "vi", confidence: 0.6291093826293945, source: "engine" as const };
+
+  test("confident zh audio names lang instead of a text guess on the romanized transcript", () => {
+    const route = routeLanguage({ audioLanguage: zhAudio, textLanguage: viFromGibberish });
+    expect(route.lang).toBe("zh");
+    expect(route.source).toBe("audio");
+  });
+
+  test("confident zh audio gets a warning naming the language", () => {
+    expect(unsupportedAudioLanguageWarning(zhAudio)).toBe(
+      'warning: audio language "zh" is not one kesha can transcribe; the text is unreliable (supported: docs/languages.md)',
+    );
+  });
+
+  test("an ASR language in the audio gets no warning and text still names lang", () => {
+    const audio = { code: "en", confidence: 0.99 };
+    expect(unsupportedAudioLanguageWarning(audio)).toBeNull();
+    expect(routeLanguage({ audioLanguage: audio, textLanguage: { code: "ru", confidence: 0.9, source: "engine" } }).lang).toBe(
+      "ru",
+    );
+  });
+
+  test("an unsure zh audio guess neither warns nor overrides the text", () => {
+    const audio = { code: "zh", confidence: UNSUPPORTED_AUDIO_LANGUAGE_CONFIDENCE - 0.01 };
+    expect(unsupportedAudioLanguageWarning(audio)).toBeNull();
+    expect(routeLanguage({ audioLanguage: audio, textLanguage: viFromGibberish }).lang).toBe("vi");
   });
 });

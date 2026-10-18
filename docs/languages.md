@@ -8,6 +8,8 @@ Kesha does three language-aware things: **speech-to-text** (ASR), **text-to-spee
 
 NVIDIA Parakeet TDT 0.6B v3. Language is auto-detected; `--lang <code>` warns if the detected language differs. The comparison is case-insensitive and ignores a region subtag, so `en-US`, `EN` and `en_us` all match a detected `en`. Three-letter codes such as `eng` are not recognised and will warn.
 
+When audio language detection is at least 0.95 sure the speech is in a language outside this list (Chinese or Japanese, for example), Kesha prints a warning on stderr naming that language, and `lang` reports the audio language instead of a text guess on the transcript. The transcript is still printed and the exit code stays 0, but the text is unreliable.
+
 | # | Language | Code | |
 |---:|----------|------|---|
 | 1 | Bulgarian | `bg` | 🇧🇬 |

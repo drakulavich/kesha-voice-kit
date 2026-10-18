@@ -1,4 +1,4 @@
-import { LANG_CONFIDENCE_FLOOR, routeLanguage } from "./language-routing";
+import { LANG_CONFIDENCE_FLOOR, routeLanguage, unsupportedAudioLanguageWarning } from "./language-routing";
 import type { TranscribeErrorRecord, TranscribeJsonOutput, TranscribeResult } from "./types";
 
 const BELOW_FLOOR_NOTE = `below the ${LANG_CONFIDENCE_FLOOR} floor, ignored for lang`;
@@ -51,8 +51,9 @@ export function formatTranscriptOutput(results: TranscribeResult[]): string {
         lines.push(`=== ${r.file} ===`);
       }
       lines.push(r.text);
-      const lang = r.textLanguage?.code || r.audioLanguage?.code || r.lang;
-      const confidence = r.textLanguage?.confidence ?? r.audioLanguage?.confidence;
+      const detected = unsupportedAudioLanguageWarning(r.audioLanguage) ? r.audioLanguage : (r.textLanguage ?? r.audioLanguage);
+      const lang = detected?.code || r.lang;
+      const confidence = detected?.confidence;
       if (lang) lines.push(`[lang: ${lang}${confidence != null ? `, confidence: ${confidence.toFixed(2)}` : ""}]`);
       return lines.join("\n");
     })
