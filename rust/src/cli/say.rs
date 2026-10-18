@@ -485,6 +485,7 @@ pub fn run(a: SayArgs) -> i32 {
         }
     };
 
+    crate::parent_watch::exit_if_parent_exited();
     match write_output(a.out.as_deref(), &bytes) {
         Ok(()) => 0,
         Err(code) => code,

@@ -41,7 +41,10 @@ fn run_command(command: Option<Commands>) -> Result<()> {
             no_vad,
             speakers,
             itn,
-        }) => cli::transcribe::run(audio_path, json, vad, no_vad, speakers, itn)?,
+        }) => {
+            kesha_engine::parent_watch::exit_when_parent_exits();
+            cli::transcribe::run(audio_path, json, vad, no_vad, speakers, itn)?
+        }
         Some(Commands::DetectLang { audio_path }) => cli::detect_lang::run(audio_path)?,
         Some(Commands::DetectTextLang { text }) => cli::detect_text_lang::run(text)?,
         Some(Commands::Record {
@@ -72,6 +75,7 @@ fn run_command(command: Option<Commands>) -> Result<()> {
         Some(Commands::Install(args)) => cli::install::run(args)?,
         #[cfg(feature = "tts")]
         Some(Commands::Say(args)) => {
+            kesha_engine::parent_watch::exit_when_parent_exits();
             std::process::exit(cli::say::run(args));
         }
         None => {
