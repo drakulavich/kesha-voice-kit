@@ -9,6 +9,7 @@ let guarded = false;
  * try/catch around the write, so it escaped as an uncaught stack trace and turned a
  * successful synthesis into exit 1 (#1001). EPIPE alone means the reader left; every other
  * write failure still reports and exits non-zero.
+ * A stdout closed before launch (`>&-`) never errors here: Bun reopens fd 1 as /dev/null (#1471).
  */
 export function guardStdoutWrites(): void {
   if (guarded) return;
