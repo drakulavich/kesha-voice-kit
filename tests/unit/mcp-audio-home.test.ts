@@ -20,10 +20,8 @@ if [ "$1" = "describe" ]; then
 fi
 if [ "$1" = "say" ]; then
   cat > /dev/null
-  prev=""
   for a in "$@"; do
-    if [ "$prev" = "--out" ]; then printf 'RIFF' > "$a"; fi
-    prev="$a"
+    case "$a" in --out=*) printf 'RIFF' > "\${a#--out=}" ;; esac
   done
   exit 0
 fi

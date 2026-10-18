@@ -19,10 +19,10 @@ if (args[0] !== "say") {
   console.error("unexpected args: " + args.join(" "));
   process.exit(2);
 }
-const outIndex = args.indexOf("--out");
+const out = args.find((a) => a.startsWith("--out="))?.slice(6);
 await new Response(Bun.stdin.stream()).text();
-if (outIndex >= 0) {
-  await Bun.write(args[outIndex + 1], new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
+if (out !== undefined) {
+  await Bun.write(out, new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
 } else {
   process.stdout.write(new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
 }
@@ -49,7 +49,7 @@ if (args.includes("--no-expand-abbrev")) {
     message: "warning: --no-expand-abbrev has no effect with FluidAudio Kokoro voices",
   }) + "\\n");
 }
-await Bun.write(args[args.indexOf("--out") + 1], new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
+await Bun.write(args.find((a) => a.startsWith("--out="))!.slice(6), new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
 `);
   chmodSync(enginePath, 0o755);
   return enginePath;
@@ -65,7 +65,7 @@ if (args[0] === "describe") {
   process.exit(0);
 }
 await Bun.write(${JSON.stringify(dir)} + "/spoken.txt", await new Response(Bun.stdin.stream()).text());
-await Bun.write(args[args.indexOf("--out") + 1], new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
+await Bun.write(args.find((a) => a.startsWith("--out="))!.slice(6), new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
 `);
   chmodSync(enginePath, 0o755);
   return enginePath;

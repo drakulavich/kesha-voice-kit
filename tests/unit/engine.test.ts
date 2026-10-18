@@ -1,9 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { chmodSync, mkdirSync, utimesSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
-import { describeJson, envEchoEngine, saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
+import { describeJson, envEchoEngine, saveEngineEnv, writeOutParsingEngine, writeTranscribingEngine } from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
 import {
   detectAudioLanguageEngine,
@@ -681,6 +681,19 @@ exit 2
       captureStderr(false, () => recordEngine({ out: "/tmp/out.wav" }, 10)),
     );
     expect(out).toContain("proto=4");
+  });
+
+  fakeEngineTest("record --out takes a file name starting with - (#1503)", async () => {
+    const engine = writeOutParsingEngine("kesha-engine-record-dash-", "record", ["record.live"]);
+    const dir = tempDir("kesha-record-dash-out-");
+    const cwd = process.cwd();
+    process.chdir(dir);
+    try {
+      await withEngineEnv(engine, () => recordEngine({ out: "-x.wav" }, 10));
+    } finally {
+      process.chdir(cwd);
+    }
+    expect(readFileSync(join(dir, "-x.wav"), "utf8")).toBe("RIFF");
   });
 
   fakeEngineTest("recordEngine reports an engine error event as a coded failure", async () => {

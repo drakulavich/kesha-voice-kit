@@ -418,7 +418,7 @@ export type RecordTarget =
 const SIGNALLED_LIVE_EXIT_CODES = new Set([130, 143]);
 
 export function buildRecordArgs(target: RecordTarget, maxSeconds: number): string[] {
-  if (!target.live) return ["record", "--out", target.out, "--max-seconds", String(maxSeconds)];
+  if (!target.live) return ["record", `--out=${target.out}`, "--max-seconds", String(maxSeconds)];
   const args = ["record", "--live", "--max-seconds", String(maxSeconds)];
   if (target.autoStop) {
     args.push(

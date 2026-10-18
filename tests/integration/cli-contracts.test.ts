@@ -144,7 +144,7 @@ if (args[0] === "say") {
 
 if (args[0] === "record") {
   console.error(JSON.stringify({ kind: "progress", message: "Listening (16000 Hz)... stop with Ctrl-C." }));
-  console.error(JSON.stringify({ kind: "progress", message: "Recorded " + args[args.indexOf("--out") + 1] }));
+  console.error(JSON.stringify({ kind: "progress", message: "Recorded " + args.find((a) => a.startsWith("--out=")).slice(6) }));
   process.exit(0);
 }
 
