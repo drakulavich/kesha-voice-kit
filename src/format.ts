@@ -51,7 +51,7 @@ export function formatTranscriptOutput(results: TranscribeResult[]): string {
         lines.push(`=== ${r.file} ===`);
       }
       lines.push(r.text);
-      const detected = unsupportedAudioLanguageWarning(r.audioLanguage) ? r.audioLanguage : (r.textLanguage ?? r.audioLanguage);
+      const detected = unsupportedAudioLanguageWarning(r.audioLanguage, r.textLanguage) ? r.audioLanguage : (r.textLanguage ?? r.audioLanguage);
       const lang = detected?.code || r.lang;
       const confidence = detected?.confidence;
       if (lang) lines.push(`[lang: ${lang}${confidence != null ? `, confidence: ${confidence.toFixed(2)}` : ""}]`);

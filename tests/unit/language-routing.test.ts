@@ -72,14 +72,14 @@ describe("audio language outside the ASR set (#1463)", () => {
   });
 
   test("confident zh audio gets a warning naming the language", () => {
-    expect(unsupportedAudioLanguageWarning(zhAudio)).toBe(
+    expect(unsupportedAudioLanguageWarning(zhAudio, viFromGibberish)).toBe(
       'warning: audio language "zh" is not one kesha can transcribe; the text is unreliable (supported: docs/languages.md)',
     );
   });
 
   test("an ASR language in the audio gets no warning and text still names lang", () => {
     const audio = { code: "en", confidence: 0.99 };
-    expect(unsupportedAudioLanguageWarning(audio)).toBeNull();
+    expect(unsupportedAudioLanguageWarning(audio, undefined)).toBeNull();
     expect(routeLanguage({ audioLanguage: audio, textLanguage: { code: "ru", confidence: 0.9, source: "engine" } }).lang).toBe(
       "ru",
     );
@@ -87,7 +87,24 @@ describe("audio language outside the ASR set (#1463)", () => {
 
   test("an unsure zh audio guess neither warns nor overrides the text", () => {
     const audio = { code: "zh", confidence: UNSUPPORTED_AUDIO_LANGUAGE_CONFIDENCE - 0.01 };
-    expect(unsupportedAudioLanguageWarning(audio)).toBeNull();
+    expect(unsupportedAudioLanguageWarning(audio, undefined)).toBeNull();
     expect(routeLanguage({ audioLanguage: audio, textLanguage: viFromGibberish }).lang).toBe("vi");
+  });
+});
+
+describe("confident non-ASR audio against a text result in the ASR set (#1463 false positive)", () => {
+  const beAudio = { code: "be", confidence: 0.9546 };
+  const enText = { code: "en", confidence: 0.974, source: "engine" as const };
+
+  test("English text at or above the floor keeps lang and gets no warning when audio says be", () => {
+    expect(routeLanguage({ audioLanguage: beAudio, textLanguage: enText }).lang).toBe("en");
+    expect(unsupportedAudioLanguageWarning(beAudio, enText)).toBeNull();
+  });
+
+  test("ja audio still overrides an ASR-set text guess below the floor", () => {
+    const jaAudio = { code: "ja", confidence: 0.999 };
+    const plText = { code: "pl", confidence: 0.485, source: "engine" as const };
+    expect(routeLanguage({ audioLanguage: jaAudio, textLanguage: plText }).lang).toBe("ja");
+    expect(unsupportedAudioLanguageWarning(jaAudio, plText)).toContain('"ja"');
   });
 });
