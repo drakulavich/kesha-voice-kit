@@ -53,7 +53,7 @@ missing.
 ### Requirement: Backend selection is mutex and platform-validated
 
 The CLI SHALL accept `--coreml` and `--onnx` flags to override the auto-detected
-backend. Passing both SHALL fail immediately with exit 1. Requesting a backend that
+backend. Passing both SHALL fail immediately with `E_INVALID_ARG` and exit 2. Requesting a backend that
 does not match the platform's release Engine (e.g. `--coreml` on Linux) SHALL also
 fail with exit 1.
 
@@ -63,8 +63,8 @@ other platform is unsupported and fails.
 #### Scenario: Both flags given
 
 - WHEN Ira runs `kesha install --coreml --onnx`
-- THEN the CLI prints `Choose only one backend: "--coreml" or "--onnx".` to stderr
-- AND the process exits 1 without downloading anything
+- THEN the CLI prints `error [E_INVALID_ARG]: Choose only one backend: "--coreml" or "--onnx".` to stderr
+- AND the process exits 2 without downloading anything
 
 #### Scenario: Wrong backend for platform
 

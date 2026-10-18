@@ -3040,7 +3040,7 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
   init: {
     errors: [
       extraArgument(() => ["init", "extra", "--plan"]),
-      { name: "both backends", args: () => ["init", "--plan", "--coreml", "--onnx"], exitCode: 1, stderr: "Choose only one backend" },
+      { name: "both backends", args: () => ["init", "--plan", "--coreml", "--onnx"], exitCode: 2, stderr: "error [E_INVALID_ARG]: Choose only one backend" },
       ...(FOREIGN_BACKEND === undefined
         ? []
         : [["--plan"], ["--plan", "--yes"]].map((flags) => ({
@@ -3071,7 +3071,7 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
   },
   install: {
     errors: [
-      { name: "both backends", args: () => ["install", "--coreml", "--onnx"], exitCode: 1, stderr: "Choose only one backend" },
+      { name: "both backends", args: () => ["install", "--coreml", "--onnx"], exitCode: 2, stderr: "error [E_INVALID_ARG]: Choose only one backend" },
       { name: "an unknown TTS language", args: () => ["install", "--tts", "xx"], exitCode: 2, stderr: "Unsupported TTS language(s): xx" },
       {
         name: "the engine's model install fails",
