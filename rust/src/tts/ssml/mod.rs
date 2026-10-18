@@ -332,7 +332,7 @@ fn check_single_closed_root(input: &str) -> anyhow::Result<()> {
                 "SSML has content after </speak> (got '{}...'); put all text inside one <speak> element",
                 input[pos..].trim_start().chars().take(20).collect::<String>()
             ),
-            Event::Start(e) => open.push(String::from_utf8_lossy(e.name().as_ref()).into_owned()),
+            Event::Start(e) => open.push(e.name().as_ref().to_owned()),
             Event::End(_) => {
                 open.pop();
                 closed = open.is_empty();

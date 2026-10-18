@@ -200,7 +200,7 @@ kesha say --ssml --voice ru-vosk-m02 '<speak>Привет <break time="1s"/> м�
 
 | Tag | Status |
 |---|---|
-| `<speak>` | ✅ required root: exactly one, closed, with every tag inside it closed and nothing but whitespace or comments after `</speak>` (else `E_SSML_INVALID`) |
+| `<speak>` | ✅ required root: exactly one, closed, with every tag inside it closed and nothing but whitespace, comments, or processing instructions after `</speak>` (else `E_SSML_INVALID`) |
 | `<break time="Nms"\|"Ns"\|default>` | ✅ inserts silence of the given duration |
 | plain text inside `<speak>` | ✅ synthesized via the selected engine |
 | `<say-as interpret-as="characters">…</say-as>` | ✅ honored on `ru-vosk-*` (#232) and ONNX `en-*` (#244) — letter-spells via the embedded table; read as plain text with a stderr warning on Darwin FluidAudio Kokoro; AVSpeech rejects every SSML request with `E_SSML_UNSUPPORTED` |
