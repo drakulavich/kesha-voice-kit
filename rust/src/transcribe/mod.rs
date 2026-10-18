@@ -502,12 +502,7 @@ fn transcribe_via_vad(
     cfg: VadConfig,
     pack_windows: bool,
 ) -> Result<TranscriptionOutput> {
-    if !models::is_cached_in(models::ModelKind::Vad, std::path::Path::new(vad_dir)) {
-        anyhow::bail!(
-            "Error: VAD model not installed\n\n\
-             Please run: kesha install --vad"
-        );
-    }
+    ensure_vad_installed(Path::new(vad_dir))?;
 
     let t_audio = Instant::now();
     let samples = audio::load_audio(Path::new(audio_path))?;
@@ -1105,10 +1100,33 @@ fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<std::path::
     Ok(dir)
 }
 
+fn ensure_vad_installed(vad_dir: &Path) -> Result<()> {
+    if !models::is_cached_in(models::ModelKind::Vad, vad_dir) {
+        coded_bail!(
+            ErrorCode::ModelMissing,
+            "VAD model not installed in {}. Run: kesha install --vad",
+            vad_dir.display()
+        );
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Write;
+
+    #[test]
+    fn vad_gate_reports_a_missing_model_with_its_path_and_install_hint() {
+        let tmp = tempfile::tempdir().expect("temp vad dir");
+        let err = ensure_vad_installed(tmp.path()).expect_err("an empty dir holds no VAD model");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains(&tmp.path().display().to_string()) && msg.contains("kesha install --vad"),
+            "missing VAD model must name its path and the install command: {msg}"
+        );
+    }
 
     /// Write a 16-bit PCM mono WAV of `seconds` silence. Symphonia's probe
     /// reads `n_frames` from the WAV data-chunk size, so these files produce

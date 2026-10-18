@@ -73,6 +73,40 @@ fn a_missing_asr_model_is_reported_as_model_missing() {
     );
 }
 
+// #1467: stub ASR files pass the presence-only ASR gate, so the --vad gate is the one that answers.
+#[cfg(not(feature = "coreml"))]
+#[test]
+fn a_missing_vad_model_under_vad_is_reported_as_model_missing() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("short.wav");
+    common::write_pcm16_wav(&wav, 16_000, 16_000, 32_000);
+    let asr = dir.path().join("cache/models/parakeet-tdt-v3");
+    std::fs::create_dir_all(&asr).unwrap();
+    for f in [
+        "encoder-model.onnx",
+        "encoder-model.onnx.data",
+        "decoder_joint-model.onnx",
+        "nemo128.onnx",
+        "vocab.txt",
+    ] {
+        std::fs::write(asr.join(f), b"stub").unwrap();
+    }
+    let out = Command::new(engine_bin())
+        .args(["transcribe", "--vad"])
+        .arg(&wav)
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_MODEL_MISSING", "{v}");
+    let message = v["message"].as_str().unwrap();
+    assert!(
+        message.contains("kesha install --vad") && message.contains("silero-vad"),
+        "{v}"
+    );
+}
+
 // Exploratory S2-2: a WAV declaring sample rate 0 made symphonia panic inside the probe, so
 // the raw panic line and the RUST_BACKTRACE hint reached the user and the code was E_INTERNAL.
 // The header is the user's input: one E_BAD_AUDIO event naming the file, nothing else.
