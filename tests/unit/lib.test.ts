@@ -196,6 +196,23 @@ describe("transcribe() on a directory", () => {
   });
 });
 
+describe("transcribe() on a named pipe (#1468)", () => {
+  fakeEngineIt("rejects with E_INVALID_ARG before any engine is spawned", async () => {
+    const dir = tempDir("kesha-lib-fifo-");
+    const fifo = join(dir, "fifo.wav");
+    Bun.spawnSync(["mkfifo", fifo]);
+    const marker = join(dir, "spawned");
+    const enginePath = writeTranscribingEngine("kesha-lib-fifo-engine-", [], `  : > '${marker}'`);
+    await withEngine(enginePath, async () => {
+      const err = await transcribe(fifo).catch((e) => e);
+      expect(err).toBeInstanceOf(KeshaError);
+      expect((err as KeshaError).code).toBe("E_INVALID_ARG");
+      expect((err as KeshaError).message).toContain("is not a regular file (expected an audio file)");
+      expect(existsSync(marker)).toBe(false);
+    });
+  });
+});
+
 /** Compile-time pin, checked by `bun run lint`: every public type resolves from `./core`; the removed one is the `@ts-expect-error` import above. */
 export type PublicSurface = [
   EngineDescription, InstallOptions, SayOptions, TranscribeOptions, TranscribeResult,

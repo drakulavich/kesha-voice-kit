@@ -102,6 +102,20 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
     },
   },
   {
+    name: "a named pipe where an audio file is expected (#1468)",
+    skip: process.platform === "win32",
+    prepare(dir) {
+      const fifo = join(dir, "fifo.wav");
+      Bun.spawnSync(["mkfifo", fifo]);
+      return {
+        args: [fifo],
+        code: "E_INVALID_ARG",
+        exitCode: 2,
+        stderrContains: ["is not a regular file (expected an audio file)", "save the audio to a file and pass that"],
+      };
+    },
+  },
+  {
     name: "a symlink pointing at nothing",
     // Creating one needs Developer Mode or an elevated shell on Windows.
     skip: process.platform === "win32",

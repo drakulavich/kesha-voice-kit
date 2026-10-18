@@ -1,7 +1,7 @@
 import { defineCommand, type ArgsDef, type CommandDef } from "citty";
 import { errorMessage } from "../error-utils";
 import { existsSync } from "fs";
-import { isDirectoryPath, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
+import { isDirectoryPath, isSpecialFilePath, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
 
 export { isDirectoryPath };
 import { detectAudioLanguageEngine, detectTextLanguageEngine, isEngineInstalled } from "../engine";
@@ -330,6 +330,19 @@ async function processFile(
   if (isDirectoryPath(file)) {
     const err = new KeshaError("E_INVALID_ARG", "is a directory (expected an audio file)", {
       hint: `pass the audio files in it instead, e.g. ${folderGlobHint(file)}`,
+    });
+    stats.recordError("input", err, err.code);
+    diagnosticLog.event("input.invalid", {
+      command: "transcribe",
+      error_code: err.code,
+    });
+    log.error(`${file}: ${errorMessage(err)}`);
+    return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
+  }
+
+  if (isSpecialFilePath(file)) {
+    const err = new KeshaError("E_INVALID_ARG", "is not a regular file (expected an audio file)", {
+      hint: "kesha reads its input more than once, so a named pipe, /dev/stdin or <(...) cannot work; save the audio to a file and pass that.",
     });
     stats.recordError("input", err, err.code);
     diagnosticLog.event("input.invalid", {
