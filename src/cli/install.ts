@@ -140,8 +140,8 @@ export function selectBackend(coreml: boolean, onnx: boolean): BackendSelection 
 export function resolveBackendFlag(coreml: boolean, onnx: boolean): string | undefined {
   const selection = selectBackend(coreml, onnx);
   if (!selection.ok) {
-    log.error(selection.error);
-    process.exit(1);
+    log.error(renderInvalidArg(selection.error));
+    process.exit(2);
   }
   return selection.backend;
 }
