@@ -58,7 +58,9 @@ code never needs sanitizing.
   or VAD model that `kesha install --diarize` / `--vad` has not placed, `E_TEXT_EMPTY` and
   `E_TEXT_TOO_LONG` from `kesha say` before any engine runs, and `E_INTERNAL` when the
   engine's transcription JSON cannot be read or the engine exits non-zero without reporting an
-  error event; all render exactly like the engine's own. `describe` publishes `E_MODEL_MISSING`,
+  error event; all render exactly like the engine's own. When a signal killed the transcription
+  engine, the message names it (`kesha-engine transcribe was killed by SIGSEGV`) and the hint says
+  to re-run with `KESHA_DEBUG=1` and file a bug with `kesha support-bundle`; the run still exits `1`. `describe` publishes `E_MODEL_MISSING`,
   `E_TEXT_EMPTY` and `E_TEXT_TOO_LONG` as `both` from engine v1.26.0 on (#1202).
 - `kesha install` and the Core API `install()` raise `E_MODEL_DOWNLOAD` when the engine binary
   cannot be downloaded (a network error, an HTTP error status, an empty response, a body

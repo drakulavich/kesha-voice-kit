@@ -7,7 +7,7 @@ import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, interruptedRun } from "./process-tree";
-import { runEngineProcess, spawnHint } from "./engine/spawn";
+import { engineSignal, runEngineProcess, spawnHint } from "./engine/spawn";
 import { engineFailure, KeshaError, renderError, type ErrorEvent } from "./engine/events";
 import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
 import {
@@ -90,6 +90,7 @@ interface EngineRun {
   stdout: string;
   stderr: string;
   exitCode: number;
+  signalCode: string | null;
   error: ErrorEvent | null;
   invalid: string[];
 }
@@ -113,7 +114,7 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
   if (run.exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
     process.stderr.write(`${stderr}\n`);
-  return { stdout: run.stdout.trim(), stderr, exitCode: run.exitCode, error: events.error, invalid: events.invalid };
+  return { stdout: run.stdout.trim(), stderr, exitCode: run.exitCode, signalCode: run.signalCode, error: events.error, invalid: events.invalid };
 }
 
 /** The run failed and said so: a non-zero status, or an error event whatever the status. */
@@ -328,10 +329,22 @@ export function withVirtualMacHint(
   });
 }
 
+function transcribeFailure(command: string, run: EngineRun): KeshaError {
+  const failure = engineFailure(command, run, run.exitCode);
+  const signal = run.error === null && run.invalid.length === 0 ? engineSignal(run.exitCode, run.signalCode) : null;
+  if (!signal) return failure;
+  return new KeshaError("E_INTERNAL", `kesha-engine ${command} was killed by ${signal}`, {
+    exitCode: failure.exitCode,
+    stderr: failure.stderr,
+    origin: failure.origin,
+    hint: "re-run with KESHA_DEBUG=1 to trace the engine call, then file a bug with the archive from `kesha support-bundle`",
+  });
+}
+
 export async function transcribeEngine(audioPath: string, opts: TranscribeEngineOptions = {}): Promise<string> {
   const args = await validatedArgs(buildTranscribeArgs(audioPath, opts), { signal: opts.signal });
   const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
-  if (failed(run)) throw withVirtualMacHint(engineFailure(args[0] ?? "", run, run.exitCode));
+  if (failed(run)) throw withVirtualMacHint(transcribeFailure(args[0] ?? "", run));
   return run.stdout;
 }
 
@@ -389,7 +402,7 @@ export async function transcribeEngineWithSegments(
   const args = await validatedArgs(buildTranscribeArgs(audioPath, opts, true), { signal: opts.signal });
   if (opts.speakers) assertSpeakerModelsInstalled();
   const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
-  if (failed(run)) throw withVirtualMacHint(engineFailure(args[0] ?? "", run, run.exitCode));
+  if (failed(run)) throw withVirtualMacHint(transcribeFailure(args[0] ?? "", run));
   try {
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
