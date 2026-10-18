@@ -43,6 +43,7 @@ mod fluid_stderr;
 mod fluid_stdout;
 pub mod lang_id;
 pub mod models;
+pub mod parent_watch;
 pub mod platform;
 #[cfg(any(test, system_tts, system_text_lang))]
 mod process_tree;

@@ -97,7 +97,7 @@ status that lets scripts branch without parsing stderr:
 | `5` | `kesha say` text exceeds the length limit. |
 | `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run and the engine subprocess was terminated, the interrupted files reporting `E_INTERRUPTED`; or a `kesha init` prompt was cancelled (nothing was installed). |
 | `143` | Terminated — a `SIGTERM` reached the CLI mid-run (a cancelled CI job, a stopped container); the engine subprocess was terminated and the interrupted files report `E_INTERRUPTED`. |
-| `129` | Hung up — the terminal closed (`SIGHUP`) mid-run; the engine subprocess was terminated exactly as for `SIGTERM` and the interrupted files report `E_INTERRUPTED`. Not on Windows, which has no terminal hangup. The engine itself also exits 129 from `kesha-engine record` when the process that started the capture has exited: the recording is abandoned, the microphone closed and the file removed. |
+| `129` | Hung up — the terminal closed (`SIGHUP`) mid-run; the engine subprocess was terminated exactly as for `SIGTERM` and the interrupted files report `E_INTERRUPTED`. Not on Windows, which has no terminal hangup. The engine itself also exits 129 when the process that started it has exited, for example after a `SIGKILL` that leaves no chance to forward a signal: `kesha-engine record` abandons the recording, closes the microphone and removes the file; `transcribe` and `say` stop within about 250 ms, and `say --out` writes no file unless it was already writing when the parent died, which can leave it partly written. Not on Windows. |
 
 `130`, `143` and `129` mean the run was **cancelled**, not that it failed: a wrapper
 that treats every non-zero status as a crash will misreport a cancellation, and
