@@ -6,6 +6,7 @@ import {
   getRecentErrors,
   getStatsStatus,
   getWeekSummary,
+  MAX_RETENTION_DAYS,
   renderErrors,
   renderWeekSummary,
   resetStats,
@@ -13,6 +14,9 @@ import {
   vacuumStats,
   type StatsExportFormat,
 } from "../stats";
+import { exitCodeFor, KeshaError } from "../engine/events";
+import { errorMessage } from "../error-utils";
+import { log } from "../log";
 import { emitActionResult, type ActionMessage, type ActionResult } from "./action-result";
 
 export interface StatsCommandArgs {
@@ -113,7 +117,13 @@ function runRetentionAction(value: string | undefined): ActionResult {
     return { ok: true, messages: info(`Kesha Stats retention: ${formatRetention(status.retentionDays)}`) };
   }
   const retention = parseRetention(value);
-  if (retention === undefined) return { ok: false, error: "usage: kesha stats retention <days|off>" };
+  if (retention === undefined) {
+    return {
+      ok: false,
+      error: "usage: kesha stats retention <days|off>",
+      hint: `days is a whole number from 1 to ${MAX_RETENTION_DAYS}.`,
+    };
+  }
   setStatsRetentionDays(retention);
   return { ok: true, messages: info(`Kesha Stats retention set to ${formatRetention(retention)}`) };
 }
@@ -144,7 +154,15 @@ export const statsCommand = defineCommand({
     },
   },
   run({ args, rawArgs }: { args: StatsCommandArgs; rawArgs: string[] }) {
-    emitActionResult(runStatsAction({ ...args, value: args.value ?? eatenNegativeNumber(rawArgs) }));
+    let result: ActionResult;
+    try {
+      result = runStatsAction({ ...args, value: args.value ?? eatenNegativeNumber(rawArgs) });
+    } catch (err) {
+      const coded = err instanceof KeshaError ? err : new KeshaError("E_INTERNAL", errorMessage(err));
+      log.error(coded.render());
+      process.exit(exitCodeFor(coded));
+    }
+    emitActionResult(result);
   },
 });
 
@@ -161,7 +179,7 @@ function parseRetention(value: string): number | null | undefined {
   const normalized = value.trim().toLowerCase();
   if (normalized === "off" || normalized === "none" || normalized === "never") return null;
   const days = Number(normalized);
-  if (Number.isInteger(days) && days >= 1) return days;
+  if (Number.isInteger(days) && days >= 1 && days <= MAX_RETENTION_DAYS) return days;
   return undefined;
 }
 

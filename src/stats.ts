@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { KeshaError } from "./engine/events";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
 import { existsSync, mkdirSync, statSync } from "fs";
@@ -11,6 +12,8 @@ import { resolveStatePaths } from "./state-paths";
 const SCHEMA_VERSION = 1;
 const MAX_ERROR_MESSAGE_CHARS = 300;
 const DEFAULT_RETENTION_DAYS = 90;
+// A Date reaches back only 100,000,000 days before 1970: a longer retention makes the cutoff an Invalid Date.
+export const MAX_RETENTION_DAYS = 100_000_000;
 const APP_VERSION = readPackageVersion();
 
 export type StatsCommandName = "transcribe" | "say";
@@ -148,7 +151,7 @@ let warnedStatsWriteFailed = false;
 
 function warnStatsWriteFailed(err: unknown): void {
   if (!warnedStatsWriteFailed) {
-    log.warn("warning: failed to write Kesha Stats; continuing without stats for this event");
+    log.warn(`warning: failed to write Kesha Stats at ${resolveStatsDbPath()}; continuing without stats for this event`);
     warnedStatsWriteFailed = true;
   }
   const message = errorMessage(err);
@@ -175,7 +178,19 @@ export function createStatsRecorder(command: StatsCommandName): StatsRecorder {
 
 /** Open the stats DB (creating it if needed), run fn, always close. */
 function withStatsDb<T>(fn: (db: Database) => T): T {
-  const db = openStatsDatabase(resolveStatsDbPath());
+  const dbPath = resolveStatsDbPath();
+  let db: Database;
+  try {
+    db = openStatsDatabase(dbPath);
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    const corrupt = code === "SQLITE_NOTADB" || code === "SQLITE_CORRUPT";
+    throw new KeshaError("E_INTERNAL", `cannot open the Kesha Stats database ${dbPath}: ${errorMessage(err)}`, {
+      hint: corrupt
+        ? `delete ${dbPath} to start over; Stats stays off until \`kesha stats enable\` creates a new one.`
+        : `check that ${dbPath} and its folder can be read and written, or point KESHA_STATS_DB at another file.`,
+    });
+  }
   try {
     return fn(db);
   } finally {
@@ -958,7 +973,7 @@ function parseRetentionSetting(raw: string): number | null {
   const normalized = raw.trim().toLowerCase();
   if (normalized === "off" || normalized === "none" || normalized === "never") return null;
   const days = Number(normalized);
-  if (Number.isInteger(days) && days >= 1) return days;
+  if (Number.isInteger(days) && days >= 1 && days <= MAX_RETENTION_DAYS) return days;
   return DEFAULT_RETENTION_DAYS;
 }
 
