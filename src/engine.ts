@@ -302,9 +302,10 @@ export function buildTranscribeArgs(
   opts: TranscribeEngineOptions,
   json = false,
 ): string[] {
-  const args = ["transcribe", audioPath, ...(json ? ["--json"] : []), ...vadArg(opts.vad)];
+  const args = ["transcribe", ...(json ? ["--json"] : []), ...vadArg(opts.vad)];
   if (opts.itn) args.push("--itn");
   if (json && opts.speakers) args.push("--speakers");
+  args.push("--", audioPath);
   return args;
 }
 
@@ -531,7 +532,7 @@ export async function detectAudioLanguageEngine(
   opts: RunEngineOptions = {},
 ): Promise<LangDetectResult | null> {
   if (!isEngineInstalled()) return null;
-  const run = await runEngine(["detect-lang", audioPath], opts);
+  const run = await runEngine(["detect-lang", "--", audioPath], opts);
   // The tolerant form: a noisy onnxruntime warning must not blind a best-effort guess.
   if (reportedFailure(run)) {
     const cause = run.error ? renderError(run.error) : `kesha-engine detect-lang exited with code ${run.exitCode}`;
