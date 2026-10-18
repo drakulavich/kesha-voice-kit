@@ -83,6 +83,22 @@ export interface EngineProcessRun<T> {
   events: StderrOutcome;
 }
 
+/** Fault signals, by number. SIGBUS is 10 on darwin but 7 on linux. */
+const FAULT_SIGNALS: Record<number, string> = { 4: "SIGILL", 6: "SIGABRT", 8: "SIGFPE", 11: "SIGSEGV" };
+
+/** The signal that killed the engine, or null; the wait status outranks Bun's signalCode (10 is SIGBUS on darwin, SIGUSR1 to Bun). */
+export function engineSignal(exitCode: number, signalCode: string | null, platform: string = process.platform): string | null {
+  const number = exitCode > 128 ? exitCode - 128 : undefined;
+  const sigbus = platform === "darwin" ? 10 : 7;
+  const signal =
+    number === undefined
+      ? (signalCode ?? undefined)
+      : number === sigbus
+        ? "SIGBUS"
+        : (FAULT_SIGNALS[number] ?? signalCode ?? undefined);
+  return signal ?? null;
+}
+
 /** Spawns the engine (or a sidecar) as its own process tree and waits for it; the tree is unregistered however the run ends. */
 export async function runEngineProcess<T = undefined>(
   binPath: string,

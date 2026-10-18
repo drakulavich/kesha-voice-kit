@@ -1,5 +1,5 @@
 import { getDescribe, getEngineBinPath, isEngineInstalled } from "./engine";
-import { runEngineProcess } from "./engine/spawn";
+import { engineSignal, runEngineProcess } from "./engine/spawn";
 import { validateArgv } from "./engine/describe";
 import { engineFailure, exitCodeFor, KeshaError, type EventSinks } from "./engine/events";
 import { installHint } from "./install-hint";
@@ -68,23 +68,13 @@ export function buildSayArgs(o: SayOptions): string[] {
   return args;
 }
 
-/** Fault signals, by number. SIGBUS is 10 on darwin but 7 on linux. */
-const FAULT_SIGNALS: Record<number, string> = { 4: "SIGILL", 6: "SIGABRT", 8: "SIGFPE", 11: "SIGSEGV" };
-
-/** Explains a signal death, which leaves no error event; the wait status outranks Bun's signalCode (10 is SIGBUS on darwin, SIGUSR1 to Bun). */
+/** Explains a signal death, which leaves no error event. */
 export function engineCrashMessage(
   exitCode: number,
   signalCode: string | null,
   platform: string = process.platform,
 ): string | null {
-  const number = exitCode > 128 ? exitCode - 128 : undefined;
-  const sigbus = platform === "darwin" ? 10 : 7;
-  const signal =
-    number === undefined
-      ? (signalCode ?? undefined)
-      : number === sigbus
-        ? "SIGBUS"
-        : (FAULT_SIGNALS[number] ?? signalCode ?? undefined);
+  const signal = engineSignal(exitCode, signalCode, platform);
   if (!signal) return null;
   const base = `kesha-engine was killed by ${signal} and produced no audio`;
   // Every physical Apple Silicon Mac has a Neural Engine; virtualised macOS has
