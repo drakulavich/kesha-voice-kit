@@ -28,7 +28,7 @@ import { runCommandSession, type CommandSession } from "./command-session";
 import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
 import { exitCodeFor, KeshaError } from "../engine/events";
-import { detectTextLanguageFallback, routeLanguage } from "../language-routing";
+import { detectTextLanguageFallback, routeLanguage, unsupportedAudioLanguageWarning } from "../language-routing";
 import { renderInvalidArg } from "./options";
 
 interface MainCommandArgs {
@@ -252,6 +252,11 @@ async function detectLanguages(
     if (mismatch) {
       warnAboveProgress(progress, `${file}: ${mismatch} (from audio)`);
     }
+  }
+
+  const unsupportedWarning = unsupportedAudioLanguageWarning(audioLanguage);
+  if (unsupportedWarning) {
+    warnAboveProgress(progress, `${file}: ${unsupportedWarning}`);
   }
 
   const tinyldResult = wantsLangId ? detectTextLanguageFallback(text) : undefined;
