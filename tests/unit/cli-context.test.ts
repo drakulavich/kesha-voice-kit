@@ -37,6 +37,15 @@ describe("resolveCliContext", () => {
     expect(resolveCliContext(["-q", "stats", "status"], {}).rawArgs).toEqual(["stats", "status"]);
   });
 
+  test("a file named like a global flag after -- stays a file (#1499)", () => {
+    const ctx = resolveCliContext(["--json", "--", "-q", "--quiet", "--no-color"], {});
+    expect(ctx).toEqual({
+      quiet: false,
+      disableColor: false,
+      rawArgs: ["--json", "--", "-q", "--quiet", "--no-color"],
+    });
+  });
+
   test("resolution does not mutate the caller's rawArgs", () => {
     const rawArgs = ["--quiet", "a.ogg"];
     resolveCliContext(rawArgs, {});
