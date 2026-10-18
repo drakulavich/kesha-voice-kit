@@ -141,6 +141,7 @@ pub fn parse(input: &str) -> anyhow::Result<Vec<Segment>> {
     let ssml = parse_ssml(input)
         .map_err(|e| anyhow::anyhow!("{} ({e})", parse_failure_hint(&e.to_string(), input)))
         .coded(ErrorCode::SsmlInvalid)?;
+    check_single_closed_root(input)?;
     let text: Vec<char> = ssml.get_text().chars().collect();
 
     // Secondary sort by priority so that when spans share the same `start`, inner
@@ -308,6 +309,45 @@ pub(super) fn tag_name(el: &ParsedElement) -> String {
         ParsedElement::Custom((name, _)) => return name.to_ascii_lowercase(),
     };
     name.to_string()
+}
+
+/// ssml-parser stops reading at the root's `</speak>` and at EOF with tags still open, dropping the rest without an error (#1465).
+fn check_single_closed_root(input: &str) -> anyhow::Result<()> {
+    use quick_xml::events::Event;
+    let mut reader = quick_xml::Reader::from_str(input);
+    let mut open: Vec<String> = Vec::new();
+    let mut closed = false;
+    loop {
+        let pos = reader.buffer_position() as usize;
+        let event = reader
+            .read_event()
+            .map_err(|e| anyhow::anyhow!("SSML is malformed ({e})"))
+            .coded(ErrorCode::SsmlInvalid)?;
+        match event {
+            Event::Eof => break,
+            Event::Comment(_) | Event::PI(_) | Event::Decl(_) | Event::DocType(_) => {}
+            Event::Text(t) if t.trim().is_empty() => {}
+            _ if closed => coded_bail!(
+                ErrorCode::SsmlInvalid,
+                "SSML has content after </speak> (got '{}...'); put all text inside one <speak> element",
+                input[pos..].trim_start().chars().take(20).collect::<String>()
+            ),
+            Event::Start(e) => open.push(e.name().as_ref().to_owned()),
+            Event::End(_) => {
+                open.pop();
+                closed = open.is_empty();
+            }
+            Event::Empty(_) if open.is_empty() => closed = true,
+            _ => {}
+        }
+    }
+    if let Some(tag) = open.last() {
+        coded_bail!(
+            ErrorCode::SsmlInvalid,
+            "SSML <{tag}> is never closed; close it (or self-close it as <{tag}/>) and end the input with </speak>"
+        );
+    }
+    Ok(())
 }
 
 fn contains_doctype(input: &str) -> bool {
