@@ -265,12 +265,7 @@ pub fn record_default_input_live(
 #[cfg(darwin_native)]
 fn load_live_endpoint(cfg: crate::vad::EndpointConfig) -> Result<crate::vad::StreamingVad> {
     let vad_dir = crate::models::model_dir(crate::models::ModelKind::Vad)?;
-    if !crate::models::is_cached_in(crate::models::ModelKind::Vad, &vad_dir) {
-        anyhow::bail!(
-            "Error: VAD model not installed\n\n\
-             Please run: kesha install --vad"
-        );
-    }
+    crate::transcribe::ensure_vad_installed(&vad_dir)?;
     crate::vad::StreamingVad::load(&vad_dir.join("silero_vad.onnx"), cfg)
         .context("load Silero VAD for live endpointing")
 }

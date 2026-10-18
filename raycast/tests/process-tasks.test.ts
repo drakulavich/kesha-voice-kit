@@ -279,7 +279,7 @@ describe("process task helpers", () => {
     const task = startKeshaLiveRecorder(kesha, 30, { spawn });
 
     processes[0].emitStderr(
-      "Error: VAD model not installed\r\n\r\nPlease run: kesha install --vad\r\n",
+      "Error: No recording backend is installed.\r\n\r\nRun the following to get started:\r\n\r\n    kesha install\r\n",
     );
     processes[0].exit(1);
     processes[0].endStdout();
@@ -289,7 +289,7 @@ describe("process task helpers", () => {
       (err: Error) => err.message,
     );
     expect(message).toBe(
-      "Error: VAD model not installed\n\nPlease run: kesha install --vad",
+      "Error: No recording backend is installed.\n\nRun the following to get started:\n\n    kesha install",
     );
   });
 
@@ -298,7 +298,7 @@ describe("process task helpers", () => {
     const task = startKeshaLiveRecorder(kesha, 30, { spawn });
 
     processes[0].emitStderr(
-      "Error: VAD model not installed\n\nPlease run: kesha install --vad\n",
+      "Error: No recording backend is installed.\n\nRun the following to get started:\n\n    kesha install\n",
     );
     processes[0].exit(1);
     processes[0].endStdout();
@@ -308,7 +308,7 @@ describe("process task helpers", () => {
       (err: Error) => err.message,
     );
     expect(message).toBe(
-      "Error: VAD model not installed\n\nPlease run: kesha install --vad",
+      "Error: No recording backend is installed.\n\nRun the following to get started:\n\n    kesha install",
     );
   });
 

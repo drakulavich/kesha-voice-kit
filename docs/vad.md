@@ -29,4 +29,4 @@ kesha record --live --auto-stop
 kesha record --live --auto-stop --auto-stop-silence-ms 800 --auto-stop-threshold 0.4
 ```
 
-The live detector uses the installed Silero model and never downloads it. It waits for 1,000 ms of silence by default, after at least 250 ms of detected speech; use `--auto-stop-min-speech-ms` to tune that false-start guard. A missing VAD model fails with `kesha install --vad` rather than starting a recording without endpointing.
+The live detector uses the installed Silero model and never downloads it. It waits for 1,000 ms of silence by default, after at least 250 ms of detected speech; use `--auto-stop-min-speech-ms` to tune that false-start guard. A missing VAD model fails with `E_MODEL_MISSING`, naming the model directory and `kesha install --vad`, rather than starting a recording without endpointing.
