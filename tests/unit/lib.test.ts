@@ -208,6 +208,7 @@ describe("transcribe() on a named pipe (#1468)", () => {
       expect(err).toBeInstanceOf(KeshaError);
       expect((err as KeshaError).code).toBe("E_INVALID_ARG");
       expect((err as KeshaError).message).toContain("is not a regular file (expected an audio file)");
+      expect((err as KeshaError).hint).toContain("save the audio to a file and pass that");
       expect(existsSync(marker)).toBe(false);
     });
   });

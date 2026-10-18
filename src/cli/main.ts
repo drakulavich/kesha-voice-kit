@@ -1,7 +1,7 @@
 import { defineCommand, type ArgsDef, type CommandDef } from "citty";
 import { errorMessage } from "../error-utils";
 import { existsSync } from "fs";
-import { isDirectoryPath, isSpecialFilePath, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
+import { isDirectoryPath, isSpecialFilePath, SPECIAL_FILE_HINT, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
 
 export { isDirectoryPath };
 import { detectAudioLanguageEngine, detectTextLanguageEngine, isEngineInstalled } from "../engine";
@@ -342,7 +342,7 @@ async function processFile(
 
   if (isSpecialFilePath(file)) {
     const err = new KeshaError("E_INVALID_ARG", "is not a regular file (expected an audio file)", {
-      hint: "kesha reads its input more than once, so a named pipe, /dev/stdin or <(...) cannot work; save the audio to a file and pass that.",
+      hint: SPECIAL_FILE_HINT,
     });
     stats.recordError("input", err, err.code);
     diagnosticLog.event("input.invalid", {
