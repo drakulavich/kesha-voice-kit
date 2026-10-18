@@ -273,6 +273,8 @@ jobs:
             # lands here even though it's a git-branch dep.
             coreml:
               - 'rust/src/backend/fluidaudio.rs'
+              - 'rust/src/record.rs'
+              - 'rust/tests/record_cli.rs'
               # The lane's diagnostics ride KESHA_DEBUG's sink selection (#841).
               - 'rust/src/fluid_stdout.rs'
               - 'rust/src/fluid_stderr.rs'

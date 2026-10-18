@@ -1125,7 +1125,7 @@ fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<std::path::
     Ok(dir)
 }
 
-fn ensure_vad_installed(vad_dir: &Path) -> Result<()> {
+pub(crate) fn ensure_vad_installed(vad_dir: &Path) -> Result<()> {
     if !models::is_cached_in(models::ModelKind::Vad, vad_dir) {
         coded_bail!(
             ErrorCode::ModelMissing,

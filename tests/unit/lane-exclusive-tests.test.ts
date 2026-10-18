@@ -55,7 +55,7 @@ describe("a lane-exclusive test cannot run nowhere", () => {
   test("every name the lane selects still exists", () => {
     const named = [...laneFilter().matchAll(/test\(([a-z0-9_]+)\)/g)].map((m) => m[1]!);
     expect(named.length).toBeGreaterThan(0);
-    const sources = ["rust/src/backend/fluidaudio.rs", ...LANE_EXCLUSIVE].map((relative) => read(relative)).join("\n");
+    const sources = ["rust/src/backend/fluidaudio.rs", "rust/tests/record_cli.rs", ...LANE_EXCLUSIVE].map((relative) => read(relative)).join("\n");
     // A rename that empties the lane must fail here rather than quietly select nothing.
     for (const name of named) expect(sources).toContain(`fn ${name}`);
   });

@@ -172,3 +172,28 @@ fn a_recording_whose_parent_dies_stops_within_a_second_and_writes_no_wav() {
         "a recording nobody waits for must not be written"
     );
 }
+
+// #1502: live endpointing bailed without a code, so a missing VAD model surfaced as E_INTERNAL.
+#[cfg(feature = "coreml")]
+#[test]
+fn live_auto_stop_without_a_vad_model_is_model_missing_with_its_path_and_install_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = Command::new(common::engine_bin())
+        .args(["record", "--live", "--auto-stop", "--max-seconds", "1"])
+        .env("KESHA_CACHE_DIR", dir.path())
+        .output()
+        .expect("spawn engine");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "docs/errors.md: a missing model is exit 1"
+    );
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_MODEL_MISSING", "{v}");
+    let message = v["message"].as_str().unwrap();
+    assert!(
+        message.contains(&dir.path().display().to_string())
+            && message.contains("kesha install --vad"),
+        "{message}"
+    );
+}
