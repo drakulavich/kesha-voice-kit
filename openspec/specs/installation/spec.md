@@ -55,7 +55,7 @@ missing.
 The CLI SHALL accept `--coreml` and `--onnx` flags to override the auto-detected
 backend. Passing both SHALL fail immediately with `E_INVALID_ARG` and exit 2. Requesting a backend that
 does not match the platform's release Engine (e.g. `--coreml` on Linux) SHALL also
-fail with exit 1.
+fail with `E_INVALID_ARG` and exit 2 before any download.
 
 Auto-detection defaults: darwin-arm64 → CoreML; linux-x64 → ONNX; win32-x64 → ONNX. Any
 other platform is unsupported and fails.
@@ -70,8 +70,8 @@ other platform is unsupported and fails.
 
 - GIVEN the machine is linux-x64 (ONNX release)
 - WHEN Ira runs `kesha install --coreml`
-- THEN the CLI prints an error explaining the platform uses the ONNX backend
-- AND the process exits 1
+- THEN the CLI prints `error [E_INVALID_ARG]: Requested backend "coreml" is not available on this platform; the release engine uses "onnx".` to stderr
+- AND the process exits 2 without downloading anything
 
 #### Scenario: Auto-detection on darwin-arm64
 
@@ -91,8 +91,8 @@ other platform is unsupported and fails.
 
 - GIVEN the machine is win32-x64
 - WHEN Ira runs `kesha install --coreml`
-- THEN the CLI prints an error explaining the platform uses the ONNX backend
-- AND the process exits 1
+- THEN the CLI prints `error [E_INVALID_ARG]: Requested backend "coreml" is not available on this platform; the release engine uses "onnx".` to stderr
+- AND the process exits 2 without downloading anything
 
 > *Technical Note — sources: `src/cli/install.ts::resolveBackendFlag`,
 > `src/cli/install.ts::defaultBackendForPlatform` (darwin-arm64 → `coreml`, linux-x64 and
