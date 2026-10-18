@@ -125,3 +125,10 @@ Transcription is a batch and keeps its own rule: the run exits `2` when the CLI
 itself rejected an argument for any file — a directory positional, a flag the
 installed engine lacks — and `1` for every runtime failure, including one the
 engine reported, whatever status the engine exited with.
+
+A stdout the reader closes mid-write (`kesha say | head -c 1000`) exits `0`
+quietly; any other failed write to stdout prints `failed writing to stdout` and
+exits `1`. A stdout already closed at launch (`kesha say hello >&-`) is the
+exception: the Bun runtime reopens fd 1 as `/dev/null` before kesha runs, so
+the output is discarded and `say`, transcription and `kesha mcp` exit `0`.
+Redirect to a file or a pipe instead of closing stdout.
