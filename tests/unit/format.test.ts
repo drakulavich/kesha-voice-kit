@@ -59,6 +59,17 @@ describe("formatTranscriptOutput", () => {
     expect(out).toBe("hello\n[lang: ru, confidence: 0.99]\n");
   });
 
+  test("labels confident audio outside the ASR set with the audio language, as JSON lang does (#1463)", () => {
+    const out = formatTranscriptOutput([
+      result({
+        lang: "zh",
+        audioLanguage: { code: "zh", confidence: 0.999 },
+        textLanguage: { code: "vi", confidence: 0.63, source: "engine" },
+      }),
+    ]);
+    expect(out).toBe("hello\n[lang: zh, confidence: 1.00]\n");
+  });
+
   test("omits lang line when no language fields are present", () => {
     expect(formatTranscriptOutput([result({})])).toBe("hello\n");
   });
