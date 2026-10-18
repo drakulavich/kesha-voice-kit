@@ -218,6 +218,17 @@ fn decide(mode: VadMode, duration_s: Option<f32>, vad_installed: bool) -> VadDec
     }
 }
 
+fn decide_after_empty_plain(mode: VadMode, text: &str, vad_installed: bool) -> Option<VadDecision> {
+    if mode != VadMode::Auto || !text.trim().is_empty() {
+        return None;
+    }
+    Some(if vad_installed {
+        VadDecision::Vad
+    } else {
+        VadDecision::PlainWithHint
+    })
+}
+
 /// Speaker labels attach to ASR segments, so diarization needs a real
 /// segmentation: without VAD the transcript is one whole-file segment and the
 /// coverage guard degenerates to a coin flip on multi-speaker audio (#768).
@@ -355,7 +366,21 @@ pub fn transcribe_with_options(
         // doesn't re-open the file (#248). On `On`/`Off` modes we didn't probe,
         // so it's `None` and the helper does the work.
         VadDecision::Plain => {
-            transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
+            let plain = transcribe_plain(audio_path, &model_dir, duration, timestamps_required)?;
+            match decide_after_empty_plain(mode, &plain.text, vad_installed) {
+                Some(VadDecision::Vad) => {
+                    dtrace!("asr::empty_plain_retry decision=Vad");
+                    transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default(), true)
+                }
+                Some(_) => {
+                    events::warn(
+                        events::W_VAD_NOT_INSTALLED,
+                        "hint: the transcript is empty; if the audio has speech, `kesha install --vad` lets Kesha retry it in speech segments",
+                    );
+                    Ok(plain)
+                }
+                None => Ok(plain),
+            }
         }
         VadDecision::PlainWithHint => {
             let secs = duration.unwrap_or(0.0);
@@ -1752,6 +1777,28 @@ mod tests {
             ),
             VadDecision::ChunkedWithHint
         );
+    }
+
+    #[test]
+    fn auto_empty_plain_transcript_retries_through_vad_when_installed() {
+        assert_eq!(
+            decide_after_empty_plain(VadMode::Auto, " ", true),
+            Some(VadDecision::Vad)
+        );
+    }
+
+    #[test]
+    fn auto_empty_plain_transcript_without_vad_keeps_result_with_hint() {
+        assert_eq!(
+            decide_after_empty_plain(VadMode::Auto, "", false),
+            Some(VadDecision::PlainWithHint)
+        );
+    }
+
+    #[test]
+    fn nonempty_or_explicit_no_vad_plain_transcript_is_kept() {
+        assert_eq!(decide_after_empty_plain(VadMode::Auto, "Wait.", true), None);
+        assert_eq!(decide_after_empty_plain(VadMode::Off, "", true), None);
     }
 
     #[test]
