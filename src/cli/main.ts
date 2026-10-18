@@ -254,11 +254,6 @@ async function detectLanguages(
     }
   }
 
-  const unsupportedWarning = unsupportedAudioLanguageWarning(audioLanguage);
-  if (unsupportedWarning) {
-    warnAboveProgress(progress, `${file}: ${unsupportedWarning}`);
-  }
-
   const tinyldResult = wantsLangId ? detectTextLanguageFallback(text) : undefined;
   let textLanguage: TextLangDetectResult | undefined;
 
@@ -267,6 +262,11 @@ async function detectLanguages(
     if (engineTextResult && engineTextResult.code) {
       textLanguage = { ...engineTextResult, source: "engine" };
     }
+  }
+
+  const unsupportedWarning = unsupportedAudioLanguageWarning(audioLanguage, textLanguage ?? tinyldResult);
+  if (unsupportedWarning) {
+    warnAboveProgress(progress, `${file}: ${unsupportedWarning}`);
   }
 
   const route = routeLanguage({ audioLanguage, textLanguage: textLanguage ?? tinyldResult });
