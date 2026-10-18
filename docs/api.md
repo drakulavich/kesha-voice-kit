@@ -31,6 +31,9 @@ The exported types are `TranscribeResult`, `TranscribeOptions`, `TranscribeError
 (`textLanguage.source` is `"tinyld"`). The API does not run the engine's audio
 language ID or the macOS text detector, so `audioLanguage` is absent and, on macOS,
 `lang` can differ from what `kesha --json` reports for the same file.
+The API also gives no signal for speech in a language outside the
+[speech-to-text set](languages.md) (Chinese, Japanese and others), so its `lang` and
+`text` are unreliable for such audio; `kesha --json` warns and reports the audio language.
 
 ## `install(opts)`
 
