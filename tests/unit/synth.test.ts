@@ -82,7 +82,7 @@ describe("buildSayArgs", () => {
 
   it("passes --out when given", () => {
     expect(buildSayArgs({ text: "Hi", out: "reply.wav" })).toEqual(
-      expect.arrayContaining(["--out", "reply.wav"]),
+      expect.arrayContaining(["--out=reply.wav"]),
     );
   });
 

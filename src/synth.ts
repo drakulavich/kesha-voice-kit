@@ -57,7 +57,7 @@ export function buildSayArgs(o: SayOptions): string[] {
   const args: string[] = ["say"];
   if (o.voice) args.push("--voice", o.voice);
   if (o.lang) args.push("--lang", o.lang);
-  if (o.out) args.push("--out", o.out);
+  if (o.out) args.push(`--out=${o.out}`);
   if (o.rate !== undefined && o.rate !== 1.0) args.push("--rate", String(o.rate));
   if (o.ssml) args.push("--ssml");
   if (o.format) args.push("--format", o.format);

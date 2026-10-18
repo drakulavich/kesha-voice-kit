@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { deviceOutRefusal, sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
 import { setColorEnabled } from "../../src/log";
-import { describeJson, saveEngineEnv } from "../helpers/fake-engine";
+import { describeJson, saveEngineEnv, writeOutParsingEngine } from "../helpers/fake-engine";
 
 // picocolors turns colour on under CI, and this harness captures the raw stderr bytes.
 setColorEnabled(false);
@@ -207,6 +207,23 @@ describe("kesha say with an explicitly empty positional (T1-2)", () => {
     const { exitCode, stderr } = await runSay({ text: "", out, rate: "1.0" });
     expect(exitCode).toBe(2);
     expect(stderr).not.toContain("Synthesizing");
+  });
+});
+
+describe("kesha say --out with a file name starting with - (#1503)", () => {
+  skipOnWin32("writes the file instead of the engine reading the name as a flag", async () => {
+    cleanups.push(saveEngineEnv());
+    process.env.KESHA_ENGINE_BIN = writeOutParsingEngine("kesha-engine-say-dash-", "say", ["tts"]);
+    const dir = tempDir("kesha-say-dash-out-");
+    const cwd = process.cwd();
+    process.chdir(dir);
+    cleanups.push(() => process.chdir(cwd));
+
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", out: "-x.wav", rate: "1.0" });
+
+    expect(stderr).not.toContain("E_INVALID_ARG");
+    expect(exitCode).toBe(0);
+    expect(readFileSync(join(dir, "-x.wav"), "utf8")).toBe("RIFF");
   });
 });
 

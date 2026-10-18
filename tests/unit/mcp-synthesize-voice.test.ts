@@ -41,11 +41,9 @@ if [ "$1" = "say" ]; then
   cat > /dev/null
   : > '${argvPath}'
   out=""
-  prev=""
   for a in "$@"; do
     printf '%s\\n' "$a" >> '${argvPath}'
-    if [ "$prev" = "--out" ]; then out="$a"; fi
-    prev="$a"
+    case "$a" in --out=*) out="\${a#--out=}" ;; esac
   done
   printf 'RIFF' > "$out"
   exit 0

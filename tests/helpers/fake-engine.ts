@@ -236,3 +236,35 @@ exit 2
   chmodSync(binPath, 0o755);
   return binPath;
 }
+
+/** A stub whose `command` reads `--out` the way clap does: a separate value starting with `-` is refused as a flag, `--out=<v>` takes any value. It writes `RIFF` to the out path. */
+export function writeOutParsingEngine(prefix: string, command: string, features: string[]): string {
+  const path = join(tempDir(prefix), "kesha-engine");
+  writeFileSync(
+    path,
+    `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ features })}'
+  exit 0
+fi
+[ "$1" = "${command}" ] || exit 2
+shift
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --out=*) out="\${1#--out=}" ;;
+    --out)
+      case "$2" in -*)
+        printf '%s\\n' '{"kind":"error","code":"E_INVALID_ARG","message":"error: unexpected argument found"}' >&2
+        exit 2 ;;
+      esac
+      out="$2"; shift ;;
+  esac
+  shift
+done
+cat > /dev/null
+printf 'RIFF' > "$out"
+`,
+  );
+  chmodSync(path, 0o755);
+  return path;
+}
