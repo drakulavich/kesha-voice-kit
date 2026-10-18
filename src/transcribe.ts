@@ -24,6 +24,19 @@ export function isDirectoryPath(path: string): boolean {
   }
 }
 
+export const SPECIAL_FILE_HINT =
+  "kesha reads its input more than once, so a named pipe, /dev/stdin or <(...) cannot work; save the audio to a file and pass that.";
+
+/** True when `path` exists and is neither a regular file nor a directory: the engine opens its input more than once, so a FIFO, `/dev/stdin` or `<(...)` hangs it (#1468). */
+export function isSpecialFilePath(path: string): boolean {
+  try {
+    const st = statSync(path);
+    return !st.isFile() && !st.isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 export interface TranscribeOptions {
   /** Silero VAD preprocessing selector. Defaults to `"auto"`. */
   vad?: VadMode;
@@ -53,6 +66,9 @@ export function assertAudioFileArgument(audioPath: string): void {
   }
   if (isDirectoryPath(audioPath)) {
     throw new KeshaError("E_INVALID_ARG", `${audioPath}: is a directory (expected an audio file)`);
+  }
+  if (isSpecialFilePath(audioPath)) {
+    throw new KeshaError("E_INVALID_ARG", `${audioPath}: is not a regular file (expected an audio file)`, { hint: SPECIAL_FILE_HINT });
   }
 }
 
