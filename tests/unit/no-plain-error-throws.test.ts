@@ -12,15 +12,15 @@ const ALLOWED: Array<[string, string]> = [
   ["src/support-bundle.ts", "tar entry names are fixed bundle paths"],
   ["src/support-bundle.ts", "tar numeric fields are fixed modes and file sizes"],
   ["src/engine-install.ts", "fires only under NODE_ENV=test, to stop a test writing the real cache"],
-  ["src/mcp/tools.ts", "the MCP SDK sends only message, which already carries the code and hint"],
   ["src/cli/install.ts", "both callers report it as E_INVALID_ARG"],
   ["src/cli/install.ts", "both callers report it as E_INVALID_ARG"],
+  ["src/mcp/tools.ts", "MCP SDK copies the numeric code into the JSON-RPC error; the message already carries the E_ code and hint"],
 ];
 
-test("src throws a plain Error only where ALLOWED says why", async () => {
+test("src builds a plain Error only where ALLOWED says why", async () => {
   const counts = new Map<string, number>();
   for await (const file of new Bun.Glob("src/**/*.{ts,mjs}").scan(repoPath("."))) {
-    counts.set(file.replaceAll("\\", "/"), readRepoFile(file).split("throw new Error(").length - 1);
+    counts.set(file.replaceAll("\\", "/"), readRepoFile(file).split("new Error(").length - 1);
   }
   const extra: string[] = [];
   const stale: string[] = [];
@@ -32,7 +32,7 @@ test("src throws a plain Error only where ALLOWED says why", async () => {
   }
   expect(
     extra,
-    `throw a KeshaError with a code from docs/errors.md and a hint instead:\n${extra.join("\n")}`,
+    `build a KeshaError with a code from docs/errors.md and a hint instead of new Error(:\n${extra.join("\n")}`,
   ).toEqual([]);
   expect(stale, `drop the stale ALLOWED entries:\n${stale.join("\n")}`).toEqual([]);
 });
