@@ -4,6 +4,7 @@ import { decode as decodeToon } from "@toon-format/toon";
 import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, detectTextLanguageFallback, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
 import type { ResolvedOutputFormat, TranscribeResult } from "../../src/cli";
 import { folderGlobHint, MAIN_VAD_ARGS, normalizeMainCommandArgs } from "../../src/cli/main";
+import { getEngineBinPath } from "../../src/engine";
 
 function normalizeUsage(usage: string): string {
   return usage
@@ -235,8 +236,9 @@ describe("record command validation", () => {
 
   test("noRecordingBackendMessage is E_ENGINE_SPAWN naming the missing engine path and an install hint", () => {
     const message = noRecordingBackendMessage();
-    expect(message).toStartWith("error [E_ENGINE_SPAWN]: No recording backend is installed: no kesha-engine at ");
-    expect(message).toContain("kesha-engine\n  hint: bun add -g");
+    expect(message).toStartWith(
+      `error [E_ENGINE_SPAWN]: No recording backend is installed: no kesha-engine at ${getEngineBinPath()}\n  hint: bun add -g`,
+    );
     expect(message).toContain("bun add -g @drakulavich/kesha-voice-kit");
     expect(message).toMatch(/kesha (install|init)/);
   });
