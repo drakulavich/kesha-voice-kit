@@ -38,6 +38,7 @@ interface BadInputSpec {
   stderrNotContains?: string[];
   /** Result lines the command legitimately prints before failing; stdout stays empty otherwise. */
   stdoutContains?: string[];
+  stdin?: Bun.BunFile;
 }
 
 interface BadInput {
@@ -109,6 +110,32 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       Bun.spawnSync(["mkfifo", fifo]);
       return {
         args: [fifo],
+        code: "E_INVALID_ARG",
+        exitCode: 2,
+        stderrContains: ["is not a regular file (expected an audio file)", "save the audio to a file and pass that"],
+      };
+    },
+  },
+  {
+    name: "`-` for stdin (#1473 S3-4)",
+    prepare() {
+      return {
+        args: ["-"],
+        code: "E_INVALID_ARG",
+        exitCode: 2,
+        stderrContains: ["reading audio from stdin is not supported", "save the audio to a file and pass that"],
+      };
+    },
+  },
+  {
+    name: "/dev/stdin redirected from a regular file (#1473 S3-4)",
+    skip: process.platform === "win32",
+    prepare(dir) {
+      const wav = join(dir, "en.wav");
+      writeFileSync(wav, "RIFF");
+      return {
+        args: ["/dev/stdin"],
+        stdin: Bun.file(wav),
         code: "E_INVALID_ARG",
         exitCode: 2,
         stderrContains: ["is not a regular file (expected an audio file)", "save the audio to a file and pass that"],
@@ -293,6 +320,7 @@ describe("failures the CLI answers without the engine", () => {
         stderrContains,
         stderrNotContains = [],
         stdoutContains = [],
+        stdin,
       } = spec;
       const run = await runCliScenario(args, {
         env: {
@@ -304,6 +332,7 @@ describe("failures the CLI answers without the engine", () => {
           KESHA_STATS_DB: join(dir, "stats.sqlite"),
           ...env,
         },
+        stdin,
       });
 
       if (exitCode === undefined) expect(run.exitCode).not.toBe(0);

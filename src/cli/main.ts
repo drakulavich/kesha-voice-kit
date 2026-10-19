@@ -1,7 +1,14 @@
 import { defineCommand, type ArgsDef, type CommandDef } from "citty";
 import { errorMessage } from "../error-utils";
 import { existsSync } from "fs";
-import { isDirectoryPath, isSpecialFilePath, SPECIAL_FILE_HINT, transcribeWithSegments, validateTranscribeRequest } from "../transcribe";
+import {
+  isDirectoryPath,
+  isSpecialFilePath,
+  SPECIAL_FILE_HINT,
+  transcribeWithSegments,
+  truncatedWavSeconds,
+  validateTranscribeRequest,
+} from "../transcribe";
 
 export { isDirectoryPath };
 import { detectAudioLanguageEngine, detectTextLanguageEngine, isEngineInstalled } from "../engine";
@@ -81,14 +88,12 @@ export function resolveOutputFormat(input: {
       error: `unknown --format '${input.format}'. supported: ${SUPPORTED_FORMATS.join(", ")}`,
     };
   }
-  if (
-    (input.json && input.toon) ||
-    (input.json && input.format === "toon") ||
-    (input.toon && input.format === "json")
-  ) {
+  const jsonFlag = input.json ? "--json" : input.format === "json" ? "--format json" : null;
+  const toonFlag = input.toon ? "--toon" : input.format === "toon" ? "--format toon" : null;
+  if (jsonFlag && toonFlag) {
     return {
       ok: false,
-      error: "--json and --toon are mutually exclusive (pick one output format).",
+      error: `${jsonFlag} and ${toonFlag} are mutually exclusive (pick one output format).`,
     };
   }
   // `--format transcript` + boolean `--json` / `--toon` was previously
@@ -321,6 +326,17 @@ async function processFile(
   const { vadMode, timestamps, speakers, itn, wantsLangId, expectedLang, reportProgress } = options;
   const { stats, diagnosticLog } = recorders;
 
+  if (file === "-") {
+    const err = new KeshaError("E_INVALID_ARG", "reading audio from stdin is not supported", { hint: SPECIAL_FILE_HINT });
+    stats.recordError("input", err, err.code);
+    diagnosticLog.event("input.invalid", {
+      command: "transcribe",
+      error_code: err.code,
+    });
+    log.error(`${file}: ${errorMessage(err)}`);
+    return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
+  }
+
   if (!existsSync(file)) {
     const err = new KeshaError("E_INPUT_NOT_FOUND", "File not found");
     stats.recordError("input", err, err.code);
@@ -356,6 +372,13 @@ async function processFile(
     });
     log.error(`${file}: ${errorMessage(err)}`);
     return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
+  }
+
+  const truncated = truncatedWavSeconds(file);
+  if (truncated) {
+    log.warn(
+      `warning: ${file} is truncated: its header declares ${truncated.declared.toFixed(1)} s of audio but the file holds ${truncated.present.toFixed(1)} s; transcribing the part present`,
+    );
   }
 
   const inputArtifact = artifactFromFile(file, "input_audio");

@@ -68,8 +68,8 @@ export interface CliScenarioOptions {
   trimOutput?: boolean;
   artifacts?: Array<string | CliScenarioArtifactRequest>;
   maxArtifactBytes?: number;
-  /** Bytes are written and the pipe closed; `"open"` leaves a pipe open for the whole run, the way a slow producer does, and `{ openAfter }` writes those bytes first. */
-  stdin?: Uint8Array | string | "open" | { openAfter: string };
+  /** Bytes are written and the pipe closed; `"open"` leaves a pipe open for the whole run, the way a slow producer does, and `{ openAfter }` writes those bytes first. A `BunFile` is redirected as a regular file, as `< file` does. */
+  stdin?: Uint8Array | string | "open" | { openAfter: string } | Bun.BunFile;
 }
 
 export function installFakeDiarizeModel(cacheDir: string): void {
@@ -86,7 +86,7 @@ export function installFakeDiarizeModel(cacheDir: string): void {
   writeFileSync(join(vad, "silero_vad.onnx"), "vad");
 }
 
-function resolveStdin(stdin: CliScenarioOptions["stdin"]): "ignore" | "pipe" | Uint8Array {
+function resolveStdin(stdin: CliScenarioOptions["stdin"]): "ignore" | "pipe" | Uint8Array | Bun.BunFile {
   if (stdin === undefined) return "ignore";
   if (stdin === "open" || typeof stdin === "object" && "openAfter" in stdin) return "pipe";
   return typeof stdin === "string" ? new TextEncoder().encode(stdin) : stdin;

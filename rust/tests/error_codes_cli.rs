@@ -136,6 +136,30 @@ fn a_wav_declaring_sample_rate_zero_is_bad_audio_with_no_panic_text() {
     );
 }
 
+// #1473 S3-6: a 0-byte file read as "unsupported audio format", which sends the user to re-encode it.
+#[test]
+fn an_empty_file_is_bad_audio_named_as_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("empty.wav");
+    std::fs::write(&wav, b"").unwrap();
+    let out = Command::new(engine_bin())
+        .arg("transcribe")
+        .arg(&wav)
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_BAD_AUDIO", "{v}");
+    assert!(
+        v["message"]
+            .as_str()
+            .unwrap()
+            .contains("empty.wav is empty (0 bytes)"),
+        "{v}"
+    );
+}
+
 /// A producer that never closes the pipe: `say` must answer once the text limit is passed, not wait for EOF.
 #[test]
 fn say_stops_reading_an_open_stdin_pipe_once_the_text_limit_is_passed() {
