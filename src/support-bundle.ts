@@ -110,6 +110,14 @@ function existsAsLink(path: string): boolean {
   }
 }
 
+function isRegularFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function fileInTheWay(dir: string): string | null {
   for (let d = dir; ; d = dirname(d)) {
     try {
@@ -168,6 +176,11 @@ export async function createSupportBundle(
 ): Promise<SupportBundleResult> {
   const now = options.now ?? new Date();
   const outputPath = resolve(options.output ?? defaultBundlePath(now));
+  if (isRegularFile(outputPath)) {
+    throw new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: the file already exists`, {
+      hint: `pass --output a path that does not exist yet, or delete ${outputPath} first.`,
+    });
+  }
   const redact = options.redact ?? true;
   const report = await collectDoctorReport({ redact });
   const root = basename(outputPath).replace(/\.tar\.gz$/, "");

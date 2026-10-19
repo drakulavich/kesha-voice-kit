@@ -549,20 +549,25 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         "  kesha init               Guided first-time setup.\n" +
         "\n" +
         "Commands:\n" +
-        "  completions  Print shell completion script.\n" +
-        "  doctor     Collect support diagnostics.\n" +
-        "  init       Interactive setup guide for Kesha features.\n" +
-        "  install    Download engine and models.\n" +
-        "  logs       Manage local privacy-safe diagnostic logs.\n" +
-        "  manpage    Print the kesha(1) manpage.\n" +
-        "  mcp        Run an MCP server over stdio.\n" +
-        "  record     Record microphone audio to a WAV file.\n" +
-        "  status     Inspect installed backend.\n" +
-        "  say        Synthesize speech from text.\n" +
-        "  stats      Manage local anonymous performance stats.\n" +
-        "  support-bundle  Create a redacted diagnostics archive.",
+        "  completions     Print shell completion script.\n" +
+        "  doctor          Collect support diagnostics.\n" +
+        "  init            Interactive setup guide for Kesha features.\n" +
+        "  install         Download engine and models.\n" +
+        "  logs            Manage local privacy-safe diagnostic logs.\n" +
+        "  manpage         Print the kesha(1) manpage.\n" +
+        "  mcp             Run an MCP server over stdio.\n" +
+        "  record          Record microphone audio to a WAV file.\n" +
+        "  status          Inspect installed backend.\n" +
+        "  say             Synthesize speech from text.\n" +
+        "  stats           Manage local anonymous performance stats.\n" +
+        "  support-bundle  Create a redacted diagnostics archive.\n",
     },
     args: {
+      audio_file: {
+        type: "positional",
+        required: false,
+        description: "Audio file(s) to transcribe",
+      },
       json: {
         type: "boolean",
         description: "Output results as JSON",

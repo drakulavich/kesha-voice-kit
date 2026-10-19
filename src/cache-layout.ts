@@ -101,14 +101,29 @@ export function cacheComponents(
     exists: existsSync(engine.path),
     sizeBytes: footprintBytes(engine, engine.members),
   };
+  const coremlRows = [
+    { label: "FluidAudio (in cache)", path: join(cacheRoot, "fluidaudio") },
+    { label: "Diarization (Sortformer)", path: join(cacheRoot, "models/diarize") },
+  ];
+  const onnxRows = [
+    { label: "ASR (Parakeet)", path: join(cacheRoot, "models/parakeet-tdt-v3") },
+    { label: "G2P (CharsiuG2P)", path: join(cacheRoot, "models/g2p") },
+  ];
+  const [usedRows, unusedRows] = coreml ? [coremlRows, onnxRows] : [onnxRows, coremlRows];
+  const sized = (row: { label: string; path: string }) => ({
+    ...row,
+    exists: existsSync(row.path),
+    sizeBytes: dirSizeBytes(row.path),
+  });
   const modelRows = [
-    ...(coreml
-      ? [{ label: "FluidAudio (in cache)", path: join(cacheRoot, "fluidaudio") }]
-      : [{ label: "ASR (Parakeet)", path: join(cacheRoot, "models/parakeet-tdt-v3") }]),
+    ...usedRows,
     { label: "Language ID", path: join(cacheRoot, "models/lang-id-ecapa") },
     { label: "VAD (Silero)", path: join(cacheRoot, "models/silero-vad") },
     { label: "TTS (Kokoro)", path: join(cacheRoot, "models/kokoro-82m") },
     { label: "TTS (Vosk)", path: join(cacheRoot, "models/vosk-ru") },
-  ].map((row) => ({ ...row, exists: existsSync(row.path), sizeBytes: dirSizeBytes(row.path) }));
-  return [engineRow, ...modelRows];
+  ].map(sized);
+  const leftoverRows = unusedRows
+    .map((row) => sized({ ...row, label: `${row.label}, unused by this engine, safe to delete` }))
+    .filter((row) => row.exists);
+  return [engineRow, ...modelRows, ...leftoverRows];
 }

@@ -176,11 +176,11 @@ describe("compareEntry", () => {
     expect(verdict.status).toBe("drift");
     expect(verdict.message).toContain("models/g2p/byt5-tiny/encoder_model.onnx");
     expect(verdict.message).toContain("12478704");
-    expect(verdict.message).toContain("11.9 MB");
+    expect(verdict.message).toContain("12.5 MB");
     expect(verdict.message).toContain("57234020");
-    expect(verdict.message).toContain("54.6 MB");
+    expect(verdict.message).toContain("57.2 MB");
     expect(verdict.message).toContain("+44755316");
-    expect(verdict.message).toContain("+42.7 MB");
+    expect(verdict.message).toContain("+44.8 MB");
   });
 
   test("reports a shrunk file with a negative delta", () => {

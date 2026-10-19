@@ -321,12 +321,12 @@ function rotateIfNeeded(activePath: string, nextBytes: number, maxBytes: number,
 }
 
 export function humanBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1000) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
-  let value = bytes / 1024;
+  let value = bytes / 1000;
   let unit = units[0];
-  for (let i = 1; i < units.length && value >= 1024; i++) {
-    value /= 1024;
+  for (let i = 1; i < units.length && value >= 1000; i++) {
+    value /= 1000;
     unit = units[i];
   }
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
