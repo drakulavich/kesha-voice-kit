@@ -2,6 +2,7 @@ import { defineCommand, type ArgsDef } from "citty";
 import { statSync } from "fs";
 import { extname } from "path";
 import { errorMessage } from "../error-utils";
+import { engineMissingError, isEngineInstalled } from "../engine";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { positionalArgs, renderInvalidArg } from "./options";
 import { log } from "../log";
@@ -268,6 +269,7 @@ async function synthesizeAndEmit(
   const { stats } = session;
   try {
     const startedAt = performance.now();
+    if (!isEngineInstalled()) throw engineMissingError("speech synthesis", "--tts");
     if (opts.out) {
       const voiceLabel = opts.voice ?? "default voice";
       log.status(`Synthesizing ${voiceLabel} -> ${opts.out}...`);

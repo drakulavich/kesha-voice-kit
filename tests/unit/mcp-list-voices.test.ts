@@ -3,6 +3,7 @@ import { chmodSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { getEngineBinPath } from "../../src/engine";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { listVoices } from "../../src/mcp/voices";
 import { errorMessage } from "../../src/error-utils";
@@ -50,7 +51,7 @@ async function withMissingEngine<T>(fn: () => Promise<T>): Promise<T> {
 describe("list_voices / list_languages guard when the engine is missing", () => {
   test("listVoices() throws an install-hint error, not a raw spawn exception", async () => {
     await withMissingEngine(async () => {
-      await expect(listVoices()).rejects.toThrow(/kesha-engine not installed. run: (kesha install|kesha init)$/);
+      await expect(listVoices()).rejects.toThrow(`No speech synthesis backend is installed: no kesha-engine at ${getEngineBinPath()}`);
     });
   });
 
@@ -58,7 +59,7 @@ describe("list_voices / list_languages guard when the engine is missing", () => 
     await withMissingEngine(async () => {
       const res = await call("list_voices");
       expect(res.isError).toBe(true);
-      expect((res.content as Array<{ text: string }>)[0]?.text).toContain("kesha-engine not installed");
+      expect((res.content as Array<{ text: string }>)[0]?.text).toContain("No speech synthesis backend is installed");
     });
   });
 
@@ -66,7 +67,7 @@ describe("list_voices / list_languages guard when the engine is missing", () => 
     await withMissingEngine(async () => {
       const res = await call("list_languages");
       expect(res.isError).toBe(true);
-      expect((res.content as Array<{ text: string }>)[0]?.text).toContain("kesha-engine not installed");
+      expect((res.content as Array<{ text: string }>)[0]?.text).toContain("No speech synthesis backend is installed");
     });
   });
 });

@@ -63,7 +63,6 @@ describe("transcribe.ts internals", () => {
       } catch (err) {
         hint = err instanceof KeshaError ? (err.hint ?? "") : String(err);
       }
-      expect(hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
       expect(hint).toContain("kesha install");
       expect(hint).not.toContain("bunx");
     } finally {

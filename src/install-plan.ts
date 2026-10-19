@@ -116,7 +116,7 @@ function releaseAssetSize(assetName: string, version: string): number | null {
 function filesCached(cacheRoot: string, files: PlanFile[]): boolean {
   return files.every((file) => {
     const path = join(cacheRoot, file.relPath);
-    return existsSync(path) && statSync(path).size > 0;
+    return existsSync(path) && statSync(path).size === file.sizeBytes;
   });
 }
 

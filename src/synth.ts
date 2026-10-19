@@ -1,8 +1,7 @@
-import { getDescribe, getEngineBinPath, isEngineInstalled } from "./engine";
+import { engineMissingError, getDescribe, getEngineBinPath, isEngineInstalled } from "./engine";
 import { engineSignal, runEngineProcess } from "./engine/spawn";
 import { validateArgv } from "./engine/describe";
 import { engineFailure, exitCodeFor, KeshaError, type EventSinks } from "./engine/events";
-import { installHint } from "./install-hint";
 import { log } from "./log";
 import { engineAbortError, interruptedRun } from "./process-tree";
 
@@ -155,10 +154,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   validateSayText(text);
 
   if (!isEngineInstalled()) {
-    throw new KeshaError("E_ENGINE_SPAWN", `kesha-engine not installed. run: ${installHint("--tts")}`, {
-      exitCode: 1,
-      stderr: "",
-    });
+    throw engineMissingError("speech synthesis", "--tts");
   }
   const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe({ signal: opts.signal }));
   for (const warning of warnings) log.warn(warning);
@@ -195,7 +191,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
 /** Installed voice ids as the engine lists them, one per line; a missing engine, a build without tts or a failed run is a KeshaError. */
 export async function listVoiceIds(sinks: EventSinks = {}, signal?: AbortSignal): Promise<string[]> {
   if (!isEngineInstalled()) {
-    throw new KeshaError("E_ENGINE_SPAWN", `kesha-engine not installed. run: ${installHint()}`);
+    throw engineMissingError("speech synthesis");
   }
   if (signal?.aborted) throw engineAbortError();
   const { argv, warnings } = validateArgv(["say", "--list-voices"], await getDescribe({ signal }));

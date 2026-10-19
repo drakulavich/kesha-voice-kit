@@ -3,14 +3,13 @@ import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInvalidArg } from "./options";
 import {
-  getEngineBinPath,
+  engineMissingError,
   isEngineInstalled,
   recordEngine,
   validateRecordRequest,
   type LiveAutoStopOptions,
   type RecordTarget,
 } from "../engine";
-import { installHint } from "../install-hint";
 import { log } from "../log";
 import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 
@@ -143,11 +142,7 @@ function resolveThreshold(
 
 /** Mirrors `src/transcribe.ts`'s "no transcription backend" guard message, worded for recording. */
 export function noRecordingBackendMessage(): string {
-  return errorMessage(
-    new KeshaError("E_ENGINE_SPAWN", `No recording backend is installed: no kesha-engine at ${getEngineBinPath()}`, {
-      hint: `bun add -g @drakulavich/kesha-voice-kit, then ${installHint()}`,
-    }),
-  );
+  return errorMessage(engineMissingError("recording"));
 }
 
 export const recordCommand = defineCommand({

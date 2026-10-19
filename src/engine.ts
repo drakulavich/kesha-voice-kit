@@ -7,6 +7,7 @@ import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, interruptedRun } from "./process-tree";
+import { resolveStatePaths } from "./state-paths";
 import { engineExitCause, engineSignal, runEngineProcess, spawnHint } from "./engine/spawn";
 import { engineFailure, KeshaError, quoteInvalidLine, renderError, SUPPORT_BUNDLE_HINT, type ErrorEvent } from "./engine/events";
 import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
@@ -74,6 +75,17 @@ export function getEngineBinPath(): string {
 
 export function isEngineInstalled(): boolean {
   return existsSync(getEngineBinPath());
+}
+
+/** The E_ENGINE_SPAWN for a missing engine: it names the path looked at and the variable that chose it. */
+export function engineMissingError(backend: string, ...installFlags: string[]): KeshaError {
+  const cacheSource = resolveStatePaths().cacheDir.source;
+  const hint = process.env.KESHA_ENGINE_BIN
+    ? spawnHint()
+    : cacheSource === "default"
+      ? `bun add -g @drakulavich/kesha-voice-kit, then ${installHint(...installFlags)}`
+      : `${cacheSource} is set; run \`${installHint(...installFlags)}\` to install there, or unset it`;
+  return new KeshaError("E_ENGINE_SPAWN", `No ${backend} backend is installed: no kesha-engine at ${getEngineBinPath()}`, { hint });
 }
 
 export interface RunEngineOptions {
