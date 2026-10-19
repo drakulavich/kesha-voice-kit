@@ -273,10 +273,10 @@ describe("engine", () => {
     await withEngineEnv(join(empty, "kesha-engine"), async () => {
       const err = await failure(() => validateTranscribeRequest({}));
       expect(err.code).toBe("E_ENGINE_SPAWN");
-      expect(err.message).toContain("No transcription backend is installed");
-      expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
-      expect(err.hint).toContain("kesha install");
-      expect(errorMessage(err)).toMatch(/^error \[E_ENGINE_SPAWN\]: No transcription backend is installed\n  hint: /);
+      expect(errorMessage(err)).toBe(
+        `error [E_ENGINE_SPAWN]: No transcription backend is installed: no kesha-engine at ${join(empty, "kesha-engine")}\n` +
+          "  hint: KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`",
+      );
     });
   });
 

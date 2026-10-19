@@ -838,14 +838,53 @@ describe("CLI contracts", () => {
     const dir = makeTempDir("kesha-cli-contract-no-engine-");
     const mediaPath = join(dir, "meeting.ogg");
     writeFileSync(mediaPath, "fake media");
-    const env = { ...isolatedEnv(dir), KESHA_ENGINE_BIN: join(dir, "absent-kesha-engine") };
+    const env = { ...isolatedEnv(dir), KESHA_CACHE_DIR: "", KESHA_HOME: "" };
     const res = await runCli([mediaPath], { env });
     expectContract(res, {
       exitCode: 1,
-      stderrContains: [`${mediaPath}: error [E_ENGINE_SPAWN]: No transcription backend is installed`, "hint: bun add -g @drakulavich/kesha-voice-kit"],
+      stderrContains: [
+        `${mediaPath}: error [E_ENGINE_SPAWN]: No transcription backend is installed: no kesha-engine at ${join(dir, ".cache", "kesha", "engine", "bin")}`,
+        "hint: bun add -g @drakulavich/kesha-voice-kit",
+      ],
       stderrNotContains: ["Transcribing", "npm i"],
     });
   });
+
+  for (const command of [[], ["say", "hi", "--out"]]) {
+    const name = command.length === 0 ? "transcribe" : "say";
+    const backend = command.length === 0 ? "transcription" : "speech synthesis";
+    const install = command.length === 0 ? "kesha install" : "kesha install --tts";
+
+    test(`${name} names the missing engine path and the KESHA_ENGINE_BIN that chose it`, async () => {
+      const dir = makeTempDir("kesha-cli-contract-engine-override-");
+      const enginePath = join(dir, "absent-kesha-engine");
+      const target = join(dir, command.length === 0 ? "meeting.ogg" : "out.wav");
+      if (command.length === 0) writeFileSync(target, "fake media");
+      const res = await runCli([...command, target], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
+      expectContract(res, {
+        exitCode: 1,
+        stderrContains: [
+          `error [E_ENGINE_SPAWN]: No ${backend} backend is installed: no kesha-engine at ${enginePath}`,
+          "hint: KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`",
+        ],
+      });
+    });
+
+    test(`${name} names the KESHA_CACHE_DIR it found no engine under`, async () => {
+      const dir = makeTempDir("kesha-cli-contract-engine-cache-");
+      const target = join(dir, command.length === 0 ? "meeting.ogg" : "out.wav");
+      if (command.length === 0) writeFileSync(target, "fake media");
+      const env = isolatedEnv(dir);
+      const res = await runCli([...command, target], { env });
+      expectContract(res, {
+        exitCode: 1,
+        stderrContains: [
+          `error [E_ENGINE_SPAWN]: No ${backend} backend is installed: no kesha-engine at ${join(env.KESHA_CACHE_DIR, "engine", "bin", "kesha-engine")}`,
+          `hint: KESHA_CACHE_DIR is set; run \`${install}\` to install there, or unset it`,
+        ],
+      });
+    });
+  }
 
   test("transcribe against a protocol-3 engine exits 1 with E_ENGINE_PROTOCOL pointing at kesha install", async () => {
     if (process.platform === "win32") return;
@@ -1071,7 +1110,7 @@ describe("CLI contracts", () => {
     expectContract(run, {
       exitCode: 1,
       stdoutEmpty: true,
-      stderrContains: ["kesha-engine not installed. run:"],
+      stderrContains: ["error [E_ENGINE_SPAWN]: No speech synthesis backend is installed: no kesha-engine at "],
       stderrNotContains: ["ENOENT", "posix_spawn"],
     });
     expect(run.stderr).not.toMatch(/^\s+at /m);

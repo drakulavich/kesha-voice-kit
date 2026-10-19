@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir } from "os";
 import { renderInstallPlan } from "../../src/install-plan";
@@ -184,10 +184,11 @@ describe("the plan's download economics", () => {
     return run(join(dir, "cache")).finally(() => rmSync(dir, { recursive: true, force: true }));
   }
 
-  function seed(cacheRoot: string, relPath: string, contents: string) {
+  function seed(cacheRoot: string, relPath: string, sizeBytes: number) {
     const path = join(cacheRoot, relPath);
     mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, contents);
+    writeFileSync(path, "");
+    truncateSync(path, sizeBytes);
   }
 
   const langIdBytes = modelPlan.langId.reduce((sum, f) => sum + f.sizeBytes, 0);
@@ -210,20 +211,25 @@ describe("the plan's download economics", () => {
     });
   });
 
-  test("a component is cached only once every file is present and non-empty", async () => {
+  test("a component is cached only once every file is present at its pinned size", async () => {
     await withCache("cached", async (cacheRoot) => {
       expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
         "needed",
       );
 
-      for (const file of modelPlan.langId) seed(cacheRoot, file.relPath, "x");
+      for (const file of modelPlan.langId) seed(cacheRoot, file.relPath, file.sizeBytes);
       expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
         "cached",
       );
 
       const firstLangId = modelPlan.langId[0];
       if (!firstLangId) throw new Error("model-plan.json langId is empty — fixture invariant broken");
-      seed(cacheRoot, firstLangId.relPath, "");
+      seed(cacheRoot, firstLangId.relPath, 0);
+      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
+        "needed",
+      );
+
+      seed(cacheRoot, firstLangId.relPath, 1000);
       expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
         "needed",
       );
@@ -246,7 +252,7 @@ describe("the plan's download economics", () => {
       const empty = await renderInstallPlan({ backend: "onnx" });
       expect(total(empty, run)).toBe(total(empty, cold));
 
-      for (const file of modelPlan.langId) seed(cacheRoot, file.relPath, "x");
+      for (const file of modelPlan.langId) seed(cacheRoot, file.relPath, file.sizeBytes);
       const warm = await renderInstallPlan({ backend: "onnx" });
       expect(total(warm, cold)).toBe(total(empty, cold));
       expect(total(warm, run)).not.toBe(total(warm, cold));
@@ -414,11 +420,12 @@ describe("the darwin-arm64 plan quotes the FluidAudio ANE bytes", () => {
     };
   }
 
-  function stageFiles(dir: string, files: { relPath: string }[]): void {
-    for (const { relPath } of files) {
+  function stageFiles(dir: string, files: { relPath: string; sizeBytes: number }[]): void {
+    for (const { relPath, sizeBytes } of files) {
       const path = join(dir, relPath);
       mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, "x");
+      writeFileSync(path, "");
+      truncateSync(path, sizeBytes);
     }
   }
 
