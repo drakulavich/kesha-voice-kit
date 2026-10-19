@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { cacheComponents, cacheTotalBytes } from "./cache-layout";
+import { cacheComponents, cacheTotalBytes, KOKORO_ONNX_UNUSED_NOTE } from "./cache-layout";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
 import { dirname, join } from "path";
@@ -59,6 +59,7 @@ interface PathSummary {
 
 interface CacheComponent extends PathSummary {
   label: string;
+  note?: string;
 }
 
 interface OptionalComponent extends PathSummary {
@@ -319,9 +320,7 @@ async function collectOptionalComponents(
     },
     {
       name: "TTS (Kokoro)",
-      note: isDarwinArm64()
-        ? "not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle"
-        : "enabled with `kesha install --tts`",
+      note: isDarwinArm64() ? KOKORO_ONNX_UNUSED_NOTE : "enabled with `kesha install --tts`",
       ...pathSummary(join(cache, "models/kokoro-82m")),
     },
     {
@@ -504,7 +503,7 @@ function formatCapabilities(engine: DoctorReport["engine"]): string {
 function formatCacheSection(cache: DoctorReport["cache"]): string[] {
   const header = `Cache: ${cache.path} (${cache.exists ? humanBytes(cache.totalBytes) : "missing"})`;
   const rows = cache.components.map(
-    (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}`,
+    (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}${c.note ? ` - ${c.note}` : ""}`,
   );
   return [header, ...rows, ...formatExternalRootsSection(cache)];
 }

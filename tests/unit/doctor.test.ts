@@ -840,6 +840,24 @@ exit 2
     }
   });
 
+  test("the Cache section and the optional rows agree on the ONNX Kokoro cache", async () => {
+    const { dir } = stage("kesha-doctor-kokoro-onnx-");
+    try {
+      const lines = formatDoctorReport(await collectDoctorReport()).split("\n");
+      const kokoroLines = lines.filter((l) => l.startsWith("  TTS (Kokoro): "));
+      expect(kokoroLines).toEqual(
+        isDarwinArm64()
+          ? [
+              "  TTS (Kokoro): missing - not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle",
+              "  TTS (Kokoro): missing - not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle",
+            ]
+          : ["  TTS (Kokoro): missing", "  TTS (Kokoro): missing - enabled with `kesha install --tts`"],
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("the package and runtime blocks describe this install", async () => {
     const { dir } = stage("kesha-doctor-identity-");
     try {
