@@ -14,20 +14,23 @@ import { tempDir } from "../helpers/temp-dir";
 
 const posix = process.platform === "win32" ? test.skip : test;
 
-/** `label` lands in argv as `$0`, which is what makes the fixture recognisable in `ps`. */
-function spawnStubborn(label: string, ttlSeconds?: number): number {
+/**
+ * `label` lands in argv as `$0`, which is what makes the fixture recognisable in `ps`. Await `exited` after
+ * `waitForPidExit`: that counts an unreaped zombie as gone, and the suite-level sweep still sees it.
+ */
+function spawnStubborn(label: string, ttlSeconds?: number): Bun.Subprocess {
   const proc = Bun.spawn(["sh", "-c", stubbornShell("TERM INT", ttlSeconds), label], {
     stdout: "ignore",
     stderr: "ignore",
   });
   proc.unref();
-  return proc.pid;
+  return proc;
 }
 
-function spawnStranger(): number {
+function spawnStranger(): Bun.Subprocess {
   const proc = Bun.spawn(["sleep", "300"], { stdout: "ignore", stderr: "ignore" });
   proc.unref();
-  return proc.pid;
+  return proc;
 }
 
 /**
@@ -44,28 +47,33 @@ const WAIT_FOR_SLEEPING_PARENT =
 
 describe("process leak guard", () => {
   posix("reaps a tracked stub the test never killed, and names it", async () => {
-    const pid = trackPid(spawnStubborn("kesha-engine-leak-guard-fixture"));
+    const proc = spawnStubborn("kesha-engine-leak-guard-fixture");
+    const pid = trackPid(proc.pid);
 
     const leaked = await reapLeakedProcesses();
 
     expect(leaked).toHaveLength(1);
     expect(leaked[0]).toContain(String(pid));
     expect(await waitForPidExit(pid)).toBe(true);
+    await proc.exited;
   });
 
   /** The fixture traps SIGTERM on purpose, so only the SIGKILL escalation can end it. */
   posix("escalates to SIGKILL rather than reporting a stub it failed to kill", async () => {
-    const pid = trackPid(spawnStubborn("kesha-engine-leak-guard-fixture"));
+    const proc = spawnStubborn("kesha-engine-leak-guard-fixture");
+    const pid = trackPid(proc.pid);
 
     const leaked = await reapLeakedProcesses();
 
     expect(leaked[0]).not.toContain("survived SIGKILL");
     expect(pidIsAlive(pid)).toBe(false);
+    await proc.exited;
   });
 
   /** A pid the OS recycled onto a stranger must not be signalled just because a test held it. */
   posix("leaves a tracked pid alone once its command is no longer a fixture", async () => {
-    const pid = trackPid(spawnStranger());
+    const proc = spawnStranger();
+    const pid = trackPid(proc.pid);
 
     const leaked = await reapLeakedProcesses();
 
@@ -73,16 +81,19 @@ describe("process leak guard", () => {
     expect(pidIsAlive(pid)).toBe(true);
     process.kill(pid, "SIGKILL");
     expect(await waitForPidExit(pid)).toBe(true);
+    await proc.exited;
   });
 
   /** An in-process spawn publishes no pid file, so only the descendant sweep can find it. */
   posix("sweeps an untracked descendant the suite left running", async () => {
-    const pid = spawnStubborn("kesha-engine-leak-guard-fixture");
+    const proc = spawnStubborn("kesha-engine-leak-guard-fixture");
+    const pid = proc.pid;
 
     const leaked = await reapLeakedProcesses({ sweepDescendants: true });
 
     expect(leaked.some((entry) => entry.includes(String(pid)))).toBe(true);
     expect(await waitForPidExit(pid)).toBe(true);
+    await proc.exited;
   });
 
   /** #1160: `kill(pid, 0)` succeeds on an exited child its parent has not reaped yet. */
@@ -114,9 +125,10 @@ describe("process leak guard", () => {
 
   /** #1131: an interrupted run reaches no hook at all, so the fixture has to end itself. */
   posix("expires on its own clock when no reaper ever signals it", async () => {
-    const pid = spawnStubborn("kesha-engine-leak-guard-fixture", 2);
+    const proc = spawnStubborn("kesha-engine-leak-guard-fixture", 2);
 
-    expect(await waitForPidExit(pid)).toBe(true);
+    expect(await waitForPidExit(proc.pid)).toBe(true);
+    await proc.exited;
   });
 });
 
