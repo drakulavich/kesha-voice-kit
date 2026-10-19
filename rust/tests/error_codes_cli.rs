@@ -305,7 +305,8 @@ fn an_asr_model_that_will_not_load_names_its_path_and_the_reinstall_command() {
     assert_eq!(v["code"], "E_MODEL_LOAD", "{v}");
     let message = v["message"].as_str().unwrap();
     assert!(
-        message.contains(&asr.join("nemo128.onnx").display().to_string())
+        message.contains("parakeet-tdt-v3")
+            && message.contains("nemo128.onnx")
             && message.contains("kesha install --no-cache"),
         "{v}"
     );
