@@ -71,6 +71,13 @@ fn open_format(path: &Path) -> Result<OpenedTrack> {
         };
         anyhow::Error::new(crate::errors::CodedError { code, message })
     })?;
+    if src.metadata().is_ok_and(|m| m.len() == 0) {
+        coded_bail!(
+            ErrorCode::BadAudio,
+            "{} is empty (0 bytes); pass a file that holds audio",
+            path.display()
+        );
+    }
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     let hint = build_hint(path);

@@ -11,7 +11,7 @@ import {
 import { validateArgv } from "./engine/describe";
 import { KeshaError } from "./engine/events";
 import { installHint } from "./install-hint";
-import { existsSync, statSync } from "fs";
+import { closeSync, existsSync, fstatSync, openSync, readSync, statSync } from "fs";
 
 export type { VadMode };
 
@@ -29,11 +29,45 @@ export const SPECIAL_FILE_HINT =
 
 /** True when `path` exists and is neither a regular file nor a directory: the engine opens its input more than once, so a FIFO, `/dev/stdin` or `<(...)` hangs it (#1468). */
 export function isSpecialFilePath(path: string): boolean {
+  // stat follows /dev/stdin to whatever stdin holds, so `kesha /dev/stdin < en.wav` would look like a regular file.
+  if (path === "/dev/stdin" || path.startsWith("/dev/fd/")) return true;
   try {
     const st = statSync(path);
     return !st.isFile() && !st.isDirectory();
   } catch {
     return false;
+  }
+}
+
+/** Seconds a RIFF WAV's data chunk declares and seconds the file holds, when the file is shorter than its header says; null otherwise. */
+export function truncatedWavSeconds(path: string): { declared: number; present: number } | null {
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, "r");
+    const size = fstatSync(fd).size;
+    const buf = Buffer.alloc(20);
+    if (readSync(fd, buf, 0, 12, 0) < 12 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") {
+      return null;
+    }
+    let byteRate = 0;
+    for (let offset = 12; offset + 8 <= size; ) {
+      readSync(fd, buf, 0, 20, offset);
+      const id = buf.toString("ascii", 0, 4);
+      const length = buf.readUInt32LE(4);
+      if (id === "fmt ") byteRate = buf.readUInt32LE(16);
+      if (id === "data") {
+        const present = size - offset - 8;
+        // Streaming writers leave 0xFFFFFFFF in the size field when they cannot seek back to fill it in.
+        if (length === 0xffffffff || byteRate === 0 || length <= present) return null;
+        return { declared: length / byteRate, present: present / byteRate };
+      }
+      offset += 8 + length + (length % 2);
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
 }
 

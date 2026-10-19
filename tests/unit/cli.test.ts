@@ -640,16 +640,16 @@ describe("resolveOutputFormat (#300 regression)", () => {
       if (!r.ok) expect(r.error).toContain("mutually exclusive");
     });
 
-    test("boolean --json + --format toon → error (cross-form)", () => {
+    test("boolean --json + --format toon → error naming the flags typed (#1473 S1-3)", () => {
       const r = resolveOutputFormat({ json: true, format: "toon" });
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error).toContain("mutually exclusive");
+      if (!r.ok) expect(r.error).toContain("--json and --format toon are mutually exclusive");
     });
 
-    test("boolean --toon + --format json → error (cross-form)", () => {
+    test("boolean --toon + --format json → error naming the flags typed (#1473 S1-3)", () => {
       const r = resolveOutputFormat({ toon: true, format: "json" });
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.error).toContain("mutually exclusive");
+      if (!r.ok) expect(r.error).toContain("--format json and --toon are mutually exclusive");
     });
 
     test("--format transcript + --json → error (Greptile P2 on #300)", () => {
