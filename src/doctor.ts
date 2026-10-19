@@ -17,6 +17,7 @@ import { engineVersion, packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
 import { kokoroAneComponents, kokoroTtsLanguages } from "./kokoro-ane";
 import { isCoremlBackend } from "./fluid-asr-cache";
+import { isDarwinArm64 } from "./engine-targets";
 import {
   fluidExternalRoots,
   fluidExternalTotalBytes,
@@ -318,12 +319,14 @@ async function collectOptionalComponents(
     },
     {
       name: "TTS (Kokoro)",
-      note: "enabled with `kesha install --tts`",
+      note: isDarwinArm64()
+        ? "not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle"
+        : "enabled with `kesha install --tts`",
       ...pathSummary(join(cache, "models/kokoro-82m")),
     },
     {
       name: "TTS (Vosk RU)",
-      note: "enabled with `kesha install --tts`",
+      note: "enabled with `kesha install --tts ru`",
       ...pathSummary(join(cache, "models/vosk-ru")),
     },
     ...kokoroAneComponents({ homeDir, cacheRoot: cache }).map((c) => ({

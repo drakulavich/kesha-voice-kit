@@ -40,6 +40,7 @@ describe("renderInstallPlan", () => {
       expect(output).toContain("Cold-cache Kesha-managed download:");
       expect(output).toContain("Expected Kesha-managed network for this run:");
       expect(output).toContain("No files are downloaded or changed by --plan.");
+      expect(output).toContain("CoreML warm-up typically takes 1-2 min");
       expect(output).toContain("Run: kesha install --tts en ru");
       if (process.platform === "darwin" && process.arch === "arm64") {
         expect(output).toContain("Warm-ups:");

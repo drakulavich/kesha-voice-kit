@@ -826,9 +826,13 @@ exit 2
       expect(byName("VAD (Silero)")).toMatchObject({ exists: true, sizeBytes: 128 });
       expect(byName("VAD (Silero)").note).toContain("kesha install --vad");
       expect(byName("TTS (Kokoro)")).toMatchObject({ exists: true, sizeBytes: 64 });
-      expect(byName("TTS (Kokoro)").note).toContain("kesha install --tts");
+      expect(byName("TTS (Kokoro)").note).toBe(
+        isDarwinArm64()
+          ? "not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle"
+          : "enabled with `kesha install --tts`",
+      );
       expect(byName("TTS (Vosk RU)")).toMatchObject({ exists: false, sizeBytes: 0 });
-      expect(byName("TTS (Vosk RU)").note).toContain("kesha install --tts");
+      expect(byName("TTS (Vosk RU)").note).toBe("enabled with `kesha install --tts ru`");
       expect(byName("Diarization (Sortformer)")).toMatchObject({ exists: false, sizeBytes: 0 });
       expect(byName("Diarization (Sortformer)").note).toContain("kesha install --diarize");
     } finally {

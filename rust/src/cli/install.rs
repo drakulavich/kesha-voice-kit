@@ -23,7 +23,7 @@ pub struct InstallArgs {
     #[arg(long)]
     pub diarize: bool,
     /// Skip the ASR-backend warm-up step at the end of install. On macOS
-    /// (CoreML) the warm-up triggers the ~20-30 s Apple Neural Engine
+    /// (CoreML) the warm-up triggers the 1-2 min Apple Neural Engine
     /// model-compile so the first `kesha audio.ogg` invocation is fast.
     /// On the ONNX path (Linux/Windows) warm-up is ~500 ms — still worth
     /// running since it surfaces missing-dep crashes at install time.
@@ -66,13 +66,13 @@ pub fn run(args: InstallArgs) -> Result<()> {
         models::download_diarize(no_cache)?;
         events::progress(None, "Diarization model installed.");
     }
-    // Pre-pay ANE model-compile (~20-30 s CoreML) / ORT session init (~500 ms) here so the
+    // Pre-pay ANE model-compile (1-2 min CoreML) / ORT session init (~500 ms) here so the
     // first real `kesha audio.ogg` is fast. CoreML cache is keyed by (model bytes, signing
     // identity) and survives process exit; survives re-runs until next `kesha install` re-signs (#295).
     if !no_warmup {
         let asr_dir = models::model_dir(models::ModelKind::Asr)?;
         let cost_hint = if cfg!(feature = "coreml") {
-            "one-time, ~20-30 s for the ANE compile on first install"
+            "one-time, 1-2 min for the ANE compile on first install"
         } else {
             "~500 ms for the ORT session init"
         };
