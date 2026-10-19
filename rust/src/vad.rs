@@ -565,7 +565,7 @@ mod tests {
                         let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
                         std::path::PathBuf::from(home).join(".cache/kesha")
                     });
-                base.join("models/silero-vad/silero_vad.onnx")
+                crate::models::join_rel(&base, "models/silero-vad/silero_vad.onnx")
             });
         if path.is_file() {
             return Some(path);

@@ -244,7 +244,7 @@ pub fn download_tts(langs: &[&str], no_cache: bool) -> Result<()> {
 /// Hash-verify on every path — cached hits short-circuit network; mismatch bails before
 /// the bad file can reach inference (#174).
 fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> {
-    let target = cache.join(f.rel_path);
+    let target = join_rel(cache, f.rel_path);
     if target.exists() {
         if verify_sha256(&target, f.sha256)? {
             if !no_cache {

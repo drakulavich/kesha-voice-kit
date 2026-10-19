@@ -157,9 +157,8 @@ fn build_kokoro_voice(
     pack_name: &str,
     espeak_lang: &'static str,
 ) -> anyhow::Result<ResolvedVoice> {
-    let model_path = cache_dir.join("models/kokoro-82m/model.onnx");
-    let voice_path = cache_dir
-        .join("models/kokoro-82m/voices")
+    let model_path = crate::models::join_rel(cache_dir, "models/kokoro-82m/model.onnx");
+    let voice_path = crate::models::join_rel(cache_dir, "models/kokoro-82m/voices")
         .join(format!("{pack_name}.bin"));
     if !voice_path.exists() {
         coded_bail!(
