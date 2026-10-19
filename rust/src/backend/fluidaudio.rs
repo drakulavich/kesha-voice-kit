@@ -3,6 +3,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use fluidaudio_rs::{AsrWordTiming, FluidAudio};
 
+use crate::errors::{CodedContext, ErrorCode};
 use crate::fluid_stdout::with_silenced_stdout;
 use crate::transcribe::WordTiming;
 
@@ -73,7 +74,9 @@ impl TranscribeBackend for FluidAudioBackend {
             self.audio.transcribe_samples_with_words(&padded)
         });
         self.sink.settle();
-        let (result, words) = result.context("FluidAudio sample transcription failed")?;
+        let (result, words) = result
+            .context("FluidAudio sample transcription failed")
+            .coded(ErrorCode::TranscribeFailed)?;
         Ok(chunk_from(result.text, words))
     }
 }

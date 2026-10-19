@@ -211,3 +211,153 @@ fn detect_text_lang_reads_the_text_from_stdin_when_no_positional_is_given() {
         "text on stdin must reach the detector: {stderr}"
     );
 }
+
+// Stands in for every uncoded failure: when this one gets its own code, move the test to another.
+#[test]
+fn an_uncoded_failure_is_internal_with_the_file_a_bug_hint() {
+    let out = detect_text_lang_on_stdin(b" ");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_INTERNAL", "{v}");
+    assert_eq!(
+        v["hint"],
+        "re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+        "{v}"
+    );
+}
+
+#[test]
+fn speakers_without_json_is_an_invalid_argument() {
+    let out = Command::new(engine_bin())
+        .args(["transcribe", "--speakers", "/nonexistent/audio.wav"])
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
+    assert!(
+        v["message"]
+            .as_str()
+            .unwrap()
+            .contains("--speakers requires --json"),
+        "{v}"
+    );
+    assert!(
+        v.get("hint").is_none(),
+        "no file-a-bug hint for a bad argument: {v}"
+    );
+}
+
+#[cfg(not(feature = "system_diarize"))]
+#[test]
+fn speakers_off_darwin_arm64_is_an_unsupported_platform() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("short.wav");
+    common::write_pcm16_wav(&wav, 16_000, 16_000, 32_000);
+    let out = Command::new(engine_bin())
+        .args(["transcribe", "--json", "--speakers"])
+        .arg(&wav)
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_UNSUPPORTED_PLATFORM", "{v}");
+    assert!(
+        v["message"].as_str().unwrap().contains("darwin-arm64 only"),
+        "{v}"
+    );
+}
+
+#[cfg(not(feature = "coreml"))]
+#[test]
+fn an_asr_model_that_will_not_load_names_its_path_and_the_reinstall_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("short.wav");
+    common::write_pcm16_wav(&wav, 16_000, 16_000, 32_000);
+    let asr = dir.path().join("cache/models/parakeet-tdt-v3");
+    std::fs::create_dir_all(&asr).unwrap();
+    for f in [
+        "encoder-model.onnx",
+        "encoder-model.onnx.data",
+        "decoder_joint-model.onnx",
+        "nemo128.onnx",
+        "vocab.txt",
+    ] {
+        std::fs::write(asr.join(f), b"stub").unwrap();
+    }
+    let out = Command::new(engine_bin())
+        .args(["transcribe", "--no-vad"])
+        .arg(&wav)
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let events: Vec<serde_json::Value> = stderr
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap_or_else(|_| panic!("not an event: {stderr}")))
+        .collect();
+    let (errors, rest): (Vec<_>, Vec<_>) = events.into_iter().partition(|e| e["kind"] == "error");
+    assert!(rest.iter().all(|e| e["kind"] == "progress"), "{stderr}");
+    assert_eq!(errors.len(), 1, "{stderr}");
+    let v = &errors[0];
+    assert_eq!(v["code"], "E_MODEL_LOAD", "{v}");
+    let message = v["message"].as_str().unwrap();
+    assert!(
+        message.contains("parakeet-tdt-v3")
+            && message.contains("nemo128.onnx")
+            && message.contains("kesha install --no-cache"),
+        "{v}"
+    );
+}
+
+#[cfg(feature = "tts")]
+fn say_with_mini(extra: &[&str]) -> Command {
+    let mini = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/fixtures/mini-models/kokoro");
+    let mut cmd = Command::new(engine_bin());
+    cmd.arg("say")
+        .arg("--model")
+        .arg(mini.join("model.onnx"))
+        .arg("--voice-file")
+        .arg(mini.join("am_michael.bin"))
+        .args(extra)
+        .arg("hello");
+    cmd
+}
+
+#[cfg(feature = "tts")]
+#[test]
+fn say_with_an_opus_sample_rate_the_encoder_lacks_is_an_invalid_argument() {
+    let out = say_with_mini(&["--format", "ogg-opus", "--sample-rate", "44100"])
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(2));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
+    assert!(v["message"].as_str().unwrap().contains("44100"), "{v}");
+}
+
+#[cfg(feature = "tts")]
+#[test]
+fn say_that_cannot_write_its_audio_names_the_next_step() {
+    let mut child = say_with_mini(&[])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn engine");
+    drop(child.stdout.take());
+    let out = child.wait_with_output().expect("engine exits");
+    assert_eq!(out.status.code(), Some(4));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_INTERNAL", "{v}");
+    assert!(
+        v["message"].as_str().unwrap().contains("write failed"),
+        "{v}"
+    );
+    assert_eq!(
+        v["hint"], "free disk space, or check the --out path or what stdout is redirected to",
+        "{v}"
+    );
+}

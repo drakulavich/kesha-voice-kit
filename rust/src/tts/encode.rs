@@ -280,13 +280,17 @@ fn encode_ogg_opus(
     bitrate: i32,
 ) -> anyhow::Result<Vec<u8>> {
     if !OPUS_VALID_SR.contains(&target_sr) {
-        anyhow::bail!(
+        crate::coded_bail!(
+            crate::errors::ErrorCode::InvalidArg,
             "ogg-opus: --sample-rate must be one of {:?}, got {target_sr}",
             OPUS_VALID_SR
         );
     }
     if !OPUS_BITRATE_RANGE.contains(&bitrate) {
-        anyhow::bail!("ogg-opus: --bitrate must be 6000..=510000 bps, got {bitrate}");
+        crate::coded_bail!(
+            crate::errors::ErrorCode::InvalidArg,
+            "ogg-opus: --bitrate must be 6000..=510000 bps, got {bitrate}"
+        );
     }
 
     // Reuse rubato from `crate::audio` rather than pulling in a third resampler dep.

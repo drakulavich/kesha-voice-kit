@@ -11,7 +11,10 @@ pub fn run(
     itn: bool,
 ) -> Result<()> {
     if speakers && !json {
-        anyhow::bail!("--speakers requires --json");
+        crate::coded_bail!(
+            crate::errors::ErrorCode::InvalidArg,
+            "--speakers requires --json"
+        );
     }
     let mode = VadMode::from_flags(vad, no_vad);
     let base = TranscribeOptionsBuilder::new().vad(mode).itn(itn);

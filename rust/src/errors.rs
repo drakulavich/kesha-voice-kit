@@ -134,6 +134,22 @@ impl std::fmt::Display for CodedError {
 
 impl std::error::Error for CodedError {}
 
+/// A [`CodedError`] that knows its own next step; [`report`] sends `hint` in place of [`hint_for`].
+#[derive(Debug)]
+pub struct HintedError {
+    pub code: ErrorCode,
+    pub message: String,
+    pub hint: String,
+}
+
+impl std::fmt::Display for HintedError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for HintedError {}
+
 /// Construct and return a coded error. Drop-in for `anyhow::bail!`.
 #[macro_export]
 macro_rules! coded_bail {
@@ -148,6 +164,7 @@ macro_rules! coded_bail {
 /// Attach a code to a `Result`, snapshotting the existing chain message.
 pub trait CodedContext<T> {
     fn coded(self, code: ErrorCode) -> anyhow::Result<T>;
+    fn coded_with_hint(self, code: ErrorCode, hint: impl Into<String>) -> anyhow::Result<T>;
 }
 
 impl<T, E> CodedContext<T> for Result<T, E>
@@ -163,14 +180,33 @@ where
             })
         })
     }
+
+    fn coded_with_hint(self, code: ErrorCode, hint: impl Into<String>) -> anyhow::Result<T> {
+        self.map_err(|e| {
+            let e: anyhow::Error = e.into();
+            anyhow::Error::new(HintedError {
+                code,
+                message: format!("{e:#}"),
+                hint: hint.into(),
+            })
+        })
+    }
 }
 
 /// Recover the code from anywhere in the chain; `Internal` if none.
 pub fn code_of(err: &anyhow::Error) -> ErrorCode {
     err.chain()
-        .find_map(|e| e.downcast_ref::<CodedError>().map(|c| c.code))
+        .find_map(|e| {
+            e.downcast_ref::<CodedError>()
+                .map(|c| c.code)
+                .or_else(|| e.downcast_ref::<HintedError>().map(|h| h.code))
+        })
         .unwrap_or(ErrorCode::Internal)
 }
+
+/// The next step for a failure only a bug report can resolve.
+pub const FILE_A_BUG_HINT: &str =
+    "re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive";
 
 thread_local! {
     static EXPECTING_PANIC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
@@ -201,7 +237,7 @@ pub fn install_panic_hook() {
                 "engine panicked: {}{location}",
                 panic_message(info.payload())
             ),
-            Some("file a bug with `kesha support-bundle`"),
+            Some(FILE_A_BUG_HINT),
         );
     }));
 }
@@ -214,9 +250,20 @@ pub fn catch_panic<T>(f: impl FnOnce() -> T) -> Result<T, String> {
     result.map_err(|payload| panic_message(&*payload))
 }
 
+/// The hint an error event carries when its message has no next step of its own.
+pub fn hint_for(code: ErrorCode) -> Option<&'static str> {
+    matches!(code, ErrorCode::Internal | ErrorCode::TranscribeFailed).then_some(FILE_A_BUG_HINT)
+}
+
+fn hint_of(err: &anyhow::Error) -> Option<&str> {
+    err.chain()
+        .find_map(|e| e.downcast_ref::<HintedError>().map(|h| h.hint.as_str()))
+        .or(hint_for(code_of(err)))
+}
+
 /// Emit the fatal error as an `error` event; always returns 1.
 pub fn report(err: &anyhow::Error) -> i32 {
-    crate::protocol::events::error(code_of(err), format!("{err:#}"), None);
+    crate::protocol::events::error(code_of(err), format!("{err:#}"), hint_of(err));
     1
 }
 
@@ -357,6 +404,21 @@ mod tests {
     fn code_of_falls_back_to_internal_for_uncoded() {
         let err = anyhow::anyhow!("plain error");
         assert_eq!(code_of(&err), ErrorCode::Internal);
+    }
+
+    #[test]
+    fn an_explicit_hint_survives_context_and_replaces_the_default() {
+        let err: anyhow::Error = Err::<(), _>(anyhow::anyhow!("No space left on device"))
+            .coded_with_hint(ErrorCode::Internal, "free space on /cache")
+            .unwrap_err()
+            .context("while installing");
+        assert_eq!(code_of(&err), ErrorCode::Internal);
+        assert_eq!(hint_of(&err), Some("free space on /cache"));
+        assert_eq!(hint_of(&anyhow::anyhow!("plain")), Some(FILE_A_BUG_HINT));
+        let bad_arg: anyhow::Error = Err::<(), _>(anyhow::anyhow!("bad"))
+            .coded(ErrorCode::InvalidArg)
+            .unwrap_err();
+        assert_eq!(hint_of(&bad_arg), None);
     }
 
     #[test]

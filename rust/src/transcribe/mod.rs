@@ -321,7 +321,8 @@ pub fn transcribe_with_options(
 
     #[cfg(not(system_diarize))]
     if speakers_required {
-        anyhow::bail!(
+        coded_bail!(
+            ErrorCode::UnsupportedPlatform,
             "speaker diarization is currently darwin-arm64 only.\n\
              Tracked at https://github.com/drakulavich/kesha-voice-kit/issues/199.",
         );
@@ -810,7 +811,10 @@ where
 
     if out.is_empty() && failures > 0 {
         let first = first_failure.unwrap_or_else(|| "unknown error".to_string());
-        anyhow::bail!("all fixed-window ASR chunks failed; first failure: {first}");
+        coded_bail!(
+            ErrorCode::TranscribeFailed,
+            "all fixed-window ASR chunks failed; first failure: {first}"
+        );
     }
 
     Ok(out)
@@ -1093,7 +1097,8 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
         if p.exists() {
             return Ok(p);
         }
-        anyhow::bail!(
+        coded_bail!(
+            ErrorCode::ModelMissing,
             "KESHA_DIARIZE_MODEL_PATH set but path does not exist: {}",
             p.display()
         );
@@ -1104,7 +1109,8 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
         return Ok(default);
     }
 
-    anyhow::bail!(
+    coded_bail!(
+        ErrorCode::ModelMissing,
         "diarization model not found at {}. \
          Run `kesha install --diarize` (or set KESHA_DIARIZE_MODEL_PATH).",
         default.display()
@@ -1397,6 +1403,7 @@ mod tests {
                 .contains("all fixed-window ASR chunks failed"),
             "{err}"
         );
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::TranscribeFailed);
     }
 
     #[test]
