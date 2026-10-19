@@ -1,8 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { readdirSync } from "fs";
-import { join } from "path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { getEngineBinPath } from "../../src/engine";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { registerTools } from "../../src/mcp/tools";
 import { isolateEngineCache } from "../helpers/fake-engine";
@@ -35,7 +35,7 @@ describe("synthesize_speech errors", () => {
       const res = await call({ text: "hello", voice: "en-am_michael" });
       expect(res.isError).toBe(true);
       expect((res.content as Array<{ text: string }>)[0]?.text).toBe(
-        `error [E_ENGINE_SPAWN]: No speech synthesis backend is installed: no kesha-engine at ${join(cache, "engine", "bin", "kesha-engine")}\n` +
+        `error [E_ENGINE_SPAWN]: No speech synthesis backend is installed: no kesha-engine at ${getEngineBinPath()}\n` +
           "  hint: KESHA_CACHE_DIR is set; run `kesha install --tts` to install there, or unset it",
       );
       expect(readdirSync(cache)).toEqual([]);

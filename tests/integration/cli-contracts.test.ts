@@ -880,7 +880,7 @@ describe("CLI contracts", () => {
       expectContract(res, {
         exitCode: 1,
         stderrContains: [
-          `error [E_ENGINE_SPAWN]: No ${backend} backend is installed: no kesha-engine at ${join(env.KESHA_CACHE_DIR, "engine", "bin", "kesha-engine")}`,
+          `error [E_ENGINE_SPAWN]: No ${backend} backend is installed: no kesha-engine at ${join(env.KESHA_CACHE_DIR, "engine", "bin")}`,
           `hint: KESHA_CACHE_DIR is set; run \`${install}\` to install there, or unset it`,
         ],
         stderrNotContains: ["Synthesizing", "Recording"],
