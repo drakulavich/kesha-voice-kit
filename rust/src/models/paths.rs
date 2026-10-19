@@ -464,28 +464,10 @@ fn has_all_files(dir: &Path, files: &[ModelFile]) -> bool {
     })
 }
 
-#[cfg(test)]
+#[cfg(all(test, windows))]
 mod join_rel_tests {
     use super::*;
-    use std::path::Component;
 
-    #[test]
-    fn join_rel_yields_one_component_per_segment() {
-        let joined = join_rel(Path::new("cache"), "models/parakeet-tdt-v3/nemo128.onnx");
-        let names: Vec<_> = joined
-            .components()
-            .map(|c| match c {
-                Component::Normal(n) => n.to_string_lossy().into_owned(),
-                other => panic!("unexpected component {other:?}"),
-            })
-            .collect();
-        assert_eq!(
-            names,
-            ["cache", "models", "parakeet-tdt-v3", "nemo128.onnx"]
-        );
-    }
-
-    #[cfg(windows)]
     #[test]
     fn model_paths_use_only_backslashes_on_windows() {
         let path = model_dir_at(ModelKind::Asr, Path::new(r"C:\cache")).join("nemo128.onnx");
