@@ -251,8 +251,9 @@ fn live_recording_without_an_asr_model_is_model_missing_with_the_install_hint() 
     );
     let v = common::sole_error_event(&out);
     assert_eq!(v["code"], "E_MODEL_MISSING", "{v}");
+    let message = v["message"].as_str().unwrap();
     assert!(
-        v["message"].as_str().unwrap().contains("kesha install"),
-        "{v}"
+        message.contains("parakeet-tdt-0.6b-v3") && message.contains("kesha install"),
+        "{message}"
     );
 }
