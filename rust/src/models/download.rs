@@ -10,8 +10,7 @@ use super::paths::*;
 use super::progress::{reader_wanted, whole_file_total, InFlight, ProgressReader};
 #[cfg(all(system_kokoro, target_arch = "aarch64"))]
 use super::staging::{stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets};
-use crate::coded_bail;
-use crate::errors::{code_of, CodedError, ErrorCode};
+use crate::errors::{code_of, CodedError, ErrorCode, HintedError, FILE_A_BUG_HINT};
 use crate::protocol::events;
 
 /// Optional HuggingFace mirror base URL. Respects `KESHA_MODEL_MIRROR` (#121).
@@ -621,15 +620,19 @@ pub(super) fn write_verified<R: io::Read>(
             // to the failure-mode value: the user can now tell stale-mirror
             // vs corrupt-download vs upstream-rehost from one line of stderr.
             let actual = compute_sha256(&part).unwrap_or_else(|_| "<unreadable>".to_string());
-            coded_bail!(
-                ErrorCode::CacheCorrupt,
-                "sha256 mismatch for {}: expected {} got {}. Fix: re-run `kesha install --no-cache`; \
-                 if KESHA_MODEL_MIRROR is set, check that the mirror serves the pinned file; \
-                 if it persists, re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
-                rel_path,
-                expected_sha.get(..12).unwrap_or(expected_sha),
-                actual.get(..12).unwrap_or(&actual)
-            );
+            return Err(anyhow::Error::new(HintedError {
+                code: ErrorCode::CacheCorrupt,
+                message: format!(
+                    "sha256 mismatch for {}: expected {} got {}",
+                    rel_path,
+                    expected_sha.get(..12).unwrap_or(expected_sha),
+                    actual.get(..12).unwrap_or(&actual)
+                ),
+                hint: format!(
+                    "re-run `kesha install --no-cache`; if KESHA_MODEL_MIRROR is set, check that \
+                     the mirror serves the pinned file; if it persists, {FILE_A_BUG_HINT}"
+                ),
+            }));
         }
         // `fs::rename` replaces an existing destination on every supported
         // platform (POSIX rename; MoveFileExW + MOVEFILE_REPLACE_EXISTING on
@@ -690,9 +693,10 @@ fn cache_write_error(
             })
         }
     };
-    anyhow::Error::new(CodedError {
+    anyhow::Error::new(HintedError {
         code,
-        message: format!("{action}: {err}. Fix: {fix}"),
+        message: format!("{action}: {err}"),
+        hint: fix,
     })
 }
 
@@ -1746,18 +1750,26 @@ mod retry_tests {
         let err = download_verified(&cache.0, &file, false).expect_err("bad hash must fail");
 
         assert_eq!(code_of(&err), ErrorCode::CacheCorrupt);
-        let rendered = format!("{err:#}");
+        let hint = own_hint(&err);
         assert!(
-            rendered.contains("kesha install --no-cache")
-                && rendered.contains("KESHA_MODEL_MIRROR")
-                && rendered.contains("kesha support-bundle"),
-            "{rendered}"
+            hint.contains("kesha install --no-cache")
+                && hint.contains("KESHA_MODEL_MIRROR")
+                && hint.ends_with(FILE_A_BUG_HINT),
+            "{hint}"
         );
         assert_eq!(server.join().expect("stub server").len(), 1);
         assert!(
             !cache.0.join(file.rel_path).exists(),
             "unverified bytes never land at the target"
         );
+    }
+
+    /// The hint the error event carries in place of the default one.
+    fn own_hint(err: &anyhow::Error) -> &str {
+        &err.chain()
+            .find_map(|e| e.downcast_ref::<HintedError>())
+            .expect("carries its own hint")
+            .hint
     }
 
     #[test]
@@ -1771,10 +1783,9 @@ mod retry_tests {
         );
         assert_eq!(code_of(&err), ErrorCode::Internal);
         assert!(!code_of(&err).retryable());
-        let rendered = format!("{err:#}");
         assert!(
-            rendered.contains("free space on the disk that holds /models/full"),
-            "{rendered}"
+            own_hint(&err).contains("free space on the disk that holds /models/full"),
+            "{err:#}"
         );
     }
 
@@ -1791,10 +1802,9 @@ mod retry_tests {
                 ErrorCode::Internal,
             );
             assert_eq!(code_of(&err), ErrorCode::InvalidArg, "{kind:?}");
-            let rendered = format!("{err:#}");
             assert!(
-                rendered.contains("make /models/locked writable"),
-                "{rendered}"
+                own_hint(&err).contains("make /models/locked writable"),
+                "{err:#}"
             );
         }
     }
@@ -1802,15 +1812,13 @@ mod retry_tests {
     #[test]
     fn kesha_cache_dir_is_offered_only_where_it_moves_the_write() {
         let denied = |dir: &Path| {
-            format!(
-                "{:#}",
-                cache_write_error(
-                    io::Error::from(io::ErrorKind::PermissionDenied),
-                    "create a.bin.part".into(),
-                    dir,
-                    ErrorCode::Internal,
-                )
-            )
+            own_hint(&cache_write_error(
+                io::Error::from(io::ErrorKind::PermissionDenied),
+                "create a.bin.part".into(),
+                dir,
+                ErrorCode::Internal,
+            ))
+            .to_string()
         };
         let inside = cache_dir().expect("cache dir").join("models");
         assert!(denied(&inside).contains("KESHA_CACHE_DIR"));
@@ -1826,7 +1834,7 @@ mod retry_tests {
             ErrorCode::ModelDownload,
         );
         assert_eq!(code_of(&err), ErrorCode::ModelDownload);
-        assert!(!format!("{err:#}").contains("Fix:"));
+        assert!(err.downcast_ref::<HintedError>().is_none(), "{err:#}");
     }
 
     #[cfg(unix)]
@@ -1850,10 +1858,9 @@ mod retry_tests {
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).expect("unlock model dir");
 
         assert_eq!(code_of(&err), ErrorCode::InvalidArg);
-        let rendered = format!("{err:#}");
         assert!(
-            rendered.contains(&format!("make {} writable", dir.display())),
-            "{rendered}"
+            own_hint(&err).contains(&format!("make {} writable", dir.display())),
+            "{err:#}"
         );
         assert_eq!(server.join().expect("stub server").len(), 1);
     }

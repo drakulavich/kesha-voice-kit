@@ -638,12 +638,12 @@ where
 
 #[cfg(target_os = "macos")]
 fn mic_unavailable(what: impl std::fmt::Display) -> anyhow::Error {
-    anyhow::Error::new(crate::errors::CodedError {
+    anyhow::Error::new(crate::errors::HintedError {
         code: crate::errors::ErrorCode::MicUnavailable,
-        message: format!(
-            "{what}. Fix: connect a microphone and select it in System Settings > Sound > Input, \
-             then allow your terminal in System Settings > Privacy & Security > Microphone"
-        ),
+        message: what.to_string(),
+        hint: "connect a microphone and select it in System Settings > Sound > Input, \
+               then allow your terminal in System Settings > Privacy & Security > Microphone"
+            .to_string(),
     })
 }
 
@@ -1063,12 +1063,15 @@ mod tests {
             crate::errors::code_of(&err),
             crate::errors::ErrorCode::MicUnavailable
         );
-        let message = format!("{err:#}");
+        assert!(format!("{err:#}").contains("zero channels"), "{err:#}");
+        let hint = &err
+            .downcast_ref::<crate::errors::HintedError>()
+            .expect("carries its own hint")
+            .hint;
         assert!(
-            message.contains("zero channels")
-                && message.contains("System Settings > Sound > Input")
-                && message.contains("Privacy & Security > Microphone"),
-            "{message}"
+            hint.contains("System Settings > Sound > Input")
+                && hint.contains("Privacy & Security > Microphone"),
+            "{hint}"
         );
     }
 
