@@ -127,7 +127,7 @@ kesha say "Hello" --format ogg-opus --out hi.ogg  # OGG/Opus — messenger voice
 kesha say "Hello" --format flac --out hi.flac     # FLAC — lossless, plays in every browser incl. Safari/iOS
 ```
 
-`kesha say --list-voices` lists what's installed. Voices, the full catalogue, macOS system voices, SSML, speaking rate (`--rate`, `<prosody>`), Russian word stress, and Russian/English abbreviation handling are all in **[docs/tts.md](docs/tts.md)**.
+`kesha say --list-voices` lists the voices kesha knows; some need `kesha install --tts <lang>` before they speak. Voices, the full catalogue, macOS system voices, SSML, speaking rate (`--rate`, `<prosody>`), Russian word stress, and Russian/English abbreviation handling are all in **[docs/tts.md](docs/tts.md)**.
 
 ## Languages
 

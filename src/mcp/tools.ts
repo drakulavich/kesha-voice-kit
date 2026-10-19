@@ -163,7 +163,7 @@ export function registerTools(server: McpServer): void {
     "list_voices",
     {
       title: "List voices",
-      description: "List installed TTS voices with their engine and language.",
+      description: "List the TTS voices kesha knows, with their engine and language. Some need `kesha install --tts <lang>` before they synthesize.",
       inputSchema: {},
       outputSchema: {
         voices: z.array(
@@ -182,7 +182,7 @@ export function registerTools(server: McpServer): void {
     async () => {
       try {
         const voices = await listVoices();
-        const text = voices.length === 0 ? `0 voices installed. Run: ${installHint("--tts")}` : `${voices.length} voices installed.`;
+        const text = voices.length === 0 ? `0 voices installed. Run: ${installHint("--tts")}` : `${voices.length} voices known; some need kesha install --tts <lang> before use.`;
         return {
           content: [{ type: "text" as const, text }],
           structuredContent: { voices },
@@ -197,7 +197,7 @@ export function registerTools(server: McpServer): void {
     "list_languages",
     {
       title: "List languages",
-      description: "List languages available for synthesis, derived from installed voices.",
+      description: "List languages available for synthesis, derived from the voices list_voices reports.",
       inputSchema: {},
       outputSchema: {
         languages: z.array(

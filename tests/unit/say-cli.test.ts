@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { deviceOutRefusal, sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
+import { parseArgs } from "citty";
 import { setColorEnabled } from "../../src/log";
 import { describeJson, saveEngineEnv, writeOutParsingEngine } from "../helpers/fake-engine";
 
@@ -90,7 +91,7 @@ function failingEngine(exitCode: number, code: string, message: string): string 
 }
 
 /** Runs `kesha say` in-process and returns the status it exits with plus everything it wrote to stderr/stdout. */
-async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number; stderr: string; stdout: string }> {
+async function runSay(args: Record<string, unknown>, rawArgs: string[] = []): Promise<{ exitCode: number; stderr: string; stdout: string }> {
   const savedExit = process.exit;
   const savedWrite = process.stderr.write;
   const savedStdoutWrite = process.stdout.write;
@@ -101,14 +102,14 @@ async function runSay(args: Record<string, unknown>): Promise<{ exitCode: number
     return true;
   }) as typeof process.stderr.write;
   process.stdout.write = ((chunk: unknown) => {
-    stdout += String(chunk);
+    stdout += chunk instanceof Uint8Array ? new TextDecoder().decode(chunk) : String(chunk);
     return true;
   }) as typeof process.stdout.write;
   process.exit = ((code?: number) => {
     throw new ExitCalled(code ?? 0);
   }) as typeof process.exit;
   try {
-    await sayCommand.run?.({ args, rawArgs: [] } as never);
+    await sayCommand.run?.({ args, rawArgs } as never);
     return { exitCode: 0, stderr, stdout };
   } catch (err) {
     if (err instanceof ExitCalled) return { exitCode: err.code, stderr, stdout };
@@ -224,6 +225,57 @@ describe("kesha say --out with a file name starting with - (#1503)", () => {
     expect(stderr).not.toContain("E_INVALID_ARG");
     expect(exitCode).toBe(0);
     expect(readFileSync(join(dir, "-x.wav"), "utf8")).toBe("RIFF");
+  });
+});
+
+describe("kesha say --out with an extension kesha cannot encode (#1473 S2-4)", () => {
+  skipOnWin32("is E_INVALID_ARG exit 2 naming the supported extensions, and writes nothing", async () => {
+    failingEngine(3, "E_VOICE_NOT_FOUND", "the engine must not have been asked");
+    const dir = tempDir("kesha-say-mp3-");
+    for (const name of ["x.mp3", "x.m4a"]) {
+      const out = join(dir, name);
+      const { exitCode, stderr } = await runSay({ text: "hi", voice: "en-am_michael", out, rate: "1.0" });
+      expect(exitCode).toBe(2);
+      expect(stderr).toContain("E_INVALID_ARG");
+      expect(stderr).toContain(".wav, .ogg, .opus, .oga, .flac");
+      expect(stderr).not.toContain("E_VOICE_NOT_FOUND");
+      expect(existsSync(out)).toBe(false);
+    }
+  });
+
+  skipOnWin32("an extensionless name and every supported extension still synthesize", async () => {
+    cleanups.push(saveEngineEnv());
+    process.env.KESHA_ENGINE_BIN = writeOutParsingEngine("kesha-engine-say-ext-", "say", ["tts"]);
+    const dir = tempDir("kesha-say-ext-");
+    for (const name of ["reply", "x.wav", "x.OGG", "x.opus", "x.oga", "x.flac"]) {
+      const out = join(dir, name);
+      const { exitCode } = await runSay({ text: "hi", voice: "en-am_michael", out, rate: "1.0" });
+      expect(exitCode).toBe(0);
+      expect(readFileSync(out, "utf8")).toBe("RIFF");
+    }
+  });
+});
+
+/** A stub engine whose `say` echoes the text it was given as the audio. */
+function echoTextEngine(): void {
+  const binPath = join(tempDir("kesha-say-echo-"), "kesha-engine");
+  writeFileSync(
+    binPath,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ncat\n`,
+  );
+  chmodSync(binPath, 0o755);
+  cleanups.push(saveEngineEnv());
+  process.env.KESHA_ENGINE_BIN = binPath;
+}
+
+describe("kesha say with text starting with a negative number (#1473 S2-5)", () => {
+  skipOnWin32("synthesizes the whole text", async () => {
+    echoTextEngine();
+    const rawArgs = ["-5 degrees outside", "--voice", "en-am_michael"];
+    const { exitCode, stderr, stdout } = await runSay(parseArgs(rawArgs, sayCommand.args as never), rawArgs);
+    expect(stderr).not.toContain("E_TEXT_EMPTY");
+    expect(exitCode).toBe(0);
+    expect(stdout).toBe("-5 degrees outside");
   });
 });
 

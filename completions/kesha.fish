@@ -78,7 +78,7 @@ complete -c kesha -n '__fish_seen_subcommand_from say' -l voice -r -d 'Voice id,
 complete -c kesha -n '__fish_seen_subcommand_from say' -l lang -r -d 'Language code, e.g. en-us (default en-us; see docs/languages.md). With no --voice, routes to that language\'s default voice and skips text-language detection.'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l out -r -d 'Write audio to file instead of stdout'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l rate -r -d 'Speaking rate 0.5–2.0'
-complete -c kesha -n '__fish_seen_subcommand_from say' -l list-voices -d 'List installed voices and exit'
+complete -c kesha -n '__fish_seen_subcommand_from say' -l list-voices -d 'List the voices kesha knows and exit; some need kesha install --tts <lang> first'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l ssml -d 'Parse input as SSML (supports <speak>, <break>; strips unknown tags)'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l format -r -d 'Output format: wav (default), ogg-opus (Telegram-ready voice note), or flac (lossless, plays in all browsers incl. Safari). Inferred from --out extension when omitted.'
 complete -c kesha -n '__fish_seen_subcommand_from say' -l bitrate -r -d 'Opus bitrate in bits/sec (e.g. 32000). Only with --format ogg-opus.'
