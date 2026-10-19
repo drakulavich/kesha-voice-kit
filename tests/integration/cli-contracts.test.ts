@@ -525,6 +525,10 @@ async function runCliPipedTo(
   };
 }
 
+// 129, 130 and 143 are signal exits, which carry no error line.
+const UNCODED_EXITS = new Set([0, 129, 130, 143]);
+const CODED_ERROR_LINE = /(^|: )error \[E_[A-Z_]+\]/m;
+
 function expectContract(
   actual: CliScenarioResult,
   expected: {
@@ -535,9 +539,13 @@ function expectContract(
     stderrNotContains?: string[];
     stdoutEmpty?: boolean;
     stderrEmpty?: boolean;
+    uncoded?: string;
   },
 ): void {
   expect(actual.exitCode).toBe(expected.exitCode);
+  if (!expected.uncoded && !UNCODED_EXITS.has(actual.exitCode)) {
+    expect(actual.stderr).toMatch(CODED_ERROR_LINE);
+  }
   if (expected.stdoutEmpty) expect(actual.stdout).toBe("");
   if (expected.stderrEmpty) expect(actual.stderr).toBe("");
   for (const needle of expected.stdoutContains ?? []) {
