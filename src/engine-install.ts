@@ -1,7 +1,7 @@
 import { dirname, join, resolve, sep } from "path";
 import { errorMessage } from "./error-utils";
 import { homedir, tmpdir } from "os";
-import { existsSync, mkdirSync, chmodSync, accessSync, constants, rmSync } from "fs";
+import { existsSync, mkdirSync, chmodSync, accessSync, constants, readFileSync, rmSync, writeFileSync } from "fs";
 import { getDescribe, getEngineBinPath } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import {
@@ -159,6 +159,16 @@ async function rejectMismatchedDownload(
   );
 }
 
+/** `<pin> <sha256 after codesign>` for a download that matched its pin before `darwinTrustBinary` rewrote it. */
+function signedShaPath(path: string): string {
+  return `${path}.signed-sha256`;
+}
+
+async function trustVerifiedDownload(path: string, displayName: string, pinnedSha: string): Promise<void> {
+  darwinTrustBinary(path, displayName);
+  if (process.platform === "darwin") writeFileSync(signedShaPath(path), `${pinnedSha} ${await sha256OfFile(path)}\n`);
+}
+
 /**
  * Whether a cached asset of the pinned release still hashes to its pin; one that does not is
  * deleted so the verified download replaces it, or refused when its directory is read-only.
@@ -180,7 +190,10 @@ async function cachedAssetMatchesPin(
   } catch (e) {
     throw canRepair ? e : unreadableInReadOnlyDir(path, e);
   }
-  if (actual === expected.sha256) return true;
+  const signed = signedShaPath(path);
+  if (actual === expected.sha256 || (existsSync(signed) && readFileSync(signed, "utf8").trim() === `${expected.sha256} ${actual}`)) {
+    return true;
+  }
   const mismatch =
     `Installed ${what} ${assetName} at ${path} does not match ${expected.source} ` +
     `(expected sha256 ${expected.sha256}, got ${actual})`;
@@ -369,7 +382,7 @@ async function downloadSidecar(
       return;
     }
     chmodSync(sidecarPath, 0o755);
-    darwinTrustBinary(sidecarPath, spec.displayName);
+    await trustVerifiedDownload(sidecarPath, spec.displayName, expected.sha256);
     log.progress(`${spec.displayName} installed (${spec.availableHint}).`);
   } catch (e) {
     log.warn(
@@ -674,7 +687,7 @@ async function fetchEngineBinary(
     throw new KeshaError("E_CACHE_CORRUPT", refusal, { hint: MISMATCH_HINT });
   }
   chmodSync(binPath, 0o755);
-  darwinTrustBinary(binPath, "kesha-engine binary");
+  await trustVerifiedDownload(binPath, "kesha-engine binary", expected.sha256);
   // Marker last: writing it first sends the retry down the cacheValid branch, which never waits.
   await waitUntilSpawnable(binPath);
   writeInstalledEngineVersion(binPath, version);

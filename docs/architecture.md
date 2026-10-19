@@ -28,7 +28,10 @@ executable, and deleted on a mismatch: the pinned release against the injected p
 never the network; any other release, and every release in a source checkout, against
 its own `SHA256SUMS`, which a release without one fails outright rather than installing
 unverified. A cached engine and its sidecars are re-hashed against the pin on every
-`kesha install`, unless `KESHA_ENGINE_BIN` names the user's own build.
+`kesha install`, unless `KESHA_ENGINE_BIN` names the user's own build. On macOS the
+installer re-signs each verified download with `codesign`, which changes its bytes, so it
+writes `<file>.signed-sha256` beside it (the pin and the hash after signing), and a cached
+file that matches that pair also passes.
 
 ## Runtime data flow
 
