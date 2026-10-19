@@ -242,7 +242,7 @@ describe("humanBytes", () => {
 });
 
 describe("a corrupt state file cannot break logging", () => {
-  const defaults = { maxBytes: 10 * 1024 * 1024, retain: 5 };
+  const defaults = { maxBytes: 10_000_000, retain: 5 };
 
   for (const [shape, written] of [
     ["a zero limit", { mode: "on", maxBytes: 0, retain: 0 }],

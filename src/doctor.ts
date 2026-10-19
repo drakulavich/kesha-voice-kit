@@ -396,7 +396,7 @@ function collectDiagnosticLogs(redact: boolean): DoctorReport["diagnosticLogs"] 
       rotatedFiles: [],
       totalSizeBytes: 0,
       mode: "retain-on-failure",
-      maxBytes: 10 * 1024 * 1024,
+      maxBytes: 10_000_000,
       retain: 5,
       error:
         redactString("diagnosticLogsError", errorMessage(err), redact) ??

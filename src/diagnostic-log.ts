@@ -21,7 +21,7 @@ import { packageVersion } from "./package-info";
 
 const ACTIVE_LOG_FILE = "kesha.ndjson";
 const STATE_FILE = "diagnostic-logs.json";
-const DEFAULT_MAX_BYTES = 10 * 1024 * 1024;
+const DEFAULT_MAX_BYTES = 10_000_000;
 const DEFAULT_RETAIN = 5;
 const DEFAULT_TAIL_BYTES = 64 * 1024;
 const SAFE_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;

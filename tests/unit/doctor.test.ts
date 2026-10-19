@@ -347,7 +347,7 @@ describe("collectDoctorReport", () => {
       // An unreadable directory still has to report the configuration in force, or the
       // report reads as if rotation were off.
       expect(report.diagnosticLogs.mode).toBe("retain-on-failure");
-      expect(report.diagnosticLogs.maxBytes).toBe(10 * 1024 * 1024);
+      expect(report.diagnosticLogs.maxBytes).toBe(10_000_000);
       expect(report.diagnosticLogs.retain).toBe(5);
       expect(report.diagnosticLogs.rotatedFiles).toEqual([]);
       expect(report.diagnosticLogs.error).toContain("~/logs");
@@ -463,7 +463,7 @@ describe("the human report states what each component is doing (#770)", () => {
         rotatedFiles: [],
         totalSizeBytes: 2048,
         mode: "retain-on-failure",
-        maxBytes: 10 * 1024 * 1024,
+        maxBytes: 10_000_000,
         retain: 5,
       },
       env: {},

@@ -108,7 +108,7 @@ whenever `KESHA_HOME` decided it. FluidAudio's own Silero VAD copy under
 `~/Library/Application Support/FluidAudio` is placed by FluidAudio and stays
 outside `KESHA_HOME`; `kesha status --disk` lists it as an external root.
 
-The first implementation rotates at 10.5 MB (10 MiB) and keeps 5 rotated files. `kesha logs
+The first implementation rotates at 10 MB and keeps 5 rotated files. `kesha logs
 reset` deletes Kesha log files but preserves the selected mode.
 
 ## Support Bundles
