@@ -71,6 +71,11 @@ function scanArgs(rawArgs: string[], argsDef: ArgsDef): { unknown: UnknownOption
   return { unknown: null, positionals };
 }
 
+/** The positionals in `rawArgs` as the user typed them; citty reads `-5 degrees` as a bundle of short flags (#1473 S2-5). */
+export function positionalArgs(rawArgs: string[], argsDef: ArgsDef): string[] {
+  return scanArgs(rawArgs, argsDef).positionals;
+}
+
 /** The coded line for a usage error the CLI refuses before doing anything (S9-F2). */
 export function renderInvalidArg(message: string): string {
   return renderError({ code: "E_INVALID_ARG", message });

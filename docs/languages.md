@@ -40,7 +40,7 @@ When audio language detection is at least 0.95 sure the speech is in a language 
 
 ## Text-to-speech
 
-On macOS, Kesha auto-picks a voice from the text's language; pass `--voice <id>` to choose. On Linux and Windows, pass `--lang <code>` for the language's default voice or `--voice <id>` for a specific one. Run `kesha say --list-voices` to see what's installed. Full voice catalogue and SSML details: [tts.md](tts.md).
+On macOS, Kesha auto-picks a voice from the text's language; pass `--voice <id>` to choose. On Linux and Windows, pass `--lang <code>` for the language's default voice or `--voice <id>` for a specific one. Run `kesha say --list-voices` to see the voices kesha knows; some need `kesha install --tts <lang>` first. Full voice catalogue and SSML details: [tts.md](tts.md).
 
 TTS models are installed per-language via `kesha install --tts <codes>`. Bare `--tts` defaults to English only. Re-running is additive. `kesha init` presents a multi-select of available languages.
 

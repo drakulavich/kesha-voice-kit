@@ -1,8 +1,9 @@
-import { defineCommand } from "citty";
+import { defineCommand, type ArgsDef } from "citty";
 import { statSync } from "fs";
+import { extname } from "path";
 import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
-import { renderInvalidArg } from "./options";
+import { positionalArgs, renderInvalidArg } from "./options";
 import { log } from "../log";
 import {
   MAX_TEXT_CHARS,
@@ -130,6 +131,16 @@ function checkOpusOnlyFlags(
   return "--bitrate and --sample-rate are only valid with --format ogg-opus";
 }
 
+const OUT_EXTENSIONS = [".wav", ".ogg", ".opus", ".oga", ".flac"];
+
+/** Mirrors the engine's `format_from_extension`, which writes WAV under any name it does not know (#1473 S2-4). */
+function checkOutExtension(outArg: string | undefined): string | null {
+  if (outArg === undefined) return null;
+  const ext = extname(outArg).toLowerCase();
+  if (ext === "" || OUT_EXTENSIONS.includes(ext)) return null;
+  return `--out ${outArg}: kesha cannot encode ${ext}; use one of ${OUT_EXTENSIONS.join(", ")}, or no extension for WAV`;
+}
+
 export type SayFlagArgs = {
   voice?: unknown;
   lang?: unknown;
@@ -181,6 +192,8 @@ export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
   const out = typeof args.out === "string" ? args.out : undefined;
   const opusOnlyError = checkOpusOnlyFlags(bitrate.value, sampleRate.value, format.value, out);
   if (opusOnlyError) return { ok: false, error: opusOnlyError };
+  const outExtError = checkOutExtension(out);
+  if (outExtError) return { ok: false, error: outExtError };
 
   return {
     ok: true,
@@ -312,7 +325,7 @@ export const sayCommand = defineCommand({
     },
     out: { type: "string", description: "Write audio to file instead of stdout" },
     rate: { type: "string", description: "Speaking rate 0.5–2.0", default: "1.0" },
-    "list-voices": { type: "boolean", description: "List installed voices and exit" },
+    "list-voices": { type: "boolean", description: "List the voices kesha knows and exit; some need kesha install --tts <lang> first" },
     ssml: {
       type: "boolean",
       description: "Parse input as SSML (supports <speak>, <break>; strips unknown tags)",
@@ -376,7 +389,7 @@ export const sayCommand = defineCommand({
       process.exit(2);
     }
 
-    const positionals = (args._ ?? []).map(String);
+    const positionals = positionalArgs(rawArgs, sayCommand.args as ArgsDef);
     const inlineText =
       positionals.length > 0 ? positionals.join(" ") : typeof args.text === "string" ? args.text : undefined;
     const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;

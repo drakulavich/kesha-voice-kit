@@ -112,7 +112,7 @@ _kesha() {
         '--lang=[Language code, e.g. en-us (default en-us; see docs/languages.md). With no --voice, routes to that language'\''s default voice and skips text-language detection.]:lang:' \
         '--out=[Write audio to file instead of stdout]:out:' \
         '--rate=[Speaking rate 0.5–2.0]:rate:' \
-        '--list-voices[List installed voices and exit]' \
+        '--list-voices[List the voices kesha knows and exit; some need kesha install --tts <lang> first]' \
         '--ssml[Parse input as SSML (supports <speak>, <break>; strips unknown tags)]' \
         '--format=[Output format: wav (default), ogg-opus (Telegram-ready voice note), or flac (lossless, plays in all browsers incl. Safari). Inferred from --out extension when omitted.]:format:' \
         '--bitrate=[Opus bitrate in bits/sec (e.g. 32000). Only with --format ogg-opus.]:bitrate:' \
