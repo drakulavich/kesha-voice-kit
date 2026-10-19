@@ -539,11 +539,10 @@ function expectContract(
     stderrNotContains?: string[];
     stdoutEmpty?: boolean;
     stderrEmpty?: boolean;
-    uncoded?: string;
   },
 ): void {
   expect(actual.exitCode).toBe(expected.exitCode);
-  if (!expected.uncoded && !UNCODED_EXITS.has(actual.exitCode)) {
+  if (!UNCODED_EXITS.has(actual.exitCode)) {
     expect(actual.stderr).toMatch(CODED_ERROR_LINE);
   }
   if (expected.stdoutEmpty) expect(actual.stdout).toBe("");

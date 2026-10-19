@@ -18,14 +18,21 @@ const ALLOWED: Array<[string, string]> = [
 ];
 
 test("src throws a plain Error only where ALLOWED says why", async () => {
-  const hits: string[] = [];
+  const counts = new Map<string, number>();
   for await (const file of new Bun.Glob("src/**/*.{ts,mjs}").scan(repoPath("."))) {
-    const count = readRepoFile(file).split("throw new Error(").length - 1;
+    counts.set(file, readRepoFile(file).split("throw new Error(").length - 1);
+  }
+  const extra: string[] = [];
+  const stale: string[] = [];
+  for (const file of new Set([...counts.keys(), ...ALLOWED.map(([path]) => path)])) {
+    const count = counts.get(file) ?? 0;
     const allowed = ALLOWED.filter(([path]) => path === file).length;
-    if (count > allowed) hits.push(`${file}: ${count} (allowed ${allowed})`);
+    if (count > allowed) extra.push(`${file}: ${count} (allowed ${allowed})`);
+    if (count < allowed) stale.push(`${file}: ${count} (allowed ${allowed})`);
   }
   expect(
-    hits,
-    `throw a KeshaError with a code from docs/errors.md and a hint instead:\n${hits.join("\n")}`,
+    extra,
+    `throw a KeshaError with a code from docs/errors.md and a hint instead:\n${extra.join("\n")}`,
   ).toEqual([]);
+  expect(stale, `drop the stale ALLOWED entries:\n${stale.join("\n")}`).toEqual([]);
 });
