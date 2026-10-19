@@ -313,7 +313,7 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     });
 
     /** One `kesha install` in its own process, so the stub codesign on PATH is the one it spawns. */
-    async function keshaInstall(): Promise<string> {
+    async function keshaInstall(expectedExit = 0): Promise<string> {
       const script = join(tempDir("kesha-repeat-install-"), "install.ts");
       writeFileSync(
         script,
@@ -331,7 +331,7 @@ describe("a cached install of the pinned engine is held to the pin", () => {
         stderr: "pipe",
       });
       const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
-      expect(exitCode).toBe(0);
+      expect(exitCode).toBe(expectedExit);
       return stderr;
     }
 
@@ -356,6 +356,33 @@ describe("a cached install of the pinned engine is held to the pin", () => {
       expect(stderr).toContain(`kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`);
       expect(readFileSync(binPath, "utf8")).toBe(`${ENGINE}# re-signed\n`);
     }, 30_000);
+
+    darwinTest("an unreadable signing record counts as no record, and the engine is replaced", async () => {
+      const binPath = getEngineBinPath();
+      await keshaInstall();
+      rmSync(`${binPath}.signed-sha256`);
+      mkdirSync(`${binPath}.signed-sha256`);
+
+      const stderr = await keshaInstall();
+
+      expect(stderr).toContain("does not match its pinned SHA-256");
+      expect(stderr).toContain("Engine binary downloaded");
+      expect(await keshaInstall()).toContain("Engine binary already installed");
+    }, 30_000);
+
+    (canChmod && process.platform === "darwin" ? test : test.skip)(
+      "an unreadable signing record in a read-only engine dir is refused as E_CACHE_CORRUPT",
+      async () => {
+        const binPath = getEngineBinPath();
+        await keshaInstall();
+        rmSync(`${binPath}.signed-sha256`);
+        mkdirSync(`${binPath}.signed-sha256`);
+        makeReadOnly(dirname(binPath));
+
+        expect(await keshaInstall(1)).toContain("error [E_CACHE_CORRUPT]: ");
+      },
+      30_000,
+    );
   });
 
   posixTest("an engine the user supplied through KESHA_ENGINE_BIN is their own build and is not held to the pin", async () => {

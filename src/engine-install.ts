@@ -164,9 +164,19 @@ function signedShaPath(path: string): string {
   return `${path}.signed-sha256`;
 }
 
+function readSignedSha(path: string): string | null {
+  try {
+    return readFileSync(signedShaPath(path), "utf8").trim();
+  } catch {
+    return null;
+  }
+}
+
 async function trustVerifiedDownload(path: string, displayName: string, pinnedSha: string): Promise<void> {
   darwinTrustBinary(path, displayName);
-  if (process.platform === "darwin") writeFileSync(signedShaPath(path), `${pinnedSha} ${await sha256OfFile(path)}\n`);
+  if (process.platform !== "darwin") return;
+  rmSync(signedShaPath(path), { recursive: true, force: true });
+  writeFileSync(signedShaPath(path), `${pinnedSha} ${await sha256OfFile(path)}\n`);
 }
 
 /**
@@ -190,10 +200,7 @@ async function cachedAssetMatchesPin(
   } catch (e) {
     throw canRepair ? e : unreadableInReadOnlyDir(path, e);
   }
-  const signed = signedShaPath(path);
-  if (actual === expected.sha256 || (existsSync(signed) && readFileSync(signed, "utf8").trim() === `${expected.sha256} ${actual}`)) {
-    return true;
-  }
+  if (actual === expected.sha256 || readSignedSha(path) === `${expected.sha256} ${actual}`) return true;
   const mismatch =
     `Installed ${what} ${assetName} at ${path} does not match ${expected.source} ` +
     `(expected sha256 ${expected.sha256}, got ${actual})`;
