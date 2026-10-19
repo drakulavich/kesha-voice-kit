@@ -151,7 +151,9 @@ let warnedStatsWriteFailed = false;
 
 function warnStatsWriteFailed(err: unknown): void {
   if (!warnedStatsWriteFailed) {
-    log.warn(`warning: failed to write Kesha Stats at ${resolveStatsDbPath()}; continuing without stats for this event`);
+    log.warn(
+      `warning: failed to write Kesha Stats at ${resolveStatsDbPath()} (${errorMessage(err)}); continuing without stats for this event; fix that, or run \`kesha stats disable\` to stop recording.`,
+    );
     warnedStatsWriteFailed = true;
   }
   const message = errorMessage(err);
@@ -193,6 +195,13 @@ function withStatsDb<T>(fn: (db: Database) => T): T {
   }
   try {
     return fn(db);
+  } catch (err) {
+    const busy = String((err as { code?: unknown }).code ?? "").startsWith("SQLITE_BUSY");
+    throw new KeshaError("E_INTERNAL", `cannot read or write the Kesha Stats database ${dbPath}: ${errorMessage(err)}`, {
+      hint: busy
+        ? "another kesha command is writing to it; retry when that command finishes."
+        : `check that ${dbPath} and its folder can be written and that its disk has free space, or point KESHA_STATS_DB at another file.`,
+    });
   } finally {
     db.close();
   }

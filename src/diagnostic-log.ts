@@ -1,4 +1,6 @@
+import { KeshaError } from "./engine/events";
 import { errorMessage } from "./error-utils";
+import { PATH_ERRNOS } from "./path-errnos";
 import { resolveStatePaths } from "./state-paths";
 import {
   closeSync,
@@ -115,8 +117,16 @@ function positiveInt(value: unknown, fallback: number): number {
 
 function writeConfig(config: DiagnosticLogConfig): void {
   const statePath = resolveStatePath();
-  mkdirSync(dirname(statePath), { recursive: true });
-  writeFileSync(statePath, `${JSON.stringify(config, null, 2)}\n`);
+  try {
+    mkdirSync(dirname(statePath), { recursive: true });
+    writeFileSync(statePath, `${JSON.stringify(config, null, 2)}\n`);
+  } catch (err) {
+    const errno = (err as NodeJS.ErrnoException).code ?? "";
+    const why = PATH_ERRNOS[errno];
+    throw new KeshaError(why ? "E_INVALID_ARG" : "E_INTERNAL", `cannot write the diagnostic log settings ${statePath}: ${why ? `${why} (${errno})` : errorMessage(err)}`, {
+      hint: `make ${dirname(statePath)} writable, or set KESHA_LOG_DIR to a folder you can write to.`,
+    });
+  }
 }
 
 export function setDiagnosticLogMode(mode: DiagnosticLogMode): DiagnosticLogStatus {

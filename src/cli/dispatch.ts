@@ -1,6 +1,8 @@
 import { renderUsage, runMain, type ArgsDef, type CommandDef } from "citty";
 import { existsSync } from "fs";
 import { stripVTControlCharacters } from "util";
+import { exitCodeFor, KeshaError, SUPPORT_BUNDLE_HINT } from "../engine/events";
+import { errorMessage } from "../error-utils";
 import { isColorEnabled, log } from "../log";
 import { packageVersion } from "../package-info";
 import { guardStdoutWrites } from "../stdout-pipe";
@@ -117,6 +119,24 @@ function misplacedSubcommand(rawArgs: string[], subcommandKeys: string[]): strin
   return rawArgs.slice(0, end === -1 ? undefined : end).find((arg) => subcommandKeys.includes(arg) && !existsSync(arg));
 }
 
+/** citty's runMain prints whatever `run` throws as a stack trace with exit 1; only `run` is wrapped, so a command with `subCommands` needs the same. */
+function reportThrows(command: CommandDef<any>): CommandDef<any> {
+  const run = command.run;
+  if (!run) return command;
+  return {
+    ...command,
+    async run(context) {
+      try {
+        return await run(context);
+      } catch (err) {
+        const coded = err instanceof KeshaError ? err : new KeshaError("E_INTERNAL", errorMessage(err), { hint: SUPPORT_BUNDLE_HINT });
+        log.error(coded.render());
+        process.exit(exitCodeFor(coded));
+      }
+    },
+  };
+}
+
 export async function runCli(argv = process.argv.slice(2)): Promise<void> {
   guardStdoutWrites();
   const context = resolveCliContext(argv);
@@ -136,7 +156,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
       const argsDef = await resolveArgsDef(command);
       rejectUnknownOptions(restArgs, argsDef);
       if (firstArg !== "install" && firstArg !== "say") rejectExtraPositionals(restArgs, argsDef);
-      await runMain(command, { rawArgs: restArgs, showUsage });
+      await runMain(reportThrows(command), { rawArgs: restArgs, showUsage });
       return;
     }
 
@@ -163,7 +183,7 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         await showUsage(rawArgs.includes("--all") ? command : briefMainUsage(command));
         return;
       }
-      await runMain(command, { rawArgs, showUsage });
+      await runMain(reportThrows(command), { rawArgs, showUsage });
     }
   }
 }

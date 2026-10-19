@@ -2,6 +2,7 @@ import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mc
 import { errorMessage } from "../error-utils";
 import { KeshaError } from "../engine/events";
 import { installHint } from "../install-hint";
+import { PATH_ERRNOS } from "../path-errnos";
 import { z } from "zod";
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
 import { basename, isAbsolute, join } from "path";
@@ -29,7 +30,11 @@ export function registerTools(server: McpServer): void {
       try {
         bytes = readFileSync(filePath);
       } catch {
-        throw new Error(`synthesized-audio: file not found or already swept: ${name}`);
+        // The SDK sends only `message`, so the code and hint go inside it.
+        const coded = new KeshaError("E_INPUT_NOT_FOUND", `synthesized-audio: file not found or already swept: ${name}`, {
+          hint: "synthesized files are deleted after 24 hours; call synthesize_speech again.",
+        });
+        throw new Error(errorMessage(coded));
       }
       return { contents: [{ uri: uri.href, mimeType: mimeForExt(name), blob: bytes.toString("base64") }] };
     },
@@ -66,7 +71,17 @@ export function registerTools(server: McpServer): void {
         return { isError: true, content: [{ type: "text" as const, text: errorMessage(err) }] };
       }
       const fmt: SayFormat = format ?? "wav";
-      const outPath = allocAudioPath(fmt);
+      let outPath: string;
+      try {
+        outPath = allocAudioPath(fmt);
+      } catch (err) {
+        const errno = (err as NodeJS.ErrnoException).code ?? "";
+        const why = PATH_ERRNOS[errno];
+        const coded = new KeshaError(why ? "E_INVALID_ARG" : "E_INTERNAL", `cannot create the audio folder ${audioDir()}: ${why ? `${why} (${errno})` : errorMessage(err)}`, {
+          hint: "set KESHA_HOME to a directory you can write to.",
+        });
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(coded) }] };
+      }
       try {
         // An MCP caller has no stderr to read: the voice it is told is its only record (#942).
         const resolvedVoice = (await resolveSayVoice(voice, undefined, text, { signal: extra.signal })) ?? DEFAULT_VOICE_ID;
@@ -173,7 +188,7 @@ export function registerTools(server: McpServer): void {
           structuredContent: { voices },
         };
       } catch (err) {
-        return { isError: true, content: [{ type: "text" as const, text: `list_voices failed: ${errorMessage(err)}` }] };
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(err) }] };
       }
     },
   );
@@ -203,7 +218,7 @@ export function registerTools(server: McpServer): void {
           structuredContent: { languages },
         };
       } catch (err) {
-        return { isError: true, content: [{ type: "text" as const, text: `list_languages failed: ${errorMessage(err)}` }] };
+        return { isError: true, content: [{ type: "text" as const, text: errorMessage(err) }] };
       }
     },
   );

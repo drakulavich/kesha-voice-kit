@@ -1,3 +1,4 @@
+import { renderError } from "./engine/events";
 import { errorMessage } from "./error-utils";
 import { log } from "./log";
 
@@ -20,7 +21,11 @@ export function guardStdoutWrites(): void {
       return;
     }
     log.error(
-      `failed writing to stdout: ${errorMessage(err)}. Check that the destination is writable and has free space.`,
+      renderError({
+        code: "E_INTERNAL",
+        message: `failed writing to stdout: ${errorMessage(err)}`,
+        hint: "free disk space or check what stdout is redirected to.",
+      }),
     );
     process.exitCode = 1;
   });
