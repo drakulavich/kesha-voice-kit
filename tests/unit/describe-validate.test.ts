@@ -66,6 +66,9 @@ describe("validateArgv", () => {
     expect(err.code).toBe("E_INVALID_ARG");
     expect(err.message).toContain("--diarize");
     expect(err.message).toContain("transcribe");
+    expect(err.hint).toBe(
+      "the installed kesha-engine is older than this CLI and lacks --diarize; run `kesha install` to fetch the engine this CLI expects",
+    );
   });
 
   test("a flag whose gate the build lacks is E_INVALID_ARG naming the feature and the build", () => {

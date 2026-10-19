@@ -233,9 +233,10 @@ describe("record command validation", () => {
     });
   });
 
-  test("noRecordingBackendMessage names the missing backend and an install hint", () => {
+  test("noRecordingBackendMessage is E_ENGINE_SPAWN naming the missing engine path and an install hint", () => {
     const message = noRecordingBackendMessage();
-    expect(message).toContain("No recording backend is installed");
+    expect(message).toStartWith("error [E_ENGINE_SPAWN]: No recording backend is installed: no kesha-engine at ");
+    expect(message).toContain("kesha-engine\n  hint: bun add -g");
     expect(message).toContain("bun add -g @drakulavich/kesha-voice-kit");
     expect(message).toMatch(/kesha (install|init)/);
   });

@@ -7,8 +7,8 @@ import { log } from "./log";
 import { createLiveStatus } from "./progress";
 import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, interruptedRun } from "./process-tree";
-import { engineSignal, runEngineProcess, spawnHint } from "./engine/spawn";
-import { engineFailure, KeshaError, renderError, type ErrorEvent } from "./engine/events";
+import { engineExitCause, engineSignal, runEngineProcess, spawnHint } from "./engine/spawn";
+import { engineFailure, KeshaError, quoteInvalidLine, renderError, SUPPORT_BUNDLE_HINT, type ErrorEvent } from "./engine/events";
 import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
 import {
   describeToCapabilities,
@@ -337,7 +337,7 @@ function transcribeFailure(command: string, run: EngineRun): KeshaError {
     exitCode: failure.exitCode,
     stderr: failure.stderr,
     origin: failure.origin,
-    hint: "re-run with KESHA_DEBUG=1 to trace the engine call, then file a bug with the archive from `kesha support-bundle`",
+    hint: SUPPORT_BUNDLE_HINT,
   });
 }
 
@@ -407,7 +407,9 @@ export async function transcribeEngineWithSegments(
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new KeshaError(err instanceof KeshaError ? err.code : "E_INTERNAL", `${message}: ${run.stdout}`);
+    throw new KeshaError(err instanceof KeshaError ? err.code : "E_INTERNAL", `${message}: ${quoteInvalidLine(run.stdout)}`, {
+      hint: SUPPORT_BUNDLE_HINT,
+    });
   }
 }
 
@@ -525,7 +527,13 @@ export async function recordEngine(target: RecordTarget, maxSeconds: number): Pr
   // so an error event beside that status is a real failure the signal must not excuse.
   if (events.error || events.invalid.length > 0) throw withVirtualMacHint(engineFailure("record", events, exitCode));
   // A silent non-zero exit named nothing, so it stays the operational 1 it has been since #1167.
-  if (!signalled && exitCode !== 0) throw new Error(`kesha-engine record exited with code ${exitCode}`);
+  if (!signalled && exitCode !== 0) {
+    throw new KeshaError("E_INTERNAL", engineExitCause("record", exitCode, run.signalCode), {
+      exitCode: 1,
+      stderr: events.stderr.trim(),
+      hint: SUPPORT_BUNDLE_HINT,
+    });
+  }
 }
 
 export function parseLangResult(stdout: string): LangDetectResult | null {
@@ -548,11 +556,10 @@ export async function detectAudioLanguageEngine(
   const run = await runEngine(["detect-lang", "--", audioPath], opts);
   // The tolerant form: a noisy onnxruntime warning must not blind a best-effort guess.
   if (reportedFailure(run)) {
-    const cause = run.error ? renderError(run.error) : `kesha-engine detect-lang exited with code ${run.exitCode}`;
-    log.warn(
-      `Audio language detection failed: ${cause}\n` +
-        "  Fix: run `kesha install` to reinstall the engine and its language-ID model.",
-    );
+    const crashed = !run.error && engineSignal(run.exitCode, run.signalCode) !== null;
+    const cause = run.error ? renderError(run.error) : engineExitCause("detect-lang", run.exitCode, run.signalCode);
+    const fix = crashed ? SUPPORT_BUNDLE_HINT : "run `kesha install` to reinstall the engine and its language-ID model.";
+    log.warn(`Audio language detection failed: ${cause}\n  Fix: ${fix}`);
     return null;
   }
   return parseLangResult(run.stdout);

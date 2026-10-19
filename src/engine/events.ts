@@ -228,8 +228,10 @@ export function exitCodeFor(err: unknown): number {
 
 const MAX_QUOTED_LINE_CHARS = 200;
 
+export const SUPPORT_BUNDLE_HINT = "re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive";
+
 /** A library line can carry the user's whole input back, so the quote is bounded and the transcript no longer repeats it (#T1-14). */
-function quoteInvalidLine(line: string): string {
+export function quoteInvalidLine(line: string): string {
   const chars = Array.from(line);
   return chars.length <= MAX_QUOTED_LINE_CHARS ? line : `${chars.slice(0, MAX_QUOTED_LINE_CHARS).join("")}…`;
 }
@@ -247,9 +249,9 @@ export function engineFailure(command: string, outcome: StderrOutcome, exitCode:
     return new KeshaError(
       "E_INTERNAL",
       offProtocolLine(command, outcome.invalid[0]!),
-      { ...extra, stderr: rest },
+      { ...extra, stderr: rest, hint: `the engine and CLI may not match: run \`kesha install\`; if it persists, ${SUPPORT_BUNDLE_HINT}` },
     );
   }
   if (outcome.error) return new KeshaError(outcome.error.code, outcome.error.message, { ...extra, hint: outcome.error.hint });
-  return new KeshaError("E_INTERNAL", `kesha-engine ${command} exited with code ${exitCode}`, extra);
+  return new KeshaError("E_INTERNAL", `kesha-engine ${command} exited with code ${exitCode}`, { ...extra, hint: SUPPORT_BUNDLE_HINT });
 }

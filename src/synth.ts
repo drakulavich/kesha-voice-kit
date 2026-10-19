@@ -18,6 +18,7 @@ export type SayFormat = "wav" | "ogg-opus" | "flac";
 export const SUPPORTED_SAMPLE_RATES = [8000, 12000, 16000, 24000, 48000] as const;
 export type SupportedSampleRate = (typeof SUPPORTED_SAMPLE_RATES)[number];
 export const MAX_TEXT_CHARS = 5000;
+export const TEXT_TOO_LONG_HINT = `split the text into requests of at most ${MAX_TEXT_CHARS} characters`;
 
 type SayBase = {
   /**
@@ -138,7 +139,11 @@ export function validateSayText(text: string): void {
   }
   const chars = Array.from(text).length;
   if (chars > MAX_TEXT_CHARS) {
-    throw new KeshaError("E_TEXT_TOO_LONG", `text exceeds ${MAX_TEXT_CHARS} chars (${chars})`, { exitCode: 5, stderr: "" });
+    throw new KeshaError("E_TEXT_TOO_LONG", `text exceeds ${MAX_TEXT_CHARS} chars (${chars})`, {
+      exitCode: 5,
+      stderr: "",
+      hint: TEXT_TOO_LONG_HINT,
+    });
   }
   if (text.includes("\0")) {
     throw new KeshaError("E_INVALID_ARG", "text contains a NUL byte", { exitCode: 2, stderr: "" });

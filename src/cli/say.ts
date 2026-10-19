@@ -6,6 +6,7 @@ import { renderInvalidArg } from "./options";
 import { log } from "../log";
 import {
   MAX_TEXT_CHARS,
+  TEXT_TOO_LONG_HINT,
   listVoiceIds,
   say,
   SUPPORTED_SAMPLE_RATES,
@@ -35,6 +36,7 @@ async function resolveText(inline: string | undefined): Promise<string> {
     throw new KeshaError(
       "E_TEXT_TOO_LONG",
       `text exceeds ${MAX_TEXT_CHARS} chars (stdin passed ${MAX_STDIN_BYTES} bytes)`,
+      { hint: TEXT_TOO_LONG_HINT },
     );
   }
   const merged = new Uint8Array(total);

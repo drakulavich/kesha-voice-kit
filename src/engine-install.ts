@@ -14,8 +14,8 @@ import {
   targetKey,
 } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, KeshaError, offProtocolLine } from "./engine/events";
-import { runEngineProcess } from "./engine/spawn";
+import { engineFailure, KeshaError, offProtocolLine, SUPPORT_BUNDLE_HINT } from "./engine/events";
+import { engineExitCause, runEngineProcess } from "./engine/spawn";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
 import { engineVersion, injectedEnginePins } from "./package-info";
@@ -108,7 +108,12 @@ export function releaseChecksums(
   return async (assetName) => {
     if (version === pins?.version) {
       const pinned = pins.sha256[assetName];
-      if (!pinned) throw new Error(`No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete.\n  Fix: report it at https://github.com/${GITHUB_REPO}/issues.`);
+      if (!pinned) {
+        throw new KeshaError("E_INTERNAL", `No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete`, {
+          exitCode: 1,
+          hint: `report it at https://github.com/${GITHUB_REPO}/issues`,
+        });
+      }
       return { sha256: pinned, source: "its pinned SHA-256" };
     }
     sums ??= fetchSha256Sums(version, pins);
@@ -779,8 +784,11 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
   }
   if (events.error || events.invalid.length > 0) throw engineFailure("install", events, exitCode);
   if (exitCode !== 0) {
-    // Nothing coded and nothing off-protocol: the engine failed without saying why, so neither do we.
-    throw new Error(`Failed to install models: kesha-engine install exited with code ${exitCode}.`);
+    throw new KeshaError("E_INTERNAL", `Failed to install models: ${engineExitCause("install", exitCode, run.signalCode)}`, {
+      exitCode: 1,
+      stderr: events.stderr.trim(),
+      hint: SUPPORT_BUNDLE_HINT,
+    });
   }
 }
 

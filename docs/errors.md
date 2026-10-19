@@ -57,10 +57,14 @@ code never needs sanitizing.
 - The CLI also raises `E_MODEL_MISSING` before spawning when `--speakers` needs a diarization
   or VAD model that `kesha install --diarize` / `--vad` has not placed, `E_TEXT_EMPTY` and
   `E_TEXT_TOO_LONG` from `kesha say` before any engine runs, and `E_INTERNAL` when the
-  engine's transcription JSON cannot be read or the engine exits non-zero without reporting an
-  error event; all render exactly like the engine's own. When a signal killed the transcription
-  engine, the message names it (`kesha-engine transcribe was killed by SIGSEGV`) and the hint says
-  to re-run with `KESHA_DEBUG=1` and file a bug with `kesha support-bundle`; the run still exits `1`. `describe` publishes `E_MODEL_MISSING`,
+  engine's transcription JSON cannot be read, the engine writes a line that is not an event, or it
+  exits non-zero without reporting an error event; all render exactly like the engine's own. When a
+  signal killed the engine, the message names it (`kesha-engine transcribe was killed by SIGSEGV`,
+  likewise for `record` and `install`). Each of these carries a hint to re-run with `KESHA_DEBUG=1`
+  and file a bug with the `kesha support-bundle` archive; for an off-protocol line it first suggests
+  `kesha install`, since an engine and CLI that do not match is the usual cause. Transcription still
+  exits `1`. The audio language-ID warning names the signal too and suggests the same bug report
+  instead of a reinstall. `describe` publishes `E_MODEL_MISSING`,
   `E_TEXT_EMPTY` and `E_TEXT_TOO_LONG` as `both` from engine v1.26.0 on (#1202).
 - `kesha install` and the Core API `install()` raise `E_MODEL_DOWNLOAD` when the engine binary
   cannot be downloaded (a network error, an HTTP error status, an empty response, a body
@@ -95,7 +99,7 @@ status that lets scripts branch without parsing stderr:
 | `0` | Success. |
 | `1` | Operational error — engine/model not installed, a download or install failed, a `macos-*` voice this Mac has not downloaded, or a helper sidecar that is missing or failed. `kesha say` derives this from the code, so `E_MODEL_MISSING`, `E_MODEL_DOWNLOAD`, `E_CACHE_CORRUPT`, `E_MODEL_LOAD`, `E_SIDECAR_MISSING` and `E_VOICE_UNKNOWN` exit `1` whichever engine raised them. |
 | `2` | Invalid arguments, usage, or configuration the CLI refuses before doing anything — no input file, an unknown command, an option the command does not declare, mutually-exclusive flags, a bad `--format`, empty `say` text, a backend flag this platform's release does not ship, a directory where an audio file is expected, a transcribe flag the installed engine lacks, a `KESHA_ENGINE_BIN` or `KESHA_CACHE_DIR` that cannot hold the engine directory (a file in the path, a read-only store), or a pinned engine file in a read-only engine directory that cannot be read to verify it. From the engine: a `say` or `record --out` path it cannot write (a directory, a missing parent, an unwritable location, a device such as `/dev/stdout`), which both commands answer with the same code and status, a `--rate` outside 0.5–2.0, a `--bitrate` outside 6000–510000, and malformed SSML (`E_SSML_INVALID`). Transcription exits `1` instead for an `E_INVALID_ARG` the engine raises at run time, such as `--no-vad` on audio past the 24-minute ceiling. |
-| `4` | Unexpected/uncoded internal failure (`E_INTERNAL`), and the two refusals that mean the request cannot be served as written rather than that anything is missing: `E_SCRIPT_UNSUPPORTED` and `E_SSML_UNSUPPORTED`. Transcription exits `1` instead for every engine failure, an engine crash included. `kesha say` exits with the engine's own status when the engine dies without reporting an error, such as `139` for `SIGSEGV`. |
+| `4` | Unexpected/uncoded internal failure (`E_INTERNAL`), and the two refusals that mean the request cannot be served as written rather than that anything is missing: `E_SCRIPT_UNSUPPORTED` and `E_SSML_UNSUPPORTED`. Transcription exits `1` instead for every engine failure, an engine crash included. `kesha say` exits with the engine's own status when the engine dies without reporting an error, such as `139` for `SIGSEGV`, and `kesha record` and `kesha install` exit `1` for it. `kesha install` also exits `1` for the `E_INTERNAL` of a CLI build that lacks the pinned SHA-256 of an engine asset. |
 | `5` | `kesha say` text exceeds the length limit. |
 | `130` | Interrupted — Ctrl-C (`SIGINT`) reached the CLI mid-run and the engine subprocess was terminated, the interrupted files reporting `E_INTERRUPTED`; or a `kesha init` prompt was cancelled (nothing was installed). |
 | `143` | Terminated — a `SIGTERM` reached the CLI mid-run (a cancelled CI job, a stopped container); the engine subprocess was terminated and the interrupted files report `E_INTERRUPTED`. |
@@ -119,9 +123,10 @@ engine directory the CLI cannot write — maps its code through the table above.
 Two edges of that rule are worth knowing. A CLI-raised `E_UNSUPPORTED_PLATFORM`
 (no engine is published for this host, or `--diarize` off darwin-arm64) is the
 operational `1`: the remedy is another machine, not another command line. And
-an engine that exits non-zero without reporting anything has no code to relay:
-`say` reports it as `E_INTERNAL` with the engine's status, while `record`
-(pinned by #1167) and `install` keep the operational `1`.
+an engine that exits non-zero without reporting anything has no code of its own:
+all three report it as `E_INTERNAL`, naming the signal when one killed the engine;
+`say` exits with the engine's status, while `record` (pinned by #1167) and
+`install` keep the operational `1`.
 
 Transcription is a batch and keeps its own rule: the run exits `2` when the CLI
 itself rejected an argument for any file — a directory positional, a flag the

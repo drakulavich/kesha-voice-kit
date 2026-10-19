@@ -197,7 +197,9 @@ export function validateArgv(argv: string[], doc: DescribeDocument): { argv: str
     if (name === null) continue;
     const flag = schema.flags[name];
     if (!flag) {
-      throw new KeshaError("E_INVALID_ARG", `kesha-engine ${command} does not accept --${name}`);
+      throw new KeshaError("E_INVALID_ARG", `kesha-engine ${command} does not accept --${name}`, {
+        hint: `the installed kesha-engine is older than this CLI and lacks --${name}; run \`kesha install\` to fetch the engine this CLI expects`,
+      });
     }
     if (!gateSatisfied(flag.gate, doc.features)) {
       const needs = `--${name} needs ${gateText(flag.gate)}, which this kesha-engine build (${build}) does not provide`;

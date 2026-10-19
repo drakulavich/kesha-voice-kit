@@ -231,7 +231,9 @@ describe("say on protocol 4", () => {
       expect(err!.code).toBe("E_INTERNAL");
       expect(err!.exitCode).toBe(134);
       const rendered = errorMessage(err);
-      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say exited with code 134\nwarning: slow\n/);
+      expect(rendered).toMatch(
+        /^error \[E_INTERNAL\]: kesha-engine say exited with code 134\n  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive\nwarning: slow\n/,
+      );
       expect(rendered).toContain("killed by SIGABRT");
       expect(rendered.match(/error \[/g)).toHaveLength(1);
     } finally {

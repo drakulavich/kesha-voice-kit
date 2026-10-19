@@ -944,16 +944,20 @@ describe("CLI contracts", () => {
     });
   });
 
-  test("kesha record without an installed engine fails with an install hint, not a stack trace", async () => {
+  test("kesha record without an installed engine is E_ENGINE_SPAWN naming the engine path, with an install hint, not a stack trace", async () => {
     const dir = makeTempDir("kesha-cli-contract-record-");
     const outPath = join(dir, "hello.wav");
     const run = await runCli(["record", "--out", outPath], { env: isolatedEnv(dir) });
     expectContract(run, {
       exitCode: 1,
       stdoutEmpty: true,
-      stderrContains: ["Error: No recording backend is installed.", "bun add -g @drakulavich/kesha-voice-kit"],
-      stderrNotContains: ["at ", "posix_spawn", "ENOENT"],
+      stderrContains: [
+        `error [E_ENGINE_SPAWN]: No recording backend is installed: no kesha-engine at ${join(dir, "cache", "engine", "bin")}`,
+        "  hint: bun add -g @drakulavich/kesha-voice-kit, then kesha install",
+      ],
+      stderrNotContains: ["posix_spawn", "ENOENT"],
     });
+    expect(run.stderr).not.toMatch(/^\s+at /m);
     expect(existsSync(outPath)).toBe(false);
   });
 
@@ -993,25 +997,32 @@ describe("CLI contracts", () => {
     });
   });
 
-  test("kesha record against a stub that exits non-zero with no coded error line still exits 1", async () => {
-    if (process.platform === "win32") return;
-    const dir = makeTempDir("kesha-cli-contract-record-uncoded-fail-");
-    const enginePath = join(dir, "kesha-engine");
-    writeFileSync(
-      enginePath,
-      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: [] })}'\n  exit 0\nfi\nexit 3\n`,
-    );
-    chmodSync(enginePath, 0o755);
-    const outPath = join(dir, "hello.wav");
-    const run = await runCli(["record", "--out", outPath], {
-      env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+  for (const [ending, body, cause] of [
+    ["exits non-zero", "exit 3", "exited with code 3"],
+    ["is killed by a signal", "kill -SEGV $$", "was killed by SIGSEGV"],
+  ] as const) {
+    test(`kesha record against a stub that ${ending} with no coded error line is E_INTERNAL with a next step and still exits 1 (#1512)`, async () => {
+      if (process.platform === "win32") return;
+      const dir = makeTempDir("kesha-cli-contract-record-uncoded-fail-");
+      const enginePath = join(dir, "kesha-engine");
+      writeFileSync(
+        enginePath,
+        `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: [] })}'\n  exit 0\nfi\n${body}\n`,
+      );
+      chmodSync(enginePath, 0o755);
+      const outPath = join(dir, "hello.wav");
+      const run = await runCli(["record", "--out", outPath], {
+        env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath },
+      });
+      expectContract(run, {
+        exitCode: 1,
+        stderrContains: [
+          `error [E_INTERNAL]: kesha-engine record ${cause}\n` +
+            "  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+        ],
+      });
     });
-    expectContract(run, {
-      exitCode: 1,
-      stderrContains: ["kesha-engine record exited with code 3"],
-      stderrNotContains: ["error [E_"],
-    });
-  });
+  }
 
   for (const [signal, exitCode] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
     test(`${signal} mid-recording exits ${exitCode} and leaves no engine running`, async () => {
@@ -1121,10 +1132,13 @@ process.exit(99);
     expectContract(run, {
       exitCode: 5,
       stdoutEmpty: true,
-      stderrContains: ["error [E_TEXT_TOO_LONG]: text exceeds 5000 chars"],
+      stderrContains: [
+        "error [E_TEXT_TOO_LONG]: text exceeds 5000 chars",
+        "  hint: split the text into requests of at most 5000 characters",
+      ],
       stderrNotContains: ["E_ENGINE_SPAWN", "Synthesizing"],
     });
-    expect(run.stderr.split("\n")).toHaveLength(1);
+    expect(run.stderr.split("\n")).toHaveLength(2);
   });
 
   test("kesha say stops reading a stdin pipe once the text limit is passed, without waiting for EOF", async () => {
@@ -1784,7 +1798,7 @@ process.exit(99);
    * prose-writing stub became a violation under protocol 4 (review of #1185). Its record counterpart
    * lives in `recordEngine`; this is install's.
    */
-  test("a model install that exits non-zero saying nothing still exits 1, uncoded, like record (#1186)", async () => {
+  test("a model install that exits non-zero saying nothing is E_INTERNAL with a next step and still exits 1, like record (#1186, #1512)", async () => {
     const dir = makeTempDir("kesha-cli-contract-install-silent-exit-");
     const enginePath = createFakeEngine(dir);
     markFakeEngineInstalled(enginePath);
@@ -1797,8 +1811,7 @@ process.exit(99);
     const run = await runCli(["install", "--vad"], { env });
     expectContract(run, {
       exitCode: 1,
-      stderrContains: ["Failed to install models: kesha-engine install exited with code 3."],
-      stderrNotContains: ["error [E_"],
+      stderrContains: ["error [E_INTERNAL]: Failed to install models: kesha-engine install exited with code 3\n  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive"],
     });
   });
 
@@ -2313,7 +2326,8 @@ exit 2
     const run = await runCli(["install", "--tts", "en"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
 
     const warning =
-      "FluidAudio Kokoro warmup skipped (error [E_INVALID_ARG]: kesha-engine say does not accept --out); first `kesha say en-*` may still be slow.";
+      "FluidAudio Kokoro warmup skipped (error [E_INVALID_ARG]: kesha-engine say does not accept --out\n" +
+      "  hint: the installed kesha-engine is older than this CLI and lacks --out; run `kesha install` to fetch the engine this CLI expects); first `kesha say en-*` may still be slow.";
     expectContract(run, { exitCode: 0, stdoutContains: ["Backend installed successfully"], stderrContains: [warning] });
     expect(run.stderr.split(warning).length - 1).toBe(1);
     expect(existsSync(sayMarker)).toBe(false);
