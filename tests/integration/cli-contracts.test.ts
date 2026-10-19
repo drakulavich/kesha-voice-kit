@@ -2718,6 +2718,66 @@ exit 2
     });
   });
 
+  test("a Stats database another process holds locked names the file and says to retry", async () => {
+    const env = isolatedEnv();
+    expectContract(await runCli(["stats", "enable"], { env }), { exitCode: 0 });
+    const holder = new Database(env.KESHA_STATS_DB);
+    holder.exec("begin immediate");
+    try {
+      expectContract(await runCli(["stats", "disable"], { env }), {
+        exitCode: 4,
+        stdoutEmpty: true,
+        stderrContains: [
+          `error [E_INTERNAL]: cannot read or write the Kesha Stats database ${env.KESHA_STATS_DB}: database is locked`,
+          "hint: another kesha command is writing to it; retry when that command finishes.",
+        ],
+        stderrNotContains: ["    at "],
+      });
+    } finally {
+      holder.exec("rollback");
+      holder.close();
+    }
+  });
+
+  test("kesha logs enable with an unwritable log folder names the settings file, never a stack trace", async () => {
+    const env = isolatedEnv();
+    const notADir = join(dirname(env.KESHA_LOG_DIR), "a-file");
+    writeFileSync(notADir, "");
+    const logDir = join(notADir, "logs");
+
+    expectContract(await runCli(["logs", "enable"], { env: { ...env, KESHA_LOG_DIR: logDir } }), {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: [
+        `error [E_INVALID_ARG]: cannot write the diagnostic log settings ${join(logDir, "diagnostic-logs.json")}: a component of it is a file, not a directory (ENOTDIR)`,
+        `hint: make ${logDir} writable, or set KESHA_LOG_DIR to a folder you can write to.`,
+      ],
+      stderrNotContains: ["    at "],
+    });
+  });
+
+  test("an unexpected failure inside a subcommand is a coded E_INTERNAL with the support-bundle hint, never a stack trace", async () => {
+    if (process.platform === "win32" || process.getuid?.() === 0) return;
+    const env = isolatedEnv();
+    mkdirSync(env.KESHA_LOG_DIR, { recursive: true });
+    writeFileSync(join(env.KESHA_LOG_DIR, "kesha.ndjson"), "{}\n");
+    chmodSync(env.KESHA_LOG_DIR, 0o555);
+    try {
+      expectContract(await runCli(["logs", "reset"], { env }), {
+        exitCode: 4,
+        stdoutEmpty: true,
+        stderrContains: [
+          "error [E_INTERNAL]: ",
+          "EACCES",
+          "hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+        ],
+        stderrNotContains: ["    at "],
+      });
+    } finally {
+      chmodSync(env.KESHA_LOG_DIR, 0o755);
+    }
+  });
+
   test("a Stats database that is not SQLite gives a coded error naming the file, never a stack trace (#1469)", async () => {
     const env = isolatedEnv();
     writeFileSync(env.KESHA_STATS_DB, "this is not a sqlite database\n".repeat(200));
@@ -2734,7 +2794,9 @@ exit 2
     const transcribe = await runCli([join(dirname(env.KESHA_STATS_DB), "missing.wav")], { env });
     expectContract(transcribe, {
       exitCode: 1,
-      stderrContains: [`warning: failed to write Kesha Stats at ${env.KESHA_STATS_DB}`],
+      stderrContains: [
+        `warning: failed to write Kesha Stats at ${env.KESHA_STATS_DB} (file is not a database); continuing without stats for this event; fix that, or run \`kesha stats disable\` to stop recording.`,
+      ],
     });
   });
 
@@ -2909,9 +2971,9 @@ exit 0
       "1</dev/null",
       env,
     );
-    expect(run.exitCode).not.toBe(0);
-    expect(run.stderr).toContain("failed writing to stdout");
-    expect(run.stderr).toContain("EBADF");
+    expect(run.exitCode).toBe(1);
+    expect(run.stderr).toContain("error [E_INTERNAL]: failed writing to stdout: EBADF");
+    expect(run.stderr).toContain("hint: free disk space or check what stdout is redirected to.");
     expect(run.stderr).not.toContain("at writeFast");
   }, 30000);
 

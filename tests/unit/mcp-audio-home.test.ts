@@ -60,3 +60,50 @@ describe("MCP audio under KESHA_HOME (openspec state-directories)", () => {
     }
   });
 });
+
+async function connectedClient(): Promise<Client> {
+  const server = createKeshaMcpServer();
+  const [c, s] = InMemoryTransport.createLinkedPair();
+  await server.connect(s);
+  const client = new Client({ name: "t", version: "0" });
+  await client.connect(c);
+  return client;
+}
+
+describe("MCP audio folder errors", () => {
+  skipOnWin32("an audio folder that cannot be created is a coded error naming it", async () => {
+    const dir = tempDir("kesha-mcp-home-file-");
+    const home = join(dir, "state");
+    writeFileSync(home, "a file, not a directory");
+    const restore = saveEngineEnv();
+    process.env.KESHA_HOME = home;
+    process.env.KESHA_ENGINE_BIN = sayingEngine(dir);
+    try {
+      const res = await (await connectedClient()).callTool({
+        name: "synthesize_speech",
+        arguments: { text: "hello", voice: "en-am_michael" },
+      });
+      expect(res.isError).toBe(true);
+      expect((res.content as Array<{ text: string }>)[0]?.text).toBe(
+        `error [E_INVALID_ARG]: cannot create the audio folder ${join(home, "mcp-audio")}: a component of it is a file, not a directory (ENOTDIR)\n` +
+          "  hint: set KESHA_HOME to a directory you can write to.",
+      );
+    } finally {
+      restore();
+    }
+  });
+
+  test("reading a swept file is E_INPUT_NOT_FOUND with a next step", async () => {
+    const restore = saveEngineEnv();
+    process.env.KESHA_HOME = join(tempDir("kesha-mcp-home-swept-"), "state");
+    try {
+      const read = (await connectedClient()).readResource({ uri: "kesha-audio://gone.wav" });
+      await expect(read).rejects.toThrow(
+        "error [E_INPUT_NOT_FOUND]: synthesized-audio: file not found or already swept: gone.wav\n" +
+          "  hint: synthesized files are deleted after 24 hours; call synthesize_speech again.",
+      );
+    } finally {
+      restore();
+    }
+  });
+});

@@ -240,7 +240,7 @@ describe("list_voices / list_languages surface an engine-reported failure coded"
       const res = await call("list_voices");
       expect(res.isError).toBe(true);
       const text = (res.content as Array<{ text: string }>)[0]?.text;
-      expect(text).toContain("error [E_MODEL_MISSING]:");
+      expect(text).toStartWith("error [E_MODEL_MISSING]:");
       expect(text).toContain("hint: run kesha install --tts");
     });
   });
@@ -250,7 +250,7 @@ describe("list_voices / list_languages surface an engine-reported failure coded"
       const res = await call("list_languages");
       expect(res.isError).toBe(true);
       const text = (res.content as Array<{ text: string }>)[0]?.text;
-      expect(text).toContain("error [E_MODEL_MISSING]:");
+      expect(text).toStartWith("error [E_MODEL_MISSING]:");
       expect(text).toContain("hint: run kesha install --tts");
     });
   });
