@@ -232,3 +232,27 @@ fn a_bad_record_argument_is_an_invalid_argument_before_the_microphone_opens() {
     }
     assert!(!wav.exists());
 }
+
+// #1516: live streaming loaded the Parakeet bundle through FluidAudio, which downloads a missing one.
+#[cfg(feature = "coreml")]
+#[test]
+fn live_recording_without_an_asr_model_is_model_missing_with_the_install_hint() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = Command::new(common::engine_bin())
+        .args(["record", "--live", "--max-seconds", "1"])
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .env("HOME", dir.path())
+        .output()
+        .expect("spawn engine");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "docs/errors.md: a missing model is exit 1"
+    );
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_MODEL_MISSING", "{v}");
+    assert!(
+        v["message"].as_str().unwrap().contains("kesha install"),
+        "{v}"
+    );
+}

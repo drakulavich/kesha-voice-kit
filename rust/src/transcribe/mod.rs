@@ -1120,7 +1120,9 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
 /// Returns the cached ASR model dir or bails with the install hint. Takes the
 /// cache-root resolution rather than reading it, so a null home surfaces as the
 /// coded `E_INTERNAL` #953 established instead of "no models installed" (#969).
-fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<std::path::PathBuf> {
+pub(crate) fn ensure_asr_installed(
+    cache: Result<std::path::PathBuf>,
+) -> Result<std::path::PathBuf> {
     let dir = models::model_dir_at(models::ModelKind::Asr, &cache?);
     if !models::is_cached_in(models::ModelKind::Asr, &dir) {
         coded_bail!(
