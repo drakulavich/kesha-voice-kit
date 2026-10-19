@@ -12,6 +12,16 @@ use crate::util::argmax;
 
 use super::{TranscribeBackend, TranscriptionChunk};
 
+fn load_failed(path: &Path, cause: impl std::fmt::Display) -> anyhow::Error {
+    anyhow::Error::new(crate::errors::CodedError {
+        code: ErrorCode::ModelLoad,
+        message: format!(
+            "failed to load {} ({cause}): run `kesha install --no-cache`",
+            path.display()
+        ),
+    })
+}
+
 const DECODER_LAYERS: usize = 2;
 const DECODER_HIDDEN: usize = 640;
 const MAX_TOKENS_PER_STEP: usize = 10;
@@ -36,26 +46,22 @@ impl OnnxBackend {
             .context("Failed to create preprocessor session builder")
             .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("nemo128.onnx"))
-            .context("Failed to load nemo128.onnx — run `kesha-engine install` first")
-            .coded(ErrorCode::ModelLoad)?;
+            .map_err(|e| load_failed(&model_path.join("nemo128.onnx"), e))?;
 
         let encoder = Session::builder()
             .context("Failed to create encoder session builder")
             .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("encoder-model.onnx"))
-            .context("Failed to load encoder-model.onnx — run `kesha-engine install` first")
-            .coded(ErrorCode::ModelLoad)?;
+            .map_err(|e| load_failed(&model_path.join("encoder-model.onnx"), e))?;
 
         let decoder = Session::builder()
             .context("Failed to create decoder session builder")
             .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("decoder_joint-model.onnx"))
-            .context("Failed to load decoder_joint-model.onnx — run `kesha-engine install` first")
-            .coded(ErrorCode::ModelLoad)?;
+            .map_err(|e| load_failed(&model_path.join("decoder_joint-model.onnx"), e))?;
 
         let vocab = load_vocab(model_path.join("vocab.txt"))
-            .context("Failed to load vocab.txt — run `kesha-engine install` first")
-            .coded(ErrorCode::ModelLoad)?;
+            .map_err(|e| load_failed(&model_path.join("vocab.txt"), format!("{e:#}")))?;
 
         let blank_id = vocab.len() - 1;
 
@@ -86,7 +92,8 @@ impl OnnxBackend {
                 "waveforms" => waveforms_value,
                 "waveforms_lens" => waveforms_lens_value,
             ])
-            .context("Preprocessor inference failed")?;
+            .context("Preprocessor inference failed")
+            .coded(ErrorCode::TranscribeFailed)?;
 
         // features shape: [1, 128, T]
         let (features_shape, features_data) = outputs[0]
@@ -127,7 +134,8 @@ impl OnnxBackend {
                 "audio_signal" => audio_signal_value,
                 "length" => length_value,
             ])
-            .context("Encoder inference failed")?;
+            .context("Encoder inference failed")
+            .coded(ErrorCode::TranscribeFailed)?;
 
         // Output: logits [1, D, T'] and encoded_lengths [1]
         let (logits_shape_raw, logits_raw) = outputs[0]
@@ -188,7 +196,8 @@ impl OnnxBackend {
                 "input_states_1" => state1_val,
                 "input_states_2" => state2_val,
             ])
-            .context("Decoder inference failed")?;
+            .context("Decoder inference failed")
+            .coded(ErrorCode::TranscribeFailed)?;
 
         // Output order varies by model version; disambiguate by tensor rank.
         // Rank-2 → joint logits; rank-3 with dim-0 == DECODER_LAYERS → recurrent state.
@@ -418,9 +427,11 @@ where
                 step(&frame, beam.last_token, &beam.state1, &beam.state2)?;
 
             if output.len() <= vocab_size {
-                anyhow::bail!(
+                crate::coded_bail!(
+                    ErrorCode::ModelLoad,
                     "joint output has {} logits, expected token logits ({}) plus TDT \
-                     duration logits — wrong or truncated decoder checkpoint?",
+                     duration logits: the decoder checkpoint is wrong or truncated; \
+                     run `kesha install --no-cache`",
                     output.len(),
                     vocab_size
                 );

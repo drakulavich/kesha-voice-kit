@@ -551,7 +551,7 @@ impl SegmentSink for KokoroSink<'_> {
     fn synth(&mut self, unit: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
         self.sess
             .infer_ipa(unit, self.voice_path, speed)
-            .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))
+            .map_err(|e| TtsError::from_engine("infer", e))
     }
     fn emphasis_warning(&self) -> &'static str {
         "<emphasis> stress markers are honored only on ru-vosk-* voices; \
@@ -726,7 +726,7 @@ fn say_with_kokoro(
     let t = Instant::now();
     let audio = sess
         .infer_ipa(ipa, voice_path, speed)
-        .map_err(|e| TtsError::SynthesisFailed(format!("infer: {e}")))?;
+        .map_err(|e| TtsError::from_engine("infer", e))?;
     crate::dtrace!(
         "kokoro::infer.end samples={} dt={}ms",
         audio.len(),

@@ -211,3 +211,94 @@ fn detect_text_lang_reads_the_text_from_stdin_when_no_positional_is_given() {
         "text on stdin must reach the detector: {stderr}"
     );
 }
+
+// Stands in for every uncoded failure: when this one gets its own code, move the test to another.
+#[test]
+fn an_uncoded_failure_is_internal_with_the_file_a_bug_hint() {
+    let out = detect_text_lang_on_stdin(b" ");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_INTERNAL", "{v}");
+    assert_eq!(
+        v["hint"],
+        "re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+        "{v}"
+    );
+}
+
+#[test]
+fn speakers_without_json_is_an_invalid_argument() {
+    let out = Command::new(engine_bin())
+        .args(["transcribe", "--speakers", "/nonexistent/audio.wav"])
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
+    assert!(
+        v["message"]
+            .as_str()
+            .unwrap()
+            .contains("--speakers requires --json"),
+        "{v}"
+    );
+    assert!(
+        v.get("hint").is_none(),
+        "no file-a-bug hint for a bad argument: {v}"
+    );
+}
+
+#[cfg(not(feature = "system_diarize"))]
+#[test]
+fn speakers_off_darwin_arm64_is_an_unsupported_platform() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("short.wav");
+    common::write_pcm16_wav(&wav, 16_000, 16_000, 32_000);
+    let out = Command::new(engine_bin())
+        .args(["transcribe", "--json", "--speakers"])
+        .arg(&wav)
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_UNSUPPORTED_PLATFORM", "{v}");
+    assert!(
+        v["message"].as_str().unwrap().contains("darwin-arm64 only"),
+        "{v}"
+    );
+}
+
+#[cfg(not(feature = "coreml"))]
+#[test]
+fn an_asr_model_that_will_not_load_names_its_path_and_the_reinstall_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("short.wav");
+    common::write_pcm16_wav(&wav, 16_000, 16_000, 32_000);
+    let asr = dir.path().join("cache/models/parakeet-tdt-v3");
+    std::fs::create_dir_all(&asr).unwrap();
+    for f in [
+        "encoder-model.onnx",
+        "encoder-model.onnx.data",
+        "decoder_joint-model.onnx",
+        "nemo128.onnx",
+        "vocab.txt",
+    ] {
+        std::fs::write(asr.join(f), b"stub").unwrap();
+    }
+    let out = Command::new(engine_bin())
+        .args(["transcribe", "--no-vad"])
+        .arg(&wav)
+        .env("KESHA_CACHE_DIR", dir.path().join("cache"))
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(1));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_MODEL_LOAD", "{v}");
+    let message = v["message"].as_str().unwrap();
+    assert!(
+        message.contains(&asr.join("nemo128.onnx").display().to_string())
+            && message.contains("kesha install --no-cache"),
+        "{v}"
+    );
+}

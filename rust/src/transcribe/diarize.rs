@@ -2,7 +2,7 @@
 //! `diarize_file_with_models` (FluidAudio SortformerDiarizer, pre-staged model,
 //! no download). Closes #199 angle D.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::coded_bail;
@@ -882,9 +882,11 @@ pub(crate) fn validate_coverage(
     };
 
     if coverage_is_incomplete(&coverage, diarize_spans.is_empty()) {
-        bail!(
+        coded_bail!(
+            ErrorCode::TranscribeFailed,
             "speaker diarization coverage incomplete: labeled {}/{} segments ({:.1}%), \
-             spans end at {:.1}s while transcript ends at {:.1}s",
+             spans end at {:.1}s while transcript ends at {:.1}s; \
+             re-run without --speakers for a plain transcript",
             labeled_segments,
             total_segments,
             coverage_ratio * 100.0,
@@ -1037,6 +1039,8 @@ mod tests {
         assert!(msg.contains("speaker diarization coverage incomplete"));
         assert!(msg.contains("labeled 1/2 segments"));
         assert!(msg.contains("spans end at 10.0s while transcript ends at 110.0s"));
+        assert!(msg.contains("re-run without --speakers"), "{msg}");
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::TranscribeFailed);
     }
 
     #[test]

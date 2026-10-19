@@ -172,6 +172,10 @@ pub fn code_of(err: &anyhow::Error) -> ErrorCode {
         .unwrap_or(ErrorCode::Internal)
 }
 
+/// The next step for a failure only a bug report can resolve.
+pub const FILE_A_BUG_HINT: &str =
+    "re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive";
+
 thread_local! {
     static EXPECTING_PANIC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -201,7 +205,7 @@ pub fn install_panic_hook() {
                 "engine panicked: {}{location}",
                 panic_message(info.payload())
             ),
-            Some("file a bug with `kesha support-bundle`"),
+            Some(FILE_A_BUG_HINT),
         );
     }));
 }
@@ -216,7 +220,10 @@ pub fn catch_panic<T>(f: impl FnOnce() -> T) -> Result<T, String> {
 
 /// Emit the fatal error as an `error` event; always returns 1.
 pub fn report(err: &anyhow::Error) -> i32 {
-    crate::protocol::events::error(code_of(err), format!("{err:#}"), None);
+    let code = code_of(err);
+    let hint = matches!(code, ErrorCode::Internal | ErrorCode::TranscribeFailed)
+        .then_some(FILE_A_BUG_HINT);
+    crate::protocol::events::error(code, format!("{err:#}"), hint);
     1
 }
 

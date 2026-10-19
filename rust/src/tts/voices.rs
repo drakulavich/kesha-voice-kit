@@ -16,15 +16,20 @@ pub const VOICE_FILE_BYTES: usize = VOICE_ROWS * VOICE_COLS * 4;
 
 /// Load a Kokoro voice file into a flat Vec of [`VOICE_ROWS`] * [`VOICE_COLS`] floats.
 pub fn load_voice(path: &Path) -> anyhow::Result<Vec<f32>> {
-    let bytes = std::fs::read(path)?;
+    let bytes =
+        std::fs::read(path).map_err(|e| super::model_load_failed("Kokoro voice", path, e))?;
     if bytes.len() != VOICE_FILE_BYTES {
-        anyhow::bail!(
-            "voice file size {} != expected {} ({} rows × {} cols × 4 bytes)",
-            bytes.len(),
-            VOICE_FILE_BYTES,
-            VOICE_ROWS,
-            VOICE_COLS
-        );
+        return Err(super::model_load_failed(
+            "Kokoro voice",
+            path,
+            format!(
+                "voice file size {} != expected {} ({} rows × {} cols × 4 bytes)",
+                bytes.len(),
+                VOICE_FILE_BYTES,
+                VOICE_ROWS,
+                VOICE_COLS
+            ),
+        ));
     }
     Ok(bytes
         .chunks_exact(4)

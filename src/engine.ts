@@ -320,7 +320,7 @@ export function withVirtualMacHint(
   platform: string = process.platform,
   isVirtualMac: () => boolean = hostIsVirtualMac,
 ): KeshaError {
-  if (platform !== "darwin" || err.hint || !err.message.includes("Swift bridge error") || !isVirtualMac()) return err;
+  if (platform !== "darwin" || !err.message.includes("Swift bridge error") || !isVirtualMac()) return err;
   return new KeshaError(err.code, err.message, {
     exitCode: err.exitCode,
     stderr: err.stderr,

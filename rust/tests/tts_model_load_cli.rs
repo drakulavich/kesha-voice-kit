@@ -95,6 +95,25 @@ fn a_truncated_vosk_model_is_a_model_load_failure_with_a_reinstall_hint() {
     assert_model_load(&out, "Vosk model");
 }
 
+#[test]
+fn a_truncated_kokoro_voice_file_is_a_model_load_failure_naming_its_path() {
+    let mini = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/fixtures/mini-models/kokoro");
+    let dir = tempfile::tempdir().unwrap();
+    let voice = dir.path().join("kokoro/voice.bin");
+    write_truncated(&voice);
+    let out = say(
+        &[
+            "--model",
+            mini.join("model.onnx").to_str().unwrap(),
+            "--voice-file",
+            voice.to_str().unwrap(),
+            "hello",
+        ],
+        &dir.path().join("cache"),
+    );
+    assert_model_load(&out, &voice.display().to_string());
+}
+
 fn stage_truncated_charsiu(cache: &Path) {
     for file in [
         "encoder_model.onnx",
