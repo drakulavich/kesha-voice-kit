@@ -12,7 +12,6 @@ const ALLOWED: Array<[string, string]> = [
   ["src/support-bundle.ts", "tar entry names are fixed bundle paths"],
   ["src/support-bundle.ts", "tar numeric fields are fixed modes and file sizes"],
   ["src/engine-install.ts", "fires only under NODE_ENV=test, to stop a test writing the real cache"],
-  ["src/mcp/tools.ts", "the MCP SDK sends only message, which already carries the code and hint"],
   ["src/cli/install.ts", "both callers report it as E_INVALID_ARG"],
   ["src/cli/install.ts", "both callers report it as E_INVALID_ARG"],
 ];

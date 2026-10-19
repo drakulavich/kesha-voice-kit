@@ -93,11 +93,12 @@ describe("MCP audio folder errors", () => {
     }
   });
 
-  test("reading a swept file is E_INPUT_NOT_FOUND with a next step", async () => {
+  test("reading a swept file is resource-not-found (-32002) and E_INPUT_NOT_FOUND with a next step", async () => {
     const restore = saveEngineEnv();
     process.env.KESHA_HOME = join(tempDir("kesha-mcp-home-swept-"), "state");
     try {
       const read = (await connectedClient()).readResource({ uri: "kesha-audio://gone.wav" });
+      await expect(read).rejects.toMatchObject({ code: -32002 });
       await expect(read).rejects.toThrow(
         "error [E_INPUT_NOT_FOUND]: synthesized-audio: file not found or already swept: gone.wav\n" +
           "  hint: synthesized files are deleted after 24 hours; call synthesize_speech again.",

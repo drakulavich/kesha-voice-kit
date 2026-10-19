@@ -107,6 +107,15 @@ describe("synthesize_speech reports the voice it used (#942)", () => {
     expect(engine.sayArgs()).toContain(voice);
   });
 
+  skipOnWin32("empty voice routes by language, the same as an omitted one (#1473)", async () => {
+    const engine = synthesizingEngine({ code: "ru", confidence: 0.99 });
+    const { res, voice } = await synthesize(engine, { text: "Совещание начинается.", voice: "" });
+
+    expect(res.isError).toBeUndefined();
+    expect(voice).toBe(pickVoiceForLang("ru", 0.99) as string);
+    expect(engine.sayArgs()).toContain(voice);
+  });
+
   skipOnWin32("explicit voice is echoed back verbatim", async () => {
     const engine = synthesizingEngine({ code: "en", confidence: 0.99 });
     const { voice } = await synthesize(engine, { text: "Привет", voice: "ru-vosk-m02" });

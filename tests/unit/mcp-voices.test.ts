@@ -113,6 +113,15 @@ describe("aggregateLanguages", () => {
     ]);
   });
 
+  test("leaves out voices without a language, which no client can pass anywhere (#1473)", () => {
+    const voices = [
+      "en-am_michael",
+      "macos-com.apple.speech.synthesis.voice.Zarvox",
+      "macos-com.apple.speech.synthesis.voice.Bells",
+    ].map(parseVoiceInfo);
+    expect(aggregateLanguages(voices)).toEqual([{ languageCode: "en-US", languageName: "American English", voiceCount: 1 }]);
+  });
+
   test("returns empty array for no voices", () => {
     expect(aggregateLanguages([])).toEqual([]);
   });

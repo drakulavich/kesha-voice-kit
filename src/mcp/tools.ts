@@ -30,11 +30,11 @@ export function registerTools(server: McpServer): void {
       try {
         bytes = readFileSync(filePath);
       } catch {
-        // The SDK sends only `message`, so the code and hint go inside it.
+        // The SDK sends only `message` and `code`; McpError would prepend "MCP error -32002:" to the message.
         const coded = new KeshaError("E_INPUT_NOT_FOUND", `synthesized-audio: file not found or already swept: ${name}`, {
           hint: "synthesized files are deleted after 24 hours; call synthesize_speech again.",
         });
-        throw new Error(errorMessage(coded));
+        throw Object.assign(new Error(errorMessage(coded)), { code: -32002 });
       }
       return { contents: [{ uri: uri.href, mimeType: mimeForExt(name), blob: bytes.toString("base64") }] };
     },
@@ -46,7 +46,7 @@ export function registerTools(server: McpServer): void {
       title: "Synthesize speech",
       description:
         "Synthesize speech from text into an audio file and return a resource link. " +
-        "Omit voice to auto-route by language (male defaults en-am_michael / ru-vosk-m02).",
+        "Omit voice (or pass an empty string) to auto-route by language (male defaults en-am_michael / ru-vosk-m02).",
       inputSchema: {
         text: z.string().min(1).describe("Text to speak"),
         voice: z.string().optional().describe("Voice id, e.g. en-am_michael"),
@@ -84,7 +84,7 @@ export function registerTools(server: McpServer): void {
       }
       try {
         // An MCP caller has no stderr to read: the voice it is told is its only record (#942).
-        const resolvedVoice = (await resolveSayVoice(voice, undefined, text, { signal: extra.signal })) ?? DEFAULT_VOICE_ID;
+        const resolvedVoice = (await resolveSayVoice(voice || undefined, undefined, text, { signal: extra.signal })) ?? DEFAULT_VOICE_ID;
         await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath, signal: extra.signal });
         chmodSync(outPath, 0o600);
         const bytes = statSync(outPath).size;

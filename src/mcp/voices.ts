@@ -106,6 +106,7 @@ export async function listVoices(): Promise<VoiceInfo[]> {
 export function aggregateLanguages(voices: VoiceInfo[]): LanguageInfo[] {
   const map = new Map<string, LanguageInfo>();
   for (const v of voices) {
+    if (!v.languageCode) continue;
     const existing = map.get(v.languageCode);
     if (existing) existing.voiceCount++;
     else map.set(v.languageCode, { languageCode: v.languageCode, languageName: v.languageName, voiceCount: 1 });
