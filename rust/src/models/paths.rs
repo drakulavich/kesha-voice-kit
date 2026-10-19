@@ -383,7 +383,15 @@ pub fn model_dir(kind: ModelKind) -> Result<PathBuf> {
 /// list-voices / resolver paths that already have the root and want to
 /// avoid re-reading the env var.
 pub fn model_dir_at(kind: ModelKind, cache_root: &Path) -> PathBuf {
-    cache_root.join(kind.subdir())
+    join_rel(cache_root, kind.subdir())
+}
+
+/// Joins a `/`-separated cache-relative path component by component, so Windows
+/// paths in messages use one separator (#1518).
+pub fn join_rel(base: &Path, rel: &str) -> PathBuf {
+    let mut path = base.to_path_buf();
+    path.extend(rel.split('/'));
+    path
 }
 
 /// True iff `kind`'s required files are present under the active cache.
@@ -422,7 +430,7 @@ fn has_vosk_ru_layout(dir: &Path) -> bool {
             .rel_path
             .strip_prefix("models/vosk-ru/")
             .expect("VOSK_RU_FILES rel_paths live under models/vosk-ru/");
-        dir.join(rel).exists()
+        join_rel(dir, rel).exists()
     })
 }
 
@@ -454,6 +462,19 @@ fn has_all_files(dir: &Path, files: &[ModelFile]) -> bool {
             .map(|n| dir.join(n).exists())
             .unwrap_or(false)
     })
+}
+
+#[cfg(all(test, windows))]
+mod join_rel_tests {
+    use super::*;
+
+    #[test]
+    fn model_paths_use_only_backslashes_on_windows() {
+        let path = model_dir_at(ModelKind::Asr, Path::new(r"C:\cache")).join("nemo128.onnx");
+        let shown = path.to_string_lossy();
+        assert!(!shown.contains('/'), "{shown}");
+        assert_eq!(shown, r"C:\cache\models\parakeet-tdt-v3\nemo128.onnx");
+    }
 }
 
 #[cfg(all(test, feature = "tts"))]

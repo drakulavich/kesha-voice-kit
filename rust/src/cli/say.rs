@@ -116,7 +116,7 @@ fn list_kokoro_voices(_cache: &std::path::Path) -> Vec<String> {
     }
     #[allow(unreachable_code)]
     {
-        let dir = _cache.join("models/kokoro-82m/voices");
+        let dir = crate::models::join_rel(_cache, "models/kokoro-82m/voices");
         std::fs::read_dir(&dir)
             .into_iter()
             .flatten()

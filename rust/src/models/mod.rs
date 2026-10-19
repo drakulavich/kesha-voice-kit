@@ -23,9 +23,9 @@ pub use paths::fluidaudio_bridge;
 #[cfg(feature = "system_diarize")]
 pub use paths::fluidaudio_diarize_location;
 pub use paths::{
-    cache_dir, fluidaudio_location, fluidaudio_models_root, is_cached, is_cached_in, model_dir,
-    model_dir_at, stale_legacy_notice, FluidAudioLocation, ModelKind, FLUIDAUDIO_ROOT_DIR,
-    FLUID_ASR_REPO_DIR,
+    cache_dir, fluidaudio_location, fluidaudio_models_root, is_cached, is_cached_in, join_rel,
+    model_dir, model_dir_at, stale_legacy_notice, FluidAudioLocation, ModelKind,
+    FLUIDAUDIO_ROOT_DIR, FLUID_ASR_REPO_DIR,
 };
 #[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub use paths::{
