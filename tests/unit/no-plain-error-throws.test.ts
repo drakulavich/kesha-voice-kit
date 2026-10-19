@@ -20,7 +20,7 @@ const ALLOWED: Array<[string, string]> = [
 test("src throws a plain Error only where ALLOWED says why", async () => {
   const counts = new Map<string, number>();
   for await (const file of new Bun.Glob("src/**/*.{ts,mjs}").scan(repoPath("."))) {
-    counts.set(file, readRepoFile(file).split("throw new Error(").length - 1);
+    counts.set(file.replaceAll("\\", "/"), readRepoFile(file).split("throw new Error(").length - 1);
   }
   const extra: string[] = [];
   const stale: string[] = [];
