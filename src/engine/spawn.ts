@@ -99,6 +99,12 @@ export function engineSignal(exitCode: number, signalCode: string | null, platfo
   return signal ?? null;
 }
 
+/** What a run that reported nothing ended with: the signal that killed it, else its exit status. */
+export function engineExitCause(command: string, exitCode: number, signalCode: string | null): string {
+  const signal = engineSignal(exitCode, signalCode);
+  return signal ? `kesha-engine ${command} was killed by ${signal}` : `kesha-engine ${command} exited with code ${exitCode}`;
+}
+
 /** Spawns the engine (or a sidecar) as its own process tree and waits for it; the tree is unregistered however the run ends. */
 export async function runEngineProcess<T = undefined>(
   binPath: string,

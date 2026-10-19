@@ -10,6 +10,7 @@ import {
   readInstalledEngineVersion,
   writeInstalledEngineVersion,
   installEngine,
+  releaseChecksums,
   SIDECARS,
 } from "../../src/engine-install";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
@@ -518,7 +519,7 @@ exit 0
    * knows. Its record counterpart is pinned at `src/engine.ts`; this one lost its pin when the
    * prose-writing stub in `cli-contracts` became a protocol violation instead (review of #1185).
    */
-  posixTest("a model install that exits non-zero saying nothing reports the bare exit status", async () => {
+  posixTest("a model install that exits non-zero saying nothing is E_INTERNAL with the exit status, a next step and exit 1 (#1512)", async () => {
     const dir = stageInstallableEngine("kesha-install-silent-");
     writeEngineWithInstallBody(dir, "  :", 3);
 
@@ -528,9 +529,25 @@ exit 0
     } catch (err) {
       caught = err;
     }
-    expect(caught).toBeInstanceOf(Error);
-    expect(caught).not.toBeInstanceOf(KeshaError);
-    expect(errorMessage(caught)).toBe("Failed to install models: kesha-engine install exited with code 3.");
+    expect(errorMessage(caught)).toBe(
+      "error [E_INTERNAL]: Failed to install models: kesha-engine install exited with code 3\n" +
+        "  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+    );
+    expect(exitCodeFor(caught)).toBe(1);
+  });
+
+  posixTest("a model install killed by a signal names it (#1512)", async () => {
+    const dir = stageInstallableEngine("kesha-install-signal-");
+    writeEngineWithInstallBody(dir, "  kill -SEGV $$");
+
+    let caught: unknown;
+    try {
+      await installEngine({});
+    } catch (err) {
+      caught = err;
+    }
+    expect(errorMessage(caught)).toStartWith("error [E_INTERNAL]: Failed to install models: kesha-engine install was killed by SIGSEGV\n  hint: ");
+    expect(exitCodeFor(caught)).toBe(1);
   });
 
   posixTest("the model install spawn speaks protocol 4", async () => {
@@ -571,4 +588,14 @@ exit 1`,
     expect(stderr).toContain("FluidAudio Kokoro warmup failed");
     expect(stderr).toContain("first `kesha say en-*` may still be slow");
   });
+});
+
+test("a pinned engine release missing an asset's SHA-256 is E_INTERNAL, exit 1, pointing at the issue tracker", async () => {
+  const checksum = releaseChecksums("9.9.9", { version: "9.9.9", sha256: {}, size: {} });
+  const err = await checksum("kesha-engine-linux-x64").then(() => null, (e: unknown) => e);
+  expect(errorMessage(err)).toBe(
+    "error [E_INTERNAL]: No pinned SHA-256 for kesha-engine-linux-x64 of engine v9.9.9; this CLI build is incomplete\n" +
+      "  hint: report it at https://github.com/drakulavich/kesha-voice-kit/issues",
+  );
+  expect(exitCodeFor(err)).toBe(1);
 });

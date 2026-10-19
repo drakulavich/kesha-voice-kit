@@ -1024,6 +1024,27 @@ exit 2
     });
   });
 
+  fakeEngineTest("a detect-lang killed by a signal warns with the signal and a bug report, not a reinstall (#1512)", async () => {
+    const engine = langDetectEngine("kesha-engine-detect-lang-crash-", "detect-lang", "  kill -SEGV $$");
+    const savedWrite = process.stderr.write;
+    const captured: string[] = [];
+    process.stderr.write = ((chunk: string | Uint8Array) => {
+      captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+      return true;
+    }) as typeof process.stderr.write;
+    try {
+      await withEngineEnv(engine, async () => {
+        expect(await detectAudioLanguageEngine("audio.wav")).toBeNull();
+      });
+    } finally {
+      process.stderr.write = savedWrite;
+    }
+    expect(captured.join("")).toContain(
+      "Audio language detection failed: kesha-engine detect-lang was killed by SIGSEGV\n" +
+        "  Fix: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+    );
+  });
+
   fakeEngineTest("a stray non-event line on detect-lang does not blind language detection (#1166 follow-up)", async () => {
     const engine = langDetectEngine(
       "kesha-engine-detect-lang-noisy-",
@@ -1252,6 +1273,8 @@ describe("engine subprocess env", () => {
 });
 
 describe("the engine boundary refuses to pass a malformed reply through", () => {
+  const HINT = "\n  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive";
+
   function transcribingEngine(payload: string): string {
     return writeTranscribingEngine("kesha-engine-malformed-", ["transcribe.segments"], `  printf '%s\\n' '${payload}'`);
   }
@@ -1279,7 +1302,7 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
       await withEngineEnv(transcribingEngine(payload), async () => {
         const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
         expect(err.code).toBe("E_INTERNAL");
-        expect(errorMessage(err)).toBe(`error [E_INTERNAL]: Invalid transcription JSON returned by kesha-engine: ${payload}`);
+        expect(errorMessage(err)).toBe(`error [E_INTERNAL]: Invalid transcription JSON returned by kesha-engine: ${payload}${HINT}`);
       });
     });
   }
@@ -1293,7 +1316,7 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
       await withEngineEnv(transcribingEngine(payload), async () => {
         const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
         expect(err.code).toBe("E_INTERNAL");
-        expect(errorMessage(err)).toBe(`error [E_INTERNAL]: Invalid transcription segment returned by kesha-engine: ${payload}`);
+        expect(errorMessage(err)).toBe(`error [E_INTERNAL]: Invalid transcription segment returned by kesha-engine: ${payload}${HINT}`);
       });
     });
   }
@@ -1302,7 +1325,14 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     await withEngineEnv(transcribingEngine("kesha-engine: segfault"), async () => {
       const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
       expect(err.code).toBe("E_INTERNAL");
-      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: .+: kesha-engine: segfault$/);
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: .+: kesha-engine: segfault\n  hint: re-run with KESHA_DEBUG=1/);
+    });
+  });
+
+  fakeEngineTest("a long malformed reply is quoted up to 200 characters", async () => {
+    await withEngineEnv(transcribingEngine("x".repeat(5000)), async () => {
+      const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
+      expect(err.message).toEndWith(`: ${"x".repeat(200)}…`);
     });
   });
 

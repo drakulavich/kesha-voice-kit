@@ -3,6 +3,7 @@ import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInvalidArg } from "./options";
 import {
+  getEngineBinPath,
   isEngineInstalled,
   recordEngine,
   validateRecordRequest,
@@ -142,11 +143,10 @@ function resolveThreshold(
 
 /** Mirrors `src/transcribe.ts`'s "no transcription backend" guard message, worded for recording. */
 export function noRecordingBackendMessage(): string {
-  return (
-    "Error: No recording backend is installed.\n\n" +
-    "Run the following to get started:\n\n" +
-    "    bun add -g @drakulavich/kesha-voice-kit\n" +
-    `    ${installHint()}`
+  return errorMessage(
+    new KeshaError("E_ENGINE_SPAWN", `No recording backend is installed: no kesha-engine at ${getEngineBinPath()}`, {
+      hint: `bun add -g @drakulavich/kesha-voice-kit, then ${installHint()}`,
+    }),
   );
 }
 

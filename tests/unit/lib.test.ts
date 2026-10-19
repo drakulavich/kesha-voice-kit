@@ -354,6 +354,7 @@ describe("say() rejects with a coded KeshaError", () => {
     const err = await rejectionOf(say({ text: "x".repeat(5001) }));
     expect(err.code).toBe("E_TEXT_TOO_LONG");
     expect(err.exitCode).toBe(5);
+    expect(err.hint).toBe("split the text into requests of at most 5000 characters");
   });
 });
 

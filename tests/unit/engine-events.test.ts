@@ -234,6 +234,9 @@ describe("engineFailure() is the one way a run becomes a KeshaError", () => {
     const err = engineFailure("say", { stderr: "loading\n", error: null, invalid: ["loading"] }, 0);
     expect(err.code).toBe("E_INTERNAL");
     expect(err.message).toBe('kesha-engine say wrote a line that is not a protocol event: "loading"');
+    expect(err.hint).toBe(
+      "the engine and CLI may not match: run `kesha install`; if it persists, re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+    );
     expect(err.exitCode).toBe(0);
   });
 
@@ -275,7 +278,11 @@ describe("engineFailure() is the one way a run becomes a KeshaError", () => {
     const err = engineFailure("transcribe", clean, 137, "killed by SIGKILL");
     expect(err.code).toBe("E_INTERNAL");
     expect(err.message).toBe("kesha-engine transcribe exited with code 137");
-    expect(errorMessage(err)).toBe("error [E_INTERNAL]: kesha-engine transcribe exited with code 137\nkilled by SIGKILL");
+    expect(errorMessage(err)).toBe(
+      "error [E_INTERNAL]: kesha-engine transcribe exited with code 137\n" +
+        "  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive\n" +
+        "killed by SIGKILL",
+    );
   });
 
   test("with no exit code of its own the error leaves exitCode unset", () => {
