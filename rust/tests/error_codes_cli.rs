@@ -302,3 +302,53 @@ fn an_asr_model_that_will_not_load_names_its_path_and_the_reinstall_command() {
         "{v}"
     );
 }
+
+#[cfg(feature = "tts")]
+fn say_with_mini(extra: &[&str]) -> Command {
+    let mini = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../tests/fixtures/mini-models/kokoro");
+    let mut cmd = Command::new(engine_bin());
+    cmd.arg("say")
+        .arg("--model")
+        .arg(mini.join("model.onnx"))
+        .arg("--voice-file")
+        .arg(mini.join("am_michael.bin"))
+        .args(extra)
+        .arg("hello");
+    cmd
+}
+
+#[cfg(feature = "tts")]
+#[test]
+fn say_with_an_opus_sample_rate_the_encoder_lacks_is_an_invalid_argument() {
+    let out = say_with_mini(&["--format", "ogg-opus", "--sample-rate", "44100"])
+        .output()
+        .expect("spawn engine");
+    assert_eq!(out.status.code(), Some(2));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_INVALID_ARG", "{v}");
+    assert!(v["message"].as_str().unwrap().contains("44100"), "{v}");
+}
+
+#[cfg(feature = "tts")]
+#[test]
+fn say_that_cannot_write_its_audio_names_the_next_step() {
+    let mut child = say_with_mini(&[])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("spawn engine");
+    drop(child.stdout.take());
+    let out = child.wait_with_output().expect("engine exits");
+    assert_eq!(out.status.code(), Some(4));
+    let v = common::sole_error_event(&out);
+    assert_eq!(v["code"], "E_INTERNAL", "{v}");
+    assert!(
+        v["message"].as_str().unwrap().contains("write failed"),
+        "{v}"
+    );
+    assert_eq!(
+        v["hint"], "free disk space, or check the --out path or what stdout is redirected to",
+        "{v}"
+    );
+}

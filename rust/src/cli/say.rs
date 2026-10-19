@@ -191,7 +191,7 @@ fn read_stdin() -> Result<String, i32> {
         events::error(
             crate::errors::ErrorCode::Internal,
             format!("failed to read stdin: {e}"),
-            None,
+            crate::errors::hint_for(crate::errors::ErrorCode::Internal),
         );
         return Err(4);
     }
@@ -381,7 +381,7 @@ fn write_output(out: Option<&std::path::Path>, bytes: &[u8]) -> Result<(), i32> 
         events::error(
             crate::errors::ErrorCode::Internal,
             format!("write failed: {msg}"),
-            None,
+            Some("free disk space, or check the --out path or what stdout is redirected to"),
         );
         4
     })
@@ -480,7 +480,7 @@ pub fn run(a: SayArgs) -> i32 {
     }) {
         Ok(w) => w,
         Err(e) => {
-            events::error(e.code(), format!("{e}"), None);
+            events::error(e.code(), format!("{e}"), crate::errors::hint_for(e.code()));
             return exit_code_for_tts_err(&e);
         }
     };

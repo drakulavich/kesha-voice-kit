@@ -836,8 +836,7 @@ fn encode_or_fail(
     sample_rate: u32,
     format: OutputFormat,
 ) -> Result<Vec<u8>, TtsError> {
-    encode::encode(samples, sample_rate, format)
-        .map_err(|e| TtsError::SynthesisFailed(format!("encode: {e}")))
+    encode::encode(samples, sample_rate, format).map_err(|e| TtsError::from_engine("encode", e))
 }
 
 /// Re-encode WAV bytes from a Swift sidecar into the caller's chosen format.

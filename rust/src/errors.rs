@@ -218,12 +218,15 @@ pub fn catch_panic<T>(f: impl FnOnce() -> T) -> Result<T, String> {
     result.map_err(|payload| panic_message(&*payload))
 }
 
+/// The hint an error event carries when its message has no next step of its own.
+pub fn hint_for(code: ErrorCode) -> Option<&'static str> {
+    matches!(code, ErrorCode::Internal | ErrorCode::TranscribeFailed).then_some(FILE_A_BUG_HINT)
+}
+
 /// Emit the fatal error as an `error` event; always returns 1.
 pub fn report(err: &anyhow::Error) -> i32 {
     let code = code_of(err);
-    let hint = matches!(code, ErrorCode::Internal | ErrorCode::TranscribeFailed)
-        .then_some(FILE_A_BUG_HINT);
-    crate::protocol::events::error(code, format!("{err:#}"), hint);
+    crate::protocol::events::error(code, format!("{err:#}"), hint_for(code));
     1
 }
 
