@@ -293,7 +293,15 @@ fn an_asr_model_that_will_not_load_names_its_path_and_the_reinstall_command() {
         .output()
         .expect("spawn engine");
     assert_eq!(out.status.code(), Some(1));
-    let v = common::sole_error_event(&out);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let events: Vec<serde_json::Value> = stderr
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap_or_else(|_| panic!("not an event: {stderr}")))
+        .collect();
+    let (errors, rest): (Vec<_>, Vec<_>) = events.into_iter().partition(|e| e["kind"] == "error");
+    assert!(rest.iter().all(|e| e["kind"] == "progress"), "{stderr}");
+    assert_eq!(errors.len(), 1, "{stderr}");
+    let v = &errors[0];
     assert_eq!(v["code"], "E_MODEL_LOAD", "{v}");
     let message = v["message"].as_str().unwrap();
     assert!(
