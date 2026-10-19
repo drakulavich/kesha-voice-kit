@@ -204,6 +204,7 @@ pub fn record_default_input_live(
     }
 
     let endpoint = endpoint.map(load_live_endpoint).transpose()?;
+    crate::transcribe::ensure_asr_installed(crate::models::cache_dir())?;
 
     // Before CPAL opens the device and spawns its threads: POSIX does not
     // promise `signal` is thread-safe.

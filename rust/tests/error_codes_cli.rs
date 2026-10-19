@@ -67,8 +67,9 @@ fn a_missing_asr_model_is_reported_as_model_missing() {
     assert_eq!(out.status.code(), Some(1));
     let v = common::sole_error_event(&out);
     assert_eq!(v["code"], "E_MODEL_MISSING", "{v}");
+    let message = v["message"].as_str().unwrap();
     assert!(
-        v["message"].as_str().unwrap().contains("kesha install"),
+        message.contains("parakeet-tdt-v3") && message.contains("kesha install"),
         "{v}"
     );
 }

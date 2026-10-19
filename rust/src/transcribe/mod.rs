@@ -1120,12 +1120,19 @@ fn resolve_diarize_model_path() -> Result<std::path::PathBuf> {
 /// Returns the cached ASR model dir or bails with the install hint. Takes the
 /// cache-root resolution rather than reading it, so a null home surfaces as the
 /// coded `E_INTERNAL` #953 established instead of "no models installed" (#969).
-fn ensure_asr_installed(cache: Result<std::path::PathBuf>) -> Result<std::path::PathBuf> {
+pub(crate) fn ensure_asr_installed(
+    cache: Result<std::path::PathBuf>,
+) -> Result<std::path::PathBuf> {
     let dir = models::model_dir_at(models::ModelKind::Asr, &cache?);
     if !models::is_cached_in(models::ModelKind::Asr, &dir) {
+        #[cfg(feature = "coreml")]
+        let checked = models::fluidaudio_asr_dir()?;
+        #[cfg(not(feature = "coreml"))]
+        let checked = dir.clone();
         coded_bail!(
             ErrorCode::ModelMissing,
-            "No transcription models installed. Run: kesha install"
+            "No transcription models installed in {}. Run: kesha install",
+            checked.display()
         );
     }
     Ok(dir)
@@ -2140,8 +2147,10 @@ mod tests {
         assert_eq!(crate::errors::code_of(&err), ErrorCode::ModelMissing);
         let msg = format!("{err:#}");
         assert!(
-            msg.contains("No transcription models installed") && msg.contains("kesha install"),
-            "an absent model must keep the install hint: {msg}"
+            msg.contains("No transcription models installed")
+                && msg.contains(&tmp.path().display().to_string())
+                && msg.contains("kesha install"),
+            "an absent model must name its path and keep the install hint: {msg}"
         );
         assert!(
             !msg.contains("KESHA_CACHE_DIR"),
