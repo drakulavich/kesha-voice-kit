@@ -4,6 +4,7 @@ import { existsSync } from "fs";
 import {
   isDirectoryPath,
   isSpecialFilePath,
+  missingFileHint,
   SPECIAL_FILE_HINT,
   transcribeWithSegments,
   truncatedWavSeconds,
@@ -338,7 +339,7 @@ async function processFile(
   }
 
   if (!existsSync(file)) {
-    const err = new KeshaError("E_INPUT_NOT_FOUND", "File not found");
+    const err = new KeshaError("E_INPUT_NOT_FOUND", "File not found", { hint: missingFileHint(file) });
     stats.recordError("input", err, err.code);
     diagnosticLog.event("input.missing", {
       command: "transcribe",

@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from "fs";
 import { hostname, tmpdir } from "os";
-import { join } from "path";
+import { join, resolve } from "path";
 import { DEFAULT_TIMEOUT_MS, runCliScenario } from "./cli-scenario";
 
 setDefaultTimeout(DEFAULT_TIMEOUT_MS * 2);
@@ -27,6 +27,8 @@ const CODED_ERROR = /error \[E_[A-Z0-9_]+\]:/;
 /** A version no release will ever carry: if the guard under test regresses, the run fails fast
  * on the release lookup instead of downloading a real engine in the fast lane. */
 const UNRELEASED = "0.0.0-does-not-exist";
+
+const REPO_ROOT = resolve(import.meta.dir, "../..");
 
 interface BadInputSpec {
   args: string[];
@@ -139,6 +141,16 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         code: "E_INVALID_ARG",
         exitCode: 2,
         stderrContains: ["is not a regular file (expected an audio file)", "save the audio to a file and pass that"],
+      };
+    },
+  },
+  {
+    name: "a relative path that does not exist",
+    prepare() {
+      return {
+        args: ["missing.wav"],
+        code: "E_INPUT_NOT_FOUND",
+        stderrContains: ["missing.wav: error [E_INPUT_NOT_FOUND]: File not found", `hint: check the path, relative to the current directory ${REPO_ROOT}`],
       };
     },
   },

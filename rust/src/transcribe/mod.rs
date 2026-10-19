@@ -359,6 +359,7 @@ pub fn transcribe_with_options(
         VadDecision::Vad => transcribe_via_vad(
             audio_path,
             &model_dir,
+            None,
             &vad_dir,
             VadConfig::default(),
             !speakers_required,
@@ -367,11 +368,19 @@ pub fn transcribe_with_options(
         // doesn't re-open the file (#248). On `On`/`Off` modes we didn't probe,
         // so it's `None` and the helper does the work.
         VadDecision::Plain => {
-            let plain = transcribe_plain(audio_path, &model_dir, duration, timestamps_required)?;
+            let mut be = create_timed_backend(&model_dir)?;
+            let plain = transcribe_plain(be.as_mut(), audio_path, duration, timestamps_required)?;
             match decide_after_empty_plain(mode, &plain.text, vad_installed) {
                 Some(VadDecision::Vad) => {
                     dtrace!("asr::empty_plain_retry decision=Vad");
-                    transcribe_via_vad(audio_path, &model_dir, &vad_dir, VadConfig::default(), true)
+                    transcribe_via_vad(
+                        audio_path,
+                        &model_dir,
+                        Some(be),
+                        &vad_dir,
+                        VadConfig::default(),
+                        true,
+                    )
                 }
                 Some(_) => {
                     events::warn(
@@ -391,7 +400,12 @@ pub fn transcribe_with_options(
                     "hint: audio is {secs:.0}s; `kesha install --vad` would improve long-audio accuracy"
                 ),
             );
-            transcribe_plain(audio_path, &model_dir, duration, timestamps_required)
+            transcribe_plain(
+                create_timed_backend(&model_dir)?.as_mut(),
+                audio_path,
+                duration,
+                timestamps_required,
+            )
         }
         VadDecision::ChunkedWithHint => {
             let secs = duration.unwrap_or(0.0);
@@ -465,12 +479,11 @@ fn join_segment_texts(segments: &[TranscriptionSegment]) -> String {
 }
 
 fn transcribe_plain(
+    be: &mut dyn backend::TranscribeBackend,
     audio_path: &str,
-    model_dir: &Path,
     duration: Option<f32>,
     timestamps_required: bool,
 ) -> Result<TranscriptionOutput> {
-    let mut be = create_timed_backend(model_dir)?;
     let t1 = Instant::now();
     let chunk = be.transcribe(Path::new(audio_path))?;
     let text = chunk.text;
@@ -524,6 +537,7 @@ fn transcribe_chunked(
 fn transcribe_via_vad(
     audio_path: &str,
     model_dir: &Path,
+    loaded: Option<Box<dyn backend::TranscribeBackend>>,
     vad_dir: &str,
     cfg: VadConfig,
     pack_windows: bool,
@@ -548,7 +562,10 @@ fn transcribe_via_vad(
         spans.len()
     );
 
-    let mut be = create_timed_backend(model_dir)?;
+    let mut be = match loaded {
+        Some(be) => be,
+        None => create_timed_backend(model_dir)?,
+    };
 
     if spans.is_empty() {
         let min_speech_samples =

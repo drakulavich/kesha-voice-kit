@@ -301,6 +301,12 @@ describe("transcribe() resolves to a TranscribeResult", () => {
     expect(err.message).toContain("/nonexistent/ghost.ogg");
   });
 
+  it("tells a caller with a missing relative path which directory it resolved against", async () => {
+    const err = await rejectionOf(transcribe("ghost.ogg"));
+    expect(err.code).toBe("E_INPUT_NOT_FOUND");
+    expect(err.render()).toContain(`hint: check the path, relative to the current directory ${process.cwd()}`);
+  });
+
   it("rejects with E_ENGINE_SPAWN and a kesha install hint when no engine is installed", async () => {
     const dir = tempDir("kesha-lib-no-engine-");
     const audio = join(dir, "note.wav");

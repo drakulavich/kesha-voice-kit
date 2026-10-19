@@ -12,6 +12,7 @@ import {
 import { validateArgv } from "./engine/describe";
 import { KeshaError } from "./engine/events";
 import { closeSync, existsSync, fstatSync, openSync, readSync, statSync } from "fs";
+import { isAbsolute } from "path";
 
 export type { VadMode };
 
@@ -22,6 +23,11 @@ export function isDirectoryPath(path: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** The next step for E_INPUT_NOT_FOUND, shared by the CLI and the Core API. */
+export function missingFileHint(path: string): string {
+  return isAbsolute(path) ? "check the path" : `check the path, relative to the current directory ${process.cwd()}`;
 }
 
 export const SPECIAL_FILE_HINT =
@@ -96,7 +102,7 @@ export interface TranscribeOptions {
 /** The refusals the CLI makes before it spawns anything, so an agent branching on the documented code sees it on every surface. */
 export function assertAudioFileArgument(audioPath: string): void {
   if (!existsSync(audioPath)) {
-    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`);
+    throw new KeshaError("E_INPUT_NOT_FOUND", `File not found: ${audioPath}`, { hint: missingFileHint(audioPath) });
   }
   if (isDirectoryPath(audioPath)) {
     throw new KeshaError("E_INVALID_ARG", `${audioPath}: is a directory (expected an audio file)`);
