@@ -42,6 +42,7 @@ error_codes! {
     UnsupportedPlatform => "E_UNSUPPORTED_PLATFORM",
     SidecarMissing => "E_SIDECAR_MISSING",
     NoBackend => "E_NO_BACKEND",
+    MicUnavailable => "E_MIC_UNAVAILABLE",
     TextEmpty => "E_TEXT_EMPTY",
     TextTooLong => "E_TEXT_TOO_LONG",
     VoiceUnknown => "E_VOICE_UNKNOWN",
@@ -77,6 +78,7 @@ impl ErrorCode {
             ErrorCode::UnsupportedPlatform => "Feature unsupported on this platform",
             ErrorCode::SidecarMissing => "Helper sidecar missing or failed",
             ErrorCode::NoBackend => "No ASR backend compiled in",
+            ErrorCode::MicUnavailable => "Microphone unavailable",
             ErrorCode::TextEmpty => "Empty synthesis text",
             ErrorCode::TextTooLong => "Synthesis text too long",
             ErrorCode::VoiceUnknown => "Unknown voice id",
@@ -99,9 +101,10 @@ impl ErrorCode {
             | ErrorCode::ModelDownload
             | ErrorCode::CacheCorrupt
             | ErrorCode::ModelLoad => Category::Model,
-            ErrorCode::UnsupportedPlatform | ErrorCode::SidecarMissing | ErrorCode::NoBackend => {
-                Category::Platform
-            }
+            ErrorCode::UnsupportedPlatform
+            | ErrorCode::SidecarMissing
+            | ErrorCode::NoBackend
+            | ErrorCode::MicUnavailable => Category::Platform,
             ErrorCode::TextEmpty
             | ErrorCode::TextTooLong
             | ErrorCode::VoiceUnknown
@@ -317,6 +320,7 @@ mod tests {
         );
         assert_eq!(ErrorCode::SidecarMissing.category(), Category::Platform);
         assert_eq!(ErrorCode::NoBackend.category(), Category::Platform);
+        assert_eq!(ErrorCode::MicUnavailable.category(), Category::Platform);
         assert_eq!(ErrorCode::TextEmpty.category(), Category::Tts);
         assert_eq!(ErrorCode::TextTooLong.category(), Category::Tts);
         assert_eq!(ErrorCode::VoiceUnknown.category(), Category::Tts);

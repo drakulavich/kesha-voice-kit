@@ -3,6 +3,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 
+use crate::coded_bail;
+use crate::errors::ErrorCode;
 use crate::protocol::events;
 
 pub fn endpoint_config(
@@ -20,13 +22,22 @@ pub fn endpoint_config(
     let trailing_silence_ms = trailing_silence_ms.unwrap_or(defaults.trailing_silence_ms);
     let min_speech_ms = min_speech_ms.unwrap_or(defaults.min_speech_ms);
     if !(0.0..=1.0).contains(&threshold) || threshold == 0.0 {
-        anyhow::bail!("--auto-stop-threshold must be greater than 0 and at most 1");
+        coded_bail!(
+            ErrorCode::InvalidArg,
+            "--auto-stop-threshold must be greater than 0 and at most 1, got {threshold}"
+        );
     }
     if trailing_silence_ms == 0 {
-        anyhow::bail!("--auto-stop-silence-ms must be greater than 0");
+        coded_bail!(
+            ErrorCode::InvalidArg,
+            "--auto-stop-silence-ms must be greater than 0"
+        );
     }
     if min_speech_ms == 0 {
-        anyhow::bail!("--auto-stop-min-speech-ms must be greater than 0");
+        coded_bail!(
+            ErrorCode::InvalidArg,
+            "--auto-stop-min-speech-ms must be greater than 0"
+        );
     }
 
     Ok(Some(crate::vad::EndpointConfig {
@@ -55,7 +66,12 @@ pub fn run(
         return run_live(Duration::from_secs(max_seconds), endpoint);
     }
 
-    let out = out.ok_or_else(|| anyhow::anyhow!("--out is required unless --live is passed"))?;
+    let Some(out) = out else {
+        coded_bail!(
+            ErrorCode::InvalidArg,
+            "--out is required unless --live is passed"
+        );
+    };
     let summary =
         match crate::record::record_default_input_to_wav(&out, Duration::from_secs(max_seconds)) {
             // Nobody is left to read an event; 129 is the status a hangup would have left.
@@ -102,8 +118,6 @@ fn run_live(max_duration: Duration, endpoint: Option<crate::vad::EndpointConfig>
 
 #[cfg(not(darwin_native))]
 fn run_live(_max_duration: Duration, _endpoint: Option<crate::vad::EndpointConfig>) -> Result<()> {
-    use crate::coded_bail;
-    use crate::errors::ErrorCode;
     coded_bail!(
         ErrorCode::UnsupportedPlatform,
         "live transcription requires a CoreML engine on Apple Silicon; \
@@ -131,5 +145,26 @@ mod tests {
     fn endpoint_rejects_a_threshold_that_can_never_observe_silence() {
         let err = endpoint_config(true, None, Some(0.0), None).unwrap_err();
         assert!(err.to_string().contains("--auto-stop-threshold"));
+        assert_eq!(crate::errors::code_of(&err), ErrorCode::InvalidArg);
+        assert_eq!(exit_code(&err), 2);
+    }
+
+    #[test]
+    fn endpoint_rejects_zero_durations_as_invalid_arguments() {
+        for (silence, min_speech, flag) in [
+            (Some(0), None, "--auto-stop-silence-ms"),
+            (None, Some(0), "--auto-stop-min-speech-ms"),
+        ] {
+            let err = endpoint_config(true, silence, None, min_speech).unwrap_err();
+            assert!(err.to_string().contains(flag), "{err}");
+            assert_eq!(exit_code(&err), 2, "{flag}");
+        }
+    }
+
+    #[test]
+    fn a_recording_with_neither_out_nor_live_is_an_invalid_argument() {
+        let err = run(None, false, 1, None).unwrap_err();
+        assert!(err.to_string().contains("--out is required"), "{err}");
+        assert_eq!(exit_code(&err), 2);
     }
 }

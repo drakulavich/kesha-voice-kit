@@ -83,7 +83,10 @@ pub fn record_default_input_to_wav(_path: &Path, _max_duration: Duration) -> Res
 #[cfg(target_os = "macos")]
 pub fn record_default_input_to_wav(path: &Path, max_duration: Duration) -> Result<RecordSummary> {
     if max_duration.is_zero() {
-        anyhow::bail!("--max-seconds must be greater than 0");
+        crate::coded_bail!(
+            crate::errors::ErrorCode::InvalidArg,
+            "--max-seconds must be greater than 0"
+        );
     }
 
     let output = WavOutput::open(path)?;
@@ -129,7 +132,7 @@ fn capture_default_input_mono(max_duration: Duration) -> Result<(u32, Vec<f32>)>
 
     stream
         .play()
-        .context("failed to start microphone recording")?;
+        .map_err(|e| mic_unavailable(format!("failed to start microphone recording: {e}")))?;
 
     let started = Instant::now();
     let mut mono_samples = Vec::new();
@@ -194,7 +197,10 @@ pub fn record_default_input_live(
     deliver: impl FnOnce(&str) -> Result<()>,
 ) -> Result<LiveOutcome> {
     if max_duration.is_zero() {
-        anyhow::bail!("--max-seconds must be greater than 0");
+        crate::coded_bail!(
+            crate::errors::ErrorCode::InvalidArg,
+            "--max-seconds must be greater than 0"
+        );
     }
 
     let endpoint = endpoint.map(load_live_endpoint).transpose()?;
@@ -234,7 +240,7 @@ pub fn record_default_input_live(
 
     stream
         .play()
-        .context("failed to start microphone recording")?;
+        .map_err(|e| mic_unavailable(format!("failed to start microphone recording: {e}")))?;
     events::progress(
         None,
         format!(
@@ -564,10 +570,10 @@ fn open_default_input() -> Result<DefaultInput> {
     let host = cpal::default_host();
     let device = host
         .default_input_device()
-        .context("no default microphone input device found")?;
+        .ok_or_else(|| mic_unavailable("no default microphone input device found"))?;
     let supported = device
         .default_input_config()
-        .context("failed to read default microphone format")?;
+        .map_err(|e| mic_unavailable(format!("failed to read default microphone format: {e}")))?;
     let sample_format = supported.sample_format();
     let config: StreamConfig = supported.into();
     ensure_input_channels(config.channels)?;
@@ -594,7 +600,9 @@ fn build_input_stream_for_format(
         SampleFormat::I24 => {
             build_input_stream::<cpal::I24>(&input.device, &input.config, sink, err_fn)
         }
-        other => anyhow::bail!("unsupported microphone sample format: {other:?}"),
+        other => Err(mic_unavailable(format!(
+            "unsupported microphone sample format: {other:?}"
+        ))),
     }
 }
 
@@ -625,7 +633,18 @@ where
             err_fn,
             None,
         )
-        .context("failed to build microphone input stream")
+        .map_err(|e| mic_unavailable(format!("failed to build microphone input stream: {e}")))
+}
+
+#[cfg(target_os = "macos")]
+fn mic_unavailable(what: impl std::fmt::Display) -> anyhow::Error {
+    anyhow::Error::new(crate::errors::HintedError {
+        code: crate::errors::ErrorCode::MicUnavailable,
+        message: what.to_string(),
+        hint: "connect a microphone and select it in System Settings > Sound > Input, \
+               then allow your terminal in System Settings > Privacy & Security > Microphone"
+            .to_string(),
+    })
 }
 
 #[cfg(target_os = "macos")]
@@ -678,7 +697,7 @@ impl FromInputSample<cpal::I24> for f32 {
 #[cfg(target_os = "macos")]
 fn ensure_input_channels(channels: u16) -> Result<()> {
     if channels == 0 {
-        anyhow::bail!("microphone reported zero channels");
+        return Err(mic_unavailable("microphone reported zero channels"));
     }
     Ok(())
 }
@@ -1035,6 +1054,26 @@ mod interrupt {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_microphone_with_no_channels_is_mic_unavailable_with_where_to_fix_it() {
+        let err = ensure_input_channels(0).unwrap_err();
+        assert_eq!(
+            crate::errors::code_of(&err),
+            crate::errors::ErrorCode::MicUnavailable
+        );
+        assert!(format!("{err:#}").contains("zero channels"), "{err:#}");
+        let hint = &err
+            .downcast_ref::<crate::errors::HintedError>()
+            .expect("carries its own hint")
+            .hint;
+        assert!(
+            hint.contains("System Settings > Sound > Input")
+                && hint.contains("Privacy & Security > Microphone"),
+            "{hint}"
+        );
+    }
 
     #[test]
     fn record_queue_drops_the_buffer_that_overflows_its_documented_bound() {
