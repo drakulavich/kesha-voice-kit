@@ -95,6 +95,7 @@ Running `kesha-engine describe` SHALL print a single JSON object to stdout and e
 > | `E_UNSUPPORTED_PLATFORM` | platform | no | both | Feature unsupported on this platform |
 > | `E_SIDECAR_MISSING` | platform | no | engine | Helper sidecar missing or failed |
 > | `E_NO_BACKEND` | platform | no | engine | No ASR backend compiled in |
+> | `E_MIC_UNAVAILABLE` | platform | no | engine | Microphone unavailable |
 > | `E_ENGINE_SPAWN` | platform | no | cli | Engine binary not installed or failed to start |
 > | `E_ENGINE_PROTOCOL` | platform | no | cli | Engine speaks a protocol this CLI does not |
 > | `E_INTERRUPTED` | platform | no | cli | The run was cancelled by a signal or by its caller |

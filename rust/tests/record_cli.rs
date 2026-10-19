@@ -197,3 +197,38 @@ fn live_auto_stop_without_a_vad_model_is_model_missing_with_its_path_and_install
         "{message}"
     );
 }
+
+// A bad record argument reached the caller as E_INTERNAL exit 1, while docs/errors.md promises E_INVALID_ARG exit 2.
+#[test]
+fn a_bad_record_argument_is_an_invalid_argument_before_the_microphone_opens() {
+    let dir = tempfile::tempdir().unwrap();
+    let wav = dir.path().join("note.wav");
+    let wav_arg = wav.to_str().unwrap();
+    for (args, flag) in [
+        (vec!["record"], "--out"),
+        (
+            vec!["record", "--out", wav_arg, "--max-seconds", "0"],
+            "--max-seconds",
+        ),
+        (
+            vec![
+                "record",
+                "--live",
+                "--auto-stop",
+                "--auto-stop-threshold",
+                "0",
+            ],
+            "--auto-stop-threshold",
+        ),
+    ] {
+        let out = Command::new(common::engine_bin())
+            .args(&args)
+            .output()
+            .expect("spawn engine");
+        assert_eq!(out.status.code(), Some(2), "{args:?}");
+        let v = common::sole_error_event(&out);
+        assert_eq!(v["code"], "E_INVALID_ARG", "{args:?}: {v}");
+        assert!(v["message"].as_str().unwrap().contains(flag), "{v}");
+    }
+    assert!(!wav.exists());
+}

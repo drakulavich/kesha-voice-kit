@@ -11,7 +11,7 @@ use super::progress::{reader_wanted, whole_file_total, InFlight, ProgressReader}
 #[cfg(all(system_kokoro, target_arch = "aarch64"))]
 use super::staging::{stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets};
 use crate::coded_bail;
-use crate::errors::{code_of, CodedContext, CodedError, ErrorCode};
+use crate::errors::{code_of, CodedError, ErrorCode};
 use crate::protocol::events;
 
 /// Optional HuggingFace mirror base URL. Respects `KESHA_MODEL_MIRROR` (#121).
@@ -262,7 +262,14 @@ fn download_verified(cache: &Path, f: &ModelFile, no_cache: bool) -> Result<()> 
         }
     }
     if let Some(parent) = target.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).map_err(|e| {
+            cache_write_error(
+                e,
+                format!("create {}", parent.display()),
+                parent,
+                ErrorCode::Internal,
+            )
+        })?;
     }
     download_with_retries(&apply_mirror(f.url), f, &target)?;
     events::progress(None, format!("OK  {}", f.rel_path));
@@ -575,18 +582,38 @@ pub(super) fn write_verified<R: io::Read>(
     resume: Option<u64>,
 ) -> Result<()> {
     let part = staging_path(target);
+    let dir = target.parent().unwrap_or(target);
 
     let result = (|| -> Result<()> {
         let mut out = match resume {
             Some(n) if n > 0 => fs::OpenOptions::new()
                 .append(true)
                 .open(&part)
-                .with_context(|| format!("append {}", part.display()))?,
-            _ => fs::File::create(&part).with_context(|| format!("create {}", part.display()))?,
+                .map_err(|e| {
+                    cache_write_error(
+                        e,
+                        format!("append {}", part.display()),
+                        dir,
+                        ErrorCode::Internal,
+                    )
+                })?,
+            _ => fs::File::create(&part).map_err(|e| {
+                cache_write_error(
+                    e,
+                    format!("create {}", part.display()),
+                    dir,
+                    ErrorCode::Internal,
+                )
+            })?,
         };
-        io::copy(reader, &mut out)
-            .with_context(|| format!("download {rel_path}"))
-            .coded(ErrorCode::ModelDownload)?;
+        io::copy(reader, &mut out).map_err(|e| {
+            cache_write_error(
+                e,
+                format!("download {rel_path}"),
+                dir,
+                ErrorCode::ModelDownload,
+            )
+        })?;
         drop(out);
         if !verify_sha256(&part, expected_sha)? {
             // Recompute to embed the actual hash in the bail (#275 D5). One
@@ -596,7 +623,9 @@ pub(super) fn write_verified<R: io::Read>(
             let actual = compute_sha256(&part).unwrap_or_else(|_| "<unreadable>".to_string());
             coded_bail!(
                 ErrorCode::CacheCorrupt,
-                "sha256 mismatch for {}: expected {} got {}",
+                "sha256 mismatch for {}: expected {} got {}. Fix: re-run `kesha install --no-cache`; \
+                 if KESHA_MODEL_MIRROR is set, check that the mirror serves the pinned file; \
+                 if it persists, re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
                 rel_path,
                 expected_sha.get(..12).unwrap_or(expected_sha),
                 actual.get(..12).unwrap_or(&actual)
@@ -605,7 +634,14 @@ pub(super) fn write_verified<R: io::Read>(
         // `fs::rename` replaces an existing destination on every supported
         // platform (POSIX rename; MoveFileExW + MOVEFILE_REPLACE_EXISTING on
         // Windows), so the pre-refresh copy survives until this single call.
-        fs::rename(&part, target).with_context(|| format!("rename {}", target.display()))
+        fs::rename(&part, target).map_err(|e| {
+            cache_write_error(
+                e,
+                format!("rename {}", target.display()),
+                dir,
+                ErrorCode::Internal,
+            )
+        })
     })();
 
     if result.is_err() && resume.is_none() {
@@ -614,6 +650,50 @@ pub(super) fn write_verified<R: io::Read>(
         let _ = fs::remove_file(&part);
     }
     result
+}
+
+/// A disk that refuses a model file is the user's to fix, not a download to retry: a full disk is
+/// `E_INTERNAL` and an unwritable directory `E_INVALID_ARG`, as the CLI codes the engine binary.
+fn cache_write_error(
+    err: io::Error,
+    action: String,
+    dir: &Path,
+    otherwise: ErrorCode,
+) -> anyhow::Error {
+    let (code, fix) = match err.kind() {
+        io::ErrorKind::StorageFull => (
+            ErrorCode::Internal,
+            format!(
+                "free space on the disk that holds {}, then re-run `kesha install`",
+                dir.display()
+            ),
+        ),
+        io::ErrorKind::PermissionDenied | io::ErrorKind::ReadOnlyFilesystem => (
+            ErrorCode::InvalidArg,
+            // FluidAudio's own caches ignore KESHA_CACHE_DIR, so only offer it where it moves the write (#953).
+            if cache_dir().is_ok_and(|cache| dir.starts_with(cache)) {
+                format!(
+                    "make {} writable or set KESHA_CACHE_DIR to a writable directory, then re-run `kesha install`",
+                    dir.display()
+                )
+            } else {
+                format!(
+                    "make {} writable, then re-run `kesha install`",
+                    dir.display()
+                )
+            },
+        ),
+        _ => {
+            return anyhow::Error::new(CodedError {
+                code: otherwise,
+                message: format!("{action}: {err}"),
+            })
+        }
+    };
+    anyhow::Error::new(CodedError {
+        code,
+        message: format!("{action}: {err}. Fix: {fix}"),
+    })
 }
 
 pub(super) fn staging_path(target: &Path) -> PathBuf {
@@ -1666,11 +1746,116 @@ mod retry_tests {
         let err = download_verified(&cache.0, &file, false).expect_err("bad hash must fail");
 
         assert_eq!(code_of(&err), ErrorCode::CacheCorrupt);
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains("kesha install --no-cache")
+                && rendered.contains("KESHA_MODEL_MIRROR")
+                && rendered.contains("kesha support-bundle"),
+            "{rendered}"
+        );
         assert_eq!(server.join().expect("stub server").len(), 1);
         assert!(
             !cache.0.join(file.rel_path).exists(),
             "unverified bytes never land at the target"
         );
+    }
+
+    #[test]
+    fn a_full_disk_is_internal_and_names_the_directory_to_free() {
+        let dir = Path::new("/models/full");
+        let err = cache_write_error(
+            io::Error::from(io::ErrorKind::StorageFull),
+            "download a.bin".into(),
+            dir,
+            ErrorCode::ModelDownload,
+        );
+        assert_eq!(code_of(&err), ErrorCode::Internal);
+        assert!(!code_of(&err).retryable());
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains("free space on the disk that holds /models/full"),
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn an_unwritable_directory_is_an_invalid_argument_naming_it() {
+        for kind in [
+            io::ErrorKind::PermissionDenied,
+            io::ErrorKind::ReadOnlyFilesystem,
+        ] {
+            let err = cache_write_error(
+                io::Error::from(kind),
+                "create a.bin.part".into(),
+                Path::new("/models/locked"),
+                ErrorCode::Internal,
+            );
+            assert_eq!(code_of(&err), ErrorCode::InvalidArg, "{kind:?}");
+            let rendered = format!("{err:#}");
+            assert!(
+                rendered.contains("make /models/locked writable"),
+                "{rendered}"
+            );
+        }
+    }
+
+    #[test]
+    fn kesha_cache_dir_is_offered_only_where_it_moves_the_write() {
+        let denied = |dir: &Path| {
+            format!(
+                "{:#}",
+                cache_write_error(
+                    io::Error::from(io::ErrorKind::PermissionDenied),
+                    "create a.bin.part".into(),
+                    dir,
+                    ErrorCode::Internal,
+                )
+            )
+        };
+        let inside = cache_dir().expect("cache dir").join("models");
+        assert!(denied(&inside).contains("KESHA_CACHE_DIR"));
+        assert!(!denied(Path::new("/nonexistent/FluidAudio/Models")).contains("KESHA_CACHE_DIR"));
+    }
+
+    #[test]
+    fn another_stream_error_keeps_the_code_it_had() {
+        let err = cache_write_error(
+            io::Error::from(io::ErrorKind::ConnectionReset),
+            "download a.bin".into(),
+            Path::new("/models"),
+            ErrorCode::ModelDownload,
+        );
+        assert_eq!(code_of(&err), ErrorCode::ModelDownload);
+        assert!(!format!("{err:#}").contains("Fix:"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_read_only_model_directory_fails_once_as_an_invalid_argument() {
+        use std::os::unix::fs::PermissionsExt;
+        let body = b"kesha model bytes".to_vec();
+        let (base, server) = stub_server(vec![ok_response(&body)]);
+        let cache = TempCache::new("readonly");
+        let file = model_file(
+            "models/retry/payload.bin",
+            format!("{base}/payload.bin"),
+            &body,
+        );
+        let dir = cache.0.join("models/retry");
+        fs::create_dir_all(&dir).expect("create model dir");
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).expect("lock model dir");
+
+        let err =
+            download_verified(&cache.0, &file, false).expect_err("the cache refuses the file");
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).expect("unlock model dir");
+
+        assert_eq!(code_of(&err), ErrorCode::InvalidArg);
+        let rendered = format!("{err:#}");
+        assert!(
+            rendered.contains(&format!("make {} writable", dir.display())),
+            "{rendered}"
+        );
+        assert_eq!(server.join().expect("stub server").len(), 1);
     }
 
     #[test]
