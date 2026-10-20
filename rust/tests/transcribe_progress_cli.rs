@@ -72,4 +72,9 @@ fn an_empty_plain_pass_retried_through_vad_loads_the_speech_model_once() {
         .filter(|v| v["kind"] == "progress" && v["message"] == "loading the speech model")
         .count();
     assert_eq!(loads, 1, "stderr was:\n{stderr}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "",
+        "stderr was:\n{stderr}"
+    );
 }
