@@ -467,7 +467,7 @@ function renderBehaviorLines(ttsLangs: string[], wantsAnyKokoro: boolean): strin
     isDarwinArm64()
       ? "  - macOS install signs/unquarantines downloaded binaries for Gatekeeper."
       : "  - No macOS Gatekeeper signing step on this platform.",
-    "  - install warms the ASR backend after downloads; CoreML warm-up is typically 20-30 s, ONNX warm-up is about 500 ms.",
+    "  - install warms the ASR backend after downloads; CoreML warm-up typically takes 1-2 min, ONNX warm-up is about 500 ms.",
   ];
   if (ttsLangs.length > 0 && wantsAnyKokoro && isDarwinArm64()) {
     lines.push(

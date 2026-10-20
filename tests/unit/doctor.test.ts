@@ -853,11 +853,33 @@ exit 2
       expect(byName("VAD (Silero)")).toMatchObject({ exists: true, sizeBytes: 128 });
       expect(byName("VAD (Silero)").note).toContain("kesha install --vad");
       expect(byName("TTS (Kokoro)")).toMatchObject({ exists: true, sizeBytes: 64 });
-      expect(byName("TTS (Kokoro)").note).toContain("kesha install --tts");
+      expect(byName("TTS (Kokoro)").note).toBe(
+        isDarwinArm64()
+          ? "not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle"
+          : "enabled with `kesha install --tts`",
+      );
       expect(byName("TTS (Vosk RU)")).toMatchObject({ exists: false, sizeBytes: 0 });
-      expect(byName("TTS (Vosk RU)").note).toContain("kesha install --tts");
+      expect(byName("TTS (Vosk RU)").note).toBe("enabled with `kesha install --tts ru`");
       expect(byName("Diarization (Sortformer)")).toMatchObject({ exists: false, sizeBytes: 0 });
       expect(byName("Diarization (Sortformer)").note).toContain("kesha install --diarize");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the Cache section and the optional rows agree on the ONNX Kokoro cache", async () => {
+    const { dir } = stage("kesha-doctor-kokoro-onnx-");
+    try {
+      const lines = formatDoctorReport(await collectDoctorReport()).split("\n");
+      const kokoroLines = lines.filter((l) => l.startsWith("  TTS (Kokoro): "));
+      expect(kokoroLines).toEqual(
+        isDarwinArm64()
+          ? [
+              "  TTS (Kokoro): missing - not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle",
+              "  TTS (Kokoro): missing - not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle",
+            ]
+          : ["  TTS (Kokoro): missing", "  TTS (Kokoro): missing - enabled with `kesha install --tts`"],
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

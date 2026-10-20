@@ -1,5 +1,5 @@
 import { existsSync } from "fs";
-import { cacheComponents, cacheTotalBytes } from "./cache-layout";
+import { cacheComponents, cacheTotalBytes, KOKORO_ONNX_UNUSED_NOTE } from "./cache-layout";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
 import { dirname, join } from "path";
@@ -17,6 +17,7 @@ import { engineVersion, packageName, packageVersion } from "./package-info";
 import { getStatsStatus, type StatsStatus } from "./stats";
 import { kokoroAneComponents, kokoroTtsLanguages } from "./kokoro-ane";
 import { isCoremlBackend } from "./fluid-asr-cache";
+import { isDarwinArm64 } from "./engine-targets";
 import {
   fluidExternalRoots,
   fluidExternalTotalBytes,
@@ -59,6 +60,7 @@ interface PathSummary {
 
 interface CacheComponent extends PathSummary {
   label: string;
+  note?: string;
 }
 
 interface OptionalComponent extends PathSummary {
@@ -319,12 +321,12 @@ async function collectOptionalComponents(
     },
     {
       name: "TTS (Kokoro)",
-      note: "enabled with `kesha install --tts`",
+      note: isDarwinArm64() ? KOKORO_ONNX_UNUSED_NOTE : "enabled with `kesha install --tts`",
       ...pathSummary(join(cache, "models/kokoro-82m")),
     },
     {
       name: "TTS (Vosk RU)",
-      note: "enabled with `kesha install --tts`",
+      note: "enabled with `kesha install --tts ru`",
       ...pathSummary(join(cache, "models/vosk-ru")),
     },
     ...kokoroAneComponents({ homeDir, cacheRoot: cache }).map((c) => ({
@@ -502,7 +504,7 @@ function formatCapabilities(engine: DoctorReport["engine"]): string {
 function formatCacheSection(cache: DoctorReport["cache"]): string[] {
   const header = `Cache: ${cache.path} (${cache.exists ? humanBytes(cache.totalBytes) : "missing"})`;
   const rows = cache.components.map(
-    (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}`,
+    (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}${c.note ? ` - ${c.note}` : ""}`,
   );
   return [header, ...rows, ...formatExternalRootsSection(cache)];
 }

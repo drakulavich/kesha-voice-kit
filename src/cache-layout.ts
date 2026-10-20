@@ -1,6 +1,9 @@
 import { existsSync, realpathSync, statSync } from "fs";
 import { dirname, join, resolve, sep } from "path";
 import { dirSizeBytes } from "./diagnostic-paths";
+import { isDarwinArm64 } from "./engine-targets";
+
+export const KOKORO_ONNX_UNUSED_NOTE = "not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle";
 
 /** The sidecar executables the engine spawns from its own directory. */
 const SIDECAR_FILES = ["say-avspeech", "kesha-textlang"] as const;
@@ -10,6 +13,7 @@ export interface CacheComponentSize {
   path: string;
   exists: boolean;
   sizeBytes: number;
+  note?: string;
 }
 
 interface EngineFootprint {
@@ -119,7 +123,11 @@ export function cacheComponents(
     ...usedRows,
     { label: "Language ID", path: join(cacheRoot, "models/lang-id-ecapa") },
     { label: "VAD (Silero)", path: join(cacheRoot, "models/silero-vad") },
-    { label: "TTS (Kokoro)", path: join(cacheRoot, "models/kokoro-82m") },
+    {
+      label: "TTS (Kokoro)",
+      path: join(cacheRoot, "models/kokoro-82m"),
+      ...(isDarwinArm64() ? { note: KOKORO_ONNX_UNUSED_NOTE } : {}),
+    },
     { label: "TTS (Vosk)", path: join(cacheRoot, "models/vosk-ru") },
   ].map(sized);
   const leftoverRows = unusedRows
