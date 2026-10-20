@@ -363,6 +363,7 @@ pub fn transcribe_with_options(
             &vad_dir,
             VadConfig::default(),
             !speakers_required,
+            false,
         ),
         // Pass the already-probed duration through so `resolve_segment_duration`
         // doesn't re-open the file (#248). On `On`/`Off` modes we didn't probe,
@@ -379,6 +380,7 @@ pub fn transcribe_with_options(
                         Some(be),
                         &vad_dir,
                         VadConfig::default(),
+                        true,
                         true,
                     )
                 }
@@ -541,6 +543,7 @@ fn transcribe_via_vad(
     vad_dir: &str,
     cfg: VadConfig,
     pack_windows: bool,
+    after_empty_plain: bool,
 ) -> Result<TranscriptionOutput> {
     ensure_vad_installed(Path::new(vad_dir))?;
 
@@ -581,6 +584,14 @@ fn transcribe_via_vad(
             cfg.min_speech_ms,
             cfg.threshold
         );
+        // The plain pass already read the whole file and heard nothing; a second
+        // full-file pass only invents text ("Thank you." on silence).
+        if after_empty_plain {
+            return Ok(TranscriptionOutput {
+                segments: vec![],
+                text: String::new(),
+            });
+        }
         if samples.len() >= min_speech_samples {
             if total_secs >= FULL_FILE_SINGLE_PASS_MAX_SECONDS {
                 events::warn(
