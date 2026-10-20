@@ -268,20 +268,25 @@ Examples:
   kesha init               Guided first-time setup.
 
 Commands:
-  completions  Print shell completion script.
-  doctor     Collect support diagnostics.
-  init       Interactive setup guide for Kesha features.
-  install    Download engine and models.
-  logs       Manage local privacy-safe diagnostic logs.
-  manpage    Print the kesha(1) manpage.
-  mcp        Run an MCP server over stdio.
-  record     Record microphone audio to a WAV file.
-  status     Inspect installed backend.
-  say        Synthesize speech from text.
-  stats      Manage local anonymous performance stats.
-  support-bundle  Create a redacted diagnostics archive. (kesha v<version>)
+  completions     Print shell completion script.
+  doctor          Collect support diagnostics.
+  init            Interactive setup guide for Kesha features.
+  install         Download engine and models.
+  logs            Manage local privacy-safe diagnostic logs.
+  manpage         Print the kesha(1) manpage.
+  mcp             Run an MCP server over stdio.
+  record          Record microphone audio to a WAV file.
+  status          Inspect installed backend.
+  say             Synthesize speech from text.
+  stats           Manage local anonymous performance stats.
+  support-bundle  Create a redacted diagnostics archive.
+ (kesha v<version>)
 
-USAGE kesha [OPTIONS]
+USAGE kesha [OPTIONS] [AUDIO_FILE]
+
+ARGUMENTS
+
+  AUDIO_FILE    Audio file(s) to transcribe
 
 OPTIONS
 

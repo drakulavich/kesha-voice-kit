@@ -219,30 +219,30 @@ describe("diagnostic log storage", () => {
 describe("humanBytes", () => {
   test("stays in bytes below the first threshold", () => {
     expect(humanBytes(0)).toBe("0 B");
-    expect(humanBytes(1023)).toBe("1023 B");
+    expect(humanBytes(999)).toBe("999 B");
   });
 
-  test("switches unit exactly at each 1024 boundary", () => {
-    expect(humanBytes(1024)).toBe("1.0 KB");
-    expect(humanBytes(1024 * 1024)).toBe("1.0 MB");
-    expect(humanBytes(1024 ** 3)).toBe("1.0 GB");
-    expect(humanBytes(1024 ** 4)).toBe("1.0 TB");
+  test("switches unit exactly at each decimal 1000 boundary (#1473 S5-8)", () => {
+    expect(humanBytes(1000)).toBe("1.0 KB");
+    expect(humanBytes(1000 ** 2)).toBe("1.0 MB");
+    expect(humanBytes(1000 ** 3)).toBe("1.0 GB");
+    expect(humanBytes(1000 ** 4)).toBe("1.0 TB");
   });
 
   // A decimal on a four-digit number is noise; below ten it is the whole signal.
   test("drops the decimal once the value reaches ten", () => {
-    expect(humanBytes(9.5 * 1024)).toBe("9.5 KB");
-    expect(humanBytes(10 * 1024)).toBe("10 KB");
-    expect(humanBytes(512 * 1024)).toBe("512 KB");
+    expect(humanBytes(9.5 * 1000)).toBe("9.5 KB");
+    expect(humanBytes(10 * 1000)).toBe("10 KB");
+    expect(humanBytes(512 * 1000)).toBe("512 KB");
   });
 
   test("stops at the largest unit it knows rather than inventing one", () => {
-    expect(humanBytes(5 * 1024 ** 5)).toBe("5120 TB");
+    expect(humanBytes(5 * 1000 ** 5)).toBe("5000 TB");
   });
 });
 
 describe("a corrupt state file cannot break logging", () => {
-  const defaults = { maxBytes: 10 * 1024 * 1024, retain: 5 };
+  const defaults = { maxBytes: 10_000_000, retain: 5 };
 
   for (const [shape, written] of [
     ["a zero limit", { mode: "on", maxBytes: 0, retain: 0 }],

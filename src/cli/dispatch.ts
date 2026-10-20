@@ -183,6 +183,11 @@ export async function runCli(argv = process.argv.slice(2)): Promise<void> {
         await showUsage(rawArgs.includes("--all") ? command : briefMainUsage(command));
         return;
       }
+      const options = rawArgs.slice(0, rawArgs.includes("--") ? rawArgs.indexOf("--") : undefined);
+      if (options.includes("--version") || options.includes("-v")) {
+        process.stdout.write(`${packageVersion}\n`);
+        return;
+      }
       await runMain(reportThrows(command), { rawArgs, showUsage });
     }
   }

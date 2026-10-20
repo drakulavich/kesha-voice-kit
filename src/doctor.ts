@@ -37,6 +37,7 @@ const KNOWN_ENV_KEYS = [
   "KESHA_CACHE_DIR",
   "KESHA_MODEL_MIRROR",
   "KESHA_STATS_DB",
+  "KESHA_LOG_DIR",
   "KESHA_DEBUG",
   "KESHA_KOKORO_COMPUTE_UNITS",
   "KESHA_DIARIZE_COMPUTE_UNITS",
@@ -397,7 +398,7 @@ function collectDiagnosticLogs(redact: boolean): DoctorReport["diagnosticLogs"] 
       rotatedFiles: [],
       totalSizeBytes: 0,
       mode: "retain-on-failure",
-      maxBytes: 10 * 1024 * 1024,
+      maxBytes: 10_000_000,
       retain: 5,
       error:
         redactString("diagnosticLogsError", errorMessage(err), redact) ??

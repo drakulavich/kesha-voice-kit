@@ -69,14 +69,14 @@ export function formatJsonOutput(
   return JSON.stringify(payload, null, 2) + "\n";
 }
 
-/** Render a byte count as a human-readable size (e.g. "1.5 MB"). */
+/** Render a byte count as a human-readable decimal size (e.g. "1.5 MB" for 1,500,000 bytes). */
 export function humanBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1000) return `${bytes} B`;
   const units = ["KB", "MB", "GB", "TB"];
-  let n = bytes / 1024;
+  let n = bytes / 1000;
   let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
+  while (n >= 1000 && i < units.length - 1) {
+    n /= 1000;
     i++;
   }
   return `${n.toFixed(n >= 100 ? 0 : 1)} ${units[i]}`;
