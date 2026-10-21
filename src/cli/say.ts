@@ -190,7 +190,7 @@ export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
   const sampleRate = parseSampleRateFlag(args["sample-rate"]);
   if (!sampleRate.ok) return sampleRate;
 
-  const out = typeof args.out === "string" ? args.out : undefined;
+  const out = typeof args.out === "string" && args.out !== "-" ? args.out : undefined;
   const opusOnlyError = checkOpusOnlyFlags(bitrate.value, sampleRate.value, format.value, out);
   if (opusOnlyError) return { ok: false, error: opusOnlyError };
   const outExtError = checkOutExtension(out);
@@ -325,7 +325,7 @@ export const sayCommand = defineCommand({
       description:
         "Language code, e.g. en-us (default en-us; see docs/languages.md). With no --voice, routes to that language's default voice and skips text-language detection.",
     },
-    out: { type: "string", description: "Write audio to file instead of stdout" },
+    out: { type: "string", description: "Write audio to file instead of stdout (- for stdout)" },
     rate: { type: "string", description: "Speaking rate 0.5–2.0", default: "1.0" },
     "list-voices": { type: "boolean", description: "List the voices kesha knows and exit; some need kesha install --tts <lang> first" },
     ssml: {

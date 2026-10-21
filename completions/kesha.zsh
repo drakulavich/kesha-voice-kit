@@ -110,7 +110,7 @@ _kesha() {
         '-h[Show help]' \
         '--voice=[Voice id, e.g. en-am_michael]:voice:' \
         '--lang=[Language code, e.g. en-us (default en-us; see docs/languages.md). With no --voice, routes to that language'\''s default voice and skips text-language detection.]:lang:' \
-        '--out=[Write audio to file instead of stdout]:out:' \
+        '--out=[Write audio to file instead of stdout (- for stdout)]:out:' \
         '--rate=[Speaking rate 0.5–2.0]:rate:' \
         '--list-voices[List the voices kesha knows and exit; some need kesha install --tts <lang> first]' \
         '--ssml[Parse input as SSML (supports <speak>, <break>; strips unknown tags)]' \

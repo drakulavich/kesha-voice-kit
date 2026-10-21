@@ -1,7 +1,8 @@
+import { statSync } from "fs";
 import { engineMissingError, getDescribe, getEngineBinPath, isEngineInstalled } from "./engine";
 import { engineSignal, runEngineProcess } from "./engine/spawn";
 import { validateArgv } from "./engine/describe";
-import { engineFailure, exitCodeFor, KeshaError, type EventSinks } from "./engine/events";
+import { engineFailure, exitCodeFor, KeshaError, SUPPORT_BUNDLE_HINT, type EventSinks } from "./engine/events";
 import { log } from "./log";
 import { engineAbortError, interruptedRun } from "./process-tree";
 
@@ -149,6 +150,14 @@ export function validateSayText(text: string): void {
   }
 }
 
+function missingAudio(out: string | undefined, stdoutBytes: number): string | null {
+  if (!out) return stdoutBytes > 0 ? null : "no audio to stdout";
+  try {
+    if (statSync(out).size > 0) return null;
+  } catch {}
+  return `nothing to ${out}`;
+}
+
 export async function say(opts: SayOptions): Promise<Uint8Array> {
   const text = opts.text ?? "";
   validateSayText(text);
@@ -169,6 +178,8 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   const stderrText = events.stderr;
   if (exitCode === 0 && events.invalid.length === 0 && !events.error) {
     if (stderrText.length > 0) process.stderr.write(stderrText);
+    const missing = missingAudio(opts.out, stdout.byteLength);
+    if (missing) throw new KeshaError("E_INTERNAL", `kesha-engine exited 0 but wrote ${missing}`, { exitCode: 1, stderr: "", hint: SUPPORT_BUNDLE_HINT });
     return new Uint8Array(stdout);
   }
   const interrupted = interruptedRun(exitCode);

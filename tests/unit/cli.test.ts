@@ -347,7 +347,7 @@ OPTIONS
 
               --voice=<voice>    Voice id, e.g. en-am_michael
                 --lang=<lang>    Language code, e.g. en-us (default en-us; see docs/languages.md). With no --voice, routes to that language's default voice and skips text-language detection.
-                  --out=<out>    Write audio to file instead of stdout
+                  --out=<out>    Write audio to file instead of stdout (- for stdout)
                 --rate=<rate>    Speaking rate 0.5–2.0 (Default: 1.0)
                 --list-voices    List the voices kesha knows and exit; some need kesha install --tts <lang> first
                        --ssml    Parse input as SSML (supports <speak>, <break>; strips unknown tags)
