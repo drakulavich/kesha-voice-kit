@@ -129,6 +129,7 @@ _kesha() {
     status)
       _arguments '--help[Show help]' \
         '-h[Show help]' \
+        '--check[Print nothing; exit 1 with E_MODEL_MISSING unless the engine and ASR model are installed]' \
         '--disk[Include recursive cache disk usage]' \
         '--json[Output status as JSON]'
       ;;
