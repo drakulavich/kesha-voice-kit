@@ -138,7 +138,8 @@ if (args[0] === "transcribe") {
 }
 
 if (args[0] === "say") {
-  await Bun.write(Bun.stdout, new Uint8Array(Number(process.env.KESHA_FAKE_SAY_BYTES || "4096")));
+  const out = args.find((a) => a.startsWith("--out="))?.slice(6);
+  await Bun.write(out ?? Bun.stdout, new Uint8Array(Number(process.env.KESHA_FAKE_SAY_BYTES || "4096")));
   process.exit(0);
 }
 
