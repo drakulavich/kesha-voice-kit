@@ -19,6 +19,8 @@ import { isCoremlBackend } from "./fluid-asr-cache";
 import {
   fluidExternalRoots,
   fluidExternalTotalBytes,
+  staleSortformerBytes,
+  staleSortformerHint,
   type FluidExternalRoot,
 } from "./fluid-roots";
 import { resolveStatePaths, type StatePath } from "./state-paths";
@@ -70,6 +72,7 @@ export interface StatusDiskUsage {
   externalTotalBytes: number;
   /** Everything Kesha put on disk, wherever it landed. */
   grandTotalBytes: number;
+  staleSortformerBytes: number;
 }
 
 /**
@@ -245,6 +248,7 @@ function collectDiskUsage(binPath: string, backend?: string, homeDir?: string): 
     externalRoots,
     externalTotalBytes,
     grandTotalBytes: totalBytes + externalTotalBytes,
+    staleSortformerBytes: staleSortformerBytes({ homeDir, cacheRoot: cache }),
   };
 }
 
@@ -254,6 +258,7 @@ function showDiskUsage(disk: StatusDiskUsage): void {
   log.info(`Disk usage (${disk.cachePath}):`);
   logDiskRows(disk.components, disk.totalBytes, disk.componentTotalBytes);
   logExternalRoots(disk);
+  if (disk.staleSortformerBytes > 0) log.info(staleSortformerHint(disk.staleSortformerBytes));
   log.info("");
   log.info(
     pc.dim(`  To reset cache: rm -rf ${disk.cachePath} — next \`kesha install\` re-downloads.`),

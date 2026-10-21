@@ -240,6 +240,14 @@ a full install. Only what is absent lands under the cache, so in practice the
 new layout applies to fresh installs. Nothing is ever moved or deleted; the two
 layouts simply coexist, and `kesha doctor` prints whichever is in play.
 
+The compiled diarizer is the exception. fluidaudio-rs names each compilation
+after a hash of the `.mlpackage` path, size and newest mtime, so every
+re-download or new cache path adds another ~245 MB copy (#1473 S5-6).
+`kesha install --diarize` computes the name of the copy the installed package
+maps to and, after its warm-up, removes the others; when that copy is absent it
+removes nothing. `kesha doctor` and `kesha status --disk` show what the stale
+copies take.
+
 The one case that needs saying out loud is a legacy ASR bundle that exists but
 no longer satisfies its probe — a fetch that died half-way, or a pin bump that
 changed the required model set. The engine then reads from the cache instead and

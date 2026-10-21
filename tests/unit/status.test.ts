@@ -573,6 +573,7 @@ describe("renderStatus turns a report into the states a user acts on", () => {
       externalRoots: [],
       externalTotalBytes: 0,
       grandTotalBytes: 10_000,
+      staleSortformerBytes: 0,
       ...overrides,
     };
   }
@@ -967,6 +968,32 @@ exit 2
       expect(disk.components.find((c) => c.label === "FluidAudio (in cache)")?.sizeBytes).toBe(128);
       expect(disk.externalRoots).toEqual([]);
     } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(fluidHome, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("stale Sortformer compilations are sized with the command that removes them", async () => {
+    const { dir, fluidHome } = stage("kesha-status-fluid-stale-sortformer-");
+    write(
+      join(fluidHome, "Library", "Application Support", "fluidaudio-rs", "SortformerCompiled", "old.mlmodelc", "model.mil"),
+      234,
+    );
+
+    const originalLog = console.log;
+    const lines: string[] = [];
+    console.log = (msg: string) => {
+      lines.push(msg);
+    };
+    try {
+      const report = await collectStatus({ disk: true, homeDir: fluidHome });
+      expect(report.disk!.staleSortformerBytes).toBe(234);
+      renderStatus(report);
+      expect(lines.join("\n")).toContain(
+        "Stale Sortformer compilations: 234 B; run `kesha install --diarize` to remove them",
+      );
+    } finally {
+      console.log = originalLog;
       rmSync(dir, { recursive: true, force: true });
       rmSync(fluidHome, { recursive: true, force: true });
     }

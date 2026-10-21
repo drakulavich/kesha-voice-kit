@@ -1,7 +1,9 @@
-import { readdirSync } from "fs";
+import { createHash } from "crypto";
+import { lstatSync, readdirSync } from "fs";
 import { join } from "path";
 import { isInsideDir } from "./cache-layout";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
+import { humanBytes } from "./format";
 import { fluidAsrCacheReady, legacyFluidAsrCachePath } from "./fluid-asr-cache";
 import { keshaCacheDir } from "./paths";
 
@@ -161,4 +163,57 @@ export function fluidExternalRoots(options: FluidRootsOptions = {}): FluidExtern
 
 export function fluidExternalTotalBytes(roots: FluidExternalRoot[]): number {
   return roots.reduce((n, root) => n + root.sizeBytes, 0);
+}
+
+/**
+ * The bundle name fluidaudio-rs compiles `modelPackage` to: SHA-256 of
+ * `<path>|<bytes in files>|<newest mtime of files and dirs, whole seconds>`.
+ * Mirrors `cacheKey(forModelPath:)` in its FluidAudioBridge.swift and `sortformer_compiled_name` in
+ * `rust/src/models/download.rs`; a drift reports the bundle in use as stale.
+ */
+export function sortformerCompiledName(modelPackage: string): string {
+  let size = 0n;
+  let newest = 0n;
+  const walk = (dir: string): void => {
+    for (const name of readdirSync(dir)) {
+      const st = lstatSync(join(dir, name), { bigint: true });
+      if (st.isFile()) size += st.size;
+      if (st.isFile() || st.isDirectory()) {
+        const mtime = st.mtimeNs / 1_000_000_000n;
+        if (mtime > newest) newest = mtime;
+      }
+      if (st.isDirectory()) walk(join(dir, name));
+    }
+  };
+  try {
+    walk(modelPackage);
+  } catch {
+    // A missing package compiles to nothing, so every bundle on disk is stale.
+  }
+  const material = `${modelPackage}|${size}|${newest}`;
+  return `${createHash("sha256").update(material).digest("hex")}.mlmodelc`;
+}
+
+export function staleSortformerHint(bytes: number): string {
+  return `  Stale Sortformer compilations: ${humanBytes(bytes)}; run \`kesha install --diarize\` to remove them`;
+}
+
+/** Bytes in compiled Sortformer bundles other than the installed package's (#1473 S5-6). */
+export function staleSortformerBytes(options: FluidRootsOptions = {}): number {
+  const cacheRoot = options.cacheRoot ?? keshaCacheDir();
+  const dir = fluidSubsystemDirs({ ...options, cacheRoot }).find(
+    (s) => s.label === "Diarization (Sortformer)",
+  )!.path;
+  const current = sortformerCompiledName(
+    join(cacheRoot, "models", "diarize", "SortformerNvidiaLow_v2.mlpackage"),
+  );
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return 0;
+  }
+  return names
+    .filter((name) => name.endsWith(".mlmodelc") && name !== current)
+    .reduce((n, name) => n + dirSizeBytes(join(dir, name)), 0);
 }
