@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "fs";
 import { createHash } from "crypto";
-import { dirname, join } from "path";
+import { dirname, join, relative } from "path";
 import { tmpdir } from "os";
 import {
   fluidExternalRoots,
@@ -254,6 +254,14 @@ describe("Sortformer compilations (#1473 S5-6)", () => {
       expect(sortformerCompiledName(pkg)).toBe(
         `${createHash("sha256").update(material).digest("hex")}.mlmodelc`,
       );
+    });
+  });
+
+  test("a relative or dotted package path hashes as the absolute path fluidaudio-rs standardizes", () => {
+    withHome((_home, cacheRoot) => {
+      const pkg = stagePackage(cacheRoot);
+      expect(sortformerCompiledName(relative(process.cwd(), pkg))).toBe(sortformerCompiledName(pkg));
+      expect(sortformerCompiledName(join(pkg, "Data", ".."))).toBe(sortformerCompiledName(pkg));
     });
   });
 

@@ -248,7 +248,21 @@ fn sortformer_compiled_name(model_package: &Path) -> String {
     }
     let (mut size, mut newest) = (0, 0);
     walk(model_package, &mut size, &mut newest);
-    let material = format!("{}|{size}|{newest}", model_package.display());
+    // Swift hashes `standardizedFileURL`: absolute, with `.` and `..` folded.
+    let mut standardized = PathBuf::new();
+    for part in std::path::absolute(model_package)
+        .unwrap_or_else(|_| model_package.to_path_buf())
+        .components()
+    {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                standardized.pop();
+            }
+            other => standardized.push(other),
+        }
+    }
+    let material = format!("{}|{size}|{newest}", standardized.display());
     format!(
         "{}.mlmodelc",
         lower_hex(&Sha256::digest(material.as_bytes()))
@@ -903,6 +917,22 @@ mod sortformer_compiled_tests {
                 "{}.mlmodelc",
                 lower_hex(&Sha256::digest(material.as_bytes()))
             )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_dotted_package_path_hashes_as_its_standardized_form() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let pkg = tmp.path().join("SortformerNvidiaLow_v2.mlpackage");
+        fs::create_dir_all(pkg.join("Data"))?;
+        assert_eq!(
+            sortformer_compiled_name(&pkg.join("Data").join("..")),
+            sortformer_compiled_name(&pkg)
+        );
+        assert_eq!(
+            sortformer_compiled_name(&pkg.join(".")),
+            sortformer_compiled_name(&pkg)
         );
         Ok(())
     }

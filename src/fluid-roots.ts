@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { lstatSync, readdirSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 import { isInsideDir } from "./cache-layout";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import { humanBytes } from "./format";
@@ -190,7 +190,7 @@ export function sortformerCompiledName(modelPackage: string): string {
   } catch {
     // A missing package compiles to nothing, so every bundle on disk is stale.
   }
-  const material = `${modelPackage}|${size}|${newest}`;
+  const material = `${resolve(modelPackage)}|${size}|${newest}`;
   return `${createHash("sha256").update(material).digest("hex")}.mlmodelc`;
 }
 
