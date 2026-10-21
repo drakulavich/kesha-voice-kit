@@ -330,8 +330,9 @@ USAGE status [OPTIONS]
 
 OPTIONS
 
-  --disk    Include recursive cache disk usage (Default: false)
-  --json    Output status as JSON (Default: false)`);
+  --check    Print nothing; exit 1 with E_MODEL_MISSING unless the engine and ASR model are installed (Default: false)
+   --disk    Include recursive cache disk usage (Default: false)
+   --json    Output status as JSON (Default: false)`);
   });
 
   test("say help matches the normalized golden output", async () => {

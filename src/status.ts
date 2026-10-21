@@ -1,8 +1,12 @@
+import { join } from "path";
 import {
   isEngineInstalled,
   getEngineBinPath,
+  getDescribe,
+  ENGINE_PROBE_TIMEOUT_MS,
   type EngineCapabilities,
 } from "./engine";
+import { KeshaError } from "./engine/events";
 import {
   CORRUPT_STATE,
   engineFunctionalHealth,
@@ -11,11 +15,13 @@ import {
 } from "./engine-health";
 import { cacheComponents, cacheTotalBytes } from "./cache-layout";
 import { humanBytes } from "./format";
+import { filesCached } from "./install-plan";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
-import { isCoremlBackend } from "./fluid-asr-cache";
+import { fluidAsrCachePath, fluidAsrCacheReady, isCoremlBackend } from "./fluid-asr-cache";
+import modelPlan from "../model-plan.json" with { type: "json" };
 import {
   fluidExternalRoots,
   fluidExternalTotalBytes,
@@ -264,6 +270,25 @@ function showDiskUsage(disk: StatusDiskUsage): void {
     pc.dim(`  To reset cache: rm -rf ${disk.cachePath} — next \`kesha install\` re-downloads.`),
   );
   log.info("");
+}
+
+/** `kesha status --check` (#1473): throws E_MODEL_MISSING when the engine or the ASR model is not installed. */
+export async function assertReady(): Promise<void> {
+  const binPath = getEngineBinPath();
+  if (!isEngineInstalled()) throw notInstalled(`engine not installed: ${binPath}`);
+  const { backend } = await getDescribe({ signal: AbortSignal.timeout(ENGINE_PROBE_TIMEOUT_MS) });
+  if (isCoremlBackend(backend)) {
+    const asrPath = fluidAsrCachePath();
+    if (!fluidAsrCacheReady(asrPath)) throw notInstalled(`ASR model not installed: ${asrPath}`);
+    return;
+  }
+  const cache = keshaCacheDir();
+  const missing = modelPlan.asr.find((file) => !filesCached(cache, [file]));
+  if (missing) throw notInstalled(`ASR model not installed: ${join(cache, missing.relPath)}`);
+}
+
+function notInstalled(message: string): KeshaError {
+  return new KeshaError("E_MODEL_MISSING", message, { hint: `run \`${installHint()}\`` });
 }
 
 /** Returns the effective `KESHA_MODEL_MIRROR` URL (#121), trimmed; null when unset. Mirrors `model_mirror()` in `rust/src/models/download.rs`. */

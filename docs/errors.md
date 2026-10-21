@@ -56,7 +56,8 @@ code never needs sanitizing.
   request cancellation. An engine that exits 130 or 143 because the CLI forwarded the
   signal is reported as `E_INTERRUPTED`, never as `E_INTERNAL`.
 - The CLI also raises `E_MODEL_MISSING` before spawning when `--speakers` needs a diarization
-  or VAD model that `kesha install --diarize` / `--vad` has not placed, `E_TEXT_EMPTY` and
+  or VAD model that `kesha install --diarize` / `--vad` has not placed, from `kesha status --check`
+  when the engine binary or the ASR model is not installed (plain `status` and `status --json` exit `0`), `E_TEXT_EMPTY` and
   `E_TEXT_TOO_LONG` from `kesha say` before any engine runs, and `E_INTERNAL` when the
   engine's transcription JSON cannot be read, the engine writes a line that is not an event, or it
   exits non-zero without reporting an error event; all render exactly like the engine's own. When a

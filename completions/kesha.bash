@@ -28,7 +28,7 @@ _kesha_completion() {
     record) opts="--help -h --out --live --max-seconds --auto-stop --auto-stop-silence-ms --auto-stop-threshold --auto-stop-min-speech-ms --debug" ;;
     say) opts="--help -h --voice --lang --out --rate --list-voices --ssml --format --bitrate --sample-rate --no-expand-abbrev --verbose --debug" ;;
     stats) opts="--help -h --format" ;;
-    status) opts="--help -h --disk --json" ;;
+    status) opts="--help -h --check --disk --json" ;;
     support-bundle) opts="--help -h --output --include-logs" ;;
     *) opts="--help -h --version -v --json --toon --timestamps --speakers --itn --include-errors --verbose --format --lang --debug --vad --no-vad --quiet --no-color" ;;
   esac
