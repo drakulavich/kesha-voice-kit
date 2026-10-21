@@ -1224,3 +1224,77 @@ describe("collectStatus reports what the engine can speak with", () => {
     expect((await collectStatus()).voices).toEqual(["en-am_michael"]);
   });
 });
+
+// #1473 S5-11: a script checks readiness by exit code, so a missing engine or ASR model must fail.
+describe("kesha status --check", () => {
+  async function runCheck(home: string) {
+    const env: Record<string, string | undefined> = { ...process.env, KESHA_HOME: home, HOME: home, NO_COLOR: "1" };
+    delete env.KESHA_CACHE_DIR;
+    delete env.KESHA_ENGINE_BIN;
+    const proc = Bun.spawn([process.execPath, "bin/kesha.js", "status", "--check"], {
+      stdout: "pipe",
+      stderr: "pipe",
+      cwd: `${import.meta.dir}/../..`,
+      env,
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      new Response(proc.stdout).text(),
+      new Response(proc.stderr).text(),
+      proc.exited,
+    ]);
+    return { stdout, stderr, exitCode };
+  }
+
+  function writeOnnxEngine(home: string): void {
+    const binDir = join(home, "cache", "engine", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const binPath = join(binDir, "kesha-engine");
+    writeFileSync(
+      binPath,
+      `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ backend: "onnx", features: [] })}'\n  exit 0\nfi\nexit 2\n`,
+    );
+    chmodSync(binPath, 0o755);
+  }
+
+  test("an empty KESHA_HOME exits 1 with E_MODEL_MISSING, the engine path and the install command", async () => {
+    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-empty-"));
+    try {
+      const { stdout, stderr, exitCode } = await runCheck(home);
+      expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
+      expect(stderr).toContain("error [E_MODEL_MISSING]");
+      expect(stderr).toContain(join(home, "cache", "engine", "bin", "kesha-engine"));
+      expect(stderr).toContain("kesha install");
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an engine without the ASR model exits 1 naming the model directory", async () => {
+    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-noasr-"));
+    try {
+      writeOnnxEngine(home);
+      const { stdout, stderr, exitCode } = await runCheck(home);
+      expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
+      expect(stderr).toContain("error [E_MODEL_MISSING]");
+      expect(stderr).toContain(join(home, "cache", "models", "parakeet-tdt-v3"));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 15_000);
+
+  posixEngineTest("an installed engine and ASR model exit 0 with nothing on stdout", async () => {
+    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-ready-"));
+    try {
+      writeOnnxEngine(home);
+      for (const name of ["encoder-model.onnx", "encoder-model.onnx.data", "decoder_joint-model.onnx", "nemo128.onnx", "vocab.txt"]) {
+        const file = join(home, "cache", "models", "parakeet-tdt-v3", name);
+        mkdirSync(dirname(file), { recursive: true });
+        writeFileSync(file, name);
+      }
+      const { stdout, stderr, exitCode } = await runCheck(home);
+      expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 15_000);
+});

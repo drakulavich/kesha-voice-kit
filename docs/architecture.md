@@ -237,7 +237,8 @@ bundles and the voice packs Kesha pre-stages) and
 and a legacy directory that already holds a usable bundle keeps being read from
 where it is — relocating would make FluidAudio re-download it, roughly 2 GB on
 a full install. Only what is absent lands under the cache, so in practice the
-new layout applies to fresh installs. Nothing is ever moved or deleted; the two
+new layout applies to fresh installs. The legacy directories are found from the home
+directory, so they are read even when `KESHA_CACHE_DIR` or `KESHA_HOME` points elsewhere. Nothing is ever moved or deleted; the two
 layouts simply coexist, and `kesha doctor` prints whichever is in play.
 
 The one case that needs saying out loud is a legacy ASR bundle that exists but

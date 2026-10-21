@@ -282,6 +282,7 @@ kesha --json test-samples/de_sample.ogg | jq -e '.[0].audioLanguage.code == "de"
 - KESHA is MIT-licensed — embed it in enterprise products, medical devices, or offline kiosks without royalties.
 - Model files are plain `.ort` (ONNX) for STT and `.onnx`/`.bin` for TTS — no proprietary formats, no license servers, no phone-home.
 - The whole model set lives under `~/.cache/kesha` (override with `KESHA_CACHE_DIR`); copy that directory for USB transfers and air-gapped deployments — kesha never phones home. To keep logs and Stats out of the home directory as well, set `KESHA_HOME` instead: one directory for everything Kesha writes (see [diagnostic-logs.md](diagnostic-logs.md#where-kesha-keeps-its-files)).
+- On macOS, a legacy FluidAudio install (`~/Library/Application Support/FluidAudio`, `~/.cache/fluidaudio`) is still read even when `KESHA_CACHE_DIR` or `KESHA_HOME` points elsewhere, so copying the cache can miss the speech model. A complete legacy bundle is used where it is and `kesha install` does not fetch a second copy, so for a self-contained copy run the install with `HOME` pointing at an empty directory too, `HOME=/path/to/empty KESHA_HOME=/path/to/fresh kesha install`, and copy `/path/to/fresh`. Kokoro G2P for macOS speech synthesis still lands in `$HOME/.cache/fluidaudio/Models/kokoro`, outside `KESHA_HOME`, so copy that too if you need `kesha say`; see [architecture.md](architecture.md#where-fluidaudios-models-live).
 
 ## AI Agent Integration
 
