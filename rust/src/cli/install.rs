@@ -133,6 +133,17 @@ pub fn run(args: InstallArgs) -> Result<()> {
                         format!("warning: diarization sidecar cleanup failed ({e})"),
                     ),
                 }
+                match models::prune_stale_sortformer_compilations(&diarize_loc.dir, &diarize_pkg) {
+                    Ok(0) => {}
+                    Ok(n) => events::progress(
+                        None,
+                        format!("Removed {n} stale diarization compilation(s)."),
+                    ),
+                    Err(e) => events::warn(
+                        events::W_INSTALL,
+                        format!("warning: stale diarization compilation cleanup failed ({e:#})"),
+                    ),
+                }
             }
             Err(e) => events::warn(
                 events::W_INSTALL,

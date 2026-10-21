@@ -424,6 +424,7 @@ describe("the human report states what each component is doing (#770)", () => {
       externalRoots: [],
       externalTotalBytes: 0,
       grandTotalBytes: 4096,
+      staleSortformerBytes: 0,
       ...overrides,
     };
   }
@@ -609,6 +610,19 @@ describe("the human report states what each component is doing (#770)", () => {
     expect(output).toContain("Grand total: 12.3 KB");
 
     expect(formatDoctorReport(doctorReport())).not.toContain("FluidAudio caches outside");
+  });
+
+  test("stale Sortformer compilations are sized with the command that removes them", () => {
+    const output = formatDoctorReport(
+      doctorReport({ cache: cacheReport({ staleSortformerBytes: 5_300_000_000 }) }),
+    );
+    expect(output).toContain(
+      "Stale Sortformer compilations: 5.3 GB; run `kesha install --diarize` to remove them",
+    );
+
+    expect(
+      formatDoctorReport(doctorReport({ cache: cacheReport({ staleSortformerBytes: 0 }) })),
+    ).not.toContain("Stale Sortformer");
   });
 
   test("stats report either their counters or the error that hid them", () => {
