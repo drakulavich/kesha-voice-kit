@@ -232,6 +232,13 @@
       "origin": "engine"
     },
     {
+      "code": "E_MIC_UNAVAILABLE",
+      "title": "Microphone unavailable",
+      "category": "platform",
+      "retryable": false,
+      "origin": "engine"
+    },
+    {
       "code": "E_TEXT_EMPTY",
       "title": "Empty synthesis text",
       "category": "tts",
