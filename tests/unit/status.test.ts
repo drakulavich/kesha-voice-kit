@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from "fs";
 import { dirname, join, sep } from "path";
 import { tmpdir } from "os";
 import {
@@ -1256,6 +1256,24 @@ describe("kesha status --check", () => {
     chmodSync(binPath, 0o755);
   }
 
+  const ASR_SIZES: Record<string, number> = {
+    "encoder-model.onnx": 41770866,
+    "encoder-model.onnx.data": 2435420160,
+    "decoder_joint-model.onnx": 72520893,
+    "nemo128.onnx": 139764,
+    "vocab.txt": 93939,
+  };
+
+  // Sparse files: the pinned sizes without writing 2.5 GB.
+  function writeAsrFiles(home: string, sizes: Record<string, number>): void {
+    for (const [name, size] of Object.entries(sizes)) {
+      const file = join(home, "cache", "models", "parakeet-tdt-v3", name);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, "");
+      truncateSync(file, size);
+    }
+  }
+
   test("an empty KESHA_HOME exits 1 with E_MODEL_MISSING, the engine path and the install command", async () => {
     const home = mkdtempSync(join(tmpdir(), "kesha-status-check-empty-"));
     try {
@@ -1282,15 +1300,25 @@ describe("kesha status --check", () => {
     }
   }, 15_000);
 
+  posixEngineTest("an ASR file of the wrong size exits 1 naming that file", async () => {
+    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-badasr-"));
+    try {
+      writeOnnxEngine(home);
+      writeAsrFiles(home, { ...ASR_SIZES, "vocab.txt": 0 });
+      const { stdout, stderr, exitCode } = await runCheck(home);
+      expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
+      expect(stderr).toContain("error [E_MODEL_MISSING]");
+      expect(stderr).toContain(join(home, "cache", "models", "parakeet-tdt-v3", "vocab.txt"));
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   posixEngineTest("an installed engine and ASR model exit 0 with nothing on stdout", async () => {
     const home = mkdtempSync(join(tmpdir(), "kesha-status-check-ready-"));
     try {
       writeOnnxEngine(home);
-      for (const name of ["encoder-model.onnx", "encoder-model.onnx.data", "decoder_joint-model.onnx", "nemo128.onnx", "vocab.txt"]) {
-        const file = join(home, "cache", "models", "parakeet-tdt-v3", name);
-        mkdirSync(dirname(file), { recursive: true });
-        writeFileSync(file, name);
-      }
+      writeAsrFiles(home, ASR_SIZES);
       const { stdout, stderr, exitCode } = await runCheck(home);
       expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
     } finally {

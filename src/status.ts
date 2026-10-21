@@ -1,4 +1,3 @@
-import { existsSync } from "fs";
 import { join } from "path";
 import {
   isEngineInstalled,
@@ -15,6 +14,7 @@ import {
 } from "./engine-health";
 import { cacheComponents, cacheTotalBytes } from "./cache-layout";
 import { humanBytes } from "./format";
+import { filesCached } from "./install-plan";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
@@ -277,7 +277,7 @@ export async function assertReady(): Promise<void> {
     return;
   }
   const cache = keshaCacheDir();
-  const missing = modelPlan.asr.find((file) => !existsSync(join(cache, file.relPath)));
+  const missing = modelPlan.asr.find((file) => !filesCached(cache, [file]));
   if (missing) throw notInstalled(`ASR model not installed: ${join(cache, missing.relPath)}`);
 }
 
