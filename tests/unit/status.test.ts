@@ -1314,6 +1314,22 @@ describe("kesha status --check", () => {
     }
   }, 15_000);
 
+  posixEngineTest("an engine that cannot be launched fails with E_ENGINE_SPAWN even when the ASR files are there", async () => {
+    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-noexec-"));
+    try {
+      writeOnnxEngine(home);
+      const binPath = join(home, "cache", "engine", "bin", "kesha-engine");
+      chmodSync(binPath, 0o644);
+      writeAsrFiles(home, ASR_SIZES);
+      const { stdout, stderr, exitCode } = await runCheck(home);
+      expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
+      expect(stderr).toContain("error [E_ENGINE_SPAWN]");
+      expect(stderr).toContain(binPath);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   posixEngineTest("an installed engine and ASR model exit 0 with nothing on stdout", async () => {
     const home = mkdtempSync(join(tmpdir(), "kesha-status-check-ready-"));
     try {

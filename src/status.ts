@@ -2,7 +2,8 @@ import { join } from "path";
 import {
   isEngineInstalled,
   getEngineBinPath,
-  getEngineCapabilities,
+  getDescribe,
+  ENGINE_PROBE_TIMEOUT_MS,
   type EngineCapabilities,
 } from "./engine";
 import { KeshaError } from "./engine/events";
@@ -270,8 +271,8 @@ function showDiskUsage(disk: StatusDiskUsage): void {
 export async function assertReady(): Promise<void> {
   const binPath = getEngineBinPath();
   if (!isEngineInstalled()) throw notInstalled(`engine not installed: ${binPath}`);
-  const probed = await getEngineCapabilities().catch(() => null);
-  if (isCoremlBackend(probed?.backend)) {
+  const { backend } = await getDescribe({ signal: AbortSignal.timeout(ENGINE_PROBE_TIMEOUT_MS) });
+  if (isCoremlBackend(backend)) {
     const asrPath = fluidAsrCachePath();
     if (!fluidAsrCacheReady(asrPath)) throw notInstalled(`ASR model not installed: ${asrPath}`);
     return;
