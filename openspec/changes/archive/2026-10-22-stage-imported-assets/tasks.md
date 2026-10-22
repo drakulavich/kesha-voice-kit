@@ -21,9 +21,9 @@
 
 ## Definition of Done
 
-- [ ] `bun test tests/unit/distribution-assets.test.ts tests/unit/update-homebrew-tap.test.ts` passes
-- [ ] `just mutate packaging/homebrew/Formula/kesha-voice-kit.rb '"model-plan.json", ' '' bun test tests/unit/distribution-assets.test.ts` reports the mutation caught; the same for `Dockerfile` (`COPY model-plan.json ./`) and `flake.nix` (`./model-plan.json`)
-- [ ] `grep -c model-plan.json packaging/homebrew/Formula/kesha-voice-kit.rb Dockerfile flake.nix` prints at least 1 for each file
-- [ ] The `homebrew-formula` CI lane is green on the PR head, with `kesha install --plan` in its `brew test` log
-- [ ] The scheduled CI run on `main` after the merge has `homebrew-formula` green
-- [ ] `bun run check:fast` and `openspec validate stage-imported-assets --strict` pass
+- [x] `bun test tests/unit/distribution-assets.test.ts tests/unit/update-homebrew-tap.test.ts` passes
+- [x] `just mutate packaging/homebrew/Formula/kesha-voice-kit.rb '"model-plan.json", ' '' bun test tests/unit/distribution-assets.test.ts` reports the mutation caught; the same for `Dockerfile` (`COPY model-plan.json ./`) and `flake.nix` (`./model-plan.json`)
+- [x] `grep -c model-plan.json packaging/homebrew/Formula/kesha-voice-kit.rb Dockerfile flake.nix` prints at least 1 for each file
+- [x] The `homebrew-formula` CI lane is green on the PR head, with `kesha install --plan` in its `brew test` log
+- [x] The scheduled CI run on `main` after the merge has `homebrew-formula` green
+- [x] `bun run check:fast` and `openspec validate stage-imported-assets --strict` pass
