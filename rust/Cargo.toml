@@ -116,6 +116,7 @@ flacenc = { version = "0.5.1", default-features = false, optional = true }
 cpal = "0.18"
 
 [dev-dependencies]
+proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 tempfile = "3"
 
 # Levels here also reach `cargo build`/`cargo test`/rust-analyzer; ci.yml's `-- -D warnings` only covers what CI runs.
