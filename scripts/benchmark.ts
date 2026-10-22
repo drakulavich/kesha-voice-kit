@@ -93,7 +93,8 @@ function ensureVenv(): string {
   if (whisperInstall.exitCode !== 0) throw new Error("Failed to install openai-whisper");
 
   console.error("Installing faster-whisper...");
-  const fasterInstall = Bun.spawnSync([pip, "install", "-q", "faster-whisper"], { stdout: "pipe", stderr: "inherit" });
+  // faster-whisper 1.2.1 passes av.open(metadata_errors=), which PyAV 19 rejects (#1421).
+  const fasterInstall = Bun.spawnSync([pip, "install", "-q", "faster-whisper", "av==15.1.0"], { stdout: "pipe", stderr: "inherit" });
   if (fasterInstall.exitCode !== 0) throw new Error("Failed to install faster-whisper");
 
   console.error("Venv ready.\n");
