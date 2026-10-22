@@ -116,6 +116,14 @@ throwing when the file does not exist. On success it returns
 - AND `structuredContent.segments` is an empty array
 - AND `isError` is absent (success path)
 
+#### Scenario: Sona transcribes a truncated WAV
+
+- GIVEN `/abs/half.wav`'s header declares 1.0 s of audio and the file holds 0.5 s
+- WHEN Sona calls `transcribe_audio` with `{ path: "/abs/half.wav" }`
+- THEN `content[0].text` is the transcript of the part present
+- AND `content[1].text` is `warning: /abs/half.wav is truncated: its header declares 1.0 s of audio but the file holds 0.5 s; transcribing the part present`
+- AND `structuredContent` has the same shape as for a whole file
+
 #### Scenario: Sona requests segment timestamps
 
 - WHEN Sona calls `transcribe_audio` with

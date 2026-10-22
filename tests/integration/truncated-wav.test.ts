@@ -74,13 +74,13 @@ describe("a truncated WAV through the Core API and MCP (#1473 S3-5)", () => {
     const truncated = run(half);
     expect(truncated.exitCode).toBe(0);
     expect(truncated.stdout.toString()).toBe("ok\n");
-    expect(truncated.stderr.toString()).toContain(
-      `warning: ${half} is truncated: its header declares 1.0 s of audio but the file holds 0.5 s; transcribing the part present`,
+    expect(truncated.stderr.toString()).toBe(
+      `warning: ${half} is truncated: its header declares 1.0 s of audio but the file holds 0.5 s; transcribing the part present\n`,
     );
 
     const complete = run(whole);
     expect(complete.exitCode).toBe(0);
-    expect(complete.stderr.toString()).not.toContain("is truncated");
+    expect(complete.stderr.toString()).toBe("");
   });
 
   scenarioTest("MCP transcribe_audio returns the transcript and the warning as a second text item", async () => {
