@@ -59,7 +59,7 @@ regardless of quiet.
 The CLI SHALL resolve color mode from `--no-color`, the `CI` environment
 variable, and the `NO_COLOR` environment variable before any subcommand runs.
 A bare or truthy `--no-color`, or a truthy `CI`, SHALL disable color, and
-`--no-color=false` SHALL re-enable it even when `CI=true`. A truthy `NO_COLOR`
+`--no-color=false` SHALL re-enable it even when `CI=true`. A non-empty `NO_COLOR`
 exported before the process started SHALL keep color off: a later
 `--no-color=false` cannot override it.
 
@@ -104,7 +104,7 @@ exported before the process started SHALL keep color off: a later
 
 ### Requirement: Color flag and environment values share one falsey grammar
 
-The CLI SHALL read the empty string, `"0"`, `"false"`, `"no"` and `"off"` (case-insensitive, trimmed) as false in a `--no-color=<value>` flag and in the `CI` and `NO_COLOR` environment variables, and any other non-empty value as true.
+The CLI SHALL read the empty string, `"0"`, `"false"`, `"no"` and `"off"` (case-insensitive, trimmed) as false in a `--no-color=<value>` flag and in the `CI` environment variable, and any other non-empty value as true. `NO_COLOR` follows no-color.org instead: any non-empty value, `"0"` included, disables color.
 
 #### Scenario: A falsey CI value leaves color on
 
@@ -117,10 +117,19 @@ The CLI SHALL read the empty string, `"0"`, `"false"`, `"no"` and `"off"` (case-
 - WHEN Ira runs `kesha --no-color=maybe status`
 - THEN all output is plain text with no ANSI escape codes
 
+#### Scenario: NO_COLOR=0 still disables color
+
+- GIVEN `NO_COLOR=0` is exported in Maks's terminal
+- WHEN Maks runs `kesha status`
+- THEN all output is plain text with no ANSI escape codes
+
 > *Technical Note — `src/cli/context.ts::isFalsey` trims and lower-cases the value
-> before looking it up in `src/cli/context.ts::FALSEY_VALUES`; the flag parser,
-> `resolveColorMode` (for `CI`) and `USER_FORCED_NO_COLOR` (for `NO_COLOR`) all
-> call it.*
+> before looking it up in `src/cli/context.ts::FALSEY_VALUES`; the flag parser and
+> `resolveColorMode` (for `CI`) call it. picocolors decides `NO_COLOR` at import
+> with `!!env.NO_COLOR`, which is the no-color.org rule. `USER_FORCED_NO_COLOR`
+> still runs `NO_COLOR` through `isFalsey`, so a falsey user value such as `"0"`
+> counts as not forced and `applyColorEnv` may clear it; the Engine reads no
+> `NO_COLOR`, so nothing a user sees changes.*
 
 ### Requirement: The CLI's color decision reaches Engine subprocesses
 
