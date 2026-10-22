@@ -162,9 +162,9 @@ Each distribution path SHALL stage every repository-root file or directory that 
   `scripts/`, or `.github/` that does not exist
 - THEN the package-metadata check fails, naming the script and the path
 
-> *Technical Note — the root imports are `src/cli/completions.ts:5-7`,
-> `src/cli/manpage.ts:3`, `src/install-plan.ts:12`, `src/voice-inventory.ts:3`
-> and `src/package-info.ts:1`. `package.json#files` lists `bin/`,
+> *Technical Note — the root imports are in `src/cli/completions.ts`,
+> `src/cli/manpage.ts`, `src/install-plan.ts`, `src/voice-inventory.ts` and
+> `src/package-info.ts`. `package.json#files` lists `bin/`,
 > `completions/`, `man/`, `src/`, `model-plan.json`, `package.json`,
 > `tsconfig.json`, `openclaw.plugin.json`, `openclaw-plugin.cjs`, two docs
 > pages, `SKILL.md`, `LICENSE`, `NOTICES.md`, `README.md`, and the
