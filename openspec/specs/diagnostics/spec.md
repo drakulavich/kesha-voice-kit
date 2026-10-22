@@ -847,8 +847,8 @@ default 64 KB), and `status.json`.
 
 > *Technical Note — sources: `src/support-bundle.ts::createSupportBundle`,
 > `src/cli/support-bundle.ts::supportBundleCommand`. Redaction is always applied
-> (`redact: true` is hardcoded in `createSupportBundle`; the `--redact` flag exists
-> on `kesha doctor` but not `kesha support-bundle`). Log tail default:
+> (`createSupportBundle` defaults `redact` to true and no caller passes false; the
+> `--redact` flag exists on `kesha doctor` but not `kesha support-bundle`). Log tail default:
 > `DEFAULT_TAIL_BYTES = 64 * 1024` from `src/diagnostic-log.ts`. The tar format is
 > a hand-written ustar implementation (no external dependency); archives are
 > gzip-compressed with Node's `zlib.gzipSync`. The manifest `entries` array lists
@@ -881,7 +881,9 @@ equivalent to `kesha doctor --redact`, whatever flags are passed.
 `--output <path>` SHALL set the archive path; the default SHALL be
 `kesha-support-bundle-<ISO-timestamp>.tar.gz` in the current directory. On success
 the CLI SHALL report the archive path, entry count, and size in bytes to stderr. On
-failure it SHALL exit 1 with the error message.
+failure it SHALL print the error message and exit by the Error code's class: 2 for
+an `--output` path it cannot write to, 4 for an internal write failure such as a
+full disk, 1 for an uncoded error.
 
 #### Scenario: Sona takes the default name
 
@@ -896,9 +898,17 @@ failure it SHALL exit 1 with the error message.
   `/tmp/kesha-new` does not exist
 - THEN the directory is created and the archive is written to that exact path
 
+#### Scenario: The output path sits under a file
+
+- GIVEN `/tmp/notes.txt` is a regular file
+- WHEN Maks runs `kesha support-bundle --output /tmp/notes.txt/diag.tar.gz`
+- THEN stderr carries `E_INVALID_ARG` naming `/tmp/notes.txt` and a fix
+- AND the process exits 2
+
 > *Technical Note — sources: `src/cli/support-bundle.ts::supportBundleCommand` prints
 > the three success lines; `src/support-bundle.ts::createSupportBundle` creates the
-> parent directory and maps write failures through `bundleWriteFailure`.*
+> parent directory and maps write failures through `bundleWriteFailure`; the exit
+> code comes from `src/engine/events.ts::exitCodeFor` for a `KeshaError`, else 1.*
 
 ### Requirement: Privacy framing — redaction, allowlists, and size-bucketing are always enforced
 
@@ -953,7 +963,3 @@ invariants, not options:
 - `kesha doctor --json` and `kesha status --json` overlap in what they report but
   do not share a payload type; keeping them consistent is currently a convention,
   not something a test enforces.
-- "On failure it SHALL exit 1" for `kesha support-bundle` disagrees with the code:
-  `src/cli/support-bundle.ts` exits through `exitCodeFor`, so a bad `--output` path
-  (`E_INVALID_ARG`) exits 2, a full disk (`E_INTERNAL`) exits 4, and an uncoded error
-  exits 4. Which of the two is right is unresolved.
