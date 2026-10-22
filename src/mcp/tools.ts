@@ -6,7 +6,7 @@ import { PATH_ERRNOS } from "../path-errnos";
 import { z } from "zod";
 import { chmodSync, existsSync, readFileSync, statSync } from "fs";
 import { basename, isAbsolute, join } from "path";
-import { assertAudioFileArgument, transcribeWithSegments } from "../transcribe";
+import { assertAudioFileArgument, transcribeWithSegments, truncatedWavWarning } from "../transcribe";
 import { listVoices, aggregateLanguages } from "./voices";
 import { say, type SayFormat } from "../synth";
 import { DEFAULT_VOICE_ID, resolveSayVoice } from "../voice-routing";
@@ -148,9 +148,10 @@ export function registerTools(server: McpServer): void {
       }
       try {
         assertAudioFileArgument(path);
+        const truncated = truncatedWavWarning(path);
         const out = await transcribeWithSegments(path, { signal: extra.signal, timestamps });
         return {
-          content: [{ type: "text" as const, text: out.text }],
+          content: [{ type: "text" as const, text: out.text }, ...(truncated ? [{ type: "text" as const, text: truncated }] : [])],
           structuredContent: { text: out.text, segments: timestamps ? out.segments : [] },
         };
       } catch (err) {

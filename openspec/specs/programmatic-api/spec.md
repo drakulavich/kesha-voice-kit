@@ -171,7 +171,7 @@ that names the `kesha install` command needed to fix the situation: in its
 
 ### Requirement: `transcribe(path, opts?)` returns a `TranscribeResult`
 
-`transcribe` SHALL accept an audio file path and an optional `TranscribeOptions` object and SHALL resolve to a `TranscribeResult` (the type one file produces under `kesha --json`) whose `file` is the given path, `text` the transcript, `lang` the language the CLI-side text detector names (empty when none clears the confidence floor), and `segments` present only when `opts.timestamps` or `opts.speakers` was set. It SHALL NOT surface Engine events on the caller's stderr.
+`transcribe` SHALL accept an audio file path and optional `TranscribeOptions` and SHALL resolve to a `TranscribeResult` (one file under `kesha --json`) whose `file` is the given path, `text` the transcript, `lang` the language the CLI-side text detector names (empty when none clears the confidence floor), and `segments` present only when `opts.timestamps` or `opts.speakers` was set. Engine events SHALL NOT reach the caller's stderr; CLI-side warnings (truncated WAV, dropped flag) SHALL.
 
 #### Scenario: Sona transcribes a voice note
 
@@ -180,6 +180,13 @@ that names the `kesha install` command needed to fix the situation: in its
 - THEN `r.text` is the transcript and `r.file` is `"note.ogg"`
 - AND `r.segments` is undefined
 - AND nothing appears on the caller's stderr
+
+#### Scenario: Truncated WAV
+
+- GIVEN `half.wav`'s header declares 1.0 s of audio and the file holds 0.5 s
+- WHEN Sona calls `await transcribe("half.wav")`
+- THEN the promise resolves with the transcript of the part present
+- AND the caller's stderr holds exactly one line: `warning: half.wav is truncated: its header declares 1.0 s of audio but the file holds 0.5 s; transcribing the part present`
 
 #### Scenario: Timestamps requested
 
@@ -197,7 +204,7 @@ that names the `kesha install` command needed to fix the situation: in its
 - THEN the promise rejects with a `KeshaError` whose `code` is `E_INVALID_ARG`
 - AND no Engine is spawned
 
-> *Technical Note — `src/lib.ts::transcribe` runs `src/transcribe.ts::assertAudioFileArgument`, then `transcribeWithSegments`, then `src/language-routing.ts::detectTextLanguageFallback` and `routeLanguage`. The Engine's audio language ID and the macOS text detector stay CLI-only: each is another Engine spawn, and each warns on the caller's stderr when it fails. `transcribeWithTimestamps` and the alias `transcribeWithSegments` are removed by this change.*
+> *Technical Note — `src/lib.ts::transcribe` runs `src/transcribe.ts::assertAudioFileArgument`, then `transcribeWithSegments`, then `src/language-routing.ts::detectTextLanguageFallback` and `routeLanguage`. Before the spawn it writes `src/transcribe.ts::truncatedWavWarning` to stderr with `src/log.ts::log`. The Engine's audio language ID and the macOS text detector stay CLI-only: each is another Engine spawn, and each warns on the caller's stderr when it fails. `transcribeWithTimestamps` and the alias `transcribeWithSegments` are removed by this change.*
 
 ### Requirement: `transcribe` rejects with the Error code of the side that failed
 
