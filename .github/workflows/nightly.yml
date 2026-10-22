@@ -15,6 +15,7 @@ on:
     - cron: "17 7 1 * *" # cargo-dependency-maintenance
     - cron: "30 6 * * 1" # raycast-schema-drift
     - cron: "0 9 * * 1" # quickstart-timing
+    - cron: "40 3 * * *" # property-tests
   workflow_dispatch:
     inputs:
       job:
@@ -30,6 +31,7 @@ on:
           - cargo-dependency-maintenance
           - raycast-schema-drift
           - quickstart-timing
+          - property-tests
       record:
         description: "capability-pact only: re-record the pacts and upload them as artifacts instead of verifying."
         type: boolean
@@ -510,3 +512,26 @@ jobs:
           RUNNER_LABEL: ${{ matrix.os }}
         shell: bash
         run: bash .github/scripts/quickstart-timing.sh
+
+  # The PR lanes run rust/tests/properties.rs on a fixed seed; this one draws a new seed each night (#1479).
+  property-tests:
+    name: "🎲 Property Tests"
+    if: github.event.schedule == '40 3 * * *' || (github.event_name == 'workflow_dispatch' && inputs.job == 'property-tests')
+    concurrency:
+      group: nightly-property-tests
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-rust
+        with:
+          shared-key: linux
+      - name: Run the properties on a random seed
+        env:
+          PROPTEST_CASES: "2048"
+        shell: bash
+        run: |
+          PROPTEST_RNG_SEED=$(shuf -i 1-4294967295 -n 1); export PROPTEST_RNG_SEED
+          echo "PROPTEST_RNG_SEED=$PROPTEST_RNG_SEED (rerun with this value to reproduce)"
+          cd rust && cargo test --features tts --test properties
