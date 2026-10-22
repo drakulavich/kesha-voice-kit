@@ -31,5 +31,5 @@
 
 - [x] 5.1 Open the PR with `Closes #671, closes #636` in the body, linking the dispatch run as acceptance evidence
 - [x] 5.2 Note in the PR that a failed release build is recovered by re-running the run, not by cutting a new tag (Risks)
-- [ ] 5.3 Wait for CI and Greptile on the head SHA; resolve P1/P2 findings
-- [ ] 5.4 After merge, remove the `WIP` label from #671 and #636 if the auto-close did not
+- [x] 5.3 Wait for CI and Greptile on the head SHA; resolve P1/P2 findings (#676 merged 2026-08-03)
+- [x] 5.4 After merge, remove the `WIP` label from #671 and #636 if the auto-close did not (both closed; neither carries `WIP`, checked 2026-10-22)

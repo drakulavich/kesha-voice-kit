@@ -32,6 +32,6 @@
 
 ## 5. Land
 
-- [ ] 5.1 PR body with `Closes #684`, the before/after payload numbers, and the note that PR CI never runs the coreml branch
-- [ ] 5.2 Wait for CI and Greptile on the head SHA; resolve P1/P2 findings
-- [ ] 5.3 Comment on #675 that the budget headroom is now available, and re-plan the cache work against the new `macOS-kesha-engine-v1` size
+- [x] 5.1 PR body with `Closes #684`, the before/after payload numbers, and the note that PR CI never runs the coreml branch (#706: ~2.5 GB to 97.5 MB, and the coreml gap filed as #708)
+- [x] 5.2 Wait for CI and Greptile on the head SHA; resolve P1/P2 findings (#706 merged 2026-08-04)
+- [ ] 5.3 Comment on #675 that the budget headroom is now available, and re-plan the cache work against the new `macOS-kesha-engine-v1` size — **not done, no longer needed**: #734 and #740 closed #675 on 2026-08-05

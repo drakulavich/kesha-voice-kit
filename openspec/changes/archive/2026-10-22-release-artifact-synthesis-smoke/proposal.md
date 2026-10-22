@@ -73,3 +73,10 @@ None. This change mechanises an obligation the `installation` spec already state
 - Release wall-clock and cost: one English Kokoro download per non-Darwin release build,
   amortised by the existing `main`-scoped model cache.
 - Closes #671 and #636. Refs #216, #464, #667.
+
+## Archive note
+
+Archived on 2026-10-22 with `--skip-specs` (#1431). The base requirement "Every shipped
+platform is verified end to end before release" already covers the pre-upload synthesis gate,
+now in `release.yml` (#1291), and it retired the published-asset scenarios this delta still
+carries. Applying this MODIFIED block would drop four scenarios the base spec gained since.

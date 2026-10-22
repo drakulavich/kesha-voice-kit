@@ -76,7 +76,7 @@ is just enforced by CI on this PR instead of by PR ordering.
 
 ## 4. Archive
 
-- [ ] 4.1 Move this change to `openspec/changes/archive/` once CI is green on the Windows lane
+- [x] 4.1 Move this change to `openspec/changes/archive/` once CI is green on the Windows lane (`windows-engine-smoke` run 30707424619 passed 2026-08-01; archived under #1431)
 
 ## Outcome
 

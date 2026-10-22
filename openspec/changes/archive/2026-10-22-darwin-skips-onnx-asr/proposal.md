@@ -71,3 +71,12 @@ None.
   install that *looks* broken because a diagnostic still points at the old path.
 
 Closes #684. Unblocks #675.
+
+## Archive note
+
+Archived on 2026-10-22 (#1431). The change shipped in #706, but none of its requirements
+reached the base specs. Since then #688 moved FluidAudio's bundles under the Kesha cache and
+the cache rows were shared between `status --disk` and `doctor`, so the deltas were rewritten
+to the current rows before syncing. The delta scenario "the external ASR cache is genuinely
+absent" was dropped: `doctor` no longer has a per-model ASR check to report it. Task 5.3 was
+never done and is moot, since #675 closed the next day.

@@ -946,6 +946,75 @@ invariants, not options:
 > `<1 MB`, `1-10 MB`, `10-100 MB`, `100 MB+`. Support bundles are bound by
 > "A Support bundle holds only its listed entries, always redacted".*
 
+### Requirement: `kesha doctor` names an Engine that differs from the Pinned Engine version
+
+`kesha doctor` SHALL report a Recorded Engine version that differs from the Pinned Engine version as a distinct named state, showing both versions, and SHALL NOT report the installation as failed on that basis alone, because installing a named Engine version is supported. Where the Recorded Engine version cannot be read at all, `kesha doctor` SHALL report that as its own state rather than as a difference.
+
+#### Scenario: Maks forgets an override is installed
+
+- GIVEN an Engine installed from `--engine-version 2.3.1-alpha.1`
+- AND a Pinned Engine version of `2.3.0`
+- WHEN Maks runs `kesha doctor`
+- THEN the output names both the Recorded and the Pinned Engine version and says they differ
+- AND the Engine is not reported as missing or broken
+
+#### Scenario: Ira runs doctor on an unmodified install
+
+- GIVEN an Engine installed at the Pinned Engine version
+- WHEN Ira runs `kesha doctor`
+- THEN the version state reads that it matches the pin
+- AND no version difference is reported
+
+#### Scenario: Maks has an Engine binary with no recorded version
+
+- GIVEN an Engine binary is present with no readable Recorded Engine version
+- WHEN Maks runs `kesha doctor`
+- THEN the output states that no version is recorded beside the binary
+- AND does not claim the Engine differs from the Pinned Engine version
+
+> *Technical Note — sources: `src/doctor.ts::engineVersionState` (`matches-pin`,
+> `differs-from-pin`, `unrecorded`, and `unsupported` for a Recorded Engine version older
+> than `MIN_ENGINE_VERSION`, which #1365 added and which takes precedence over a
+> difference), `formatVersionState` (the `Version state:` line) and `formatDoctorReport`
+> (`Version marker:` and `Pinned version:`). The marker file is written on purpose by
+> `flake.nix` and by CI so an install treats a locally built Engine as a valid cache.
+> Covered by `tests/unit/doctor.test.ts`.*
+
+### Requirement: Diagnostics report ASR from the Backend's real location
+
+`kesha status --disk` and `kesha doctor` SHALL report ASR from where the compiled Backend keeps its weights. On a CoreML Engine that is FluidAudio's tree: its part inside the Kesha cache is one row, and what stays in FluidAudio's own directories is listed under external caches. A healthy install SHALL NOT be shown as missing ASR because a row points at a directory the Backend never populates.
+
+#### Scenario: Maks checks disk usage on Apple Silicon
+
+- GIVEN a healthy CoreML install on darwin-arm64
+- WHEN Maks runs `kesha status --disk`
+- THEN the cache breakdown has a `FluidAudio (in cache)` row and no `ASR (Parakeet)` row
+- AND no row claims ASR is missing
+
+#### Scenario: Maks runs doctor with ONNX weights left over
+
+- GIVEN a CoreML install whose Kesha cache still holds `models/parakeet-tdt-v3` from an older install
+- WHEN Maks runs `kesha doctor`
+- THEN that directory is listed as `ASR (Parakeet), unused by this engine, safe to delete` with its size
+- AND it is not reported as the ASR model the Engine uses
+
+#### Scenario: Ira runs doctor on Linux
+
+- GIVEN an ONNX install on linux-x64
+- WHEN Ira runs `kesha doctor`
+- THEN the cache breakdown has an `ASR (Parakeet)` row
+- AND no `FluidAudio (in cache)` row
+
+> *Technical Note — sources: `src/cache-layout.ts::cacheComponents`, which both commands
+> use and which swaps the ONNX rows for the CoreML rows by backend;
+> `src/fluid-asr-cache.ts::isCoremlBackend`, which falls back to the platform's shipped
+> backend when the describe probe yields nothing, so darwin is never pointed at the ONNX
+> directory (#684); external roots from `src/fluid-roots.ts::fluidExternalRoots`. FluidAudio
+> loads ASR from `<ApplicationSupport>/FluidAudio/Models/parakeet-tdt-0.6b-v3` when it is
+> not relocated; `folderName` strips the `-coreml` suffix, so the `…-v3-coreml` sibling
+> some machines carry is not what it reads. Covered by `tests/unit/doctor.test.ts` and
+> `tests/unit/status.test.ts`.*
+
 ## Open Issues
 
 - `kesha doctor` does not surface the FluidAudio Kokoro external cache size in the
