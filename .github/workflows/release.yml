@@ -649,6 +649,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      actions: write
       contents: write
       pull-requests: write
     concurrency:
@@ -696,3 +697,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/open-post-release-pr.sh
+      - name: Re-record the capability pacts from the released engines
+        if: steps.shape.outputs.skip != 'true' && steps.existing.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run nightly.yml --repo "$REPOSITORY" --ref main -f job=capability-pact -f record=true
