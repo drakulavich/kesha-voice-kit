@@ -63,21 +63,22 @@ export function trackPid(pid: number): number {
 interface ProcessRow {
   pid: number;
   ppid: number;
+  stat: string;
   command: string;
 }
 
 function processTable(): ProcessRow[] {
   if (process.platform === "win32") return [];
-  const format = "pid=,ppid=,command=";
+  const format = "pid=,ppid=,stat=,command=";
   const res = Bun.spawnSync(["ps", "-eo", format], { stdout: "pipe", stderr: "ignore" });
   if (!res.success) return [];
   return res.stdout
     .toString()
     .split("\n")
     .flatMap((line) => {
-      const match = /^\s*(\d+)\s+(\d+)\s+(\S.*)$/.exec(line);
-      if (!match || match[3]!.includes(format)) return [];
-      return [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3]! }];
+      const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(\S.*)$/.exec(line);
+      if (!match || match[4]!.includes(format)) return [];
+      return [{ pid: Number(match[1]), ppid: Number(match[2]), stat: match[3]!, command: match[4]! }];
     });
 }
 
@@ -107,7 +108,10 @@ function survivors(sweepDescendants: boolean): ProcessRow[] {
   const table = processTable();
   const found = new Map<number, ProcessRow>();
   // Descendants only: another lane's strays are never ours to kill.
-  if (sweepDescendants) for (const row of descendantsOf(table, process.pid)) found.set(row.pid, row);
+  // A zombie has already exited; Bun reaps its own on the next event-loop turn, which a single-file run's afterAll can beat (#1449).
+  if (sweepDescendants) {
+    for (const row of descendantsOf(table, process.pid)) if (!row.stat.startsWith("Z")) found.set(row.pid, row);
+  }
   for (const row of table) {
     if (live.has(row.pid) && FIXTURE_COMMAND.test(row.command)) found.set(row.pid, row);
   }
