@@ -81,3 +81,8 @@ false negative with an unverified promise.
 - Docs: `README.md`, `docs/product-positioning.md`, `openspec/specs/installation/spec.md`.
 - No breaking changes for macOS or Linux: every touched branch is guarded on
   `process.platform === "win32"` and is unreachable elsewhere.
+
+## Archive note
+
+Archived on 2026-10-22 with `--skip-specs` (#1431): #667 synced both requirements and the
+Backend selection change into the base `installation` spec itself (task 3.3).
