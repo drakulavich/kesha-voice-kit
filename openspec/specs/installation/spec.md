@@ -17,7 +17,9 @@ path Maks follows when setting up a new machine.
   `bun add -g @drakulavich/kesha-voice-kit` for that.
 - No model pruning or cleanup of previously installed optional components; installs
   are additive.
+
 ## Requirements
+
 ### Requirement: Only `kesha install` downloads the Engine and models
 
 The CLI SHALL download the Engine binary and ASR/lang-id models only when `kesha install`
@@ -371,32 +373,6 @@ singleton resolves for itself, which no models root can move.
 > `~/.cache/fluidaudio/Models/kokoro` itself, fluidaudio-rs 4e488d7, still true at
 > upstream 0.15.7; staging elsewhere leaves English synthesis failing with
 > `G2PModelError.vocabLoadFailed`).*
-
-### Requirement: The pre-synthesis asset check does not require the Mandarin jieba HMM tables
-
-The pre-synthesis asset check SHALL NOT require the Mandarin jieba HMM tables, which
-`kesha install --tts zh` deliberately does not stage; their absence degrades Mandarin
-segmentation rather than blocking synthesis.
-
-#### Scenario: Maks synthesizes Mandarin without the jieba HMM tables
-
-- GIVEN `kesha install --tts zh` has staged the Mandarin bundle on darwin-arm64
-- AND the jieba HMM tables are absent
-- WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
-- THEN the asset check reports nothing missing and audio is written
-- AND the process exits 0
-
-#### Scenario: A Mandarin install stages no jieba HMM tables
-
-- GIVEN the machine is darwin-arm64
-- WHEN Ira runs `kesha install --tts zh`
-- THEN no jieba HMM table is downloaded or staged
-- AND the process exits 0
-
-> *Technical Note — segmentation falls back to FMM without the tables. The spec has
-> recorded them as never published upstream; the comment on
-> `rust/src/models/manifest.rs::ANE_ZH_G2P_ASSETS` says upstream first published them
-> at this pin (FluidAudio#919) and kesha does not stage them yet.*
 
 ### Requirement: VAD and Diarize install are separate opt-in flags
 
@@ -943,11 +919,40 @@ Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL m
 - **WHEN** a TTY user sees "run `kesha init`" after a missing-model error and searches the README
 - **THEN** the README explains what `kesha init` is and that it is interchangeable with `kesha install`
 
+### Requirement: A Mandarin install stages the jieba HMM tables, and synthesis does not require them
+
+`kesha install --tts zh` SHALL stage the Mandarin jieba HMM tables (`jieba_hmm_start.bin`, `jieba_hmm_trans.bin`, `jieba_hmm_emit.bin`) into the Mandarin bundle's `g2p/` directory, each downloaded through the verified downloader against a pinned SHA-256. The pre-synthesis asset check SHALL NOT require them: their absence degrades Mandarin segmentation to FMM rather than blocking synthesis, so an install made before the tables were staged keeps working.
+
+#### Scenario: Maks synthesizes Mandarin without the jieba HMM tables
+
+- GIVEN `kesha install --tts zh` has staged the Mandarin bundle on darwin-arm64
+- AND the jieba HMM tables are absent
+- WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
+- THEN the asset check reports nothing missing and audio is written
+- AND the process exits 0
+
+#### Scenario: A Mandarin install stages the jieba HMM tables
+
+- GIVEN the machine is darwin-arm64
+- WHEN Ira runs `kesha install --tts zh`
+- THEN `jieba_hmm_start.bin`, `jieba_hmm_trans.bin` and `jieba_hmm_emit.bin` are in the Mandarin bundle's `g2p/` directory, each matching its pinned SHA-256
+- AND the process exits 0
+
+#### Scenario: Mandarin synthesis uses HMM segmentation after install
+
+- GIVEN `kesha install --tts zh` has run on darwin-arm64
+- WHEN Maks runs `kesha say --voice zh-zm_050 "你好世界"`
+- THEN stderr does not contain `HMM segmentation disabled`
+- AND no network request is made
+
+> *Technical Note — upstream reads the tables from `<repoDir>/g2p/` and publishes them
+> under `ANE-zh/assets/` (`KokoroAneConstants.jiebaHmm*File`, FluidAudio 0.15.7).
+> kesha lists them in `rust/src/models/manifest.rs::ANE_ZH_HMM_ASSETS`, apart from
+> `ANE_ZH_G2P_ASSETS`, because `missing_kokoro_assets` checks the latter. Without them
+> `ensureMandarinJiebaHmm` fails on the offline registry base and segmentation falls
+> back to FMM (#1433).*
+
 ## Open Issues
 
 - `kesha record` has no Windows or Linux microphone capture; `record.rs` gates capture on
   macOS and the README directs other platforms to pass an existing audio file.
-- The spec has said the Mandarin jieba HMM tables were never published upstream, while
-  the comment on `rust/src/models/manifest.rs::ANE_ZH_G2P_ASSETS` says FluidAudio#919
-  published them at the current pin and kesha does not stage them yet. Whether to stage
-  them is undecided.
