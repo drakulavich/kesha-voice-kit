@@ -24,9 +24,16 @@ function wavSeconds(bytes: Buffer): number {
   throw new Error("no data chunk in WAV");
 }
 
-function run(argv: string[], stdin?: string): Buffer {
-  const proc = Bun.spawnSync(argv, { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin) });
-  if (proc.exitCode !== 0) throw new Error(`${argv[0]} exited ${proc.exitCode}: ${proc.stderr.toString()}`);
+// A cold swiftc module cache alone took 33 s locally and used up the old 60 s test timeout on CI (#1560).
+const COMPILE_MS = 150_000;
+const SPEAK_MS = 30_000;
+
+function run(argv: string[], timeoutMs: number, stdin?: string): Buffer {
+  const proc = Bun.spawnSync(argv, { stdin: stdin === undefined ? "ignore" : Buffer.from(stdin), timeout: timeoutMs });
+  if (proc.exitCode !== 0)
+    throw new Error(
+      `${argv[0]} ${proc.signalCode ? `was killed (${proc.signalCode}) after its ${timeoutMs} ms budget` : `exited ${proc.exitCode}`}: ${proc.stderr.toString()}`,
+    );
   return proc.stdout;
 }
 
@@ -38,17 +45,17 @@ describe("say-avspeech sidecar", () => {
     () => {
       const dir = tempDir("kesha-avspeech-");
       const bin = join(dir, "say-avspeech");
-      run(["swiftc", "-o", bin, SOURCE]);
+      run(["swiftc", "-o", bin, SOURCE], COMPILE_MS);
       const sidecarWav = join(dir, "sidecar.wav");
-      writeFileSync(sidecarWav, run([bin, VOICE], TEXT));
+      writeFileSync(sidecarWav, run([bin, VOICE], SPEAK_MS, TEXT));
       const sayWav = join(dir, "say.wav");
-      run(["say", "-v", VOICE, "--data-format=LEI16", "-o", sayWav, TEXT]);
+      run(["say", "-v", VOICE, "--data-format=LEI16", "-o", sayWav, TEXT], SPEAK_MS);
 
       const sidecar = wavSeconds(readFileSync(sidecarWav));
       const reference = wavSeconds(readFileSync(sayWav));
       expect(reference).toBeGreaterThan(15);
       expect(Math.abs(sidecar - reference)).toBeLessThan(0.25);
     },
-    60_000,
+    COMPILE_MS + 2 * SPEAK_MS,
   );
 });
