@@ -1,0 +1,4 @@
+{"kind":"progress","phase":"download","message":"GET model.onnx","pct":12}
+{"kind":"warn","code":"W_VAD_NO_SPEECH","message":"no speech found"}
+{"kind":"error","code":"E_MODEL_MISSING","message":"the ASR model is missing","hint":"kesha install"}
+{"kind":"debug","t_ms":7,"event":"asr.backend_loaded","message":"asr::backend_loaded dt=12ms","fields":{"dt_ms":12}}
