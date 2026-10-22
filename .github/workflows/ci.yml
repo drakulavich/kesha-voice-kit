@@ -124,6 +124,8 @@ jobs:
               # tests/unit/claude-hooks.test.ts checks that every hook settings.json registers is tracked; a hook-only edit must still run it (#1205 review round 1).
               - '.claude/settings.json'
               - '.claude/hooks/**'
+              # Nine unit tests read openspec/; a spec-only PR skipped them and broke main (#1556).
+              - 'openspec/**'
             integration:
               - 'src/**'
               - 'tests/integration/**'
