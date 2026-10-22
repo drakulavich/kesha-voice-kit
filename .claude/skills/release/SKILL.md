@@ -42,7 +42,7 @@ A dispatched beta's `X.Y.Z` must equal `package.json#version`. An alpha version 
    ```
 
    `release.yml`'s smokes run on hosted runners, and hosted macOS has no Neural Engine, so darwin-arm64 Transcription is only ever verified here, on real hardware.
-7. **Re-record the capability pacts.** `tests/fixtures/capabilities/*.json` describe the previous Engine until re-recorded; otherwise the weekly pact job fails on all three targets (#1246–#1248). Run `🌙 Nightly` with `job: capability-pact` and `record: true`, download the three artifacts, copy the six files over `tests/fixtures/capabilities/` unchanged in a worktree, and merge that PR. Only when the release really changed a published contract do the test's expected lists and `docs/errors.md` move with it.
+7. **Merge the pact PR.** `post-release` dispatches `🌙 Nightly` with `job: capability-pact` and `record: true`, and its `open-capability-pact-pr` job opens `test(pact): record the capability pacts from the vX.Y.Z engines`; until it merges, the weekly pact job fails on all three targets (#1246–#1248). A `GITHUB_TOKEN` PR starts no CI, so close and reopen it first. If no PR appears, run that dispatch by hand. Re-record, never relax the check. Only when the release really changed a published contract do the test's expected lists and `docs/errors.md` move with it.
 8. **Merge the `post-release` PR**, which leads `main` to the next minor.
 
 ## Recovery
