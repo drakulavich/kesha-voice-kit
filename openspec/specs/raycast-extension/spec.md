@@ -649,8 +649,9 @@ live session SHALL release the input device immediately.
 ### Requirement: Recorded audio is written to a private temp directory and deleted
 
 The extension SHALL record into a per-session temporary directory it creates,
-and SHALL delete that directory when the Dictation session ends, on every path
-including failure and cancellation. Audio SHALL never be written to a
+and SHALL delete that directory when the Dictation session ends, on success,
+failure and cancellation alike, except for a captured recording kept under "A
+recording that yields no transcript is kept". Audio SHALL never be written to a
 user-visible location and SHALL never leave the machine.
 
 #### Scenario: Nothing is left behind after a normal session
@@ -659,10 +660,10 @@ user-visible location and SHALL never leave the machine.
 - WHEN the session ends
 - THEN its temporary directory and the WAV inside it no longer exist
 
-#### Scenario: Nothing is left behind after a failure
+#### Scenario: Nothing is left behind when no usable recording was captured
 
-- GIVEN a Dictation session that fails — silent audio, a CLI error, or a
-  cancellation
+- GIVEN a Dictation session that is cancelled or fails before capture
+  completes, or whose capture is confirmed silent
 - WHEN the session ends
 - THEN the temporary directory is still removed
 - AND no partial recording remains on disk
@@ -672,7 +673,8 @@ user-visible location and SHALL never leave the machine.
 > `mkdtemp` under the OS temp dir, prefix `raycast-kesha-dictate-`); the WAV
 > path is `join(tempDir, "dictation.wav")` inside `run()`. Removal in the
 > session's `finally` via `cleanupTempDir`
-> (`rm(dir, { recursive: true, force: true })`).*
+> (`rm(dir, { recursive: true, force: true })`), skipped when `keepAudio` is set
+> (`captureComplete && !confirmedSilent` on failure, `captureComplete` on cancel; #944).*
 
 ### Requirement: Not-found guidance works for users without bun
 When the kesha CLI cannot be resolved, the extension's guidance SHALL present a Homebrew-first install path, mention the bun alternative, include the mandatory `kesha install` follow-up step, and demote the probed-paths listing to a secondary troubleshooting line.

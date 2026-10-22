@@ -137,14 +137,13 @@ The CLI SHALL drop emoji from the text before synthesis on every voice, keeping
 > any other `\p{Extended_Pictographic}` code point (#1388). Emoji-only text is
 > left to the Engine as before (see the Emoji-only text scenario).*
 
-### Requirement: Voice routing resolves --voice, then --lang, then detected language, then the engine default
+### Requirement: Voice routing resolves --voice, then --lang, then detected language, then Cyrillic text, then the engine default
 
-Voice routing SHALL apply this precedence: an explicit `--voice` wins; otherwise
-`--lang` maps the stated language to its default voice without running
-Language detection (text), and an unmapped `--lang` gets the Engine default;
-otherwise detection runs and a result with confidence of at least 0.5 maps the
-same way; otherwise the Engine uses its Default voice, `en-am_michael`. An
-unparseable or unsupported Voice id SHALL fail with `E_VOICE_UNKNOWN`, exit 1,
+Voice routing SHALL take the first of: an explicit `--voice`; `--lang` mapped
+to its language's default voice with no Language detection (text), the Engine
+default if unmapped; a detection result of confidence 0.5 or more, mapped the
+same way; `ru` when most words are Cyrillic; the Engine's Default voice,
+`en-am_michael`. An unparseable or unsupported Voice id SHALL fail with `E_VOICE_UNKNOWN`, exit 1,
 listing every prefix the build routes.
 
 #### Scenario: Explicit voice beats explicit language
@@ -174,6 +173,14 @@ listing every prefix the build routes.
 - THEN `pickVoiceForLang` returns no voice
 - AND the Engine synthesizes with its Default voice `en-am_michael`
 
+#### Scenario: Inconclusive detection on mostly Cyrillic text routes to Russian
+
+- GIVEN Ira's Linux runner with no `--voice` or `--lang` given
+- WHEN Ira runs `kesha say "Ссылка на документ: docs.google.com/document/d/abc, пароль в 1Password."`
+  and detection returns no result or one below 0.5
+- THEN the voice resolves to `ru-vosk-m02`, because most of the words are Cyrillic
+  (#1387); on macOS the same text resolves to Milena
+
 #### Scenario: Unknown voice id
 
 - WHEN Ira runs `kesha say --voice gibberish "test"`
@@ -200,7 +207,8 @@ listing every prefix the build routes.
 > `src/voice-routing.ts::pickVoiceForLang`, after which
 > `src/voice-routing.ts::nativeScriptOverride` swaps the `ja`/`hi` Kokoro voice for
 > an installed AVSpeech voice of that locale on darwin when `dominantScript` finds
-> more native letters than Latin ones (T2-10). The `pickVoiceForLang` map
+> more native letters than Latin ones (T2-10). Below 0.5 confidence,
+> `mostlyCyrillicWords` sends the text to the `ru` row (#1387). The `pickVoiceForLang` map
 > (confidence < 0.5 → none; base code is lowercased and split on `-`/`_`):*
 >
 > | Detected/stated lang | darwin-arm64 | darwin-x64 (Intel macOS) | Linux / Windows |
@@ -320,7 +328,7 @@ requirement).
 - WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
 - THEN stderr carries Error code `E_MODEL_MISSING`, names missing asset paths,
   and hints `kesha install --tts zh`
-- AND the process exits 4 without downloading anything
+- AND the process exits 1 without downloading anything
 
 > *Technical Note — model presence gates:
 > `rust/src/tts/voices.rs::build_kokoro_voice` (ONNX Kokoro) and
@@ -332,8 +340,8 @@ requirement).
 > `AssetDownloader` (#823). Its required set is derived from the same staging
 > manifests the install uses, so a manifest change cannot leave the check
 > behind. The error is a `CodedError { ModelMissing }` that reaches the caller
-> as `TtsError::Coded`, hence exit 4 rather than the 1 a voice-resolution
-> failure returns; a file that exists but is truncated slips past and surfaces
+> as `TtsError::Coded`, and `rust/src/cli/say.rs::exit_code_for_tts_err` maps
+> `ModelMissing` to exit 1, the same as a voice-resolution failure; a file that exists but is truncated slips past and surfaces
 > as the same message from FluidAudio's `AssetsUnavailable`. What install
 > stages: installation spec, "On darwin-arm64, `--tts` stages FluidAudio's
 > Kokoro assets outside the Model cache".*
@@ -344,7 +352,7 @@ On darwin-arm64, before the FluidAudio bridge is initialized, synthesis SHALL
 confirm that every asset the requested voice needs (its bundle's model chain,
 that voice's own pack and the variant's G2P assets) is already on disk, and
 refuse with `E_MODEL_MISSING` when any is absent. The message SHALL name the
-first few missing paths, and the refusal exits 4.
+first few missing paths, and the refusal exits 1.
 
 #### Scenario: A staged voice synthesizes offline
 
@@ -362,9 +370,8 @@ first few missing paths, and the refusal exits 4.
 > *Technical Note — refusing up front is what makes the Never-auto-download
 > rule hold here, because upstream's asset downloader consults no offline
 > switch and would otherwise fetch a voice pack that
-> `kesha install --tts <other-lang>` never staged. Exit 4 is the `kesha say`
-> code for a coded synthesis failure; see Open Issues for the conflict with
-> the exit-code map.*
+> `kesha install --tts <other-lang>` never staged. Exit 1 follows "The exit
+> code follows the Error code's class".*
 
 ### Requirement: Output formats — wav, ogg-opus, flac
 
@@ -1081,8 +1088,3 @@ Settings and `--list-voices`.
 - **Hindi/Japanese native scripts** fail fast with `E_SCRIPT_UNSUPPORTED` on
   the darwin-arm64 FluidAudio build and have no voices at all on ONNX
   platforms; ja/hi are a future ONNX-CharsiuG2P effort.
-- **FluidAudio pre-check exit code** — "FluidAudio voice assets are checked on
-  disk before synthesis" and the scenario "Mandarin voice on an
-  English-only Apple Silicon install" say the refusal exits 4, while "The exit
-  code follows the Error code's class" and
-  `rust/src/cli/say.rs::exit_code_for_tts_err` map `E_MODEL_MISSING` to 1.
