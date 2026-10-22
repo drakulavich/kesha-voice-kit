@@ -30,3 +30,11 @@ Mandarin synthesis on darwin-arm64 runs without jieba HMM segmentation. `kesha i
 - `rust/src/models/manifest.rs` (a separate `ANE_ZH_HMM_ASSETS` list), `rust/src/models/staging.rs`, `model-plan.json`.
 - `src/install-plan.ts` only if the plan gains a key; the design keeps the tables under the existing `aneZhG2p` key.
 - Closes #1453.
+
+## Archive note
+
+Archived on 2026-10-22 with spec sync (#1431). The tables shipped in #1462. The archive
+replaced the base requirement "The pre-synthesis asset check does not require the Mandarin
+jieba HMM tables" with this delta's "A Mandarin install stages the jieba HMM tables, and
+synthesis does not require them", and the `installation` Open Issue that asked whether to
+stage the tables was removed because #1462 answered it.
