@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { writeFileSync } from "fs";
 import { join } from "path";
-import { writeTranscribingEngine } from "../helpers/fake-engine";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { createKeshaMcpServer } from "../../src/mcp/server";
+import { saveEngineEnv, writeTranscribingEngine } from "../helpers/fake-engine";
+import { repoPath } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
 import { runCliScenario } from "./cli-scenario";
 
@@ -52,5 +56,66 @@ describe("a WAV shorter than its header says (#1473 S3-5)", () => {
     const unsized = await runCliScenario([streamed], { env });
     expect(unsized.exitCode).toBe(0);
     expect(unsized.stderr).not.toContain("is truncated");
+  });
+});
+
+describe("a truncated WAV through the Core API and MCP (#1473 S3-5)", () => {
+  scenarioTest("the Core API transcribes it and writes the warning to stderr", async () => {
+    const dir = tempDir("kesha-truncated-wav-core-");
+    const enginePath = writeTranscribingEngine("kesha-truncated-wav-core-engine-", ["transcribe"], "  printf '%s\\n' 'ok'");
+    const half = join(dir, "half.wav");
+    const whole = join(dir, "whole.wav");
+    writeFileSync(half, pcmWav(32000, 16000));
+    writeFileSync(whole, pcmWav(32000, 32000));
+    const script = `const { transcribe } = await import(${JSON.stringify(repoPath("src/lib.ts"))}); console.log((await transcribe(process.argv[1])).text);`;
+    const env = { ...process.env, HOME: dir, KESHA_HOME: join(dir, "state"), KESHA_CACHE_DIR: join(dir, "cache"), KESHA_ENGINE_BIN: enginePath, NO_COLOR: "1" };
+    const run = (file: string) => Bun.spawnSync([process.execPath, "-e", script, file], { env });
+
+    const truncated = run(half);
+    expect(truncated.exitCode).toBe(0);
+    expect(truncated.stdout.toString()).toBe("ok\n");
+    expect(truncated.stderr.toString()).toContain(
+      `warning: ${half} is truncated: its header declares 1.0 s of audio but the file holds 0.5 s; transcribing the part present`,
+    );
+
+    const complete = run(whole);
+    expect(complete.exitCode).toBe(0);
+    expect(complete.stderr.toString()).not.toContain("is truncated");
+  });
+
+  scenarioTest("MCP transcribe_audio returns the transcript and the warning as a second text item", async () => {
+    const restore = saveEngineEnv();
+    try {
+      const dir = tempDir("kesha-truncated-wav-mcp-");
+      process.env.HOME = dir;
+      process.env.KESHA_HOME = join(dir, "state");
+      process.env.KESHA_CACHE_DIR = join(dir, "cache");
+      process.env.KESHA_ENGINE_BIN = writeTranscribingEngine("kesha-truncated-wav-mcp-engine-", ["transcribe"], "  printf '%s\\n' 'ok'");
+      const half = join(dir, "half.wav");
+      const whole = join(dir, "whole.wav");
+      writeFileSync(half, pcmWav(32000, 16000));
+      writeFileSync(whole, pcmWav(32000, 32000));
+      const server = createKeshaMcpServer();
+      const [c, s] = InMemoryTransport.createLinkedPair();
+      await server.connect(s);
+      const client = new Client({ name: "t", version: "0" });
+      await client.connect(c);
+
+      const truncated = await client.callTool({ name: "transcribe_audio", arguments: { path: half } });
+      expect(truncated.isError).toBeFalsy();
+      expect(truncated.content).toEqual([
+        { type: "text", text: "ok" },
+        {
+          type: "text",
+          text: `warning: ${half} is truncated: its header declares 1.0 s of audio but the file holds 0.5 s; transcribing the part present`,
+        },
+      ]);
+
+      const complete = await client.callTool({ name: "transcribe_audio", arguments: { path: whole } });
+      expect(complete.content).toEqual([{ type: "text", text: "ok" }]);
+      await client.close();
+    } finally {
+      restore();
+    }
   });
 });
