@@ -476,8 +476,3 @@ When the first positional token is not a file and not a known subcommand, the CL
 - There is no `--color` flag to force color on when stdout is not a TTY (e.g.
   inside tmux with `TERM=dumb`); `FORCE_COLOR` from picocolors is the current
   workaround.
-- `kesha completions` and `kesha manpage` both resolve their file relative to
-  `import.meta.url`, which does not survive the `bun build --compile` step the
-  `.deb`/`.rpm` are built with, so on that install path both crash with an
-  unhandled `ENOENT` instead of printing or failing cleanly. Reproduction and
-  scope: [cli-distribution](../cli-distribution/spec.md), Open Issues.
