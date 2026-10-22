@@ -137,14 +137,13 @@ The CLI SHALL drop emoji from the text before synthesis on every voice, keeping
 > any other `\p{Extended_Pictographic}` code point (#1388). Emoji-only text is
 > left to the Engine as before (see the Emoji-only text scenario).*
 
-### Requirement: Voice routing resolves --voice, then --lang, then detected language, then the engine default
+### Requirement: Voice routing resolves --voice, then --lang, then detected language, then Cyrillic text, then the engine default
 
-Voice routing SHALL apply this precedence: an explicit `--voice` wins; otherwise
-`--lang` maps the stated language to its default voice without running
-Language detection (text), and an unmapped `--lang` gets the Engine default;
-otherwise detection runs and a result with confidence of at least 0.5 maps the
-same way; otherwise the Engine uses its Default voice, `en-am_michael`. An
-unparseable or unsupported Voice id SHALL fail with `E_VOICE_UNKNOWN`, exit 1,
+Voice routing SHALL take the first of: an explicit `--voice`; `--lang` mapped
+to its language's default voice with no Language detection (text), the Engine
+default if unmapped; a detection result of confidence 0.5 or more, mapped the
+same way; `ru` when most words are Cyrillic; the Engine's Default voice,
+`en-am_michael`. An unparseable or unsupported Voice id SHALL fail with `E_VOICE_UNKNOWN`, exit 1,
 listing every prefix the build routes.
 
 #### Scenario: Explicit voice beats explicit language
@@ -174,6 +173,14 @@ listing every prefix the build routes.
 - THEN `pickVoiceForLang` returns no voice
 - AND the Engine synthesizes with its Default voice `en-am_michael`
 
+#### Scenario: Inconclusive detection on mostly Cyrillic text routes to Russian
+
+- GIVEN Ira's Linux runner with no `--voice` or `--lang` given
+- WHEN Ira runs `kesha say "Ссылка на документ: docs.google.com/document/d/abc, пароль в 1Password."`
+  and detection returns no result or one below 0.5
+- THEN the voice resolves to `ru-vosk-m02`, because most of the words are Cyrillic
+  (#1387); on macOS the same text resolves to Milena
+
 #### Scenario: Unknown voice id
 
 - WHEN Ira runs `kesha say --voice gibberish "test"`
@@ -200,7 +207,8 @@ listing every prefix the build routes.
 > `src/voice-routing.ts::pickVoiceForLang`, after which
 > `src/voice-routing.ts::nativeScriptOverride` swaps the `ja`/`hi` Kokoro voice for
 > an installed AVSpeech voice of that locale on darwin when `dominantScript` finds
-> more native letters than Latin ones (T2-10). The `pickVoiceForLang` map
+> more native letters than Latin ones (T2-10). Below 0.5 confidence,
+> `mostlyCyrillicWords` sends the text to the `ru` row (#1387). The `pickVoiceForLang` map
 > (confidence < 0.5 → none; base code is lowercased and split on `-`/`_`):*
 >
 > | Detected/stated lang | darwin-arm64 | darwin-x64 (Intel macOS) | Linux / Windows |
