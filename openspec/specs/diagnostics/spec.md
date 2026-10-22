@@ -847,8 +847,8 @@ default 64 KB), and `status.json`.
 
 > *Technical Note — sources: `src/support-bundle.ts::createSupportBundle`,
 > `src/cli/support-bundle.ts::supportBundleCommand`. Redaction is always applied
-> (`redact: true` is hardcoded in `createSupportBundle`; the `--redact` flag exists
-> on `kesha doctor` but not `kesha support-bundle`). Log tail default:
+> (`createSupportBundle` defaults `redact` to true and no caller passes false; the
+> `--redact` flag exists on `kesha doctor` but not `kesha support-bundle`). Log tail default:
 > `DEFAULT_TAIL_BYTES = 64 * 1024` from `src/diagnostic-log.ts`. The tar format is
 > a hand-written ustar implementation (no external dependency); archives are
 > gzip-compressed with Node's `zlib.gzipSync`. The manifest `entries` array lists
