@@ -77,3 +77,13 @@ None.
   is a manual check.
 
 Closes #962.
+
+## Archive note
+
+Archived on 2026-10-22 (#1431). The change shipped in #965, but its delta had fallen behind
+the base spec: its MODIFIED block lacked two scenarios the base gained since ("Sona takes
+only the first line of a streaming transcript", "nothing was said, quietly") and the `--quiet`
+sentence. The delta was rebuilt on the current base before archiving; the recovery-WAV
+requirement was split in two to stay under the length limit, and its notes now match the
+code (the handler re-arms the default disposition; `--quiet` drops the start-of-session path
+line). The baseline Open Issue about interrupted sessions was deleted, as the delta asked.
