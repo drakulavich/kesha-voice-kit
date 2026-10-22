@@ -30,7 +30,7 @@
 ## 5. Close the loop with the alpha channel
 
 - [x] 5.1 Rewrite #685 task 7.3 to verify an Engine alpha through this flag instead of by committing an alpha pin, which rule 3 rejects
-- [ ] 5.2 Verify end to end against a published Engine alpha once #685 group 7 exists: install it by name, run a transcription, then reinstall without the flag and confirm the pinned Engine returns — **blocked**: no Engine alpha is published yet
+- [ ] 5.2 Verify end to end against a published Engine alpha once #685 group 7 exists: install it by name, run a transcription, then reinstall without the flag and confirm the pinned Engine returns — **not done**: no Engine prerelease existed until the `v2.3.0-beta.*` releases; tracked in #1546
 - [x] 5.3 Confirm `check:versions` still rejects an alpha pin afterwards — the override must be an alternative to editing the pin, never an argument for allowing it
 
 ## 6. Documentation

@@ -81,3 +81,14 @@ None. This extends an existing install path rather than introducing a capability
 - `openspec/specs/installation`, `openspec/specs/diagnostics` — requirement deltas.
 - #685 task 7.3, whose stated verification ("set the pin to the alpha and run
   `kesha install`") becomes achievable without violating #736.
+
+## Archive note
+
+Archived on 2026-10-22 (#1431). The flag shipped in #739; the base specs had none of its
+requirements. Before syncing, the deltas were updated to the current code: example versions
+moved above `MIN_ENGINE_VERSION` (a `1.24.x` Recorded Engine version now reads as
+`unsupported`, #1365), long requirements were split, and line-number sources became symbol
+names. The two Open Issues were dropped: Engine protocol compatibility is now "The protocol
+version is a gate, not a label" in `engine-contract`, and partial downloads are covered by
+"Downloads land atomically and an installed Engine is verified by running it". Task 5.2, the
+end-to-end run against a real prerelease, is still open as #1546.
