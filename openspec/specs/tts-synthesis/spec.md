@@ -320,7 +320,7 @@ requirement).
 - WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
 - THEN stderr carries Error code `E_MODEL_MISSING`, names missing asset paths,
   and hints `kesha install --tts zh`
-- AND the process exits 4 without downloading anything
+- AND the process exits 1 without downloading anything
 
 > *Technical Note — model presence gates:
 > `rust/src/tts/voices.rs::build_kokoro_voice` (ONNX Kokoro) and
@@ -332,8 +332,8 @@ requirement).
 > `AssetDownloader` (#823). Its required set is derived from the same staging
 > manifests the install uses, so a manifest change cannot leave the check
 > behind. The error is a `CodedError { ModelMissing }` that reaches the caller
-> as `TtsError::Coded`, hence exit 4 rather than the 1 a voice-resolution
-> failure returns; a file that exists but is truncated slips past and surfaces
+> as `TtsError::Coded`, and `rust/src/cli/say.rs::exit_code_for_tts_err` maps
+> `ModelMissing` to exit 1, the same as a voice-resolution failure; a file that exists but is truncated slips past and surfaces
 > as the same message from FluidAudio's `AssetsUnavailable`. What install
 > stages: installation spec, "On darwin-arm64, `--tts` stages FluidAudio's
 > Kokoro assets outside the Model cache".*
@@ -344,7 +344,7 @@ On darwin-arm64, before the FluidAudio bridge is initialized, synthesis SHALL
 confirm that every asset the requested voice needs (its bundle's model chain,
 that voice's own pack and the variant's G2P assets) is already on disk, and
 refuse with `E_MODEL_MISSING` when any is absent. The message SHALL name the
-first few missing paths, and the refusal exits 4.
+first few missing paths, and the refusal exits 1.
 
 #### Scenario: A staged voice synthesizes offline
 
@@ -362,9 +362,8 @@ first few missing paths, and the refusal exits 4.
 > *Technical Note — refusing up front is what makes the Never-auto-download
 > rule hold here, because upstream's asset downloader consults no offline
 > switch and would otherwise fetch a voice pack that
-> `kesha install --tts <other-lang>` never staged. Exit 4 is the `kesha say`
-> code for a coded synthesis failure; see Open Issues for the conflict with
-> the exit-code map.*
+> `kesha install --tts <other-lang>` never staged. Exit 1 follows "The exit
+> code follows the Error code's class".*
 
 ### Requirement: Output formats — wav, ogg-opus, flac
 
@@ -1081,8 +1080,3 @@ Settings and `--list-voices`.
 - **Hindi/Japanese native scripts** fail fast with `E_SCRIPT_UNSUPPORTED` on
   the darwin-arm64 FluidAudio build and have no voices at all on ONNX
   platforms; ja/hi are a future ONNX-CharsiuG2P effort.
-- **FluidAudio pre-check exit code** — "FluidAudio voice assets are checked on
-  disk before synthesis" and the scenario "Mandarin voice on an
-  English-only Apple Silicon install" say the refusal exits 4, while "The exit
-  code follows the Error code's class" and
-  `rust/src/cli/say.rs::exit_code_for_tts_err` map `E_MODEL_MISSING` to 1.
