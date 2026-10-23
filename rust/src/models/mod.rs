@@ -8,7 +8,9 @@ mod staging;
 pub use download::download_tts;
 pub use download::{apply_mirror, download_vad, init_mirror_logging, model_mirror};
 #[cfg(feature = "system_diarize")]
-pub use download::{cleanup_diarize_compiled_sidecars, download_diarize};
+pub use download::{
+    cleanup_diarize_compiled_sidecars, download_diarize, prune_stale_sortformer_compilations,
+};
 pub use manifest::ModelFile;
 #[cfg(feature = "tts")]
 pub use manifest::{tts_engine_for, tts_languages, validate_tts_langs, VOSK_RU_FILES};

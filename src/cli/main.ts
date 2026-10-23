@@ -7,7 +7,7 @@ import {
   missingFileHint,
   SPECIAL_FILE_HINT,
   transcribeWithSegments,
-  truncatedWavSeconds,
+  truncatedWavWarning,
   validateTranscribeRequest,
 } from "../transcribe";
 
@@ -375,12 +375,8 @@ async function processFile(
     return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
   }
 
-  const truncated = truncatedWavSeconds(file);
-  if (truncated) {
-    log.warn(
-      `warning: ${file} is truncated: its header declares ${truncated.declared.toFixed(1)} s of audio but the file holds ${truncated.present.toFixed(1)} s; transcribing the part present`,
-    );
-  }
+  const truncated = truncatedWavWarning(file);
+  if (truncated) log.warn(truncated);
 
   const inputArtifact = artifactFromFile(file, "input_audio");
   if (inputArtifact) {

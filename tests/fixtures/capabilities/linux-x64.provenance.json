@@ -1,6 +1,6 @@
 {
-  "engineVersion": "2.2.0",
+  "engineVersion": "2.3.0",
   "assetName": "kesha-engine-linux-x64",
-  "sha256": "b25b77d3b0a64ccc6b0d276fd0a3fd320c60f06700e1ccfcb792359150248012",
-  "recordedFrom": "kesha-engine-linux-x64 from release v2.2.0"
+  "sha256": "a1fded2c393180c10f1dae6f064c4d52bdfc64c8a47584f95e0dde73405e6ff1",
+  "recordedFrom": "kesha-engine-linux-x64 from release v2.3.0"
 }

@@ -46,7 +46,7 @@ export function isSpecialFilePath(path: string): boolean {
 }
 
 /** Seconds a RIFF WAV's data chunk declares and seconds the file holds, when the file is shorter than its header says; null otherwise. */
-export function truncatedWavSeconds(path: string): { declared: number; present: number } | null {
+function truncatedWavSeconds(path: string): { declared: number; present: number } | null {
   let fd: number | undefined;
   try {
     fd = openSync(path, "r");
@@ -75,6 +75,13 @@ export function truncatedWavSeconds(path: string): { declared: number; present: 
   } finally {
     if (fd !== undefined) closeSync(fd);
   }
+}
+
+/** The warning the CLI, the Core API and MCP give for a WAV shorter than its header says; null for any other file. */
+export function truncatedWavWarning(path: string): string | null {
+  const truncated = truncatedWavSeconds(path);
+  if (!truncated) return null;
+  return `warning: ${path} is truncated: its header declares ${truncated.declared.toFixed(1)} s of audio but the file holds ${truncated.present.toFixed(1)} s; transcribing the part present`;
 }
 
 export interface TranscribeOptions {

@@ -21,6 +21,8 @@ import { isDarwinArm64 } from "./engine-targets";
 import {
   fluidExternalRoots,
   fluidExternalTotalBytes,
+  staleSortformerBytes,
+  staleSortformerHint,
   type FluidExternalRoot,
 } from "./fluid-roots";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
@@ -132,6 +134,7 @@ export interface DoctorReport {
     externalTotalBytes: number;
     /** Everything Kesha put on disk, wherever it landed. */
     grandTotalBytes: number;
+    staleSortformerBytes: number;
   };
   optionalComponents: OptionalComponent[];
   tts: DoctorTts;
@@ -287,6 +290,7 @@ function collectCache(
     externalRoots: externalRoots.map((root) => redactExternalRoot(root, redact)),
     externalTotalBytes,
     grandTotalBytes: totalBytes + externalTotalBytes,
+    staleSortformerBytes: staleSortformerBytes({ homeDir, cacheRoot: cache }),
   };
 }
 
@@ -506,7 +510,8 @@ function formatCacheSection(cache: DoctorReport["cache"]): string[] {
   const rows = cache.components.map(
     (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}${c.note ? ` - ${c.note}` : ""}`,
   );
-  return [header, ...rows, ...formatExternalRootsSection(cache)];
+  const stale = cache.staleSortformerBytes > 0 ? [staleSortformerHint(cache.staleSortformerBytes)] : [];
+  return [header, ...rows, ...formatExternalRootsSection(cache), ...stale];
 }
 
 /** Roots FluidAudio keeps for itself. Named with full paths because there is no `kesha uninstall`. */

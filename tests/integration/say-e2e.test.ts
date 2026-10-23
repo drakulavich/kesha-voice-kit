@@ -86,7 +86,7 @@ describe("kesha say e2e", () => {
   it.skipIf(!SPIKE_AVAILABLE)(
     "KESHA_DEBUG=1 emits [debug] traces on stderr",
     async () => {
-      const outPath = `/tmp/kesha-debug-${Date.now()}.wav`;
+      const outPath = join(tempDir("kesha-debug-"), "out.wav");
       const proc = spawnCli(["say", "Hi", "--out", outPath], { KESHA_DEBUG: "1" });
       expect(await proc.exited).toBe(0);
       const stderr = await new Response(proc.stderr).text();

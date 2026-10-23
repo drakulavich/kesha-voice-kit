@@ -17,7 +17,9 @@ path Maks follows when setting up a new machine.
   `bun add -g @drakulavich/kesha-voice-kit` for that.
 - No model pruning or cleanup of previously installed optional components; installs
   are additive.
+
 ## Requirements
+
 ### Requirement: Only `kesha install` downloads the Engine and models
 
 The CLI SHALL download the Engine binary and ASR/lang-id models only when `kesha install`
@@ -371,32 +373,6 @@ singleton resolves for itself, which no models root can move.
 > `~/.cache/fluidaudio/Models/kokoro` itself, fluidaudio-rs 4e488d7, still true at
 > upstream 0.15.7; staging elsewhere leaves English synthesis failing with
 > `G2PModelError.vocabLoadFailed`).*
-
-### Requirement: The pre-synthesis asset check does not require the Mandarin jieba HMM tables
-
-The pre-synthesis asset check SHALL NOT require the Mandarin jieba HMM tables, which
-`kesha install --tts zh` deliberately does not stage; their absence degrades Mandarin
-segmentation rather than blocking synthesis.
-
-#### Scenario: Maks synthesizes Mandarin without the jieba HMM tables
-
-- GIVEN `kesha install --tts zh` has staged the Mandarin bundle on darwin-arm64
-- AND the jieba HMM tables are absent
-- WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
-- THEN the asset check reports nothing missing and audio is written
-- AND the process exits 0
-
-#### Scenario: A Mandarin install stages no jieba HMM tables
-
-- GIVEN the machine is darwin-arm64
-- WHEN Ira runs `kesha install --tts zh`
-- THEN no jieba HMM table is downloaded or staged
-- AND the process exits 0
-
-> *Technical Note — segmentation falls back to FMM without the tables. The spec has
-> recorded them as never published upstream; the comment on
-> `rust/src/models/manifest.rs::ANE_ZH_G2P_ASSETS` says upstream first published them
-> at this pin (FluidAudio#919) and kesha does not stage them yet.*
 
 ### Requirement: VAD and Diarize install are separate opt-in flags
 
@@ -930,11 +906,26 @@ After a successful install the CLI MAY print an invitation to star the repositor
 > nagging every install. Covered by `tests/unit/star.test.ts`.*
 
 ### Requirement: Install cost is stated before download
-User-facing install documentation SHALL state the approximate download/disk cost of `kesha install` (~2.7 GB) and the quiet-progress behavior of the model step next to the command itself, and SHALL present `kesha install --plan` (exact sizes, downloads nothing) and `kesha status --disk` as the user-facing cost-inspection commands.
+
+User-facing install documentation SHALL state the approximate download and disk cost of `kesha install` for each Backend, and the quiet-progress behavior of the model step, next to the command itself, and SHALL present `kesha install --plan` (exact sizes, downloads nothing) and `kesha status --disk` as the cost-inspection commands. `--plan` SHALL quote the compiled Backend's own set and SHALL name weights the Backend fetches outside Kesha's pinned downloader rather than omit them.
 
 #### Scenario: reading Quick Start
+
 - **WHEN** a new user reads the README Quick Start install step
 - **THEN** the expected download size, disk footprint, and the `--plan` preview command are visible without leaving the section
+
+#### Scenario: previewing the plan on Apple Silicon
+
+- GIVEN Maks is on darwin-arm64
+- WHEN he runs `kesha install --plan`
+- THEN the plan does not list the Parakeet ONNX bundle as a download
+- AND it lists `ASR Parakeet TDT v3 (CoreML)` with its approximate size, noted as fetched by the backend during warm-up
+- AND nothing is downloaded
+
+> *Technical Note — sources: `src/install-plan.ts` (the CoreML row and
+> `FLUID_ASR_CACHE_NOTE` from `src/fluid-asr-cache.ts`; the ONNX `ASR_FILES` bundle only
+> on an ONNX Engine) and the README Quick Start, which states ~2.5 GB on Linux and
+> Windows and ~0.6 GB on Apple Silicon.*
 
 ### Requirement: Documented install entry points match interactive hints
 Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL mention `kesha init` and state its relationship to `kesha install` so the hint never names an undocumented command.
@@ -943,11 +934,190 @@ Interactive missing-model errors recommend `kesha init`; the Quick Start SHALL m
 - **WHEN** a TTY user sees "run `kesha init`" after a missing-model error and searches the README
 - **THEN** the README explains what `kesha init` is and that it is interchangeable with `kesha install`
 
+### Requirement: A Mandarin install stages the jieba HMM tables, and synthesis does not require them
+
+`kesha install --tts zh` SHALL stage the Mandarin jieba HMM tables (`jieba_hmm_start.bin`, `jieba_hmm_trans.bin`, `jieba_hmm_emit.bin`) into the Mandarin bundle's `g2p/` directory, each downloaded through the verified downloader against a pinned SHA-256. The pre-synthesis asset check SHALL NOT require them: their absence degrades Mandarin segmentation to FMM rather than blocking synthesis, so an install made before the tables were staged keeps working.
+
+#### Scenario: Maks synthesizes Mandarin without the jieba HMM tables
+
+- GIVEN `kesha install --tts zh` has staged the Mandarin bundle on darwin-arm64
+- AND the jieba HMM tables are absent
+- WHEN Maks runs `kesha say --voice zh-zm_050 "你好"`
+- THEN the asset check reports nothing missing and audio is written
+- AND the process exits 0
+
+#### Scenario: A Mandarin install stages the jieba HMM tables
+
+- GIVEN the machine is darwin-arm64
+- WHEN Ira runs `kesha install --tts zh`
+- THEN `jieba_hmm_start.bin`, `jieba_hmm_trans.bin` and `jieba_hmm_emit.bin` are in the Mandarin bundle's `g2p/` directory, each matching its pinned SHA-256
+- AND the process exits 0
+
+#### Scenario: Mandarin synthesis uses HMM segmentation after install
+
+- GIVEN `kesha install --tts zh` has run on darwin-arm64
+- WHEN Maks runs `kesha say --voice zh-zm_050 "你好世界"`
+- THEN stderr does not contain `HMM segmentation disabled`
+- AND no network request is made
+
+> *Technical Note — upstream reads the tables from `<repoDir>/g2p/` and publishes them
+> under `ANE-zh/assets/` (`KokoroAneConstants.jiebaHmm*File`, FluidAudio 0.15.7).
+> kesha lists them in `rust/src/models/manifest.rs::ANE_ZH_HMM_ASSETS`, apart from
+> `ANE_ZH_G2P_ASSETS`, because `missing_kokoro_assets` checks the latter. Without them
+> `ensureMandarinJiebaHmm` fails on the offline registry base and segmentation falls
+> back to FMM (#1433).*
+
+### Requirement: `--engine-version` installs a named Engine without changing the Pinned Engine version
+
+`kesha install --engine-version <version>` SHALL download that Engine release (the binary and, on darwin-arm64, its Sidecars) instead of the Pinned Engine version, SHALL set the Recorded Engine version to it, and SHALL name it in the install summary. The version SHALL apply only to that invocation: nothing under version control changes, and a later `kesha install` without the flag reinstalls the Pinned Engine version.
+
+#### Scenario: Maks tries an Engine prerelease before it is pinned
+
+- GIVEN the Pinned Engine version is `2.3.0`
+- AND an Engine prerelease is published as `v2.3.1-alpha.1`
+- WHEN Maks runs `kesha install --engine-version 2.3.1-alpha.1`
+- THEN the Engine binary and its Sidecars are downloaded from that release
+- AND the Recorded Engine version is `2.3.1-alpha.1`
+- AND the install summary names `2.3.1-alpha.1`
+- AND `package.json` is unchanged
+- AND the process exits 0
+
+#### Scenario: Maks adds a voice and loses the override
+
+- GIVEN an Engine installed from `--engine-version 2.3.1-alpha.1`
+- WHEN Maks runs `kesha install --tts en` without repeating the flag
+- THEN the Pinned Engine version is downloaded, replacing the overridden Engine
+- AND the Recorded Engine version is the Pinned Engine version
+
+#### Scenario: Maks keeps the override while adding a voice
+
+- GIVEN an Engine prerelease is published as `v2.3.1-alpha.1`
+- WHEN Maks runs `kesha install --engine-version 2.3.1-alpha.1 --tts en`
+- THEN the named Engine is installed and the English voices are installed by it
+- AND the Recorded Engine version is `2.3.1-alpha.1`
+
+> *Technical Note — sources: `src/cli/install.ts::resolveEngineVersionFlag` and
+> `performInstall`; `src/engine-install.ts::installEngine` takes the requested version
+> and passes it to the binary URL, the cache comparison, the Recorded Engine version
+> write and both Sidecar paths (the first download and the cache-hit top-up in
+> `refreshCachedEngine`). Missing any one of them installs the override and then
+> replaces it on its own cache check. Models need no separate rule: the model install
+> runs through the Engine just installed, so model pins follow the binary. `kesha init`
+> does not take the flag; it is the guided first-run path. Covered by
+> `tests/unit/engine-version-override.test.ts` (#738).*
+
+### Requirement: `--engine-version` rejects a bad value and never falls back to the pin
+
+A value that is not an exact SemVer 2.0 version SHALL be rejected before any network call, with exit 2. A version with no published release SHALL fail with an error naming the release it looked for, with exit 1, and SHALL leave the binary already installed untouched rather than install the Pinned Engine version in its place.
+
+#### Scenario: Ira names a version that was never released
+
+- GIVEN no release exists for the named version
+- WHEN Ira runs `kesha install --engine-version 9.9.9`
+- THEN the CLI prints an error naming release `v9.9.9` to stderr
+- AND the Pinned Engine version is not installed in its place
+- AND the process exits 1
+
+#### Scenario: Ira names something that is not a version
+
+- WHEN Ira runs `kesha install --engine-version latest`
+- THEN the CLI rejects the value with `E_INVALID_ARG` before contacting the network
+- AND the process exits 2
+
+> *Technical Note — sources: `src/cli/install.ts::resolveEngineVersionFlag` (a leading
+> `v` gets its own hint, since it belongs to the tag), `src/engine-install.ts`, where a
+> non-OK release response throws `E_MODEL_DOWNLOAD` naming `release v<version>`.*
+
+### Requirement: An override reaches whatever Engine path is in effect
+
+`kesha install --engine-version` SHALL install to the Engine path actually in use, including one redirected by `KESHA_ENGINE_BIN`, and SHALL replace a binary there whose Recorded Engine version differs. Where the Engine directory cannot be written, the install SHALL fail with an error naming that directory rather than report success against the binary already present.
+
+#### Scenario: Ira overrides a redirected Engine path
+
+- GIVEN `KESHA_ENGINE_BIN` points at a writable path holding a locally built Engine
+- WHEN Ira runs `kesha install --engine-version 2.3.1-alpha.1`
+- THEN the named Engine replaces the binary at that path
+- AND the Recorded Engine version beside it is `2.3.1-alpha.1`
+
+#### Scenario: Maks overrides against a read-only Engine directory
+
+- GIVEN the Engine directory is read-only, as with a Nix-store install
+- AND the Recorded Engine version differs from the named version
+- WHEN Maks runs `kesha install --engine-version 2.3.1-alpha.1`
+- THEN the CLI prints an error naming the directory it could not write
+- AND does not report the install as successful
+
+> *Technical Note — sources: `src/engine.ts::getEngineBinPath` (path only) and
+> `src/engine-install.ts`, which refuses with `Cannot install engine v<version>: <dir>
+> is not writable` before any download. A read-only directory still counts as a valid
+> cache when the Recorded Engine version already matches. `flake.nix` and CI write the
+> Recorded Engine version on purpose so an install treats a locally built Engine as a
+> valid cache; replacing that binary is the documented result of asking for a
+> different version.*
+
+### Requirement: `--plan` previews the Engine version the install would fetch
+
+`kesha install --plan` SHALL name the Engine version the corresponding install would download, SHALL judge cached-versus-needed against that version, and SHALL carry `--engine-version` into the `Run:` command it prints. It SHALL NOT download anything.
+
+#### Scenario: Maks previews an override
+
+- WHEN Maks runs `kesha install --plan --engine-version 2.3.1-alpha.1 --tts`
+- THEN the plan reads `Engine release: v2.3.1-alpha.1 (overrides the pinned v<pin>)`
+- AND it ends with `Run: kesha install --engine-version 2.3.1-alpha.1 --tts en`
+- AND no download occurs
+
+#### Scenario: Ira previews an override against an already-installed pin
+
+- GIVEN an Engine installed at the Pinned Engine version
+- WHEN Ira runs `kesha install --plan --engine-version 2.3.1-alpha.1`
+- THEN the Engine is reported as needing download rather than as already present
+- AND no download occurs
+
+#### Scenario: Ira previews an invalid version
+
+- WHEN Ira runs `kesha install --plan --engine-version latest`
+- THEN the CLI rejects the value and prints no plan
+- AND the process exits 2
+
+> *Technical Note — sources: `src/install-plan.ts` (the plan options carry
+> `engineVersion`; the header, the cached check and the Engine and Sidecar sources read
+> it, and `buildInstallCommand` adds `--engine-version` to the `Run:` line). Sizes for a
+> release the CLI does not pin are covered by "The Install plan sizes the Engine only
+> from the release the CLI pins". Covered by `tests/unit/install-plan.test.ts` and the
+> `--plan` case in `tests/integration/cli-contracts.test.ts` (#738).*
+
+### Requirement: Install downloads only what the compiled Backend can use
+
+`kesha install` SHALL download the ASR weights of the Backend compiled into the Engine, and SHALL NOT download the weights of the other Backend: the two Backends are compile-time exclusive with no runtime fallback, so weights for the absent one can never be read. On a CoreML Engine the ASR weights are fetched by FluidAudio, not by Kesha's pinned downloader.
+
+#### Scenario: Maks installs on Apple Silicon
+
+- GIVEN Maks is on darwin-arm64, whose released Engine is CoreML
+- WHEN he runs `kesha install`
+- THEN the Parakeet ONNX weight set is not downloaded
+- AND Language ID, VAD and any requested TTS models are downloaded as before
+
+#### Scenario: Ira installs on Linux
+
+- GIVEN Ira is on a platform whose released Engine is ONNX
+- WHEN she runs `kesha install`
+- THEN the Parakeet ONNX weight set is downloaded, unchanged from before
+
+#### Scenario: Transcription still refuses when its models are absent
+
+- GIVEN an installed Engine whose ASR weights are not present
+- WHEN Maks transcribes a file
+- THEN the CLI fails with an actionable install hint rather than downloading anything silently
+
+> *Technical Note — sources: `rust/src/models/manifest.rs` (the ONNX ASR manifest is
+> compiled out of coreml builds), `rust/src/models/paths.rs::fluidaudio_asr_location`
+> (FluidAudio's bundle sits under `<Model cache>/fluidaudio` since #688, or in
+> FluidAudio's own Application Support tree when it already holds a complete bundle) and
+> `fluidaudio_asr_ready_in`, which requires every file FluidAudio's `modelsExist` checks,
+> so a partial fetch fails preflight instead of downloading the rest mid-transcribe
+> (#684).*
+
 ## Open Issues
 
 - `kesha record` has no Windows or Linux microphone capture; `record.rs` gates capture on
   macOS and the README directs other platforms to pass an existing audio file.
-- The spec has said the Mandarin jieba HMM tables were never published upstream, while
-  the comment on `rust/src/models/manifest.rs::ANE_ZH_G2P_ASSETS` says FluidAudio#919
-  published them at the current pin and kesha does not stage them yet. Whether to stage
-  them is undecided.

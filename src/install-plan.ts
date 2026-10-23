@@ -113,7 +113,7 @@ function releaseAssetSize(assetName: string, version: string): number | null {
   return injectedEnginePins?.version === version ? (injectedEnginePins.size[assetName] ?? null) : null;
 }
 
-function filesCached(cacheRoot: string, files: PlanFile[]): boolean {
+export function filesCached(cacheRoot: string, files: PlanFile[]): boolean {
   return files.every((file) => {
     const path = join(cacheRoot, file.relPath);
     return existsSync(path) && statSync(path).size === file.sizeBytes;
