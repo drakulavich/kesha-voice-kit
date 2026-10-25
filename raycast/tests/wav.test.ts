@@ -21,13 +21,10 @@ describe("isSilentWav", () => {
   });
 
   it("supports WAVE_FORMAT_EXTENSIBLE payload tags", () => {
-    const wav = makeWav({
-      formatTag: 0xfffe,
-      payloadTag: 3,
-      bits: 32,
-      samples: [0, 0.02],
-    });
-    expect(isSilentWav(wav)).toBe(false);
+    const extensible = (samples: number[]) =>
+      makeWav({ formatTag: 0xfffe, payloadTag: 3, bits: 32, samples });
+    expect(isSilentWav(extensible([0, 0]))).toBe(true);
+    expect(isSilentWav(extensible([0, 0.02]))).toBe(false);
   });
 
   it("does not block on malformed or unsupported WAV files", () => {
