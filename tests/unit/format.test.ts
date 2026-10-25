@@ -14,26 +14,30 @@ function result(overrides: Partial<TranscribeResult>): TranscribeResult {
 }
 
 describe("humanBytes", () => {
-  test("bytes below 1024 stay in B", () => {
+  test("bytes below 1000 stay in B", () => {
     expect(humanBytes(0)).toBe("0 B");
-    expect(humanBytes(1023)).toBe("1023 B");
+    expect(humanBytes(999)).toBe("999 B");
   });
 
-  test("scales through KB/MB/GB/TB", () => {
-    expect(humanBytes(1024)).toBe("1.0 KB");
-    expect(humanBytes(1536)).toBe("1.5 KB");
-    expect(humanBytes(1024 * 1024)).toBe("1.0 MB");
-    expect(humanBytes(1024 ** 3)).toBe("1.0 GB");
-    expect(humanBytes(1024 ** 4)).toBe("1.0 TB");
+  test("scales through decimal KB/MB/GB/TB", () => {
+    expect(humanBytes(1000)).toBe("1.0 KB");
+    expect(humanBytes(1500)).toBe("1.5 KB");
+    expect(humanBytes(1000 ** 2)).toBe("1.0 MB");
+    expect(humanBytes(1000 ** 3)).toBe("1.0 GB");
+    expect(humanBytes(1000 ** 4)).toBe("1.0 TB");
+  });
+
+  test("the Sortformer model reads as the ~245MB the help promises (#1473 S5-8)", () => {
+    expect(humanBytes(245_386_674)).toBe("245 MB");
   });
 
   test("drops decimals at 100+ of a unit", () => {
-    expect(humanBytes(150 * 1024)).toBe("150 KB");
-    expect(humanBytes(99.4 * 1024)).toBe("99.4 KB");
+    expect(humanBytes(150 * 1000)).toBe("150 KB");
+    expect(humanBytes(99.4 * 1000)).toBe("99.4 KB");
   });
 
   test("caps at TB instead of inventing units", () => {
-    expect(humanBytes(1024 ** 5)).toBe("1024 TB");
+    expect(humanBytes(1000 ** 5)).toBe("1000 TB");
   });
 });
 

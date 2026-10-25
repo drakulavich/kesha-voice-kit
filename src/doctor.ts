@@ -21,6 +21,8 @@ import { isDarwinArm64 } from "./engine-targets";
 import {
   fluidExternalRoots,
   fluidExternalTotalBytes,
+  staleSortformerBytes,
+  staleSortformerHint,
   type FluidExternalRoot,
 } from "./fluid-roots";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
@@ -37,6 +39,7 @@ const KNOWN_ENV_KEYS = [
   "KESHA_CACHE_DIR",
   "KESHA_MODEL_MIRROR",
   "KESHA_STATS_DB",
+  "KESHA_LOG_DIR",
   "KESHA_DEBUG",
   "KESHA_KOKORO_COMPUTE_UNITS",
   "KESHA_DIARIZE_COMPUTE_UNITS",
@@ -131,6 +134,7 @@ export interface DoctorReport {
     externalTotalBytes: number;
     /** Everything Kesha put on disk, wherever it landed. */
     grandTotalBytes: number;
+    staleSortformerBytes: number;
   };
   optionalComponents: OptionalComponent[];
   tts: DoctorTts;
@@ -286,6 +290,7 @@ function collectCache(
     externalRoots: externalRoots.map((root) => redactExternalRoot(root, redact)),
     externalTotalBytes,
     grandTotalBytes: totalBytes + externalTotalBytes,
+    staleSortformerBytes: staleSortformerBytes({ homeDir, cacheRoot: cache }),
   };
 }
 
@@ -397,7 +402,7 @@ function collectDiagnosticLogs(redact: boolean): DoctorReport["diagnosticLogs"] 
       rotatedFiles: [],
       totalSizeBytes: 0,
       mode: "retain-on-failure",
-      maxBytes: 10 * 1024 * 1024,
+      maxBytes: 10_000_000,
       retain: 5,
       error:
         redactString("diagnosticLogsError", errorMessage(err), redact) ??
@@ -505,7 +510,8 @@ function formatCacheSection(cache: DoctorReport["cache"]): string[] {
   const rows = cache.components.map(
     (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}${c.note ? ` - ${c.note}` : ""}`,
   );
-  return [header, ...rows, ...formatExternalRootsSection(cache)];
+  const stale = cache.staleSortformerBytes > 0 ? [staleSortformerHint(cache.staleSortformerBytes)] : [];
+  return [header, ...rows, ...formatExternalRootsSection(cache), ...stale];
 }
 
 /** Roots FluidAudio keeps for itself. Named with full paths because there is no `kesha uninstall`. */

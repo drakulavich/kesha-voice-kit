@@ -7,7 +7,7 @@ import {
   missingFileHint,
   SPECIAL_FILE_HINT,
   transcribeWithSegments,
-  truncatedWavSeconds,
+  truncatedWavWarning,
   validateTranscribeRequest,
 } from "../transcribe";
 
@@ -375,12 +375,8 @@ async function processFile(
     return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
   }
 
-  const truncated = truncatedWavSeconds(file);
-  if (truncated) {
-    log.warn(
-      `warning: ${file} is truncated: its header declares ${truncated.declared.toFixed(1)} s of audio but the file holds ${truncated.present.toFixed(1)} s; transcribing the part present`,
-    );
-  }
+  const truncated = truncatedWavWarning(file);
+  if (truncated) log.warn(truncated);
 
   const inputArtifact = artifactFromFile(file, "input_audio");
   if (inputArtifact) {
@@ -550,20 +546,25 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         "  kesha init               Guided first-time setup.\n" +
         "\n" +
         "Commands:\n" +
-        "  completions  Print shell completion script.\n" +
-        "  doctor     Collect support diagnostics.\n" +
-        "  init       Interactive setup guide for Kesha features.\n" +
-        "  install    Download engine and models.\n" +
-        "  logs       Manage local privacy-safe diagnostic logs.\n" +
-        "  manpage    Print the kesha(1) manpage.\n" +
-        "  mcp        Run an MCP server over stdio.\n" +
-        "  record     Record microphone audio to a WAV file.\n" +
-        "  status     Inspect installed backend.\n" +
-        "  say        Synthesize speech from text.\n" +
-        "  stats      Manage local anonymous performance stats.\n" +
-        "  support-bundle  Create a redacted diagnostics archive.",
+        "  completions     Print shell completion script.\n" +
+        "  doctor          Collect support diagnostics.\n" +
+        "  init            Interactive setup guide for Kesha features.\n" +
+        "  install         Download engine and models.\n" +
+        "  logs            Manage local privacy-safe diagnostic logs.\n" +
+        "  manpage         Print the kesha(1) manpage.\n" +
+        "  mcp             Run an MCP server over stdio.\n" +
+        "  record          Record microphone audio to a WAV file.\n" +
+        "  status          Inspect installed backend.\n" +
+        "  say             Synthesize speech from text.\n" +
+        "  stats           Manage local anonymous performance stats.\n" +
+        "  support-bundle  Create a redacted diagnostics archive.\n",
     },
     args: {
+      audio_file: {
+        type: "positional",
+        required: false,
+        description: "Audio file(s) to transcribe",
+      },
       json: {
         type: "boolean",
         description: "Output results as JSON",

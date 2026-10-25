@@ -102,8 +102,7 @@ jobs:
         run: bun install --frozen-lockfile
       - id: audit
         name: Audit JS dependencies
-        # No patched braces yet; drop the ignore with #1397.
-        run: bun audit --audit-level=high --ignore GHSA-vfj7-8cjw-p6xm
+        run: bun audit --audit-level=high
         continue-on-error: true
       - name: Report findings (scheduled only)
         if: github.event_name == 'schedule' && steps.audit.outcome == 'failure'
@@ -134,7 +133,7 @@ jobs:
         with:
           persist-credentials: false
       - name: 🔍 Scan
-        uses: hashgraph-online/ai-plugin-scanner-action@9d323922505d2fc8a1252e39f99b5aac453c59c0 # v1.2.785
+        uses: hashgraph-online/ai-plugin-scanner-action@4a44de6c18b68ec258fcc3e0cec5261fc8ea63fd # v1.2.792
         with:
           plugin_dir: "."
           min_score: 80

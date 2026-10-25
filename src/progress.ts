@@ -8,7 +8,7 @@ const BAR_WIDTH = 20;
 const DEFAULT_ESTIMATED_PROGRESS_MS = 30 * 60 * 1000;
 
 export function formatBytes(bytes: number): string {
-  return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+  return `${(bytes / 1000 / 1000).toFixed(1)}MB`;
 }
 
 function bar(pct: number): string {

@@ -11,12 +11,12 @@ import {
 import { log } from "../../src/log";
 
 describe("formatBytes", () => {
-  test("formats bytes to MB", () => {
-    expect(formatBytes(104857600)).toBe("100.0MB");
+  test("formats bytes to decimal MB (#1473 S5-8)", () => {
+    expect(formatBytes(100_000_000)).toBe("100.0MB");
   });
 
   test("formats small values", () => {
-    expect(formatBytes(1048576)).toBe("1.0MB");
+    expect(formatBytes(1_000_000)).toBe("1.0MB");
   });
 
   test("formats zero", () => {
@@ -44,7 +44,7 @@ describe("formatProgressBar", () => {
   });
 
   test("includes byte counts in MB", () => {
-    const bar = formatProgressBar("file.onnx", 104857600, 209715200);
+    const bar = formatProgressBar("file.onnx", 100_000_000, 200_000_000);
     expect(bar).toContain("100.0MB");
     expect(bar).toContain("200.0MB");
   });
@@ -452,7 +452,7 @@ function withCapturedLog(fn: () => void): string {
 describe("the download line reports the size it knows", () => {
   test("a known Content-Length is quoted in the non-TTY line", () => {
     const out = withCapturedLog(() => {
-      const bar = createProgressBar("model.onnx", 5 * 1024 * 1024);
+      const bar = createProgressBar("model.onnx", 5_000_000);
       bar.update(1024);
       bar.finish();
     });

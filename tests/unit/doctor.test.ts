@@ -168,6 +168,7 @@ describe("collectDoctorReport", () => {
       expect(report.env.KESHA_MODEL_MIRROR).toBe("https://example.com/kesha");
       expect(report.env.KESHA_DEBUG).toBe("1");
       expect(report.env.KESHA_HOME).toBe("~/kesha-home");
+      expect(report.env.KESHA_LOG_DIR).toBe("~/logs");
       expect(report.paths).toEqual({
         cache: { path: "~/.cache/kesha", source: "KESHA_CACHE_DIR" },
         logs: { path: "~/logs", source: "KESHA_LOG_DIR" },
@@ -346,7 +347,7 @@ describe("collectDoctorReport", () => {
       // An unreadable directory still has to report the configuration in force, or the
       // report reads as if rotation were off.
       expect(report.diagnosticLogs.mode).toBe("retain-on-failure");
-      expect(report.diagnosticLogs.maxBytes).toBe(10 * 1024 * 1024);
+      expect(report.diagnosticLogs.maxBytes).toBe(10_000_000);
       expect(report.diagnosticLogs.retain).toBe(5);
       expect(report.diagnosticLogs.rotatedFiles).toEqual([]);
       expect(report.diagnosticLogs.error).toContain("~/logs");
@@ -423,6 +424,7 @@ describe("the human report states what each component is doing (#770)", () => {
       externalRoots: [],
       externalTotalBytes: 0,
       grandTotalBytes: 4096,
+      staleSortformerBytes: 0,
       ...overrides,
     };
   }
@@ -462,7 +464,7 @@ describe("the human report states what each component is doing (#770)", () => {
         rotatedFiles: [],
         totalSizeBytes: 2048,
         mode: "retain-on-failure",
-        maxBytes: 10 * 1024 * 1024,
+        maxBytes: 10_000_000,
         retain: 5,
       },
       env: {},
@@ -574,8 +576,8 @@ describe("the human report states what each component is doing (#770)", () => {
         }),
       }),
     );
-    expect(output).toContain("Cache: /cache (8.0 KB)");
-    expect(output).toContain("Engine: 4.0 KB");
+    expect(output).toContain("Cache: /cache (8.2 KB)");
+    expect(output).toContain("Engine: 4.1 KB");
     expect(output).toContain("TTS (Vosk): missing");
 
     expect(
@@ -602,12 +604,25 @@ describe("the human report states what each component is doing (#770)", () => {
       }),
     );
     expect(output).toContain("FluidAudio caches outside the Kesha cache:");
-    expect(output).toContain("/home/Library/Application Support/FluidAudio: 4.0 KB");
-    expect(output).toContain("ASR (Parakeet): 3.0 KB");
+    expect(output).toContain("/home/Library/Application Support/FluidAudio: 4.1 KB");
+    expect(output).toContain("ASR (Parakeet): 3.1 KB");
     expect(output).toContain("1.0 KB not attributed to any subsystem above");
-    expect(output).toContain("Grand total: 12.0 KB");
+    expect(output).toContain("Grand total: 12.3 KB");
 
     expect(formatDoctorReport(doctorReport())).not.toContain("FluidAudio caches outside");
+  });
+
+  test("stale Sortformer compilations are sized with the command that removes them", () => {
+    const output = formatDoctorReport(
+      doctorReport({ cache: cacheReport({ staleSortformerBytes: 5_300_000_000 }) }),
+    );
+    expect(output).toContain(
+      "Stale Sortformer compilations: 5.3 GB; run `kesha install --diarize` to remove them",
+    );
+
+    expect(
+      formatDoctorReport(doctorReport({ cache: cacheReport({ staleSortformerBytes: 0 }) })),
+    ).not.toContain("Stale Sortformer");
   });
 
   test("stats report either their counters or the error that hid them", () => {
@@ -787,6 +802,32 @@ exit 2
       const labels = (await collectDoctorReport()).cache.components.map((c) => c.label);
       expect(labels).toContain("ASR (Parakeet)");
       expect(labels).not.toContain("FluidAudio (in cache)");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("a CoreML engine names diarization and the ONNX leftovers it does not use (#1473 S5-5)", async () => {
+    const { dir, cache, binDir } = stage("kesha-doctor-leftover-cache-");
+    writeEngineStub(
+      join(binDir, "kesha-engine"),
+      `#!/bin/sh
+if [ "$1" = "describe" ]; then
+  printf '%s\\n' '${describeJson({ backend: "coreml", features: [] })}'
+  exit 0
+fi
+exit 2
+`,
+    );
+    for (const sub of ["diarize", "g2p", "parakeet-tdt-v3"]) {
+      mkdirSync(join(cache, "models", sub), { recursive: true });
+      writeFileSync(join(cache, "models", sub, "model.bin"), "x".repeat(2048));
+    }
+    try {
+      const rendered = formatDoctorReport(await collectDoctorReport());
+      expect(rendered).toContain("  Diarization (Sortformer): 2.0 KB");
+      expect(rendered).toContain("  ASR (Parakeet), unused by this engine, safe to delete: 2.0 KB");
+      expect(rendered).toContain("  G2P (CharsiuG2P), unused by this engine, safe to delete: 2.0 KB");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

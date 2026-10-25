@@ -281,7 +281,7 @@ describe("the plan's download economics", () => {
       const onnx = await renderInstallPlan({ backend: "onnx" });
       const cold = "Cold-cache Kesha-managed download";
 
-      expect(coreml).toContain("Additionally fetched by the backend into its own cache: ~473 MB");
+      expect(coreml).toContain("Additionally fetched by the backend into its own cache: ~496 MB");
       expect(onnx).not.toContain("Additionally fetched by the backend");
       expect(total(coreml, cold)).not.toBe(total(onnx, cold));
     });
@@ -330,7 +330,7 @@ describe("release asset sizes come from the injected Engine pin", () => {
       };
 
       const pinned = render();
-      expect(pinned.match(assetLine)?.[0]).toContain("11.8 MB (12345678 bytes, needed, GitHub release v9.9.9)");
+      expect(pinned.match(assetLine)?.[0]).toContain("12.3 MB (12345678 bytes, needed, GitHub release v9.9.9)");
       expect(pinned).not.toContain("Not counted");
       expect(render("9.9.8").match(assetLine)?.[0]).toContain("size unknown");
     } finally {

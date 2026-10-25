@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { parseRepoYaml } from "../helpers/repo";
 
-type Job = { if?: string; concurrency?: { group?: string }; strategy?: { matrix?: unknown } };
+type Job = { if?: string; needs?: unknown; concurrency?: { group?: string }; strategy?: { matrix?: unknown } };
 const nightly = parseRepoYaml(".github/workflows/nightly.yml") as {
   on: { schedule: { cron: string }[]; workflow_dispatch: { inputs: { job: { options: string[] } } } };
   jobs: Record<string, Job>;
 };
 const crons = nightly.on.schedule.map((s) => s.cron);
-const jobs = Object.entries(nightly.jobs);
+// A job with `needs` runs only behind the job it follows, so it owns no cron or dispatch option.
+const jobs = Object.entries(nightly.jobs).filter(([, job]) => !job.needs);
 
 // A job whose cron the trigger list lacks never runs, and two jobs on one cron run together.
 describe("nightly.yml", () => {

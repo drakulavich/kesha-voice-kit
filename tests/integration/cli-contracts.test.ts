@@ -138,7 +138,8 @@ if (args[0] === "transcribe") {
 }
 
 if (args[0] === "say") {
-  await Bun.write(Bun.stdout, new Uint8Array(Number(process.env.KESHA_FAKE_SAY_BYTES || "4096")));
+  const out = args.find((a) => a.startsWith("--out="))?.slice(6);
+  await Bun.write(out ?? Bun.stdout, new Uint8Array(Number(process.env.KESHA_FAKE_SAY_BYTES || "4096")));
   process.exit(0);
 }
 
@@ -596,6 +597,12 @@ describe("CLI contracts", () => {
     const short = await runCli(["-v"]);
     expectContract(short, { exitCode: 0, stderrEmpty: true });
     expect(short.stdout).toBe(version.stdout);
+    // #1473 S5-9: --version wins over other arguments, and never transcribes a file next to it.
+    for (const args of [["--version", "--json"], ["--json", "--version"], ["--version", "missing.wav"], ["-v", "missing.wav"]]) {
+      const mixed = await runCli(args);
+      expectContract(mixed, { exitCode: 0, stderrEmpty: true });
+      expect(mixed.stdout).toBe(version.stdout);
+    }
     for (const args of [["say", "--version"], ["status", "--version"], ["logs", "-v"], ["say", "-v"]]) {
       const sub = await runCli(args);
       expectContract(sub, { exitCode: 0, stderrEmpty: true });
@@ -2484,6 +2491,21 @@ exit 2
     });
   }, 30_000);
 
+  test("support-bundle refuses to overwrite an existing file and leaves it intact (#1473 S5-7)", async () => {
+    const dir = makeTempDir("kesha-cli-contract-bundle-exists-");
+    const notes = join(dir, "notes.md");
+    writeFileSync(notes, "hi\n");
+
+    const bundle = await runCli(["support-bundle", "--output", notes], { env: isolatedEnv(dir), timeoutMs: 15_000 });
+
+    expectContract(bundle, {
+      exitCode: 2,
+      stdoutEmpty: true,
+      stderrContains: [`error [E_INVALID_ARG]: `, notes, "hint:", "--output"],
+    });
+    expect(readFileSync(notes, "utf8")).toBe("hi\n");
+  }, 30_000);
+
   test("support-bundle under -q still names the archive it wrote (#1369)", async () => {
     const dir = makeTempDir("kesha-cli-contract-bundle-quiet-");
     const bundlePath = join(dir, "bundle.tar.gz");
@@ -2589,7 +2611,7 @@ exit 2
       rotatedFiles: [],
       totalSizeBytes: 0,
       mode: "retain-on-failure",
-      maxBytes: 10 * 1024 * 1024,
+      maxBytes: 10_000_000,
       retain: 5,
     });
 

@@ -16,7 +16,7 @@
 - **Transcribe locally** — [25 languages](docs/languages.md#speech-to-text-25), up to ~19x faster than Whisper on Apple Silicon, ~10x on an x86 CPU
 - **Speak back** — text-to-speech in [9 languages](docs/languages.md#text-to-speech)
 - **Plug into agents** — ship voice workflows as CLI commands, an MCP server, an <a href="docs/openclaw.md">OpenClaw</a> skill, or a <a href="docs/hermes.md">Hermes</a> agent
-- **Small Rust engine** — single ~65MB binary, no ffmpeg, no Python, no native Node addons
+- **Small Rust engine** — single ~74 MB binary, no ffmpeg, no Python, no native Node addons
 
 <p align="center">
   <img src="https://github.com/drakulavich/kesha-voice-kit/raw/main/docs/assets/demo.webp" alt="kesha demo: an English voice message transcribed, a Russian one as JSON with automatic language detection, then text-to-speech into a wav" width="800">
@@ -84,6 +84,7 @@ kesha --toon audio.ogg                     # compact LLM-friendly TOON
 kesha status                               # show installed backend info
 kesha status --disk                        # + recursive cache disk usage
 kesha status --json                        # machine-readable, for scripts
+kesha status --check                       # exit 1 unless engine + ASR model are installed
 ```
 
 Multiple files get `head`-style headers; stdout is the transcript, stderr is errors — pipe-friendly:

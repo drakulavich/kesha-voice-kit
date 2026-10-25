@@ -155,7 +155,7 @@ function engineRecordedAs(version: string): void {
   const binPath = join(tempDir("kesha-say-old-engine-"), "kesha-engine");
   writeFileSync(
     binPath,
-    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "detect-text-lang" ]; then\n  if [ -z "$2" ]; then\n    printf '%s\\n' 'Usage: kesha-engine detect-text-lang <TEXT>' >&2\n    exit 2\n  fi\n  printf '%s\\n' '{"code":"ru","confidence":0.9}'\n  exit 0\nfi\ncat > /dev/null\nexit 0\n`,
+    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\nif [ "$1" = "detect-text-lang" ]; then\n  if [ -z "$2" ]; then\n    printf '%s\\n' 'Usage: kesha-engine detect-text-lang <TEXT>' >&2\n    exit 2\n  fi\n  printf '%s\\n' '{"code":"ru","confidence":0.9}'\n  exit 0\nfi\ncat > /dev/null\nprintf RIFF\nexit 0\n`,
   );
   chmodSync(binPath, 0o755);
   writeFileSync(`${binPath}.version`, `${version}\n`);

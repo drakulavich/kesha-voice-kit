@@ -72,4 +72,44 @@ fn an_empty_plain_pass_retried_through_vad_loads_the_speech_model_once() {
         .filter(|v| v["kind"] == "progress" && v["message"] == "loading the speech model")
         .count();
     assert_eq!(loads, 1, "stderr was:\n{stderr}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "",
+        "stderr was:\n{stderr}"
+    );
+}
+
+#[test]
+fn forced_vad_on_silence_falls_back_to_an_empty_transcript() {
+    let test = "forced_vad_on_silence_falls_back_to_an_empty_transcript";
+    if !common::asr_model_or_skip(test) {
+        return;
+    }
+    if !kesha_engine::models::is_cached(kesha_engine::models::ModelKind::Vad) {
+        eprintln!("Silero VAD not installed (`kesha install --vad`) — skipping {test}");
+        return;
+    }
+    let silence = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("rust/ has a parent")
+        .join("tests/fixtures/silence.wav");
+
+    let out = Command::new(common::engine_bin())
+        .args(["transcribe", "--vad"])
+        .arg(&silence)
+        .output()
+        .expect("spawn engine");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(0), "stderr: {stderr}");
+
+    let warned = stderr
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .any(|v| v["kind"] == "warn" && v["code"] == "W_VAD_NO_SPEECH");
+    assert!(warned, "stderr was:\n{stderr}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "",
+        "stderr was:\n{stderr}"
+    );
 }

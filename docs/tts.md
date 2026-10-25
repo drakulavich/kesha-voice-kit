@@ -10,6 +10,7 @@ kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav    # auto-routes (Milena on darwin, ru-vosk-m02 elsewhere)
 echo "long text" | kesha say > reply.wav
 kesha say --out reply.wav "text"
+kesha say --out - "text" > reply.wav   # - means stdout; a file named - is ./-
 kesha say --voice en-am_michael "text"    # explicit voice overrides auto-routing
 kesha say --lang es "Hola, mundo" > hola.wav   # route by stated language, skip detection
 kesha say --list-voices

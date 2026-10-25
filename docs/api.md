@@ -35,6 +35,11 @@ The API also gives no signal for speech in a language outside the
 [speech-to-text set](languages.md) (Chinese, Japanese and others), so its `lang` and
 `text` are unreliable for such audio; `kesha --json` warns and reports the audio language.
 
+A WAV whose header declares more audio than the file holds is transcribed as far as
+the data goes, and `transcribe` writes the same warning the CLI prints to stderr:
+`warning: <file> is truncated: its header declares 10.0 s of audio but the file holds 5.0 s; transcribing the part present`.
+The result carries no field for it.
+
 ## `install(opts)`
 
 | Option | `kesha install` flag |

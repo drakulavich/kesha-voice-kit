@@ -183,6 +183,92 @@ pub fn cleanup_diarize_compiled_sidecars(keep_model_package: &Path) -> Result<us
     Ok(removed)
 }
 
+/// Remove compiled Sortformer bundles other than the one `model_package` maps to (#1473 S5-6).
+/// Removes nothing when that bundle is absent, since then nothing tells which one is in use.
+#[cfg(any(test, feature = "system_diarize"))]
+pub fn prune_stale_sortformer_compilations(
+    compiled_dir: &Path,
+    model_package: &Path,
+) -> Result<usize> {
+    let keep = sortformer_compiled_name(model_package);
+    if !compiled_dir.join(&keep).exists() {
+        return Ok(0);
+    }
+    let mut removed = 0;
+    for entry in fs::read_dir(compiled_dir)
+        .with_context(|| format!("read compiled diarize cache {}", compiled_dir.display()))?
+    {
+        let entry = entry?;
+        let name = entry.file_name();
+        if name.to_str() == Some(keep.as_str())
+            || !name.to_str().is_some_and(|n| n.ends_with(".mlmodelc"))
+        {
+            continue;
+        }
+        let path = entry.path();
+        if entry.file_type()?.is_dir() {
+            fs::remove_dir_all(&path)
+        } else {
+            fs::remove_file(&path)
+        }
+        .with_context(|| format!("remove stale diarize compilation {}", path.display()))?;
+        removed += 1;
+    }
+    Ok(removed)
+}
+
+/// The bundle name fluidaudio-rs compiles `model_package` to. Mirrors `cacheKey(forModelPath:)`
+/// in its FluidAudioBridge.swift and `sortformerCompiledName` in `src/fluid-roots.ts`.
+#[cfg(any(test, feature = "system_diarize"))]
+fn sortformer_compiled_name(model_package: &Path) -> String {
+    use sha2::{Digest, Sha256};
+    fn walk(dir: &Path, size: &mut u64, newest: &mut u64) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let Ok(meta) = fs::symlink_metadata(entry.path()) else {
+                continue;
+            };
+            if meta.is_file() {
+                *size += meta.len();
+            }
+            if let Some(age) = meta
+                .modified()
+                .ok()
+                .filter(|_| meta.is_file() || meta.is_dir())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            {
+                *newest = (*newest).max(age.as_secs());
+            }
+            if meta.is_dir() {
+                walk(&entry.path(), size, newest);
+            }
+        }
+    }
+    let (mut size, mut newest) = (0, 0);
+    walk(model_package, &mut size, &mut newest);
+    // Swift hashes `standardizedFileURL`: absolute, with `.` and `..` folded.
+    let mut standardized = PathBuf::new();
+    for part in std::path::absolute(model_package)
+        .unwrap_or_else(|_| model_package.to_path_buf())
+        .components()
+    {
+        match part {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                standardized.pop();
+            }
+            other => standardized.push(other),
+        }
+    }
+    let material = format!("{}|{size}|{newest}", standardized.display());
+    format!(
+        "{}.mlmodelc",
+        lower_hex(&Sha256::digest(material.as_bytes()))
+    )
+}
+
 #[cfg(feature = "system_diarize")]
 fn compiled_model_sidecar(model_package: &Path) -> PathBuf {
     let mut sidecar = model_package.as_os_str().to_os_string();
@@ -792,6 +878,98 @@ fn cleanup_orphan_staging(dir: &Path) {
             );
             let _ = fs::remove_file(&path);
         }
+    }
+}
+
+#[cfg(test)]
+mod sortformer_compiled_tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn at(secs: u64) -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(secs)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn compiled_name_is_the_one_fluidaudio_rs_derives_from_the_package() -> Result<()> {
+        use sha2::{Digest, Sha256};
+        let tmp = tempfile::tempdir()?;
+        let pkg = tmp.path().join("SortformerNvidiaLow_v2.mlpackage");
+        fs::create_dir_all(pkg.join("Data"))?;
+        fs::write(pkg.join("Manifest.json"), b"12345")?;
+        fs::write(pkg.join("Data/weights.bin"), b"1234567")?;
+        fs::File::options()
+            .write(true)
+            .open(pkg.join("Manifest.json"))?
+            .set_modified(at(1_700_000_000))?;
+        fs::File::options()
+            .write(true)
+            .open(pkg.join("Data/weights.bin"))?
+            .set_modified(at(1_700_000_100))?;
+        fs::File::open(pkg.join("Data"))?.set_modified(at(1_700_000_200))?;
+        fs::File::open(&pkg)?.set_modified(at(1_800_000_000))?;
+
+        let material = format!("{}|12|1700000200", pkg.display());
+        assert_eq!(
+            sortformer_compiled_name(&pkg),
+            format!(
+                "{}.mlmodelc",
+                lower_hex(&Sha256::digest(material.as_bytes()))
+            )
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn a_dotted_package_path_hashes_as_its_standardized_form() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let pkg = tmp.path().join("SortformerNvidiaLow_v2.mlpackage");
+        fs::create_dir_all(pkg.join("Data"))?;
+        assert_eq!(
+            sortformer_compiled_name(&pkg.join("Data").join("..")),
+            sortformer_compiled_name(&pkg)
+        );
+        assert_eq!(
+            sortformer_compiled_name(&pkg.join(".")),
+            sortformer_compiled_name(&pkg)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn prune_keeps_the_installed_compilation_and_removes_the_rest() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let pkg = tmp.path().join("SortformerNvidiaLow_v2.mlpackage");
+        fs::create_dir_all(&pkg)?;
+        fs::write(pkg.join("Manifest.json"), b"{}")?;
+        let compiled = tmp.path().join("SortformerCompiled");
+        let current = compiled.join(sortformer_compiled_name(&pkg));
+        let stale = compiled.join("aaaa.mlmodelc");
+        let staging = compiled.join("bbbb.5C1D.tmp");
+        for dir in [&current, &stale, &staging] {
+            fs::create_dir_all(dir)?;
+        }
+
+        assert_eq!(prune_stale_sortformer_compilations(&compiled, &pkg)?, 1);
+        assert!(current.exists());
+        assert!(staging.exists());
+        assert!(!stale.exists());
+        Ok(())
+    }
+
+    #[test]
+    fn prune_removes_nothing_when_the_installed_compilation_is_missing() -> Result<()> {
+        let tmp = tempfile::tempdir()?;
+        let pkg = tmp.path().join("SortformerNvidiaLow_v2.mlpackage");
+        fs::create_dir_all(&pkg)?;
+        let compiled = tmp.path().join("SortformerCompiled");
+        let other = compiled.join("aaaa.mlmodelc");
+        fs::create_dir_all(&other)?;
+
+        assert_eq!(prune_stale_sortformer_compilations(&compiled, &pkg)?, 0);
+        assert!(other.exists());
+        Ok(())
     }
 }
 

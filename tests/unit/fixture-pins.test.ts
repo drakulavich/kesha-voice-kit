@@ -50,6 +50,31 @@ describe("recorded fixtures follow the engine's pins", () => {
     expect(scriptVoices).toEqual(manifestVoices);
   });
 
+  test.each([
+    { list: "G2P_CHARSIU_FILES", prefix: "CHARSIU", dir: "models/g2p/byt5-tiny/", ext: ".onnx" },
+    { list: "VOSK_RU_FILES", prefix: "VOSK", dir: "models/vosk-ru/", ext: "" },
+  ])("download-kokoro.sh fetches the $list revision and hashes manifest.rs pins", ({ list, prefix, dir, ext }) => {
+    const script = readRepoFile("rust/ci/download-kokoro.sh");
+    const block = mustMatch(MANIFEST_RS, new RegExp(`const ${list}: &\\[ModelFile\\] = &\\[([\\s\\S]*?)\\n\\];`), list)[1]!;
+    const entries = [
+      ...block.matchAll(/rel_path: "([^"]+)",\s*url:\s*"[^"]*\/resolve\/([0-9a-f]{40})\/[^"]*",\s*sha256: "([0-9a-f]{64})"/g),
+    ];
+    expect(entries.length).toBeGreaterThan(0);
+
+    const revisions = new Set(entries.map((m) => m[2]!));
+    expect(revisions.size).toBe(1);
+    const scriptRevision = mustMatch(script, new RegExp(`^${prefix}_REVISION=(\\S+)$`, "m"), `${prefix}_REVISION`)[1]!;
+    expect(scriptRevision).toBe([...revisions][0]!);
+
+    const manifestFiles = Object.fromEntries(
+      entries.map((m) => [m[1]!.slice(dir.length, m[1]!.length - ext.length).replace(/[/.]/g, "_"), m[3]!]),
+    );
+    const scriptFiles = Object.fromEntries(
+      [...script.matchAll(new RegExp(`^${prefix}_SHA256_(\\w+)=([0-9a-f]{64})$`, "gm"))].map((m) => [m[1]!, m[2]!]),
+    );
+    expect(scriptFiles).toEqual(manifestFiles);
+  });
+
   test("the committed mini model files are the bytes MINI-MODEL.json records", () => {
     const marker = JSON.parse(readRepoFile(`${MINI_DIR}/MINI-MODEL.json`));
     const files = Object.entries(marker.files as Record<string, { bytes: number; sha256: string }>);
