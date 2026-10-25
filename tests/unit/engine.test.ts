@@ -1087,7 +1087,7 @@ case "$cmd" in
     1) printf '{"text":"heard %s","segments":[]}\\n' "$file" ;;
     *) printf 'heard %s\\n' "$file" ;;
   esac ;;
-  detect-lang) printf '{"code":"en","confidence":0.9,"file":"%s"}\\n' "$file" ;;
+  detect-lang) [ -n "$file" ] || exit 2; printf '{"code":"en","confidence":0.9}\\n' ;;
 esac
 `,
     );
