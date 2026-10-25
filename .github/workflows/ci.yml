@@ -1283,25 +1283,15 @@ jobs:
           bun .github/scripts/upload-flakiness.ts \
             rust/target/nextest/ci/junit.xml rust Laputa/kesha-voice-kit
 
-  # Provisioned macOS arm64 lane for the FluidAudio TDT decoder-state guard
-  # (#592). `transcribe_samples_is_stateless_across_calls` is `#[ignore]` +
-  # `coreml`-only because it needs a real Apple Neural Engine AND the cached
-  # Parakeet CoreML bundle — the per-PR macos-15 lane above only *compiles*
-  # `coreml` (`cargo check`), so a fluidaudio-rs bump that dropped the upstream
-  # stateless-reset fix (FluidInference/fluidaudio-rs#15) would ship the
-  # multi-segment "." corruption with no automated failure.
+  # macOS arm64 lane for the coreml-only tests that build under no other lane
+  # (see .github/scripts/coreml-regression.sh). The #592 decoder-state guard and
+  # the sub-second test need an Apple Neural Engine, which this VM lacks (#841,
+  # #912), so they run only through `just ane-tests` (#1567).
   #
   # Runs only when the regression surface changes (the `coreml` paths-filter:
   # the FluidAudio backend, the coreml feature wiring, or the fluidaudio-rs pin
   # in Cargo.lock) — not on every PR and not nightly. The CoreML Parakeet
   # bundle is large but cached, so the fetch is a once-per-key seed.
-  #
-  # GitHub-hosted Apple Silicon is an `Apple M1 (Virtual)` VM
-  # with **no** Neural Engine (#742 measured `ioreg -c AppleARMIODevice | grep -ci
-  # ane` at 0 there against 32 on a real M2), so the ANE-converted Parakeet chain
-  # actually executes through BNNS on the CPU. The guard still catches a
-  # fluidaudio-rs bump that drops the stateless-reset fix, which is what #592
-  # asked of it; it just does not exercise the ANE.
   coreml-regression:
     needs: changes
     if: github.event_name == 'pull_request' && needs.changes.outputs.coreml == 'true'
