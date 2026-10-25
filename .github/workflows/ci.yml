@@ -1337,7 +1337,7 @@ jobs:
           restore-keys: |
             parakeet-coreml-models-v2-${{ runner.os }}-
 
-      - name: 🧪 CoreML decoder-state regression
+      - name: 🧪 CoreML-only tests
         run: bash .github/scripts/coreml-regression.sh
 
       - name: 📤 Upload JUnit
@@ -1352,7 +1352,7 @@ jobs:
   # The second required status check, kept under its old name when rust-test.yml moved in
   # (openspec unified-release D4). Always runs so the context reports on every PR (the heavy
   # jobs above skip on non-rust PRs → success); the step fails the gate only if a real job
-  # failed. `coreml-regression` is included so a red decoder-state guard blocks a PR that
+  # failed. `coreml-regression` is included so a red CoreML-only test blocks a PR that
   # touches the regression surface (it reports 'skipped' — not 'failure' — on PRs that
   # don't, so it never blocks unrelated work). `rust-push-gate` runs on main only, where a
   # red one now reds this check instead of nothing.
