@@ -114,13 +114,13 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(describeDocument({ backend: live!.backend, profile: live!.profile, features: live!.features, tts: live!.tts })).toEqual(live!);
   });
 
-  test("transcribe.diarize present iff darwin-arm64 (#199)", async () => {
+  test("transcribe.diarize absent off darwin-arm64 (#199)", async () => {
     const { stdout, exitCode } = await runEngine(["describe"]);
     expect(exitCode).toBe(0);
     const caps = JSON.parse(stdout);
     const isDarwinArm64 = process.platform === "darwin" && process.arch === "arm64";
     if (isDarwinArm64) {
-      // KESHA_ENGINE_BIN may point at a feature-stripped dev build; capability matrix in release.yml is the release source of truth.
+      // KESHA_ENGINE_BIN may point at a dev build without system_diarize; .github/scripts/smoke-engine-binary.sh gates presence for releases.
       const advertises = caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE);
       if (!advertises) {
         console.warn(
