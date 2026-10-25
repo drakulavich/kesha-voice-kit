@@ -87,5 +87,10 @@ with the absolute path from `which kesha` (PowerShell: `Get-Command kesha`):
 { "mcpServers": { "kesha": { "command": "/Users/you/.bun/bin/kesha", "args": ["mcp"] } } }
 ```
 
+`transcribe_audio` on a WAV whose header declares more audio than the file holds
+returns the transcript of the part present as the first text item and a second
+text item, `warning: <path> is truncated: its header declares 10.0 s of audio but the file holds 5.0 s; transcribing the part present`.
+`structuredContent` is unchanged.
+
 If a tool returns "models not installed", run `kesha install` (ASR) or
 `kesha install --tts` (TTS) once, then retry.

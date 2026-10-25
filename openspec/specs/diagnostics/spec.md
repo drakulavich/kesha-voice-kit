@@ -847,8 +847,8 @@ default 64 KB), and `status.json`.
 
 > *Technical Note — sources: `src/support-bundle.ts::createSupportBundle`,
 > `src/cli/support-bundle.ts::supportBundleCommand`. Redaction is always applied
-> (`redact: true` is hardcoded in `createSupportBundle`; the `--redact` flag exists
-> on `kesha doctor` but not `kesha support-bundle`). Log tail default:
+> (`createSupportBundle` defaults `redact` to true and no caller passes false; the
+> `--redact` flag exists on `kesha doctor` but not `kesha support-bundle`). Log tail default:
 > `DEFAULT_TAIL_BYTES = 64 * 1024` from `src/diagnostic-log.ts`. The tar format is
 > a hand-written ustar implementation (no external dependency); archives are
 > gzip-compressed with Node's `zlib.gzipSync`. The manifest `entries` array lists
@@ -881,7 +881,9 @@ equivalent to `kesha doctor --redact`, whatever flags are passed.
 `--output <path>` SHALL set the archive path; the default SHALL be
 `kesha-support-bundle-<ISO-timestamp>.tar.gz` in the current directory. On success
 the CLI SHALL report the archive path, entry count, and size in bytes to stderr. On
-failure it SHALL exit 1 with the error message.
+failure it SHALL print the error message and exit by the Error code's class: 2 for
+an `--output` path it cannot write to, 4 for an internal write failure such as a
+full disk, 1 for an uncoded error.
 
 #### Scenario: Sona takes the default name
 
@@ -896,9 +898,17 @@ failure it SHALL exit 1 with the error message.
   `/tmp/kesha-new` does not exist
 - THEN the directory is created and the archive is written to that exact path
 
+#### Scenario: The output path sits under a file
+
+- GIVEN `/tmp/notes.txt` is a regular file
+- WHEN Maks runs `kesha support-bundle --output /tmp/notes.txt/diag.tar.gz`
+- THEN stderr carries `E_INVALID_ARG` naming `/tmp/notes.txt` and a fix
+- AND the process exits 2
+
 > *Technical Note — sources: `src/cli/support-bundle.ts::supportBundleCommand` prints
 > the three success lines; `src/support-bundle.ts::createSupportBundle` creates the
-> parent directory and maps write failures through `bundleWriteFailure`.*
+> parent directory and maps write failures through `bundleWriteFailure`; the exit
+> code comes from `src/engine/events.ts::exitCodeFor` for a `KeshaError`, else 1.*
 
 ### Requirement: Privacy framing — redaction, allowlists, and size-bucketing are always enforced
 
@@ -936,6 +946,75 @@ invariants, not options:
 > `<1 MB`, `1-10 MB`, `10-100 MB`, `100 MB+`. Support bundles are bound by
 > "A Support bundle holds only its listed entries, always redacted".*
 
+### Requirement: `kesha doctor` names an Engine that differs from the Pinned Engine version
+
+`kesha doctor` SHALL report a Recorded Engine version that differs from the Pinned Engine version as a distinct named state, showing both versions, and SHALL NOT report the installation as failed on that basis alone, because installing a named Engine version is supported. Where the Recorded Engine version cannot be read at all, `kesha doctor` SHALL report that as its own state rather than as a difference.
+
+#### Scenario: Maks forgets an override is installed
+
+- GIVEN an Engine installed from `--engine-version 2.3.1-alpha.1`
+- AND a Pinned Engine version of `2.3.0`
+- WHEN Maks runs `kesha doctor`
+- THEN the output names both the Recorded and the Pinned Engine version and says they differ
+- AND the Engine is not reported as missing or broken
+
+#### Scenario: Ira runs doctor on an unmodified install
+
+- GIVEN an Engine installed at the Pinned Engine version
+- WHEN Ira runs `kesha doctor`
+- THEN the version state reads that it matches the pin
+- AND no version difference is reported
+
+#### Scenario: Maks has an Engine binary with no recorded version
+
+- GIVEN an Engine binary is present with no readable Recorded Engine version
+- WHEN Maks runs `kesha doctor`
+- THEN the output states that no version is recorded beside the binary
+- AND does not claim the Engine differs from the Pinned Engine version
+
+> *Technical Note — sources: `src/doctor.ts::engineVersionState` (`matches-pin`,
+> `differs-from-pin`, `unrecorded`, and `unsupported` for a Recorded Engine version older
+> than `MIN_ENGINE_VERSION`, which #1365 added and which takes precedence over a
+> difference), `formatVersionState` (the `Version state:` line) and `formatDoctorReport`
+> (`Version marker:` and `Pinned version:`). The marker file is written on purpose by
+> `flake.nix` and by CI so an install treats a locally built Engine as a valid cache.
+> Covered by `tests/unit/doctor.test.ts`.*
+
+### Requirement: Diagnostics report ASR from the Backend's real location
+
+`kesha status --disk` and `kesha doctor` SHALL report ASR from where the compiled Backend keeps its weights. On a CoreML Engine that is FluidAudio's tree: its part inside the Kesha cache is one row, and what stays in FluidAudio's own directories is listed under external caches. A healthy install SHALL NOT be shown as missing ASR because a row points at a directory the Backend never populates.
+
+#### Scenario: Maks checks disk usage on Apple Silicon
+
+- GIVEN a healthy CoreML install on darwin-arm64
+- WHEN Maks runs `kesha status --disk`
+- THEN the cache breakdown has a `FluidAudio (in cache)` row and no `ASR (Parakeet)` row
+- AND no row claims ASR is missing
+
+#### Scenario: Maks runs doctor with ONNX weights left over
+
+- GIVEN a CoreML install whose Kesha cache still holds `models/parakeet-tdt-v3` from an older install
+- WHEN Maks runs `kesha doctor`
+- THEN that directory is listed as `ASR (Parakeet), unused by this engine, safe to delete` with its size
+- AND it is not reported as the ASR model the Engine uses
+
+#### Scenario: Ira runs doctor on Linux
+
+- GIVEN an ONNX install on linux-x64
+- WHEN Ira runs `kesha doctor`
+- THEN the cache breakdown has an `ASR (Parakeet)` row
+- AND no `FluidAudio (in cache)` row
+
+> *Technical Note — sources: `src/cache-layout.ts::cacheComponents`, which both commands
+> use and which swaps the ONNX rows for the CoreML rows by backend;
+> `src/fluid-asr-cache.ts::isCoremlBackend`, which falls back to the platform's shipped
+> backend when the describe probe yields nothing, so darwin is never pointed at the ONNX
+> directory (#684); external roots from `src/fluid-roots.ts::fluidExternalRoots`. FluidAudio
+> loads ASR from `<ApplicationSupport>/FluidAudio/Models/parakeet-tdt-0.6b-v3` when it is
+> not relocated; `folderName` strips the `-coreml` suffix, so the `…-v3-coreml` sibling
+> some machines carry is not what it reads. Covered by `tests/unit/doctor.test.ts` and
+> `tests/unit/status.test.ts`.*
+
 ## Open Issues
 
 - `kesha doctor` does not surface the FluidAudio Kokoro external cache size in the
@@ -953,7 +1032,3 @@ invariants, not options:
 - `kesha doctor --json` and `kesha status --json` overlap in what they report but
   do not share a payload type; keeping them consistent is currently a convention,
   not something a test enforces.
-- "On failure it SHALL exit 1" for `kesha support-bundle` disagrees with the code:
-  `src/cli/support-bundle.ts` exits through `exitCodeFor`, so a bad `--output` path
-  (`E_INVALID_ARG`) exits 2, a full disk (`E_INTERNAL`) exits 4, and an uncoded error
-  exits 4. Which of the two is right is unresolved.

@@ -12,7 +12,8 @@ import {
 } from "./cli/install";
 import { detectTextLanguageFallback, routeLanguage } from "./language-routing";
 import { say as synthesize, type SayOptions } from "./synth";
-import { assertAudioFileArgument, transcribeWithSegments, type TranscribeOptions } from "./transcribe";
+import { log } from "./log";
+import { assertAudioFileArgument, transcribeWithSegments, truncatedWavWarning, type TranscribeOptions } from "./transcribe";
 import type { TranscribeResult } from "./types";
 
 export { KeshaError };
@@ -57,6 +58,8 @@ async function coded<T>(run: () => Promise<T>): Promise<T> {
 export function transcribe(audioPath: string, options: TranscribeOptions = {}): Promise<TranscribeResult> {
   return coded(async () => {
     assertAudioFileArgument(audioPath);
+    const truncated = truncatedWavWarning(audioPath);
+    if (truncated) log.warn(truncated);
     const startedAt = performance.now();
     const { text, segments } = await transcribeWithSegments(audioPath, options);
     const textLanguage = detectTextLanguageFallback(text);

@@ -609,7 +609,8 @@ fn transcribe_via_vad(
                 );
             }
         }
-        let chunk = be.transcribe_samples(&samples)?;
+        // Not transcribe_samples: CoreML zero-pads sub-1.5 s audio and hears "Thank you." in silence (#1535).
+        let chunk = be.transcribe(Path::new(audio_path))?;
         let text = chunk.text;
         // Reuse the duration we already computed for the dtrace above
         // (Greptile follow-up on #282 — was a redundant float divide).

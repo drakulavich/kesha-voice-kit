@@ -8,10 +8,9 @@ set -euo pipefail
 DEST="${1:?usage: download-kokoro.sh <dest_dir>}"
 mkdir -p "$DEST"
 
-# Every download in this script is guarded by a `! -f` check, which makes a
-# truncated file permanently indistinguishable from a complete one: `curl -o`
-# leaves a stump behind when a transfer dies mid-flight, and every later run then
-# treats it as "already have it". Land the bytes under a temp name and rename
+# A `! -f` check makes a truncated file indistinguishable from a complete one:
+# `curl -o` leaves a stump behind when a transfer dies mid-flight, and every later
+# run then treats it as "already have it". Land the bytes under a temp name and rename
 # only once curl reports success, so a failed transfer leaves nothing.
 #
 # This matters more since cache-seed.yml persists whatever this produces to a
@@ -35,6 +34,22 @@ fetch_verified() {
   fi
 }
 
+# The cache restores the previous bundle by prefix after a pin change (#1557), so
+# a file that is already here is hashed too, not trusted for existing.
+ensure_verified() {
+  local dest="$1" url="$2" expected="$3"
+  if [[ -f "$dest" ]]; then
+    if [[ "$(shasum -a 256 "$dest" | cut -d' ' -f1)" == "$expected" ]]; then
+      echo "cached $dest matches its pin"
+      return 0
+    fi
+    echo "cached $dest does not match its pin; re-downloading" >&2
+    rm -f "$dest"
+  fi
+  echo "Downloading $url..."
+  fetch_verified "$dest" "$url" "$expected"
+}
+
 # Pins copied from rust/src/models/manifest.rs; tests/unit/fixture-pins.test.ts keeps them equal.
 KOKORO_MODEL_URL=https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx
 KOKORO_MODEL_SHA256=7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5
@@ -44,6 +59,16 @@ KOKORO_VOICE_SHA256_em_alex=27809e9eafdcbcfff90a3016c697568676531de2a2c39cee29c9
 KOKORO_VOICE_SHA256_ff_siwis=a35f5675ad08948e326ae75fd0ea16ba5d0042e4f76b5f3d1df77d0a48c54861
 KOKORO_VOICE_SHA256_im_nicola=bc578e510d52a96d6940d46f12e96d7b3df00905dbea075113226d100e6e1ab0
 KOKORO_VOICE_SHA256_pm_alex=0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae74ec2acbeb2a
+VOSK_REVISION=37c7b45a32b3fa62f3a2bbce89677080dcd2107f
+VOSK_SHA256_model_onnx=0fa5a36b22a8bf7fe7179a3882c6371d2c01e5317019e717516f892d329c24b9
+VOSK_SHA256_dictionary=2939e72c170bb41ac8e256828cca1c5fac4db1e36717f9f53fde843b00a220ba
+VOSK_SHA256_config_json=e155fb266a730e1858a2420442b465acf08a3236dffad7d1a507bf155b213d50
+VOSK_SHA256_bert_model_onnx=2e2f1740eaae5e29c2b4844625cbb01ff644b2b5fb0560bd34374c35d8a092c1
+VOSK_SHA256_bert_vocab_txt=bbe5063cc3d7a314effd90e9c5099cf493b81f2b9552c155264e16eeab074237
+CHARSIU_REVISION=0e2cf759874353bcc0cd153d4b6886a27f61e4a7
+CHARSIU_SHA256_encoder_model=1ac7aca11845527873f9e0e870fbe1e3c3ac2cb009d8852230332d10541aab04
+CHARSIU_SHA256_decoder_model=de32477aae14e254d4a7dee4b2c324fb39f93a0dc254181c5bfdd8fc67492919
+CHARSIU_SHA256_decoder_with_past_model=fae30b9f3a8d935be01b32af851bae6d54f330813167073e84caf6d0a1890fcb
 
 # Kokoro's graph and voice packs are not fetched for the PR lanes: the committed
 # stand-in in tests/fixtures/mini-models/kokoro carries the same I/O signature for
@@ -54,10 +79,7 @@ KOKORO_VOICE_SHA256_pm_alex=0175c753f59c54e7fd5a995bedef0c5ff2fb67e0043dd3dcb2ae
 # asserted at all now — so this arm is the counterweight to the stand-ins, not a
 # leftover.
 if [[ "${WITH_REAL_KOKORO:-0}" == "1" ]]; then
-  if [[ ! -f "$DEST/model.onnx" ]]; then
-    echo "Downloading Kokoro model.onnx (kokoro-onnx official release)..."
-    fetch_verified "$DEST/model.onnx" "$KOKORO_MODEL_URL" "$KOKORO_MODEL_SHA256"
-  fi
+  ensure_verified "$DEST/model.onnx" "$KOKORO_MODEL_URL" "$KOKORO_MODEL_SHA256"
   KOKORO_DIR="$DEST/models/kokoro-82m"
   mkdir -p "$KOKORO_DIR/voices"
   ln -f "$DEST/model.onnx" "$KOKORO_DIR/model.onnx" 2>/dev/null \
@@ -66,11 +88,8 @@ if [[ "${WITH_REAL_KOKORO:-0}" == "1" ]]; then
   # corpus. ff_siwis is the documented French exception.
   VOICE_BASE="https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/$KOKORO_VOICE_REVISION/voices"
   for v in am_michael em_alex ff_siwis im_nicola pm_alex; do
-    if [[ ! -f "$KOKORO_DIR/voices/$v.bin" ]]; then
-      echo "Downloading Kokoro voice $v.bin..."
-      sha_var="KOKORO_VOICE_SHA256_$v"
-      fetch_verified "$KOKORO_DIR/voices/$v.bin" "$VOICE_BASE/$v.bin" "${!sha_var}"
-    fi
+    sha_var="KOKORO_VOICE_SHA256_$v"
+    ensure_verified "$KOKORO_DIR/voices/$v.bin" "$VOICE_BASE/$v.bin" "${!sha_var}"
   done
   ln -f "$KOKORO_DIR/voices/am_michael.bin" "$DEST/am_michael.bin" 2>/dev/null \
     || cp "$KOKORO_DIR/voices/am_michael.bin" "$DEST/am_michael.bin"
@@ -86,13 +105,11 @@ fi
 if [[ "${WITH_VOSK:-0}" == "1" ]]; then
   VOSK_DIR="$DEST/models/vosk-ru"
   mkdir -p "$VOSK_DIR/bert"
-  VOSK_BASE="https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/main"
-  download_if_missing() {
+  VOSK_BASE="https://huggingface.co/drakulavich/vosk-tts-ru-0.9-multi/resolve/$VOSK_REVISION"
+  vosk_file() {
     local rel="$1"
-    if [[ ! -f "$VOSK_DIR/$rel" ]]; then
-      echo "Downloading Vosk $rel..."
-      fetch "$VOSK_DIR/$rel" "$VOSK_BASE/$rel"
-    fi
+    local sha_var="VOSK_SHA256_${rel//[\/.]/_}"
+    ensure_verified "$VOSK_DIR/$rel" "$VOSK_BASE/$rel" "${!sha_var}"
   }
   # Bare `wait` reports success even when a background job failed, so a partial
   # bundle used to reach the caller as exit 0 — and cache-seed.yml would then
@@ -100,7 +117,7 @@ if [[ "${WITH_VOSK:-0}" == "1" ]]; then
   # PID and propagate the first failure instead.
   vosk_pids=()
   for rel in model.onnx dictionary config.json bert/model.onnx bert/vocab.txt; do
-    download_if_missing "$rel" &
+    vosk_file "$rel" &
     vosk_pids+=("$!")
   done
   vosk_failed=0
@@ -121,12 +138,10 @@ ls -lh "$DEST"
 # run-cargo-test.sh exports CHARSIU_ONNX pointing at this dir.
 G2P_DIR="$DEST/models/g2p/byt5-tiny"
 mkdir -p "$G2P_DIR"
-G2P_BASE="https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/main"
+G2P_BASE="https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx/resolve/$CHARSIU_REVISION"
 for f in encoder_model decoder_model decoder_with_past_model; do
-  if [[ ! -f "$G2P_DIR/$f.onnx" ]]; then
-    echo "Downloading CharsiuG2P $f.onnx..."
-    fetch "$G2P_DIR/$f.onnx" "$G2P_BASE/$f.onnx"
-  fi
+  sha_var="CHARSIU_SHA256_$f"
+  ensure_verified "$G2P_DIR/$f.onnx" "$G2P_BASE/$f.onnx" "${!sha_var}"
 done
 
 ls -lh "$G2P_DIR"

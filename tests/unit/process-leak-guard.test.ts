@@ -14,10 +14,7 @@ import { tempDir } from "../helpers/temp-dir";
 
 const posix = process.platform === "win32" ? test.skip : test;
 
-/**
- * `label` lands in argv as `$0`, which is what makes the fixture recognisable in `ps`. Await `exited` after
- * `waitForPidExit`: that counts an unreaped zombie as gone, and the suite-level sweep still sees it.
- */
+/** `label` lands in argv as `$0`, which is what makes the fixture recognisable in `ps`. */
 function spawnStubborn(label: string, ttlSeconds?: number): Bun.Subprocess {
   const proc = Bun.spawn(["sh", "-c", stubbornShell("TERM INT", ttlSeconds), label], {
     stdout: "ignore",
@@ -110,6 +107,29 @@ describe("process leak guard", () => {
       expect(stat()).toStartWith("Z");
 
       expect(pidIsAlive(zombie)).toBe(false);
+    } finally {
+      parent.kill("SIGKILL");
+      await parent.exited;
+    }
+  }, 20_000);
+
+  /** #1449: an exited child Bun has not reaped yet is not running, but its parent still is. */
+  posix("the descendant sweep reports a live process and skips its unreaped child", async () => {
+    const parent = Bun.spawn(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!; exec sleep 30`], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    try {
+      const zombie = Number(new TextDecoder().decode((await parent.stdout.getReader().read()).value));
+      const stat = () => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(zombie)]).stdout.toString();
+      const deadline = Date.now() + 15_000;
+      while (Date.now() < deadline && !stat().startsWith("Z")) await Bun.sleep(20);
+      expect(stat()).toStartWith("Z");
+
+      const leaked = await reapLeakedProcesses({ sweepDescendants: true });
+
+      expect(leaked.filter((entry) => entry.startsWith(`pid ${parent.pid}:`))).toEqual([`pid ${parent.pid}: sleep 30`]);
+      expect(leaked.filter((entry) => entry.startsWith(`pid ${zombie}:`))).toEqual([]);
     } finally {
       parent.kill("SIGKILL");
       await parent.exited;

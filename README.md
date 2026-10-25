@@ -84,6 +84,7 @@ kesha --toon audio.ogg                     # compact LLM-friendly TOON
 kesha status                               # show installed backend info
 kesha status --disk                        # + recursive cache disk usage
 kesha status --json                        # machine-readable, for scripts
+kesha status --check                       # exit 1 unless engine + ASR model are installed
 ```
 
 Multiple files get `head`-style headers; stdout is the transcript, stderr is errors — pipe-friendly:

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { spawn } from "bun";
-import { chmodSync, mkdirSync, readFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { describeJson } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 
@@ -81,6 +81,23 @@ async function spokenText(sayArgs: (dir: string) => string[]): Promise<string> {
   });
   expect(await proc.exited).toBe(0);
   return readFileSync(`${dir}/spoken.txt`, "utf8");
+}
+
+/** Exits 0 without writing audio anywhere, the engine defect #1473 S3-10 describes. */
+async function createMuteEngine(dir: string): Promise<string> {
+  mkdirSync(dir, { recursive: true });
+  const enginePath = `${dir}/kesha-engine`;
+  await Bun.write(enginePath, `#!/usr/bin/env bun
+if (Bun.argv[2] === "describe") {
+  console.log(${JSON.stringify(describeJson({ features: ["tts"] }))});
+  process.exit(0);
+}
+await new Response(Bun.stdin.stream()).text();
+const out = Bun.argv.find((a) => a.startsWith("--out="))?.slice(6);
+if (out !== undefined && process.env.KESHA_TEST_EMPTY_OUT) await Bun.write(out, "");
+`);
+  chmodSync(enginePath, 0o755);
+  return enginePath;
 }
 
 async function createFailingEngine(dir: string): Promise<string> {
@@ -350,5 +367,72 @@ describe("kesha say (CLI)", () => {
       "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak>🎉</speak>",
     ]);
     expect(spoken).toBe("<speak>🎉</speak>");
+  });
+
+  it("--out - writes the audio to stdout and creates no file named - (#1473 S2-6)", async () => {
+    const dir = tempDir("kesha-fake-engine-");
+    const enginePath = await createFakeEngine(dir);
+    const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", "--out", "-", "Привет"], {
+      cwd: dir,
+      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(await proc.exited).toBe(0);
+    const stdout = new Uint8Array(await new Response(proc.stdout).arrayBuffer());
+    const stderr = await new Response(proc.stderr).text();
+    expect(new TextDecoder().decode(stdout.slice(0, 4))).toBe("RIFF");
+    expect(stderr).not.toContain("Saved");
+    expect(existsSync(`${dir}/-`)).toBe(false);
+  });
+
+  it("--out ./- still writes a file named -", async () => {
+    const dir = tempDir("kesha-fake-engine-");
+    const enginePath = await createFakeEngine(dir);
+    const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", "--out", "./-", "Привет"], {
+      cwd: dir,
+      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(await proc.exited).toBe(0);
+    expect(await new Response(proc.stdout).text()).toBe("");
+    expect(new TextDecoder().decode(readFileSync(`${dir}/-`).slice(0, 4))).toBe("RIFF");
+  });
+
+  for (const tc of [{ left: "no file", env: {} }, { left: "an empty file", env: { KESHA_TEST_EMPTY_OUT: "1" } }]) {
+    it(`fails when the engine exits 0 and leaves ${tc.left} at --out (#1473 S3-10)`, async () => {
+      const dir = tempDir("kesha-mute-engine-");
+      const enginePath = await createMuteEngine(dir);
+      const outPath = `${dir}/x.wav`;
+      const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", "--out", outPath, "Привет"], {
+        env: { ...process.env, ...tc.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      expect(await proc.exited).toBe(1);
+      const stderr = await new Response(proc.stderr).text();
+      expect(stderr).toContain(`error [E_INTERNAL]: kesha-engine exited 0 but wrote nothing to ${outPath}`);
+      expect(stderr).toContain("kesha support-bundle");
+      expect(stderr).not.toContain("Saved");
+    });
+  }
+
+  it("fails when the engine exits 0 without writing to stdout (#1473 S3-10)", async () => {
+    const dir = tempDir("kesha-mute-engine-");
+    const enginePath = await createMuteEngine(dir);
+    const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", "Привет"], {
+      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(await proc.exited).toBe(1);
+    const stderr = await new Response(proc.stderr).text();
+    expect(stderr).toContain("error [E_INTERNAL]: kesha-engine exited 0 but wrote no audio to stdout");
+    expect(stderr).toContain("kesha support-bundle");
   });
 });

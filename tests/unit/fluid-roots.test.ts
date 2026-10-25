@@ -1,12 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "fs";
+import { createHash } from "crypto";
+import { dirname, join, relative } from "path";
 import { tmpdir } from "os";
 import {
   fluidExternalRoots,
   fluidExternalTotalBytes,
   fluidLegacyRootPaths,
   fluidSubsystemDirs,
+  sortformerCompiledName,
+  staleSortformerBytes,
 } from "../../src/fluid-roots";
 import { FLUID_ASR_REQUIRED } from "../../src/fluid-asr-cache";
 import { rustModelsSource } from "../helpers/rust-models-source";
@@ -228,6 +231,49 @@ describe("fluidExternalRoots", () => {
     withHome((home) => {
       write(join(legacy.ane(home), "bundle.bin"), 100);
       expect(fluidExternalRoots({ homeDir: home, cacheRoot: home })).toEqual([]);
+    });
+  });
+});
+
+describe("Sortformer compilations (#1473 S5-6)", () => {
+  function stagePackage(cacheRoot: string): string {
+    const pkg = join(cacheRoot, "models", "diarize", "SortformerNvidiaLow_v2.mlpackage");
+    write(join(pkg, "Manifest.json"), 5);
+    write(join(pkg, "Data", "weights.bin"), 7);
+    utimesSync(join(pkg, "Manifest.json"), 1_700_000_000, 1_700_000_000);
+    utimesSync(join(pkg, "Data", "weights.bin"), 1_700_000_100, 1_700_000_100);
+    utimesSync(join(pkg, "Data"), 1_700_000_200.9, 1_700_000_200.9);
+    utimesSync(pkg, 1_800_000_000, 1_800_000_000);
+    return pkg;
+  }
+
+  test("the compiled name is the one fluidaudio-rs derives from the package", () => {
+    withHome((_home, cacheRoot) => {
+      const pkg = stagePackage(cacheRoot);
+      const material = `${pkg}|12|1700000200`;
+      expect(sortformerCompiledName(pkg)).toBe(
+        `${createHash("sha256").update(material).digest("hex")}.mlmodelc`,
+      );
+    });
+  });
+
+  test("a relative or dotted package path hashes as the absolute path fluidaudio-rs standardizes", () => {
+    withHome((_home, cacheRoot) => {
+      const pkg = stagePackage(cacheRoot);
+      expect(sortformerCompiledName(relative(process.cwd(), pkg))).toBe(sortformerCompiledName(pkg));
+      expect(sortformerCompiledName(join(pkg, "Data", ".."))).toBe(sortformerCompiledName(pkg));
+    });
+  });
+
+  test("every compilation but the installed package's counts as stale", () => {
+    withHome((home, cacheRoot) => {
+      const current = sortformerCompiledName(stagePackage(cacheRoot));
+      write(join(legacy.sortformer(home), current, "model.mil"), 300);
+      write(join(legacy.sortformer(home), "aaaa.mlmodelc", "model.mil"), 100);
+      write(join(legacy.sortformer(home), "bbbb.mlmodelc", "model.mil"), 50);
+      write(join(legacy.sortformer(home), "cccc.1234.tmp", "model.mil"), 7);
+
+      expect(staleSortformerBytes({ homeDir: home, cacheRoot })).toBe(150);
     });
   });
 });
