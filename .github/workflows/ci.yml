@@ -1337,7 +1337,7 @@ jobs:
           restore-keys: |
             parakeet-coreml-models-v2-${{ runner.os }}-
 
-      - name: 🧪 CoreML decoder-state regression
+      - name: 🧪 CoreML-only tests
         run: bash .github/scripts/coreml-regression.sh
 
       - name: 📤 Upload JUnit
