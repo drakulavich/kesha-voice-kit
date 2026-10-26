@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import {
   formatStatusLine,
   activeModelMirror,
+  assertReady,
   collectStatus,
   renderStatus,
   type StatusDiskUsage,
@@ -13,6 +14,7 @@ import {
 import { humanBytes } from "../../src/format";
 import { starSeenPath } from "../../src/star";
 import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine, writeVoiceListingEngine } from "../helpers/fake-engine";
+import { KeshaError, exitCodeFor } from "../../src/engine/events";
 import modelPlan from "../../model-plan.json" with { type: "json" };
 
 // Literals, not derived from model-plan.json: a dropped plan entry must go red here, since the Rust binding test skips plan-only PRs (#1132).
@@ -1311,6 +1313,25 @@ describe("kesha status --check", () => {
       expect(stderr).toContain("kesha install");
     } finally {
       rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  posixEngineTest("an engine that never answers describe fails as E_ENGINE_PROTOCOL with exit 1, not an interrupt (#1580)", async () => {
+    const restoreEnv = saveEngineEnv();
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-check-hang-"));
+    try {
+      const binPath = join(dir, "kesha-engine");
+      writeFileSync(binPath, "#!/bin/sh\nexec sleep 30\n");
+      chmodSync(binPath, 0o755);
+      process.env.KESHA_ENGINE_BIN = binPath;
+      const err = await assertReady(300).then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(KeshaError);
+      const { code, message } = err as KeshaError;
+      expect({ code, exit: exitCodeFor(err) }).toEqual({ code: "E_ENGINE_PROTOCOL", exit: 1 });
+      expect(message).toContain(`${binPath} did not answer \`describe\` within 0.3s`);
+    } finally {
+      restoreEnv();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
