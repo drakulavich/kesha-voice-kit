@@ -83,7 +83,7 @@ export function langFlagError(lang: unknown): string | null {
   if (typeof lang !== "string") return null;
   let known: string | undefined;
   try {
-    known = LANGUAGE_NAMES.of(lang);
+    known = LANGUAGE_NAMES.of(lang.trim().replace(/_/g, "-"));
   } catch {}
   return known ? null : `--lang ${JSON.stringify(lang)} is not a language code; pass one such as en, ru or pt-BR.`;
 }

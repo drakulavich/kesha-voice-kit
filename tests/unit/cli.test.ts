@@ -763,7 +763,7 @@ describe("validateTranscribeArgs guards", () => {
     expect(expectRejected({ lang: "" }, ["--lang", ""], okFmt())).toBe(
       '--lang "" is not a language code; pass one such as en, ru or pt-BR.',
     );
-    for (const lang of ["en", "EN", "en-US", "yue"]) expectAccepted({ lang }, ["--lang", lang], okFmt());
+    for (const lang of ["en", "EN", "en-US", "en_US", "yue"]) expectAccepted({ lang }, ["--lang", lang], okFmt());
   });
 
   test("--timestamps without machine-readable output is rejected", () => {

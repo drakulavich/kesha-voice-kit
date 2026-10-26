@@ -330,22 +330,24 @@ describe("kesha say (CLI)", () => {
     expect(spoken).toBe("© Acme™ ®");
   });
 
-  for (const tc of [
-    { name: "emoji-only text", args: ["🎉"] },
-    { name: "emoji-only SSML", args: ["--ssml", "<speak>🎉</speak>"] },
-  ]) {
-    it(`refuses ${tc.name} as empty text before the engine runs (#1581)`, async () => {
-      const dir = tempDir("kesha-recording-engine-");
-      const enginePath = await createRecordingEngine(dir);
-      const proc = spawn(["bun", CLI_PATH, "say", "--voice", "en-am_michael", "--out", `${dir}/r.wav`, ...tc.args], {
-        env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
-        stdout: "pipe",
-        stderr: "pipe",
-      });
+  it("refuses emoji-only text as empty text before the engine runs (#1581)", async () => {
+    const dir = tempDir("kesha-recording-engine-");
+    const enginePath = await createRecordingEngine(dir);
+    const proc = spawn(["bun", CLI_PATH, "say", "--voice", "en-am_michael", "--out", `${dir}/r.wav`, "🎉"], {
+      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
-      expect(await proc.exited).toBe(2);
-      expect(await new Response(proc.stderr).text()).toContain("error [E_TEXT_EMPTY]: text has nothing to speak");
-      expect(existsSync(`${dir}/spoken.txt`)).toBe(false);
+    expect(await proc.exited).toBe(2);
+    expect(await new Response(proc.stderr).text()).toContain("error [E_TEXT_EMPTY]: text has nothing to speak: emoji are not read aloud");
+    expect(existsSync(`${dir}/spoken.txt`)).toBe(false);
+  });
+
+  for (const ssml of ["<speak>🎉</speak>", '<speak><break time="1s"/></speak>', "<speak><![CDATA[<a>]]></speak>"]) {
+    it(`passes ${ssml} through to the engine: SSML speech is the engine's call`, async () => {
+      const spoken = await spokenText((dir) => ["--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, ssml]);
+      expect(spoken).toBe(ssml);
     });
   }
 

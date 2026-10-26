@@ -97,15 +97,14 @@ export function engineCrashMessage(
 const KEPT_SYMBOL = /([©®™])️/g;
 const EMOJI = /\p{RGI_Emoji}|[\p{Extended_Pictographic}--[©®™]]/gv;
 
-/** Emoji are decoration in a reply; a voice would read out their Unicode names (#1388). */
+/**
+ * Emoji are decoration in a reply; a voice would read out their Unicode names (#1388).
+ * Emoji-only SSML, tags aside, goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
+ */
 export function dropEmoji(text: string, ssml = false): string {
-  return (ssml ? decodeCharRefs(text) : text).replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
-}
-
-function hasSpeech(text: string, ssml: boolean): boolean {
-  const spoken = dropEmoji(text, ssml);
+  const spoken = (ssml ? decodeCharRefs(text) : text).replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
   const speech = ssml ? spoken.replace(CDATA, "$1").replace(/<[^>]*>/g, "") : spoken;
-  return speech.trim().length > 0;
+  return speech.trim().length > 0 ? spoken : text;
 }
 
 const CDATA = /<!\[CDATA\[([\s\S]*?)\]\]>/g;
@@ -138,8 +137,8 @@ export function validateSayText(text: string, ssml = false): void {
   if (text.trim().length === 0) {
     throw new KeshaError("E_TEXT_EMPTY", "text is empty", { exitCode: 2, stderr: "" });
   }
-  if (!hasSpeech(text, ssml)) {
-    throw new KeshaError("E_TEXT_EMPTY", "text has nothing to speak: emoji and SSML tags are not read aloud", { exitCode: 2, stderr: "" });
+  if (!ssml && text.replace(KEPT_SYMBOL, "$1").replace(EMOJI, "").trim().length === 0) {
+    throw new KeshaError("E_TEXT_EMPTY", "text has nothing to speak: emoji are not read aloud", { exitCode: 2, stderr: "" });
   }
   const chars = Array.from(text).length;
   if (chars > MAX_TEXT_CHARS) {
