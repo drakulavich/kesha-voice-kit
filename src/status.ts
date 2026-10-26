@@ -273,10 +273,19 @@ function showDiskUsage(disk: StatusDiskUsage): void {
 }
 
 /** `kesha status --check` (#1473): throws E_MODEL_MISSING when the engine or the ASR model is not installed. */
-export async function assertReady(): Promise<void> {
+export async function assertReady(timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<void> {
   const binPath = getEngineBinPath();
   if (!isEngineInstalled()) throw notInstalled(`engine not installed: ${binPath}`);
-  const { backend } = await getDescribe({ signal: AbortSignal.timeout(ENGINE_PROBE_TIMEOUT_MS) });
+  const signal = AbortSignal.timeout(timeoutMs);
+  let backend: string;
+  try {
+    ({ backend } = await getDescribe({ signal }));
+  } catch (err) {
+    if (!signal.aborted || !(err instanceof KeshaError) || err.code !== "E_INTERRUPTED") throw err;
+    throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s`, {
+      hint: "run `kesha install` to fetch a working engine, or point KESHA_ENGINE_BIN at one",
+    });
+  }
   if (isCoremlBackend(backend)) {
     const asrPath = fluidAsrCachePath();
     if (!fluidAsrCacheReady(asrPath)) throw notInstalled(`ASR model not installed: ${asrPath}`);
