@@ -7,9 +7,9 @@ import {
   rmSync,
   statSync,
   writeFileSync,
-} from "fs";
-import { dirname, join } from "path";
-import { tmpdir } from "os";
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { gunzipSync } from "node:zlib";
 import {
   collectDoctorReport,
@@ -1090,7 +1090,7 @@ describe("engine version drift (#738)", () => {
       expect(output).toContain("9.9.9-alpha.1");
       expect(output).toContain(`Pinned version: ${engineVersion}`);
       expect(output).toContain("differs from the pinned");
-      expect(output).not.toContain("Binary: " + report.engine.path + " (missing)");
+      expect(output).not.toContain(`Binary: ${report.engine.path} (missing)`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -1,7 +1,7 @@
-import { dirname, join, resolve, sep } from "path";
+import { dirname, join, resolve, sep } from "node:path";
 import { errorMessage } from "./error-utils";
-import { homedir, tmpdir } from "os";
-import { existsSync, mkdirSync, chmodSync, accessSync, constants, readFileSync, rmSync, writeFileSync } from "fs";
+import { homedir, tmpdir } from "node:os";
+import { existsSync, mkdirSync, chmodSync, accessSync, constants, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { getDescribe, getEngineBinPath } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
 import {
@@ -18,7 +18,7 @@ import { engineFailure, KeshaError, offProtocolLine, SUPPORT_BUNDLE_HINT } from 
 import { engineExitCause, runEngineProcess } from "./engine/spawn";
 import { acquireInstallLock } from "./install-lock";
 import { log } from "./log";
-import { engineVersion, injectedEnginePins } from "./package-info";
+import { type AssetPins, engineVersion, injectedEnginePins } from "./package-info";
 import { PATH_ERRNOS } from "./path-errnos";
 import { keshaCacheDir } from "./paths";
 import { createLiveStatus, streamResponseToFile } from "./progress";
@@ -44,13 +44,6 @@ const MISMATCH_HINT = `re-run \`kesha install\`; if the mismatch persists, repor
 interface ExpectedSha256 {
   sha256: string;
   source: string;
-}
-
-/** `package.json#kesha.engine`, injected at publish by `engine-pin.ts`: what every downloaded asset of that Engine hashes to and weighs. */
-export interface AssetPins {
-  version: string;
-  sha256: Readonly<Record<string, string>>;
-  size: Readonly<Record<string, number>>;
 }
 
 /** Without `--engine-version` nothing but the maintainer can make an unverifiable pinned release verifiable. */
@@ -654,8 +647,9 @@ async function fetchEngineBinary(
     downloadSidecar(s, binPath, version, checksums),
   );
   // If the engine fetch throws, silence in-flight sidecar rejections so unhandledRejection doesn't obscure the engine error.
-  const muteSidecarRejections = () =>
-    sidecarPromises.forEach((p) => p.catch(() => {}));
+  const muteSidecarRejections = () => {
+    for (const p of sidecarPromises) p.catch(() => {});
+  };
 
   let expected: ExpectedSha256;
   try {

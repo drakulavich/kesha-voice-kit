@@ -1,6 +1,6 @@
 import { describe, it, expect, spyOn } from "bun:test";
-import { chmodSync, existsSync, writeFileSync } from "fs";
-import { join } from "path";
+import { chmodSync, existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   listVoiceIds,
   buildSayArgs,
@@ -232,7 +232,7 @@ describe("say on protocol 4", () => {
       expect(err!.exitCode).toBe(134);
       const rendered = errorMessage(err);
       expect(rendered).toMatch(
-        /^error \[E_INTERNAL\]: kesha-engine say exited with code 134\n  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive\nwarning: slow\n/,
+        /^error \[E_INTERNAL\]: kesha-engine say exited with code 134\n {2}hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive\nwarning: slow\n/,
       );
       expect(rendered).toContain("killed by SIGABRT");
       expect(rendered.match(/error \[/g)).toHaveLength(1);
@@ -264,7 +264,10 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     const written: string[] = [];
-    const stderrSpy = spyOn(process.stderr, "write").mockImplementation((chunk) => (written.push(String(chunk)), true));
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation((chunk) => {
+      written.push(String(chunk));
+      return true;
+    });
     try {
       const audio = await say({ text: "hi" });
       expect(new TextDecoder().decode(audio)).toBe("RIFF");

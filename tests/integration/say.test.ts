@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 import { spawn } from "bun";
-import { chmodSync, existsSync, mkdirSync, readFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { describeJson } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 

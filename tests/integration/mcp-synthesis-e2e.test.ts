@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll } from "bun:test";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { existsSync, mkdirSync, statSync, symlinkSync } from "fs";
+import { existsSync, mkdirSync, statSync, symlinkSync } from "node:fs";
 import { createKeshaMcpServer } from "../../src/mcp/server";
 import { modelsRequired } from "../helpers/model-gate";
 import { tempDir } from "../helpers/temp-dir";

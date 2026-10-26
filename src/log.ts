@@ -55,21 +55,21 @@ export const log = {
   // caller must not collide with a future `install --json` deliverable (#945).
   progress: (msg: string) => {
     if (log.quietEnabled) return;
-    process.stderr.write(colors.cyan(msg) + "\n");
+    process.stderr.write(`${colors.cyan(msg)}\n`);
   },
   // stderr via process.stderr.write (not console.error): Bun auto-colors
   // console.error red in a TTY, and that decision is frozen at startup — it
   // would survive `--no-color`. Writing the stream directly leaves picocolors
   // (which `setColorEnabled` controls) as the only colorizer, so `--no-color`
   // and `CI=true` produce genuinely plain output. (#531)
-  warn: (msg: string) => void process.stderr.write(colors.yellow(msg) + "\n"),
-  error: (msg: string) => void process.stderr.write(colors.red(msg) + "\n"),
+  warn: (msg: string) => void process.stderr.write(`${colors.yellow(msg)}\n`),
+  error: (msg: string) => void process.stderr.write(`${colors.red(msg)}\n`),
   // A result that lives on stderr because stdout is spoken for (record's outcome line): --quiet keeps it.
-  notice: (msg: string) => void process.stderr.write(colors.cyan(msg) + "\n"),
+  notice: (msg: string) => void process.stderr.write(`${colors.cyan(msg)}\n`),
   // STDERR, not stdout: `say --out` streams raw audio bytes to stdout. (#526/#531)
   status: (msg: string) => {
     if (log.quietEnabled) return;
-    process.stderr.write(colors.cyan(msg) + "\n");
+    process.stderr.write(`${colors.cyan(msg)}\n`);
   },
 
   quietEnabled: false,
@@ -81,7 +81,7 @@ export const log = {
     if (this.isDebugEnabled()) {
       // CLI-process timeline; Rust engine has its own independent origin (rust/src/debug.rs::trace_fmt).
       const t = Math.round(performance.now() - PROCESS_T0_MS);
-      process.stderr.write(colors.dim(`[debug +${t}ms] ${msg}`) + "\n");
+      process.stderr.write(`${colors.dim(`[debug +${t}ms] ${msg}`)}\n`);
     }
   },
 };

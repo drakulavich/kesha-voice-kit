@@ -1,6 +1,6 @@
-import { createHash } from "crypto";
-import { lstatSync, readdirSync } from "fs";
-import { join, resolve } from "path";
+import { createHash } from "node:crypto";
+import { lstatSync, readdirSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { isInsideDir } from "./cache-layout";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import { humanBytes } from "./format";

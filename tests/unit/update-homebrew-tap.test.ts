@@ -35,7 +35,7 @@ describe("buildUpdatedFormula", () => {
       fetchImpl: fetchReturning("1.28.0"),
     });
 
-    expect(second.match(/^  version /gm)).toHaveLength(1);
+    expect(second.match(/^ {2}version /gm)).toHaveLength(1);
     expect(second).toContain('version "1.28.0"');
     expect(second).not.toContain('version "1.27.0"');
   });
@@ -47,7 +47,7 @@ describe("buildUpdatedFormula", () => {
       fetchImpl: fetchReturning("1.24.7"),
     });
 
-    expect(out).not.toMatch(/^  version /m);
+    expect(out).not.toMatch(/^ {2}version /m);
   });
 
   test("rejects a non-stable tag before fetching anything", async () => {

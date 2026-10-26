@@ -6,17 +6,17 @@ const BELOW_FLOOR_NOTE = `below the ${LANG_CONFIDENCE_FLOOR} floor, ignored for 
 export function formatTextOutput(results: TranscribeResult[]): string {
   const [first] = results;
   if (first && results.length === 1) {
-    return first.text + "\n";
+    return `${first.text}\n`;
   }
   return results
-    .map((r, i) => (i > 0 ? "\n" : "") + `=== ${r.file} ===\n${r.text}\n`)
+    .map((r, i) => `${i > 0 ? "\n" : ""}=== ${r.file} ===\n${r.text}\n`)
     .join("");
 }
 
 /** The `--verbose` block for stderr: detection details and timing, never the transcript (that is stdout's). */
 export function formatVerboseDiagnostics(results: TranscribeResult[]): string {
   if (results.length === 0) return "";
-  return results
+  return `${results
     .map((r, i) => {
       const lines: string[] = [];
       if (results.length > 1) {
@@ -39,11 +39,11 @@ export function formatVerboseDiagnostics(results: TranscribeResult[]): string {
       }
       return lines.join("\n");
     })
-    .join("\n") + "\n";
+    .join("\n")}\n`;
 }
 
 export function formatTranscriptOutput(results: TranscribeResult[]): string {
-  return results
+  return `${results
     .map((r, i) => {
       const lines: string[] = [];
       if (results.length > 1) {
@@ -57,7 +57,7 @@ export function formatTranscriptOutput(results: TranscribeResult[]): string {
       if (lang) lines.push(`[lang: ${lang}${confidence != null ? `, confidence: ${confidence.toFixed(2)}` : ""}]`);
       return lines.join("\n");
     })
-    .join("\n") + "\n";
+    .join("\n")}\n`;
 }
 
 export function formatJsonOutput(
@@ -66,7 +66,7 @@ export function formatJsonOutput(
 ): string {
   const payload: TranscribeJsonOutput =
     errors === undefined ? results : { results, errors };
-  return JSON.stringify(payload, null, 2) + "\n";
+  return `${JSON.stringify(payload, null, 2)}\n`;
 }
 
 /** Render a byte count as a human-readable decimal size (e.g. "1.5 MB" for 1,500,000 bytes). */

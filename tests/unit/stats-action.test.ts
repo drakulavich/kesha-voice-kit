@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { runStatsAction } from "../../src/cli/stats";
 import { enableStats } from "../../src/stats";
 

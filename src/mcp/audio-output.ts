@@ -1,6 +1,6 @@
-import { join } from "path";
-import { mkdirSync, readdirSync, statSync, unlinkSync } from "fs";
-import { randomUUID } from "crypto";
+import { join } from "node:path";
+import { mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import type { SayFormat } from "../synth";
 import { resolveStatePaths } from "../state-paths";
 
@@ -16,7 +16,6 @@ function extFor(format: SayFormat): string {
       return "ogg";
     case "flac":
       return "flac";
-    case "wav":
     default:
       return "wav";
   }

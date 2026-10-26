@@ -1,4 +1,4 @@
-import { join } from "path";
+import { join } from "node:path";
 import { resolveStatePaths } from "./state-paths";
 
 export function keshaCacheDir(): string {

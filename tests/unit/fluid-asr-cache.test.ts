@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { basename, join } from "path";
-import { tmpdir } from "os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   FLUID_ASR_REQUIRED,
   fluidAsrCachePath,

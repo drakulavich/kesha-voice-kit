@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { appendFileSync, existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { collectFrozenTree, mutate, publishSidecar, type SidecarFs } from "../../scripts/mutate";
 import { pidIsAlive, trackPid, waitForPidExit, waitForPidFile } from "../helpers/process";

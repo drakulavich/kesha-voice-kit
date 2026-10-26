@@ -17,6 +17,7 @@ type Shell = "bash" | "zsh" | "fish";
 
 interface CliCommand {
   name: string;
+  // biome-ignore lint/suspicious/noExplicitAny: citty's CommandDef is invariant in the arg shape and each command has its own schema.
   command: CommandDef<any>;
 }
 
@@ -90,7 +91,7 @@ function optionFromArg(name: string, def: ArgDef): CliOption | null {
   };
 }
 
-async function commandToArtifact(name: string, command: CommandDef<any>): Promise<ArtifactCommand> {
+async function commandToArtifact<T extends ArgsDef>(name: string, command: CommandDef<T>): Promise<ArtifactCommand> {
   const meta = (await resolve(command.meta)) as CommandMeta | undefined;
   const args = ((await resolve(command.args)) ?? {}) as ArgsDef;
   const options: CliOption[] = [];

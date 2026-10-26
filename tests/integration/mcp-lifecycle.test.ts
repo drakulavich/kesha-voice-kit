@@ -1,13 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, writeFileSync } from "fs";
-import { join } from "path";
+import { chmodSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { trackPid, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { describeJson } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 
-const DEFAULT_CWD = import.meta.dir + "/../..";
+const DEFAULT_CWD = `${import.meta.dir}/../..`;
 
 function createHangingEngine(dir: string, enginePidPath: string): string {
   const enginePath = join(dir, "kesha-engine");

@@ -53,7 +53,7 @@ export function decideExisting(prs: FollowupPr[], tag: string, branch: string): 
   if (!pr) return { skip: false };
   const ours =
     pr.title.startsWith(`chore(release): record ${tag} assets and lead main to v`) &&
-    pr.body.includes("Published engine tag: `" + tag + "`");
+    pr.body.includes(`Published engine tag: \`${tag}\``);
   return ours ? { skip: true } : { refuse: `An unrelated PR already uses ${branch}; refusing to touch it.` };
 }
 

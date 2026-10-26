@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync, utimesSync, rmSync, statSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, writeFileSync, utimesSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { audioDir, allocAudioPath, sweepOldAudio } from "../../src/mcp/audio-output";
 
 afterEach(() => {

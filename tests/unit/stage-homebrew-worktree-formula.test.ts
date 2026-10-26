@@ -34,7 +34,7 @@ describe("rewriteFormula", () => {
     const withVersion = rewriteFormula(FORMULA, { url: URL, version: "1.29.1", sha256: SHA256 });
     const out = rewriteFormula(withVersion, { url: URL, version: "1.30.0", sha256: SHA256 });
 
-    expect(out.match(/^  version /gm)).toHaveLength(1);
+    expect(out.match(/^ {2}version /gm)).toHaveLength(1);
     expect(out).toContain('version "1.30.0"');
     expect(out).not.toContain('version "1.29.1"');
   });
@@ -43,13 +43,13 @@ describe("rewriteFormula", () => {
     const withVersion = rewriteFormula(FORMULA, { url: URL, version: "1.24.7", sha256: SHA256 });
     const out = rewriteFormula(withVersion, { url: URL, version: null, sha256: SHA256 });
 
-    expect(out).not.toMatch(/^  version /m);
+    expect(out).not.toMatch(/^ {2}version /m);
   });
 
   // The CLI writes the tap formula only with rewriteFormula's return value, so a
   // formula it rejects can never leave a partial file behind.
   test("refuses a formula with no url before returning a rewrite", () => {
-    const noUrl = FORMULA.replace(/^  url ".*"$/m, "  # url removed");
+    const noUrl = FORMULA.replace(/^ {2}url ".*"$/m, "  # url removed");
 
     expect(() => rewriteFormula(noUrl, { url: URL, version: VERSION, sha256: SHA256 })).toThrow(
       /missing url/,
@@ -57,7 +57,7 @@ describe("rewriteFormula", () => {
   });
 
   test("refuses a formula with no sha256 before returning a rewrite", () => {
-    const noSha = FORMULA.replace(/^  sha256 "[a-f0-9]{64}"$/m, "  # sha256 removed");
+    const noSha = FORMULA.replace(/^ {2}sha256 "[a-f0-9]{64}"$/m, "  # sha256 removed");
 
     expect(() => rewriteFormula(noSha, { url: URL, version: VERSION, sha256: SHA256 })).toThrow(
       /missing sha256/,

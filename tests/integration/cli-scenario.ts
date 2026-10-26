@@ -1,8 +1,8 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { delimiter, dirname, join } from "path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 
-const DEFAULT_CWD = import.meta.dir + "/../..";
+const DEFAULT_CWD = `${import.meta.dir}/../..`;
 // Headroom for macOS scanning the fake engine each scenario mints; measured at ~1 s
 // for a test's three stubs, well under the 2-9 s #649 attributed to it (#805).
 export const DEFAULT_TIMEOUT_MS = 15_000;

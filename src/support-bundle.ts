@@ -1,5 +1,5 @@
-import { lstatSync, mkdirSync, statSync, writeFileSync } from "fs";
-import { basename, dirname, join, resolve } from "path";
+import { lstatSync, mkdirSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { gzipSync } from "node:zlib";
 import { collectDoctorReport, formatDoctorReport } from "./doctor";
 import { readDiagnosticLogTail } from "./diagnostic-log";

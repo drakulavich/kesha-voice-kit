@@ -1,6 +1,6 @@
 import { defineCommand, type ArgsDef } from "citty";
-import { statSync } from "fs";
-import { extname } from "path";
+import { statSync } from "node:fs";
+import { extname } from "node:path";
 import { errorMessage } from "../error-utils";
 import { engineMissingError, isEngineInstalled } from "../engine";
 import { exitCodeFor, KeshaError } from "../engine/events";

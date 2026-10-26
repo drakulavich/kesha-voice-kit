@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";
 import { runCliScenario } from "./cli-scenario";

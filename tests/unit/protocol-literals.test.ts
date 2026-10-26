@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { readdirSync, readFileSync, statSync } from "fs";
-import { join, relative } from "path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative } from "node:path";
 import { repoPath } from "../helpers/repo";
 
 function sources(dir: string, out: string[] = []): string[] {

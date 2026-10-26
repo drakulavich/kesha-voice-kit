@@ -8,9 +8,9 @@ import {
   statSync,
   utimesSync,
   writeFileSync,
-} from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+} from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { applyBackpressure, streamResponseToFile } from "../../src/progress";
 
 const posixTest = process.platform === "win32" ? test.skip : test;

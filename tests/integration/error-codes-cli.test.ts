@@ -8,9 +8,9 @@ import {
   rmSync,
   symlinkSync,
   writeFileSync,
-} from "fs";
-import { hostname, tmpdir } from "os";
-import { join, resolve } from "path";
+} from "node:fs";
+import { hostname, tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { DEFAULT_TIMEOUT_MS, runCliScenario } from "./cli-scenario";
 
 setDefaultTimeout(DEFAULT_TIMEOUT_MS * 2);

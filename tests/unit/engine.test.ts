@@ -1,7 +1,7 @@
 import { describe, test, expect } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { chmodSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { describeJson, envEchoEngine, saveEngineEnv, writeOutParsingEngine, writeTranscribingEngine } from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
@@ -526,11 +526,11 @@ describe("engine", () => {
     writeFileSync(
       path,
       `#!/bin/sh
-if [ "\$1" = "describe" ]; then
+if [ "$1" = "describe" ]; then
   printf '%s\\n' '${describeJson({ features: ["record.live"] })}'
   exit 0
 fi
-if [ "\$1" = "record" ]; then
+if [ "$1" = "record" ]; then
 ${body}
   exit ${exitCode}
 fi
@@ -675,7 +675,7 @@ exit 2
   fakeEngineTest("recordEngine spawns the engine on protocol 4", async () => {
     const engine = writeRecordingEngine(
       "kesha-engine-record-proto-",
-      `  printf '{"kind":"progress","message":"proto=%s"}\\n' "\$KESHA_PROTOCOL" >&2`,
+      `  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2`,
     );
     const out = await withEngineEnv(engine, () =>
       captureStderr(false, () => recordEngine({ out: "/tmp/out.wav" }, 10)),
@@ -1325,7 +1325,7 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     await withEngineEnv(transcribingEngine("kesha-engine: segfault"), async () => {
       const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
       expect(err.code).toBe("E_INTERNAL");
-      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: .+: kesha-engine: segfault\n  hint: re-run with KESHA_DEBUG=1/);
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: .+: kesha-engine: segfault\n {2}hint: re-run with KESHA_DEBUG=1/);
     });
   });
 

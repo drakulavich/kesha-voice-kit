@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { deviceOutRefusal, sayCommand, shouldRejectMissingSayText } from "../../src/cli/say";
 import { parseArgs } from "citty";
 import { setColorEnabled } from "../../src/log";

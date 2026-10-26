@@ -28,6 +28,7 @@ export async function parseJunit(path: string): Promise<TestResult[]> {
 
     const results: TestResult[] = [];
 
+    // biome-ignore lint/suspicious/noExplicitAny: fast-xml-parser returns untyped nodes.
     function collect(node: any): void {
       if (!node) return;
       const items = Array.isArray(node) ? node : [node];

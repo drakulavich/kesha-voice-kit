@@ -1,6 +1,6 @@
-import { existsSync, statSync } from "fs";
+import { existsSync, statSync } from "node:fs";
 import { humanBytes } from "./format";
-import { dirname, join } from "path";
+import { dirname, join } from "node:path";
 import { getEngineBinPath, getEngineCapabilities } from "./engine";
 import { SIDECARS } from "./engine-install";
 import { engineTarget, isDarwinArm64 } from "./engine-targets";

@@ -11,8 +11,8 @@ import {
 } from "./engine";
 import { validateArgv } from "./engine/describe";
 import { KeshaError } from "./engine/events";
-import { closeSync, existsSync, fstatSync, openSync, readSync, statSync } from "fs";
-import { isAbsolute } from "path";
+import { closeSync, existsSync, fstatSync, openSync, readSync, statSync } from "node:fs";
+import { isAbsolute } from "node:path";
 
 export type { VadMode };
 

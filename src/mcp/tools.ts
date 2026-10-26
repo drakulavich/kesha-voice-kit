@@ -1,11 +1,11 @@
-import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { type McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { errorMessage } from "../error-utils";
 import { KeshaError } from "../engine/events";
 import { installHint } from "../install-hint";
 import { PATH_ERRNOS } from "../path-errnos";
 import { z } from "zod";
-import { chmodSync, existsSync, readFileSync, statSync } from "fs";
-import { basename, isAbsolute, join } from "path";
+import { chmodSync, existsSync, readFileSync, statSync } from "node:fs";
+import { basename, isAbsolute, join } from "node:path";
 import { assertAudioFileArgument, transcribeWithSegments, truncatedWavWarning } from "../transcribe";
 import { listVoices, aggregateLanguages } from "./voices";
 import { say, type SayFormat } from "../synth";

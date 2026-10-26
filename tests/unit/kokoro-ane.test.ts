@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
-import { tmpdir } from "os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   KOKORO_ANE_EN_REQUIRED,
   KOKORO_G2P_REQUIRED,

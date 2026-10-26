@@ -13,8 +13,8 @@
  * `--voice` overrides the voice, for platforms whose default engine can't run in CI.
  * `--text` overrides the sentence, for hosts that cannot synthesise the default one (#742).
  */
-import { mkdirSync } from "fs";
-import { join } from "path";
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { assertSingleTranscript } from "./assert-transcript";
 
 const ENGLISH = "The quick brown fox jumps over the lazy dog.";
@@ -28,7 +28,7 @@ export type SmokeArgs = { workDir: string; noRoundtrip: boolean; voices: typeof 
 export function parseArgs(argv: string[]): SmokeArgs | null {
   const noRoundtrip = argv.includes("--no-roundtrip");
   const valueAt: number[] = [];
-  const valueOf = (flag: string): string | null | undefined => {
+  const flagValue = (flag: string): string | null | undefined => {
     const at = argv.indexOf(flag);
     if (at === -1) return undefined;
     const value = argv[at + 1];
@@ -37,8 +37,8 @@ export function parseArgs(argv: string[]): SmokeArgs | null {
     return value;
   };
 
-  const voiceOverride = valueOf("--voice");
-  const textOverride = valueOf("--text");
+  const voiceOverride = flagValue("--voice");
+  const textOverride = flagValue("--text");
   if (voiceOverride === null || textOverride === null) return null;
 
   const workDir = argv.find((arg, i) => !arg.startsWith("--") && !valueAt.includes(i));

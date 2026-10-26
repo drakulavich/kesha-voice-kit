@@ -424,10 +424,10 @@ The CLI SHALL print usage to stdout with an empty stderr when help was asked for
 - AND adding a subcommand without listing it fails a unit test (#938)
 
 > *Technical Note — the no-argument usage block is a hand-maintained string,
-> `USAGE_MESSAGE` in `src/cli/dispatch.ts`, co-located with the `SUBCOMMANDS`
-> registry it must mirror; `src/cli/main.ts` writes the coded line and then the
-> block to stderr, followed by `process.exit(2)` (S1-1). `tests/unit/dispatch.test.ts` iterates
-> `SUBCOMMAND_NAMES` and asserts each appears in `USAGE_MESSAGE`, so the two
+> `USAGE_MESSAGE` in `src/cli/main.ts`, which must mirror the `SUBCOMMANDS`
+> registry in `src/cli/dispatch.ts`; `src/cli/main.ts` writes the coded line and then the
+> block to stderr, followed by `process.exit(2)` (S1-1). `tests/integration/cli-contracts.test.ts` iterates
+> `SUBCOMMAND_NAMES` and asserts each appears in the bare-invocation usage, so the two
 > lists can no longer drift apart (#938). `--help` is citty's own renderer over
 > the main command's `meta` and `args`, so it shows the transcription flags, not
 > each subcommand's. Both stream contracts are asserted in

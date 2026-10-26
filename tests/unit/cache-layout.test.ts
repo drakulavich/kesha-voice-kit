@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { join, resolve, sep } from "path";
+import { join, resolve, sep } from "node:path";
 import { isInsideDir } from "../../src/cache-layout";
 
 const cache = resolve(join(sep, "home", "u", ".cache", "kesha"));

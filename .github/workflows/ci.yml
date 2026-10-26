@@ -88,6 +88,7 @@ jobs:
               - 'bun.lock'
               - '.bun-version'
               - 'tsconfig.json'
+              - 'biome.json'
               # `rust/Cargo.toml` is in the SUPERSET filter so the
               # version-drift check (#267 F16) always fires on a
               # Cargo-only version bump PR. Without it, `unit-tests`
@@ -450,10 +451,10 @@ jobs:
       - name: 🍞 Setup Bun workspace
         uses: ./.github/actions/setup-bun
 
-      - name: 🔍 Type check
+      - name: 🔍 Type check and lint
         if: matrix.os == 'ubuntu-latest'
         shell: bash
-        run: bun check
+        run: bun run lint
 
       - name: 🔢 Check version drift (package.json + Cargo.toml)
         if: matrix.os == 'ubuntu-latest'

@@ -13,9 +13,9 @@ import {
   releaseChecksums,
   SIDECARS,
 } from "../../src/engine-install";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { defaultEngineBinPath } from "../../src/paths";
 import { engineVersion } from "../../src/package-info";
 import { isDarwinArm64 } from "../../src/engine-targets";
@@ -44,7 +44,7 @@ describe("engine-install version marker (#151)", () => {
     const binPath = mkTmpBinPath();
     writeInstalledEngineVersion(binPath, "1.2.0");
     expect(readInstalledEngineVersion(binPath)).toBe("1.2.0");
-    rmSync(binPath + ".version");
+    rmSync(`${binPath}.version`);
   });
 
   test("returns null when marker missing", () => {
@@ -54,16 +54,16 @@ describe("engine-install version marker (#151)", () => {
 
   test("returns null for empty marker (corrupted file treated as missing)", () => {
     const binPath = mkTmpBinPath();
-    writeFileSync(binPath + ".version", "");
+    writeFileSync(`${binPath}.version`, "");
     expect(readInstalledEngineVersion(binPath)).toBeNull();
-    rmSync(binPath + ".version");
+    rmSync(`${binPath}.version`);
   });
 
   test("returns null for whitespace-only marker", () => {
     const binPath = mkTmpBinPath();
-    writeFileSync(binPath + ".version", "  \n  ");
+    writeFileSync(`${binPath}.version`, "  \n  ");
     expect(readInstalledEngineVersion(binPath)).toBeNull();
-    rmSync(binPath + ".version");
+    rmSync(`${binPath}.version`);
   });
 
   test("trims surrounding whitespace on read (hand-written marker)", () => {
@@ -71,9 +71,9 @@ describe("engine-install version marker (#151)", () => {
     // writeInstalledEngineVersion only appends one \n, which String.trim
     // would strip regardless of our handling.
     const binPath = mkTmpBinPath();
-    writeFileSync(binPath + ".version", "  1.2.0\n\n\n");
+    writeFileSync(`${binPath}.version`, "  1.2.0\n\n\n");
     expect(readInstalledEngineVersion(binPath)).toBe("1.2.0");
-    rmSync(binPath + ".version");
+    rmSync(`${binPath}.version`);
   });
 
   test("overwrite replaces previous version", () => {
@@ -81,7 +81,7 @@ describe("engine-install version marker (#151)", () => {
     writeInstalledEngineVersion(binPath, "1.1.3");
     writeInstalledEngineVersion(binPath, "1.2.0");
     expect(readInstalledEngineVersion(binPath)).toBe("1.2.0");
-    rmSync(binPath + ".version");
+    rmSync(`${binPath}.version`);
   });
 });
 
@@ -434,11 +434,11 @@ exit 0
     writeFileSync(
       binPath,
       `#!/bin/sh
-case "\$1" in
+case "$1" in
   describe) printf '%s\\n' '${describeJson({ features: ["tts"] })}'; exit 0 ;;
   --version) printf 'kesha-engine ${engineVersion}\\n'; exit 0 ;;
 esac
-if [ "\$1" = "install" ]; then
+if [ "$1" = "install" ]; then
 ${installBody}
   exit ${installExit}
 fi
@@ -552,7 +552,7 @@ exit 0
 
   posixTest("the model install spawn speaks protocol 4", async () => {
     const dir = stageInstallableEngine("kesha-install-proto-");
-    writeEngineWithInstallBody(dir, `  printf '{"kind":"progress","message":"proto=%s"}\\n' "\$KESHA_PROTOCOL" >&2`);
+    writeEngineWithInstallBody(dir, `  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2`);
 
     const stderr = await captureStderr(false, async () => {
       await installEngine({});

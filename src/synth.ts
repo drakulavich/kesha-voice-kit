@@ -1,4 +1,4 @@
-import { statSync } from "fs";
+import { statSync } from "node:fs";
 import { engineMissingError, getDescribe, getEngineBinPath, isEngineInstalled } from "./engine";
 import { engineSignal, runEngineProcess } from "./engine/spawn";
 import { validateArgv } from "./engine/describe";

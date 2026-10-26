@@ -1,5 +1,5 @@
-import { existsSync, realpathSync, statSync } from "fs";
-import { dirname, join, resolve, sep } from "path";
+import { existsSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import { dirSizeBytes } from "./diagnostic-paths";
 import { isDarwinArm64 } from "./engine-targets";
 

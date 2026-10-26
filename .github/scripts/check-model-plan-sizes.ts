@@ -121,7 +121,7 @@ function expandModelFileMacros(source: string): string {
     if (!name || !body) continue;
     const arm = /\(([^)]*)\)\s*=>\s*\{/.exec(body.inner);
     const template = arm && balanced(body.inner, arm.index + arm[0].length - 1, "{", "}");
-    if (arm && template && template.inner.includes("ModelFile")) {
+    if (arm && template?.inner.includes("ModelFile")) {
       macros.set(name, {
         params: [...(arm[1] ?? "").matchAll(/(\$\w+):/g)].map((p) => p[1] ?? ""),
         template: template.inner,

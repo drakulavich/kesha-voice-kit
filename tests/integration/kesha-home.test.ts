@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { resolveStatePaths } from "../../src/state-paths";
 import { writeTranscribingEngine } from "../helpers/fake-engine";
 import { tempDir } from "../helpers/temp-dir";

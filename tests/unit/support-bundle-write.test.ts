@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import * as fs from "fs";
-import { join } from "path";
+import * as fs from "node:fs";
+import { join } from "node:path";
 import { exitCodeFor, KeshaError } from "../../src/engine/events";
 import { createSupportBundle } from "../../src/support-bundle";
 import { tempDir } from "../helpers/temp-dir";

@@ -6,9 +6,9 @@
  */
 
 import { Glob } from "bun";
-import { resolve, basename } from "path";
-import { existsSync, mkdirSync } from "fs";
-import { homedir } from "os";
+import { resolve, basename } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
+import { homedir } from "node:os";
 
 const CLI = "kesha";
 const VENV_DIR = resolve(homedir(), ".cache", "kesha", "benchmark-venv");

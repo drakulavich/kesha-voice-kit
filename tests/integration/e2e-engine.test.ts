@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeAll } from "bun:test";
+import { describe, test, expect, } from "bun:test";
 import { engineGate, modelsRequired } from "../helpers/model-gate";
 import { getEngineBinPath, TRANSCRIBE_DIARIZE_FEATURE } from "../../src/engine";
 import { parseDescribe } from "../../src/engine/describe";
@@ -11,7 +11,7 @@ const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
 const TRANSCRIBE_ITN_FEATURE = "transcribe.itn";
 const TRANSCRIBE_WORDS_FEATURE = "transcribe.words";
 
-const CWD = import.meta.dir + "/../..";
+const CWD = `${import.meta.dir}/../..`;
 const FIXTURE_RU = "tests/fixtures/benchmark/01-ne-nuzhno-slat-soobshcheniya.ogg";
 const FIXTURE_EN = "tests/fixtures/benchmark-en/01-check-email.ogg";
 

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
-import { tmpdir } from "os";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { getEngineBinaryName, installEngine, SIDECARS } from "../../src/engine-install";
 import { installableTtsLangs, probeCapabilitiesForInstall, resolveTtsLangs } from "../../src/cli/install";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "../../src/engine-health";

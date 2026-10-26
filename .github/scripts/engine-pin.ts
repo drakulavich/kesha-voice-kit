@@ -12,7 +12,7 @@
 import { readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { downloadedAssetNames, parseSha256Sums } from "../../src/engine-targets";
-import type { AssetPins } from "../../src/engine-install";
+import type { AssetPins } from "../../src/package-info";
 import { cmp, isSemver, parseSemver } from "../../src/semver.mjs";
 
 export const PINNED_ASSETS = downloadedAssetNames();

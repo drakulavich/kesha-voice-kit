@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readFileSync } from "node:fs";
 
 const PID_FILE_POLL_INTERVAL_MS = 25;
 // 10s: the fake engine traps SIGTERM, so every abort waits out FORCE_KILL_GRACE_MS before SIGKILL.
