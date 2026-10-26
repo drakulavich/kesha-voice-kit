@@ -23,9 +23,17 @@ use super::avspeech;
 /// silence. 30s × 24 kHz × 4 B ≈ 2.9 MB max per tag, easily affordable.
 const MAX_BREAK_SECS: f64 = 30.0;
 
+const WARN_BREAK_CAPPED: &str = "break-capped";
+
 fn silence_len(dur: std::time::Duration, sample_rate: u32) -> usize {
-    let secs = dur.as_secs_f64().min(MAX_BREAK_SECS);
-    (secs * sample_rate as f64).round() as usize
+    let asked = dur.as_secs_f64();
+    if asked > MAX_BREAK_SECS {
+        crate::tts::warn::warn_once(
+            WARN_BREAK_CAPPED,
+            &format!("<break> of {asked}s capped to {MAX_BREAK_SECS}s, the longest pause one break can insert"),
+        );
+    }
+    (asked.min(MAX_BREAK_SECS) * sample_rate as f64).round() as usize
 }
 
 /// Engine-safe playback rate: Vosk and Kokoro both honor rate within ~7% of theoretical at these endpoints (#236).
@@ -1410,6 +1418,15 @@ mod tests {
             "interior dead air of {} ms where none was requested",
             dead / 8
         );
+    }
+
+    #[test]
+    fn a_break_past_the_cap_is_capped_with_a_warning() {
+        use std::time::Duration;
+        assert_eq!(silence_len(Duration::from_secs(30), 1_000), 30_000);
+        assert!(!crate::tts::warn::was_warned(WARN_BREAK_CAPPED));
+        assert_eq!(silence_len(Duration::from_secs(999), 1_000), 30_000);
+        assert!(crate::tts::warn::was_warned(WARN_BREAK_CAPPED));
     }
 
     #[test]
