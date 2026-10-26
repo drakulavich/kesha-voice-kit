@@ -10,7 +10,7 @@ let workDir: string;
 let compiledBin: string;
 
 async function runCompiled(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-  const proc = Bun.spawn([compiledBin, ...args], { stdout: "pipe", stderr: "pipe" });
+  const proc = Bun.spawn([compiledBin, ...args], { env: process.env, stdout: "pipe", stderr: "pipe" });
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),

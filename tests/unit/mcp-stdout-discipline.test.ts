@@ -6,6 +6,7 @@ describe("mcp stdout discipline", () => {
     // "bun" fails uv_spawn on Windows (no PATH/.exe resolution). import.meta.dir
     // (Bun-native, absolute) anchors the repo root so this works regardless of cwd.
     const proc = Bun.spawn([process.execPath, "bin/kesha.js", "mcp"], {
+      env: process.env,
       stdin: "pipe",
       stdout: "pipe",
       stderr: "pipe",
