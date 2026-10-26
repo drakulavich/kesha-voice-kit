@@ -97,14 +97,15 @@ export function engineCrashMessage(
 const KEPT_SYMBOL = /([©®™])️/g;
 const EMOJI = /\p{RGI_Emoji}|[\p{Extended_Pictographic}--[©®™]]/gv;
 
-/**
- * Emoji are decoration in a reply; a voice would read out their Unicode names (#1388).
- * Emoji-only text, SSML tags aside, goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
- */
+/** Emoji are decoration in a reply; a voice would read out their Unicode names (#1388). */
 export function dropEmoji(text: string, ssml = false): string {
-  const spoken = (ssml ? decodeCharRefs(text) : text).replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
+  return (ssml ? decodeCharRefs(text) : text).replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
+}
+
+function hasSpeech(text: string, ssml: boolean): boolean {
+  const spoken = dropEmoji(text, ssml);
   const speech = ssml ? spoken.replace(CDATA, "$1").replace(/<[^>]*>/g, "") : spoken;
-  return speech.trim().length > 0 ? spoken : text;
+  return speech.trim().length > 0;
 }
 
 const CDATA = /<!\[CDATA\[([\s\S]*?)\]\]>/g;
@@ -133,9 +134,12 @@ function decodeCharRefs(ssml: string): string {
  * The text contract both doors enforce, before anything that costs a subprocess.
  * Throws `KeshaError`; the CLI runs it before voice routing, `say()` for programmatic callers.
  */
-export function validateSayText(text: string): void {
+export function validateSayText(text: string, ssml = false): void {
   if (text.trim().length === 0) {
     throw new KeshaError("E_TEXT_EMPTY", "text is empty", { exitCode: 2, stderr: "" });
+  }
+  if (!hasSpeech(text, ssml)) {
+    throw new KeshaError("E_TEXT_EMPTY", "text has nothing to speak: emoji and SSML tags are not read aloud", { exitCode: 2, stderr: "" });
   }
   const chars = Array.from(text).length;
   if (chars > MAX_TEXT_CHARS) {
@@ -160,7 +164,7 @@ function missingAudio(out: string | undefined, stdoutBytes: number): string | nu
 
 export async function say(opts: SayOptions): Promise<Uint8Array> {
   const text = opts.text ?? "";
-  validateSayText(text);
+  validateSayText(text, opts.ssml);
 
   if (!isEngineInstalled()) {
     throw engineMissingError("speech synthesis", "--tts");

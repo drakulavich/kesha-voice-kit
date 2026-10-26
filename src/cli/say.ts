@@ -405,7 +405,7 @@ export const sayCommand = defineCommand({
     let voice: string | undefined;
     try {
       text = await resolveText(inlineText);
-      validateSayText(text);
+      validateSayText(text, Boolean(args.ssml));
       voice = await resolveSayVoice(explicitVoice, langHint, text);
     } catch (err) {
       log.error(errorMessage(err));
