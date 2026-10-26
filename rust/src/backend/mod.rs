@@ -51,6 +51,25 @@ pub trait TranscribeBackend {
     fn transcribe_samples(&mut self, samples: &[f32]) -> Result<TranscriptionChunk>;
 }
 
+/// The model invents "Thank you." in some lengths of pure zeros (#1578).
+pub struct SilenceGuard(pub Box<dyn TranscribeBackend>);
+
+impl TranscribeBackend for SilenceGuard {
+    fn transcribe(&mut self, audio_path: &Path) -> Result<TranscriptionChunk> {
+        if crate::audio::is_digital_silence(audio_path)? {
+            return Ok(String::new().into());
+        }
+        self.0.transcribe(audio_path)
+    }
+
+    fn transcribe_samples(&mut self, samples: &[f32]) -> Result<TranscriptionChunk> {
+        if crate::audio::samples_are_digital_silence(samples) {
+            return Ok(String::new().into());
+        }
+        self.0.transcribe_samples(samples)
+    }
+}
+
 pub fn create_backend(model_dir: &Path) -> Result<Box<dyn TranscribeBackend>> {
     #[cfg(feature = "coreml")]
     {
@@ -101,6 +120,42 @@ mod tests {
         fn transcribe_samples(&mut self, _samples: &[f32]) -> Result<TranscriptionChunk> {
             unimplemented!("not exercised by this test")
         }
+    }
+
+    struct InventsThanks;
+
+    impl TranscribeBackend for InventsThanks {
+        fn transcribe(&mut self, _audio_path: &Path) -> Result<TranscriptionChunk> {
+            Ok("Thank you.".to_string().into())
+        }
+
+        fn transcribe_samples(&mut self, _samples: &[f32]) -> Result<TranscriptionChunk> {
+            Ok("Thank you.".to_string().into())
+        }
+    }
+
+    #[test]
+    fn digital_silence_never_reaches_the_model() {
+        let dir = tempfile::tempdir().unwrap();
+        let zeros = dir.path().join("zeros.wav");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&zeros, spec).unwrap();
+        for _ in 0..3_200 {
+            w.write_sample(0i16).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let mut be = SilenceGuard(Box::new(InventsThanks));
+        assert_eq!(be.transcribe(&zeros).unwrap().text, "");
+        assert_eq!(be.transcribe_samples(&[0.0; 3_200]).unwrap().text, "");
+        let mut speech = vec![0.0; 3_200];
+        speech[100] = 0.2;
+        assert_eq!(be.transcribe_samples(&speech).unwrap().text, "Thank you.");
     }
 
     // Guards a revert to `&str`; a generic `AsRef<Path>` signature would also satisfy this, and that's fine (#958).

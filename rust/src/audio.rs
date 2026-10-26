@@ -375,18 +375,25 @@ pub fn measure_duration_seconds(path: &str) -> Result<f32> {
 
 const DIGITAL_SILENCE_PEAK: f32 = 1.0 / 32768.0;
 
+pub fn samples_are_digital_silence(samples: &[f32]) -> bool {
+    samples.iter().all(|s| s.abs() <= DIGITAL_SILENCE_PEAK)
+}
+
 /// Stops decoding at the first sample above one 16-bit step, so audio with sound costs a packet or two.
 pub fn is_digital_silence(path: &Path) -> Result<bool> {
+    let mut decoded = 0usize;
     let mut silent = true;
     decode_packets(path, |samples| {
-        if samples.iter().any(|s| s.abs() > DIGITAL_SILENCE_PEAK) {
+        decoded += samples.len();
+        if !samples_are_digital_silence(samples) {
             silent = false;
             ControlFlow::Break(())
         } else {
             ControlFlow::Continue(())
         }
     })?;
-    Ok(silent)
+    // A file that decodes to nothing is damaged, not silent: the backend reports it.
+    Ok(silent && decoded > 0)
 }
 
 /// Validate that the file is a supported audio container with at least one
@@ -441,6 +448,9 @@ mod tests {
         late_click[23_000] = 0.01;
         let path = write_wav(dir.path(), "late-click.wav", &late_click);
         assert!(!is_digital_silence(&path).unwrap());
+
+        let header_only = write_wav(dir.path(), "header-only.wav", &[]);
+        assert!(!matches!(is_digital_silence(&header_only), Ok(true)));
     }
 
     #[test]
