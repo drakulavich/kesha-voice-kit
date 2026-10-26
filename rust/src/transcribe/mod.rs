@@ -348,6 +348,14 @@ pub fn transcribe_with_options(
     validate_plain_transcribe_safety(mode, duration, vad_installed)?;
 
     let model_dir = ensure_asr_installed(models::cache_dir())?;
+    // The model invents "Thank you." in some lengths of pure zeros (#1578).
+    if audio::is_digital_silence(Path::new(audio_path))? {
+        dtrace!("asr::digital_silence");
+        return Ok(TranscriptionOutput {
+            segments: vec![],
+            text: String::new(),
+        });
+    }
     let decision = decide(mode, duration, vad_installed);
     dtrace!(
         "asr::mode={mode:?} duration={:?} vad_installed={vad_installed} decision={decision:?}",
