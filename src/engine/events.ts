@@ -226,6 +226,13 @@ export function exitCodeFor(err: unknown): number {
   return err.exitCode ?? CLI_EXIT_CODES[err.code] ?? 1;
 }
 
+/** The fix for an engine that runs but is the wrong one: an override the user set is what to change (#1581). */
+export function replaceEngineHint(): string {
+  return process.env.KESHA_ENGINE_BIN
+    ? "KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`"
+    : "run `kesha install` to fetch the engine this CLI expects";
+}
+
 const MAX_QUOTED_LINE_CHARS = 200;
 
 export const SUPPORT_BUNDLE_HINT = "re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive";

@@ -906,7 +906,7 @@ describe("CLI contracts", () => {
     const res = await runCli([mediaPath, "--json", "--include-errors"], { env: { ...isolatedEnv(dir), KESHA_ENGINE_BIN: enginePath } });
     expectContract(res, {
       exitCode: 1,
-      stderrContains: ["error [E_ENGINE_PROTOCOL]: ", "hint: run `kesha install`"],
+      stderrContains: ["error [E_ENGINE_PROTOCOL]: ", "hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`"],
       stderrNotContains: ["Transcribing"],
     });
     const parsed = JSON.parse(res.stdout);
