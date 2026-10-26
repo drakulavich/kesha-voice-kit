@@ -1,4 +1,5 @@
 import { describe, test, expect, } from "bun:test";
+import { join, resolve } from "node:path";
 import { engineGate, modelsRequired } from "../helpers/model-gate";
 import { getEngineBinPath, TRANSCRIBE_DIARIZE_FEATURE } from "../../src/engine";
 import { parseDescribe } from "../../src/engine/describe";
@@ -51,8 +52,8 @@ test.skipIf(!engineInstalled)("a CLI run from this suite keeps its log and Stats
   expect(exitCode).toBe(0);
   const { paths } = JSON.parse(stdout);
   expect({ logs: paths.logs.path, stats: paths.stats.path }).toEqual({
-    logs: `${process.env.KESHA_HOME}/logs`,
-    stats: `${process.env.KESHA_HOME}/stats.sqlite`,
+    logs: join(resolve(process.env.KESHA_HOME!), "logs"),
+    stats: join(resolve(process.env.KESHA_HOME!), "stats.sqlite"),
   });
 });
 
