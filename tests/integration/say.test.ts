@@ -421,6 +421,21 @@ describe("kesha say (CLI)", () => {
     });
   }
 
+  it("overwrites an existing --out file of the same size with the new audio (#1579)", async () => {
+    const dir = tempDir("kesha-fake-engine-");
+    const enginePath = await createFakeEngine(dir);
+    const outPath = `${dir}/reply.wav`;
+    writeFileSync(outPath, "oldaudio");
+    const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", "--out", outPath, "Привет"], {
+      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(await proc.exited).toBe(0);
+    expect([...readFileSync(outPath)]).toEqual([82, 73, 70, 70, 0, 0, 0, 0]);
+  });
+
   it("fails when the engine exits 0 and leaves an existing --out file untouched (#1579)", async () => {
     const dir = tempDir("kesha-mute-engine-");
     const enginePath = await createMuteEngine(dir);
