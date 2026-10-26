@@ -35,6 +35,13 @@ describe("resolveSayFlags: --format", () => {
   });
 });
 
+describe("resolveSayFlags: --lang", () => {
+  test("rejects a code that names no language and accepts a real one (#1581)", () => {
+    expect(err({ lang: "xx" })).toBe('--lang "xx" is not a language code; pass one such as en, ru or pt-BR.');
+    expect(ok({ lang: "pt-BR" }).lang).toBe("pt-BR");
+  });
+});
+
 describe("resolveSayFlags: --rate", () => {
   test("accepts the documented 0.5–2.0 range", () => {
     expect(ok({ rate: "0.5" }).rate).toBe(0.5);

@@ -4,7 +4,7 @@ import { extname } from "node:path";
 import { errorMessage } from "../error-utils";
 import { engineMissingError, isEngineInstalled } from "../engine";
 import { exitCodeFor, KeshaError } from "../engine/events";
-import { positionalArgs, renderInvalidArg } from "./options";
+import { langFlagError, positionalArgs, renderInvalidArg } from "./options";
 import { log } from "../log";
 import {
   MAX_TEXT_CHARS,
@@ -195,6 +195,8 @@ export function resolveSayFlags(args: SayFlagArgs): ResolvedSayFlags {
   if (opusOnlyError) return { ok: false, error: opusOnlyError };
   const outExtError = checkOutExtension(out);
   if (outExtError) return { ok: false, error: outExtError };
+  const langError = langFlagError(args.lang);
+  if (langError) return { ok: false, error: langError };
 
   return {
     ok: true,

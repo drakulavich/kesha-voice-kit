@@ -77,6 +77,17 @@ export function positionalArgs(rawArgs: string[], argsDef: ArgsDef): string[] {
 }
 
 /** The coded line for a usage error the CLI refuses before doing anything (S9-F2). */
+const LANGUAGE_NAMES = new Intl.DisplayNames(["en"], { type: "language", fallback: "none" });
+
+export function langFlagError(lang: unknown): string | null {
+  if (typeof lang !== "string") return null;
+  let known: string | undefined;
+  try {
+    known = LANGUAGE_NAMES.of(lang);
+  } catch {}
+  return known ? null : `--lang ${JSON.stringify(lang)} is not a language code; pass one such as en, ru or pt-BR.`;
+}
+
 export function renderInvalidArg(message: string): string {
   return renderError({ code: "E_INVALID_ARG", message });
 }
