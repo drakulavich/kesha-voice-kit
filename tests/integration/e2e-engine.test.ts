@@ -1,4 +1,5 @@
 import { describe, test, expect, } from "bun:test";
+import { join, resolve } from "node:path";
 import { engineGate, modelsRequired } from "../helpers/model-gate";
 import { getEngineBinPath, TRANSCRIBE_DIARIZE_FEATURE } from "../../src/engine";
 import { parseDescribe } from "../../src/engine/describe";
@@ -31,6 +32,7 @@ function skipUnlessRequired(reason: string): void {
 
 async function runCli(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   const proc = Bun.spawn([process.execPath, "run", "src/cli-entry.ts", ...args], {
+    env: process.env,
     stdout: "pipe",
     stderr: "pipe",
     cwd: CWD,
@@ -44,6 +46,16 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
 
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
+
+test.skipIf(!engineInstalled)("a CLI run from this suite keeps its log and Stats DB in the harness home (#1582)", async () => {
+  const { stdout, exitCode } = await runCli(["status", "--json"]);
+  expect(exitCode).toBe(0);
+  const { paths } = JSON.parse(stdout);
+  expect({ logs: paths.logs.path, stats: paths.stats.path }).toEqual({
+    logs: join(resolve(process.env.KESHA_HOME!), "logs"),
+    stats: join(resolve(process.env.KESHA_HOME!), "stats.sqlite"),
+  });
+});
 
 async function runEngine(
   args: string[],
