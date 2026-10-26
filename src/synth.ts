@@ -150,10 +150,20 @@ export function validateSayText(text: string): void {
   }
 }
 
-function missingAudio(out: string | undefined, stdoutBytes: number): string | null {
+function outStamp(out: string | undefined): string | null {
+  if (!out) return null;
+  try {
+    const s = statSync(out, { bigint: true });
+    return `${s.ino}:${s.mtimeNs}:${s.size}`;
+  } catch {
+    return null;
+  }
+}
+
+function missingAudio(out: string | undefined, stdoutBytes: number, before: string | null): string | null {
   if (!out) return stdoutBytes > 0 ? null : "no audio to stdout";
   try {
-    if (statSync(out).size > 0) return null;
+    if (statSync(out).size > 0 && outStamp(out) !== before) return null;
   } catch {}
   return `nothing to ${out}`;
 }
@@ -167,6 +177,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   }
   const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe({ signal: opts.signal }));
   for (const warning of warnings) log.warn(warning);
+  const before = outStamp(opts.out);
   const { exitCode, signalCode, aborted, stdout, events } = await runEngineProcess(getEngineBinPath(), args, {
     stdio: ["pipe", "pipe", "pipe"],
     stdin: dropEmoji(text, opts.ssml),
@@ -178,7 +189,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   const stderrText = events.stderr;
   if (exitCode === 0 && events.invalid.length === 0 && !events.error) {
     if (stderrText.length > 0) process.stderr.write(stderrText);
-    const missing = missingAudio(opts.out, stdout.byteLength);
+    const missing = missingAudio(opts.out, stdout.byteLength, before);
     if (missing) throw new KeshaError("E_INTERNAL", `kesha-engine exited 0 but wrote ${missing}`, { exitCode: 1, stderr: "", hint: SUPPORT_BUNDLE_HINT });
     return new Uint8Array(stdout);
   }
