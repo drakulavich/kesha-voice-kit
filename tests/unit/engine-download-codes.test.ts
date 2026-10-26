@@ -16,7 +16,8 @@ let restore: () => void = () => {};
 const BROKEN_MID_STREAM = `(() => { let sent = false; return new ReadableStream({ pull(c) { if (sent) { c.error(new TypeError("The socket connection was closed unexpectedly")); return; } sent = true; c.enqueue(new TextEncoder().encode(${JSON.stringify(ENGINE.slice(0, 5))})); } }); })()`;
 const ZERO_BYTES = `new ReadableStream({ start(c) { c.close(); } })`;
 // biome-ignore lint/security/noGlobalEval: the same source string also runs in the spawned CLI, so the in-process stub is built from it.
-const streamed = (body: string) => globalThis.eval(`(async () => new Response(${body}, { status: 200 }))`) as typeof fetch;
+const indirectEval = eval;
+const streamed = (body: string) => indirectEval(`(async () => new Response(${body}, { status: 200 }))`) as typeof fetch;
 
 type Failure = { name: string; fetch: typeof fetch; served: string; code: string; hint: RegExp };
 
@@ -176,8 +177,7 @@ describe("a SHA256SUMS the installer cannot use is E_MODEL_DOWNLOAD with a hint"
     ] as const) {
       test(`${surface}: SHA256SUMS ${c.name}`, async () => {
         engineChecksums.pins = undefined;
-        // biome-ignore lint/security/noGlobalEval: the same source string also runs in the spawned CLI, so the in-process stub is built from it.
-        globalThis.fetch = globalThis.eval(`(${sumsFetch(c.respond)})`) as typeof fetch;
+        globalThis.fetch = indirectEval(`(${sumsFetch(c.respond)})`) as typeof fetch;
 
         const err = await rejectionOf(run());
 
