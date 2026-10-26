@@ -1,3 +1,4 @@
+use std::ops::ControlFlow;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -143,7 +144,10 @@ fn open_format(path: &Path) -> Result<OpenedTrack> {
 /// interleaved samples to `on_samples`. Returns the track's sample rate and
 /// channel count. Consumers that don't need the audio itself must not retain
 /// the slice, so they stay O(1) in memory.
-fn decode_packets<F: FnMut(&[f32])>(path: &Path, mut on_samples: F) -> Result<(u32, usize)> {
+fn decode_packets<F: FnMut(&[f32]) -> ControlFlow<()>>(
+    path: &Path,
+    mut on_samples: F,
+) -> Result<(u32, usize)> {
     let OpenedTrack {
         mut format,
         track_id,
@@ -198,7 +202,9 @@ fn decode_packets<F: FnMut(&[f32])>(path: &Path, mut on_samples: F) -> Result<(u
         };
 
         decoded.copy_to_vec_interleaved(&mut samples);
-        on_samples(&samples);
+        if on_samples(&samples).is_break() {
+            break;
+        }
     }
 
     Ok((sample_rate, channels))
@@ -206,8 +212,10 @@ fn decode_packets<F: FnMut(&[f32])>(path: &Path, mut on_samples: F) -> Result<(u
 
 fn decode_audio(path: &Path) -> Result<(Vec<f32>, u32, usize)> {
     let mut all_samples: Vec<f32> = Vec::new();
-    let (sample_rate, channels) =
-        decode_packets(path, |samples| all_samples.extend_from_slice(samples))?;
+    let (sample_rate, channels) = decode_packets(path, |samples| {
+        all_samples.extend_from_slice(samples);
+        ControlFlow::Continue(())
+    })?;
     Ok((all_samples, sample_rate, channels))
 }
 
@@ -350,8 +358,10 @@ pub fn probe_duration_seconds(path: &str) -> Result<Option<f32>> {
 /// advisory routing decisions.
 pub fn measure_duration_seconds(path: &str) -> Result<f32> {
     let mut decoded_samples = 0usize;
-    let (sample_rate, channels) =
-        decode_packets(Path::new(path), |samples| decoded_samples += samples.len())?;
+    let (sample_rate, channels) = decode_packets(Path::new(path), |samples| {
+        decoded_samples += samples.len();
+        ControlFlow::Continue(())
+    })?;
     let frames = decoded_samples / channels.max(1);
     if frames == 0 || sample_rate == 0 {
         coded_bail!(
@@ -361,6 +371,29 @@ pub fn measure_duration_seconds(path: &str) -> Result<f32> {
         );
     }
     Ok(frames as f32 / sample_rate as f32)
+}
+
+const DIGITAL_SILENCE_PEAK: f32 = 1.0 / 32768.0;
+
+pub fn samples_are_digital_silence(samples: &[f32]) -> bool {
+    samples.iter().all(|s| s.abs() <= DIGITAL_SILENCE_PEAK)
+}
+
+/// Stops decoding at the first sample above one 16-bit step, so audio with sound costs a packet or two.
+pub fn is_digital_silence(path: &Path) -> Result<bool> {
+    let mut decoded = 0usize;
+    let mut silent = true;
+    decode_packets(path, |samples| {
+        decoded += samples.len();
+        if !samples_are_digital_silence(samples) {
+            silent = false;
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    })?;
+    // A file that decodes to nothing is damaged, not silent: the backend reports it.
+    Ok(silent && decoded > 0)
 }
 
 /// Validate that the file is a supported audio container with at least one
@@ -385,6 +418,40 @@ pub fn ensure_audio_track(path: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn write_wav(dir: &Path, name: &str, samples: &[f32]) -> std::path::PathBuf {
+        let path = dir.join(name);
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&path, spec).unwrap();
+        for s in samples {
+            w.write_sample((s * 32767.0) as i16).unwrap();
+        }
+        w.finalize().unwrap();
+        path
+    }
+
+    // #1578: the ASR model hears "Thank you." in 0.1, 0.2 and 1.5 s of zeros.
+    #[test]
+    fn digital_silence_is_detected_and_any_sound_is_not() {
+        let dir = tempfile::tempdir().unwrap();
+        for secs in [0.1f32, 0.2, 1.5, 3.0] {
+            let zeros = vec![0.0; (secs * 16_000.0) as usize];
+            let path = write_wav(dir.path(), &format!("zeros-{secs}.wav"), &zeros);
+            assert!(is_digital_silence(&path).unwrap(), "{secs}s of zeros");
+        }
+        let mut late_click = vec![0.0; 24_000];
+        late_click[23_000] = 0.01;
+        let path = write_wav(dir.path(), "late-click.wav", &late_click);
+        assert!(!is_digital_silence(&path).unwrap());
+
+        let header_only = write_wav(dir.path(), "header-only.wav", &[]);
+        assert!(!matches!(is_digital_silence(&header_only), Ok(true)));
+    }
 
     #[test]
     fn mix_to_mono_passes_mono_through() {

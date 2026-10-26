@@ -465,7 +465,8 @@ fn create_timed_backend(model_dir: &Path) -> Result<Box<dyn backend::TranscribeB
     // A cold ASR load runs into tens of seconds; without a live event a wired-up spinner reads as a hang (Exploratory S8-8).
     events::progress(Some("transcribe"), "loading the speech model");
     let t0 = Instant::now();
-    let be = backend::create_backend(model_dir)?;
+    let be: Box<dyn backend::TranscribeBackend> =
+        Box::new(backend::SilenceGuard(backend::create_backend(model_dir)?));
     let dt_ms = t0.elapsed().as_millis() as u64;
     dtrace!("asr::backend_loaded dt={dt_ms}ms");
     dtrace_json!("asr.backend_loaded", { "dt_ms": dt_ms });
