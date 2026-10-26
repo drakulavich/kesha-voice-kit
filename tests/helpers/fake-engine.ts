@@ -1,7 +1,7 @@
-import { createHash } from "crypto";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
-import { tmpdir } from "os";
-import { join } from "path";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { DescribeDocument, FlagSchema, TtsLanguageCapability } from "../../src/engine/describe";
 import { engineChecksums } from "../../src/engine-install";
 import { tempDir } from "./temp-dir";
@@ -136,7 +136,8 @@ export function describeDocument(opts: DescribeOptions = {}): DescribeDocument {
   for (const [command, flag, schema] of DESCRIBE_ROWS) {
     if ((command === "say" || (command === "install" && flag === "tts")) && !ttsBuild) continue;
     if (command === "install" && flag === "diarize" && !diarizeBuild) continue;
-    (commands[command] ??= { flags: {} }).flags[flag] = schema;
+    commands[command] ??= { flags: {} };
+    commands[command].flags[flag] = schema;
   }
   const sorted = Object.fromEntries(
     Object.keys(commands)

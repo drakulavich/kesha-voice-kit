@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "bun:test";
 import { spawn } from "bun";
-import { existsSync, mkdirSync, symlinkSync } from "fs";
-import { join } from "path";
+import { existsSync, mkdirSync, symlinkSync } from "node:fs";
+import { join } from "node:path";
 import { tempDir } from "../helpers/temp-dir";
 
 const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;

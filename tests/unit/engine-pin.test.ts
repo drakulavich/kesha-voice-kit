@@ -8,7 +8,7 @@ import { readRepoFile, REPO_ROOT } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
 
 const sha = (c: string) => c.repeat(64);
-const SUMS = PINNED_ASSETS.map((name, i) => `${sha("abcde"[i]!)}  ./${name}`).join("\n") + `\n${sha("f")}  ./kesha-voice-kit_2.0.0-1_amd64.deb\n`;
+const SUMS = `${PINNED_ASSETS.map((name, i) => `${sha("abcde"[i]!)}  ./${name}`).join("\n")}\n${sha("f")}  ./kesha-voice-kit_2.0.0-1_amd64.deb\n`;
 const ASSETS = [...PINNED_ASSETS.map((name, i) => ({ name, size: 1000 + i })), { name: "kesha-voice-kit_2.0.0-1_amd64.deb", size: 7 }];
 
 describe("buildEnginePin", () => {

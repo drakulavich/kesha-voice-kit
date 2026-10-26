@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { tryParseSemver } from "./semver.mjs";
 import { errorMessage } from "./error-utils";
 

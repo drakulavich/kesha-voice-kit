@@ -7,9 +7,9 @@ import {
   readFileSync,
   rmSync,
   writeFileSync,
-} from "fs";
-import { dirname, join } from "path";
-import { homedir, tmpdir } from "os";
+} from "node:fs";
+import { dirname, join } from "node:path";
+import { homedir, tmpdir } from "node:os";
 import {
   assertNotRealCacheUnderTest,
   getEngineBinaryName,

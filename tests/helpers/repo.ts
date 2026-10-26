@@ -13,6 +13,6 @@ export function readRepoFile(path: string): string {
   return readFileSync(repoPath(path), "utf8").replace(/\r\n/g, "\n");
 }
 
-export function parseRepoYaml(path: string): any {
+export function parseRepoYaml(path: string) {
   return parse(readRepoFile(path));
 }

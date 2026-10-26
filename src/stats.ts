@@ -2,9 +2,9 @@ import { Database } from "bun:sqlite";
 import { KeshaError } from "./engine/events";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
-import { existsSync, mkdirSync, statSync } from "fs";
-import { homedir } from "os";
-import { dirname, extname, join } from "path";
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { dirname, extname, } from "node:path";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
 import { resolveStatePaths } from "./state-paths";
@@ -951,10 +951,10 @@ function renderStatsCsv(data: StatsExportData): string {
     });
   }
 
-  return [
+  return `${[
     header.join(","),
     ...rows.map((row) => header.map((name) => csvCell(row[name] ?? null)).join(",")),
-  ].join("\n") + "\n";
+  ].join("\n")}\n`;
 }
 
 function csvCell(value: string | number | null): string {

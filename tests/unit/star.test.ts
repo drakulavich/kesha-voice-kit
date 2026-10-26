@@ -7,9 +7,9 @@ import {
   hasStarMarker,
   maybeAskForStar,
 } from "../../src/star";
-import { mkdtempSync, writeFileSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
+import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 const tmpDirs: string[] = [];
 

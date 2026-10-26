@@ -12,9 +12,9 @@ import {
   rmSync,
   statSync,
   writeFileSync,
-} from "fs";
-import { tmpdir } from "os";
-import { delimiter, dirname, join } from "path";
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, dirname, join } from "node:path";
 import { engineVersion } from "../../src/package-info";
 import { engineTarget } from "../../src/engine-targets";
 import { SUBCOMMAND_NAMES } from "../../src/cli/dispatch";
@@ -33,7 +33,7 @@ import {
 setDefaultTimeout(DEFAULT_TIMEOUT_MS * 2);
 
 const tempDirs: string[] = [];
-const DEFAULT_CWD = import.meta.dir + "/../..";
+const DEFAULT_CWD = `${import.meta.dir}/../..`;
 
 async function runCli(
   args: string[],

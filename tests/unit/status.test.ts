@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from "fs";
-import { dirname, join, sep } from "path";
-import { tmpdir } from "os";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import { dirname, join, sep } from "node:path";
+import { tmpdir } from "node:os";
 import {
   formatStatusLine,
   activeModelMirror,

@@ -12,9 +12,9 @@ import {
   rmSync,
   writeFileSync,
   writeSync,
-} from "fs";
-import { hostname, tmpdir } from "os";
-import { join } from "path";
+} from "node:fs";
+import { hostname, tmpdir } from "node:os";
+import { join } from "node:path";
 import { acquireInstallLock } from "../../src/install-lock";
 
 const tempDirs: string[] = [];

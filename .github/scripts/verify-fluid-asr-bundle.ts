@@ -7,8 +7,8 @@
  * immutable exact key: later seed probes hit it and skip repair, while every PR restores
  * the broken entry (#675).
  */
-import { existsSync } from "fs";
-import { join } from "path";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { FLUID_ASR_REQUIRED, fluidAsrCachePath } from "../../src/fluid-asr-cache";
 
 const dir = fluidAsrCachePath();

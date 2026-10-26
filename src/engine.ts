@@ -1,7 +1,7 @@
-import { spawnSync } from "child_process";
-import { existsSync, statSync, type Stats } from "fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, statSync, type Stats } from "node:fs";
 import { errorMessage } from "./error-utils";
-import { join } from "path";
+import { join } from "node:path";
 import { installHint } from "./install-hint";
 import { log } from "./log";
 import { createLiveStatus } from "./progress";

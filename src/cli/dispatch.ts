@@ -1,6 +1,6 @@
 import { renderUsage, runMain, type ArgsDef, type CommandDef } from "citty";
-import { existsSync } from "fs";
-import { stripVTControlCharacters } from "util";
+import { existsSync } from "node:fs";
+import { stripVTControlCharacters } from "node:util";
 import { exitCodeFor, KeshaError, SUPPORT_BUNDLE_HINT } from "../engine/events";
 import { errorMessage } from "../error-utils";
 import { isColorEnabled, log } from "../log";
@@ -11,7 +11,7 @@ import { applyCliContext, resolveCliContext } from "./context";
 import { rejectExtraPositionals, rejectUnknownOptions, renderInvalidArg } from "./options";
 
 // Lazy loaders so a cold CLI spawn transpiles only the invoked command, not the whole graph (#568).
-// `CommandDef<any>`: citty's generic is invariant in the arg shape and each command has its own schema.
+// biome-ignore lint/suspicious/noExplicitAny: citty's CommandDef is invariant in the arg shape and each command has its own schema.
 type CommandLoader = () => Promise<CommandDef<any>>;
 const SUBCOMMANDS: Record<string, CommandLoader> = {
   doctor: async () => (await import("./doctor")).doctorCommand,
@@ -29,24 +29,6 @@ const SUBCOMMANDS: Record<string, CommandLoader> = {
 };
 
 export const SUBCOMMAND_NAMES = Object.keys(SUBCOMMANDS);
-
-// Hand-curated ordering and per-command argument hints; every key in SUBCOMMANDS
-// must appear here, guarded at the observable layer by the bare-invocation case in
-// tests/integration/cli-contracts.test.ts (#938).
-export const USAGE_MESSAGE =
-  "Usage: kesha <audio_file> [audio_file ...]\n" +
-  "       kesha completions <bash|zsh|fish>\n" +
-  "       kesha doctor [--json] [--redact]\n" +
-  "       kesha init [--yes]\n" +
-  "       kesha install [--no-cache]\n" +
-  "       kesha logs [enable|disable|mode|status|path|reset]\n" +
-  "       kesha manpage\n" +
-  "       kesha mcp\n" +
-  "       kesha record --out path.wav [--max-seconds 120]\n" +
-  "       kesha status\n" +
-  "       kesha say <text>\n" +
-  "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +
-  "       kesha support-bundle [--output path.tar.gz]";
 
 function isPathLike(arg: string): boolean {
   return arg.includes(".") || arg.includes("/") || existsSync(arg);
@@ -96,10 +78,10 @@ export function unknownCommandMessages(token: string, subcommandKeys: string[]):
 
 async function showUsage<T extends ArgsDef>(cmd: CommandDef<T>, parent?: CommandDef<T>): Promise<void> {
   const usage = await renderUsage(cmd, parent);
-  console.log((isColorEnabled() ? usage : stripVTControlCharacters(usage)) + "\n");
+  console.log(`${isColorEnabled() ? usage : stripVTControlCharacters(usage)}\n`);
 }
 
-async function resolveArgsDef(command: CommandDef<any>): Promise<ArgsDef> {
+async function resolveArgsDef<T extends ArgsDef>(command: CommandDef<T>): Promise<ArgsDef> {
   const args = command.args;
   return (typeof args === "function" ? await args() : await args) ?? {};
 }
@@ -120,7 +102,7 @@ function misplacedSubcommand(rawArgs: string[], subcommandKeys: string[]): strin
 }
 
 /** citty's runMain prints whatever `run` throws as a stack trace with exit 1; only `run` is wrapped, so a command with `subCommands` needs the same. */
-function reportThrows(command: CommandDef<any>): CommandDef<any> {
+function reportThrows<T extends ArgsDef>(command: CommandDef<T>): CommandDef<T> {
   const run = command.run;
   if (!run) return command;
   return {

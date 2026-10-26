@@ -1,6 +1,6 @@
-import { readdirSync, statSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
+import { readdirSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 export function diagnosticHomeDir(): string {
   return process.env.HOME ?? homedir();

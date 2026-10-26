@@ -50,7 +50,7 @@
     "coverage:rust": "mkdir -p coverage/rust && cd rust && cargo llvm-cov nextest --features tts --lcov --output-path ../coverage/rust/lcov.info",
     "coverage:check:rust": "bun .github/scripts/check-coverage.ts --preset=rust --lcov=coverage/rust/lcov.info --summary=coverage/rust/summary.md",
     "generate:shell-artifacts": "bun scripts/generate-shell-artifacts.ts",
-    "lint": "bun check",
+    "lint": "bun check && biome ci .",
     "check:fast": "bun run lint && bun run check:versions && bun run check:recipes && bun run test:cli-fast",
     "check:workflows": "bun .github/scripts/check-workflows.ts",
     "check:recipes": "bun .github/scripts/check-recipes.ts",
@@ -86,6 +86,7 @@
     "bun": ">=1.4.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@fission-ai/openspec": "1.14.3",
     "@types/bun": "latest",
     "fast-xml-parser": "^5.8.0",

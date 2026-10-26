@@ -14,8 +14,8 @@ import {
   rmSync,
   statSync,
   writeFileSync,
-} from "fs";
-import { dirname, join } from "path";
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
 

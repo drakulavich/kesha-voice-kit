@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { join } from "path";
+import { join } from "node:path";
 import { resolveStatePaths, type StatePathSource } from "../../src/state-paths";
 import { tempDir } from "../helpers/temp-dir";
 

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "fs";
-import { createHash } from "crypto";
-import { dirname, join, relative } from "path";
-import { tmpdir } from "os";
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { dirname, join, relative } from "node:path";
+import { tmpdir } from "node:os";
 import {
   fluidExternalRoots,
   fluidExternalTotalBytes,

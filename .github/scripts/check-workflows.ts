@@ -625,7 +625,7 @@ export function requireJobTimeouts(path: string, document: unknown): string[] {
 
     for (const candidate of timeoutCandidates(job)) {
       const timeoutNum = Number(candidate);
-      if (isNaN(timeoutNum) || timeoutNum >= 360) {
+      if (Number.isNaN(timeoutNum) || timeoutNum >= 360) {
         errors.push(
           `${path}: \`${name}\` sets \`timeout-minutes: ${candidate}\`, not strictly below 360; an unattended stall still exceeds this bound (#1105)`,
         );

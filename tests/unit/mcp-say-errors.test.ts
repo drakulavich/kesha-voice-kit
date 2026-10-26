@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { readdirSync } from "fs";
+import { readdirSync } from "node:fs";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getEngineBinPath } from "../../src/engine";

@@ -1,8 +1,8 @@
-import { existsSync } from "fs";
+import { existsSync } from "node:fs";
 import { cacheComponents, cacheTotalBytes, KOKORO_ONNX_UNUSED_NOTE } from "./cache-layout";
 import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
-import { dirname, join } from "path";
+import { dirname, join } from "node:path";
 import { getEngineBinPath, isEngineInstalled, type EngineCapabilities } from "./engine";
 import {
   CORRUPT_STATE,

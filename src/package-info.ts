@@ -1,5 +1,11 @@
 import pkg from "../package.json" with { type: "json" };
-import type { AssetPins } from "./engine-install";
+
+/** `package.json#kesha.engine`, injected at publish by `engine-pin.ts`: what every downloaded asset of that Engine hashes to and weighs. */
+export interface AssetPins {
+  version: string;
+  sha256: Readonly<Record<string, string>>;
+  size: Readonly<Record<string, number>>;
+}
 
 type PackageFields = { version?: unknown; kesha?: { engine?: unknown } };
 

@@ -63,11 +63,10 @@ export function abortOnSignal(
   signal: AbortSignal | undefined,
 ): { readonly aborted: boolean; dispose: () => void } {
   let aborted = false;
-  let forceKillTimer: Timer | undefined;
   const abort = () => {
     aborted = true;
     tree.terminate("SIGTERM");
-    forceKillTimer ??= tree.forceKillAfterGrace();
+    tree.forceKillAfterGrace();
   };
   signal?.addEventListener("abort", abort, { once: true });
   return {

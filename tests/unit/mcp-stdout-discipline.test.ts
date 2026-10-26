@@ -22,8 +22,8 @@ describe("mcp stdout discipline", () => {
       },
     };
     const listTools = { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} };
-    proc.stdin.write(JSON.stringify(initialize) + "\n");
-    proc.stdin.write(JSON.stringify(listTools) + "\n");
+    proc.stdin.write(`${JSON.stringify(initialize)}\n`);
+    proc.stdin.write(`${JSON.stringify(listTools)}\n`);
     await proc.stdin.flush();
 
     const reader = proc.stdout.getReader();

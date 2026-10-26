@@ -1,5 +1,5 @@
-import { copyFileSync, readdirSync, renameSync, rmSync, statSync } from "fs";
-import { basename, dirname, join } from "path";
+import { copyFileSync, readdirSync, renameSync, rmSync, statSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
 import { errorMessage } from "./error-utils";
 import { KeshaError } from "./engine/events";
 import { log } from "./log";

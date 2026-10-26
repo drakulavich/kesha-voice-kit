@@ -75,9 +75,9 @@ if (isEntry(import.meta.url)) {
   mkdirSync(dirname(formulaPath), { recursive: true });
   writeFileSync(formulaPath, formula);
 
-  const url = formula.match(/^  url "(.*)"$/m)?.[1];
-  const sha256 = formula.match(/^  sha256 "([a-f0-9]{64})"$/m)?.[1];
-  const version = formula.match(/^  version "(.*)"$/m)?.[1];
+  const url = formula.match(/^ {2}url "(.*)"$/m)?.[1];
+  const sha256 = formula.match(/^ {2}sha256 "([a-f0-9]{64})"$/m)?.[1];
+  const version = formula.match(/^ {2}version "(.*)"$/m)?.[1];
   console.log(`Updated ${FORMULA_REL} for ${tag}`);
   console.log(`url: ${url}`);
   console.log(`sha256: ${sha256}`);

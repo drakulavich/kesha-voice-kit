@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, readdirSync, statSync, writeFileSync } from "fs";
-import { join } from "path";
+import { chmodSync, existsSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { createKeshaMcpServer } from "../../src/mcp/server";
@@ -50,7 +50,7 @@ describe("MCP audio under KESHA_HOME (openspec state-directories)", () => {
         arguments: { text: "hello", voice: "en-am_michael" },
       });
       const { path } = res.structuredContent as { path: string };
-      expect(path.startsWith(join(home, "mcp-audio") + "/")).toBe(true);
+      expect(path.startsWith(`${join(home, "mcp-audio")}/`)).toBe(true);
       expect(existsSync(path)).toBe(true);
       expect(statSync(path).mode & 0o777).toBe(0o600);
       expect(statSync(join(home, "mcp-audio")).mode & 0o777).toBe(0o700);

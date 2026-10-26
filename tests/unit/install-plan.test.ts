@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "fs";
-import { dirname, join } from "path";
-import { tmpdir } from "os";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { tmpdir } from "node:os";
 import { renderInstallPlan } from "../../src/install-plan";
 import { engineVersion } from "../../src/package-info";
 import { downloadedAssetNames } from "../../src/engine-targets";

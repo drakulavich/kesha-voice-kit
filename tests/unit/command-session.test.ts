@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { readFileSync } from "node:fs";
 import { runCommandSession, type CommandSessionFactories } from "../../src/cli/command-session";
 import {
   createDiagnosticLogSession,

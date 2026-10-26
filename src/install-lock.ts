@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import {
   mkdirSync,
   readdirSync,
@@ -8,9 +8,9 @@ import {
   rmSync,
   unlinkSync,
   writeFileSync,
-} from "fs";
-import { hostname } from "os";
-import { dirname, join } from "path";
+} from "node:fs";
+import { hostname } from "node:os";
+import { dirname, join } from "node:path";
 import { KeshaError } from "./engine/events";
 import { errorMessage } from "./error-utils";
 import { log } from "./log";

@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync } from "node:fs";
 import { ENGINE_PROBE_TIMEOUT_MS, getDescribe, getEngineBinPath, type EngineCapabilities } from "./engine";
 import { describeToCapabilities } from "./engine/describe";
 import { KeshaError } from "./engine/events";

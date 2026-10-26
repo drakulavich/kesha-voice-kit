@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { basename, dirname, join } from "path";
-import { existsSync, readdirSync, writeFileSync } from "fs";
+import { basename, dirname, join } from "node:path";
+import { existsSync, readdirSync, writeFileSync } from "node:fs";
 import { install, KeshaError } from "../../src/lib";
 import { getEngineBinPath } from "../../src/engine";
 import { engineChecksums, installEngine } from "../../src/engine-install";
@@ -15,7 +15,8 @@ let restore: () => void = () => {};
 
 const BROKEN_MID_STREAM = `(() => { let sent = false; return new ReadableStream({ pull(c) { if (sent) { c.error(new TypeError("The socket connection was closed unexpectedly")); return; } sent = true; c.enqueue(new TextEncoder().encode(${JSON.stringify(ENGINE.slice(0, 5))})); } }); })()`;
 const ZERO_BYTES = `new ReadableStream({ start(c) { c.close(); } })`;
-const streamed = (body: string) => (0, eval)(`(async () => new Response(${body}, { status: 200 }))`) as typeof fetch;
+// biome-ignore lint/security/noGlobalEval: the same source string also runs in the spawned CLI, so the in-process stub is built from it.
+const streamed = (body: string) => globalThis.eval(`(async () => new Response(${body}, { status: 200 }))`) as typeof fetch;
 
 type Failure = { name: string; fetch: typeof fetch; served: string; code: string; hint: RegExp };
 
@@ -175,7 +176,8 @@ describe("a SHA256SUMS the installer cannot use is E_MODEL_DOWNLOAD with a hint"
     ] as const) {
       test(`${surface}: SHA256SUMS ${c.name}`, async () => {
         engineChecksums.pins = undefined;
-        globalThis.fetch = (0, eval)(`(${sumsFetch(c.respond)})`) as typeof fetch;
+        // biome-ignore lint/security/noGlobalEval: the same source string also runs in the spawned CLI, so the in-process stub is built from it.
+        globalThis.fetch = globalThis.eval(`(${sumsFetch(c.respond)})`) as typeof fetch;
 
         const err = await rejectionOf(run());
 

@@ -6,7 +6,7 @@ const SPECS = readdirSync(repoPath("openspec/specs")).map((cap) => `openspec/spe
 // Any repo-relative path with an extension, root files included (`bin/kesha.js`, `flake.nix`), not a directory allowlist.
 const PATH = String.raw`(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_-]+\.[a-z]+`;
 // A lookbehind, not \b: a word boundary never precedes the dot of `.github/`.
-const LINE_CITATION = new RegExp(String.raw`(?<![\w/.])${PATH}:\d+(?:-\d+)?\b|` + "`:\\d+(?:-\\d+)?`", "g");
+const LINE_CITATION = new RegExp(`${String.raw`(?<![\w/.])${PATH}:\d+(?:-\d+)?\b|`}\`:\\d+(?:-\\d+)?\``, "g");
 const SYMBOL_CITATION = new RegExp(String.raw`(?<![\w/.])(${PATH})::([A-Za-z_][A-Za-z0-9_-]*(?:::[A-Za-z_][A-Za-z0-9_-]*)*)`, "g");
 
 describe("openspec technical notes cite code by symbol", () => {

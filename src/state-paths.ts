@@ -1,5 +1,5 @@
-import { homedir, tmpdir } from "os";
-import { posix, win32 } from "path";
+import { homedir, tmpdir } from "node:os";
+import { posix, win32 } from "node:path";
 
 export type StatePathSource = "default" | "KESHA_HOME" | "KESHA_CACHE_DIR" | "KESHA_LOG_DIR" | "KESHA_STATS_DB";
 

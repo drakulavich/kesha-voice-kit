@@ -29,9 +29,13 @@ function stripCommentsAndLiterals(source: string): string {
       let depth = 1;
       i += 2;
       while (i < source.length && depth > 0) {
-        if (source.startsWith("/*", i)) (depth++, (i += 2));
-        else if (source.startsWith("*/", i)) (depth--, (i += 2));
-        else i++;
+        if (source.startsWith("/*", i)) {
+          depth++;
+          i += 2;
+        } else if (source.startsWith("*/", i)) {
+          depth--;
+          i += 2;
+        } else i++;
       }
       continue;
     }

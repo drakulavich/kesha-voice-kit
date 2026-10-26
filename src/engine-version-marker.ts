@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { cmp, parseSemver, tryParseSemver } from "./semver.mjs";
 
 export const MIN_ENGINE_VERSION = "1.26.0";

@@ -5,13 +5,12 @@ const streams = [process.stdin, process.stdout, process.stderr] as const;
 const original = streams.map((s) => s.isTTY);
 
 function setTTY(stdin: boolean, stdout: boolean, stderr: boolean): void {
-  [stdin, stdout, stderr].forEach((value, i) =>
-    Object.defineProperty(streams[i], "isTTY", { value, configurable: true }),
-  );
+  for (const [i, value] of [stdin, stdout, stderr].entries())
+    Object.defineProperty(streams[i], "isTTY", { value, configurable: true });
 }
 
 afterEach(() => {
-  streams.forEach((s, i) => Object.defineProperty(s, "isTTY", { value: original[i], configurable: true }));
+  for (const [i, s] of streams.entries()) Object.defineProperty(s, "isTTY", { value: original[i], configurable: true });
 });
 
 describe("installHint", () => {

@@ -1,6 +1,6 @@
 import { defineCommand, type ArgsDef, type CommandDef } from "citty";
 import { errorMessage } from "../error-utils";
-import { existsSync } from "fs";
+import { existsSync } from "node:fs";
 import {
   isDirectoryPath,
   isSpecialFilePath,
@@ -33,11 +33,28 @@ import { getPendingSignalExitCode, pendingInterruption, waitForPendingSignalClea
 import type { TranscriptionSegment } from "../types";
 import { diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandSession } from "./command-session";
-import { USAGE_MESSAGE } from "./dispatch";
 import type { CliContext } from "./context";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { detectTextLanguageFallback, routeLanguage, unsupportedAudioLanguageWarning } from "../language-routing";
 import { renderInvalidArg } from "./options";
+
+// Hand-curated ordering and per-command argument hints; every key in SUBCOMMANDS (dispatch.ts)
+// must appear here, guarded at the observable layer by the bare-invocation case in
+// tests/integration/cli-contracts.test.ts (#938).
+const USAGE_MESSAGE =
+  "Usage: kesha <audio_file> [audio_file ...]\n" +
+  "       kesha completions <bash|zsh|fish>\n" +
+  "       kesha doctor [--json] [--redact]\n" +
+  "       kesha init [--yes]\n" +
+  "       kesha install [--no-cache]\n" +
+  "       kesha logs [enable|disable|mode|status|path|reset]\n" +
+  "       kesha manpage\n" +
+  "       kesha mcp\n" +
+  "       kesha record --out path.wav [--max-seconds 120]\n" +
+  "       kesha status\n" +
+  "       kesha say <text>\n" +
+  "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +
+  "       kesha support-bundle [--output path.tar.gz]";
 
 interface MainCommandArgs {
   _: string[];
@@ -249,7 +266,7 @@ async function detectLanguages(
   }
 
   let audioLanguage: LangDetectResult | undefined;
-  if (audioResult && audioResult.code) {
+  if (audioResult?.code) {
     audioLanguage = audioResult;
   }
 
@@ -265,7 +282,7 @@ async function detectLanguages(
 
   if (wantsLangId) {
     const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text));
-    if (engineTextResult && engineTextResult.code) {
+    if (engineTextResult?.code) {
       textLanguage = { ...engineTextResult, source: "engine" };
     }
   }
@@ -527,6 +544,7 @@ const BRIEF_HELP_ARGS: ArgsDef = {
 };
 
 /** What plain `kesha --help` renders; parsing still uses every flag of createMainCommand. */
+// biome-ignore lint/suspicious/noExplicitAny: the result swaps in other args, which citty's invariant CommandDef cannot express.
 export function briefMainUsage(command: CommandDef<any>): CommandDef<any> {
   return { ...command, meta: { ...command.meta, description: BRIEF_HELP_DESCRIPTION }, args: BRIEF_HELP_ARGS };
 }

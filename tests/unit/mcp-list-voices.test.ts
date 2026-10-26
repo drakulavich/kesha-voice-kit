@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { chmodSync, existsSync, writeFileSync } from "fs";
-import { join } from "path";
+import { chmodSync, existsSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { getEngineBinPath } from "../../src/engine";

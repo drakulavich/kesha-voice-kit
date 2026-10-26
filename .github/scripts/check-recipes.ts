@@ -392,7 +392,7 @@ const MISSING_JUST =
   "  step with `tool: just@<version>` to the job before this check.";
 
 function loadDump(): JustDump {
-  let result;
+  let result: Bun.SyncSubprocess<"pipe", "pipe">;
   try {
     result = Bun.spawnSync(["just", "--dump", "--dump-format", "json"]);
   } catch {
