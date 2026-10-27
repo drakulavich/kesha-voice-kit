@@ -51,16 +51,12 @@ describe("rewriteFormula", () => {
   test("refuses a formula with no url before returning a rewrite", () => {
     const noUrl = FORMULA.replace(/^ {2}url ".*"$/m, "  # url removed");
 
-    expect(() => rewriteFormula(noUrl, { url: URL, version: VERSION, sha256: SHA256 })).toThrow(
-      /missing url/,
-    );
+    expect(() => rewriteFormula(noUrl, { url: URL, version: VERSION, sha256: SHA256 })).toThrow(/missing url/);
   });
 
   test("refuses a formula with no sha256 before returning a rewrite", () => {
     const noSha = FORMULA.replace(/^ {2}sha256 "[a-f0-9]{64}"$/m, "  # sha256 removed");
 
-    expect(() => rewriteFormula(noSha, { url: URL, version: VERSION, sha256: SHA256 })).toThrow(
-      /missing sha256/,
-    );
+    expect(() => rewriteFormula(noSha, { url: URL, version: VERSION, sha256: SHA256 })).toThrow(/missing sha256/);
   });
 });

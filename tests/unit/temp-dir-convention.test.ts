@@ -10,17 +10,20 @@ import { readRepoFile, repoPath } from "../helpers/repo";
 // Exempt for now: each of these removes its directories by hand. Converting them is not this change.
 const EXEMPT: Record<string, string> = {
   "tests/helpers/temp-dir.ts": "the helper itself — the one mkdtempSync call tempDir() wraps",
-  "tests/helpers/fake-engine.ts": "converted where it leaked; isolateEngineCache() removes its directory in the undo it returns",
+  "tests/helpers/fake-engine.ts":
+    "converted where it leaked; isolateEngineCache() removes its directory in the undo it returns",
   "tests/helpers/git-repo.ts": "tracks its own directories, and cleanupGitRepos() removes them",
   "tests/integration/cli-contracts.test.ts": "removes its directories by hand; not yet converted",
   "tests/integration/compiled-cli-assets.test.ts": "removes its directories by hand; not yet converted",
   "tests/integration/error-codes-cli.test.ts": "removes its directories by hand; not yet converted",
-  "tests/unit/check-workflows.test.ts": "converted where it leaked; the remaining call sites remove their directories by hand",
+  "tests/unit/check-workflows.test.ts":
+    "converted where it leaked; the remaining call sites remove their directories by hand",
   "tests/unit/diagnostic-log.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/doctor.test.ts": "converted where it leaked; the remaining call sites remove their directories by hand",
   "tests/unit/engine-install-concurrency.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/engine-install-decisions.test.ts": "removes its directories by hand; not yet converted",
-  "tests/unit/engine-install.test.ts": "converted where it leaked; the remaining call sites remove their directories by hand",
+  "tests/unit/engine-install.test.ts":
+    "converted where it leaked; the remaining call sites remove their directories by hand",
   "tests/unit/engine-probe.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/engine-repair.test.ts": "removes its directories by hand; not yet converted",
   "tests/unit/engine-version-override.test.ts": "removes its directories by hand; not yet converted",
@@ -132,6 +135,8 @@ describe("unreapableLines", () => {
   });
 
   test("leaves a file that only imports the name alone", () => {
-    expect(unreapableLines(`import { ${CALL_NAME}, rmSync } from "node:fs";\nconst dir = tempDir("p-");\n`)).toEqual([]);
+    expect(unreapableLines(`import { ${CALL_NAME}, rmSync } from "node:fs";\nconst dir = tempDir("p-");\n`)).toEqual(
+      [],
+    );
   });
 });

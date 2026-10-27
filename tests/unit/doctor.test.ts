@@ -1,13 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  chmodSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { gunzipSync } from "node:zlib";
@@ -19,7 +11,13 @@ import {
   type DoctorReport,
 } from "../../src/doctor";
 import { collectStatus } from "../../src/status";
-import { describeDocument, describeJson, saveEngineEnv, stageEngineHome, writeVoiceListingEngine } from "../helpers/fake-engine";
+import {
+  describeDocument,
+  describeJson,
+  saveEngineEnv,
+  stageEngineHome,
+  writeVoiceListingEngine,
+} from "../helpers/fake-engine";
 import { describeToCapabilities } from "../../src/engine/describe";
 import { createSupportBundle } from "../../src/support-bundle";
 import { engineVersion, packageName, packageVersion } from "../../src/package-info";
@@ -50,29 +48,17 @@ describe("redactDiagnosticValue", () => {
   test("redacts home directory paths", () => {
     expect(redactDiagnosticValue("KESHA_CACHE_DIR", "/tmp/home/.cache/kesha", "/tmp/home")).toBe("~/.cache/kesha");
     expect(redactDiagnosticValue("KESHA_CACHE_DIR", "/tmp/home", "/tmp/home")).toBe("~");
+    expect(redactDiagnosticValue("KESHA_CACHE_DIR", "C:\\Users\\Runner\\.cache\\kesha", "C:\\Users\\Runner")).toBe(
+      "~/.cache/kesha",
+    );
     expect(
-      redactDiagnosticValue(
-        "KESHA_CACHE_DIR",
-        "C:\\Users\\Runner\\.cache\\kesha",
-        "C:\\Users\\Runner",
-      ),
-    ).toBe("~/.cache/kesha");
-    expect(
-      redactDiagnosticValue(
-        "probeError",
-        "spawn /tmp/home/.cache/kesha/engine/bin/kesha-engine ENOENT",
-        "/tmp/home",
-      ),
+      redactDiagnosticValue("probeError", "spawn /tmp/home/.cache/kesha/engine/bin/kesha-engine ENOENT", "/tmp/home"),
     ).toBe("spawn ~/.cache/kesha/engine/bin/kesha-engine ENOENT");
   });
 
   test("strips credentials and query strings from URLs", () => {
     expect(
-      redactDiagnosticValue(
-        "KESHA_MODEL_MIRROR",
-        "https://user:pass@example.com/kesha?token=abc#frag",
-        "/tmp/home",
-      ),
+      redactDiagnosticValue("KESHA_MODEL_MIRROR", "https://user:pass@example.com/kesha?token=abc#frag", "/tmp/home"),
     ).toBe("https://example.com/kesha");
     expect(
       redactDiagnosticValue(
@@ -84,9 +70,7 @@ describe("redactDiagnosticValue", () => {
   });
 
   test("leaves malformed URL-like values unchanged", () => {
-    expect(redactDiagnosticValue("KESHA_MODEL_MIRROR", "https://[broken", "/tmp/home")).toBe(
-      "https://[broken",
-    );
+    expect(redactDiagnosticValue("KESHA_MODEL_MIRROR", "https://[broken", "/tmp/home")).toBe("https://[broken");
   });
 
   test("a value that never mentions home is handed back byte for byte", () => {
@@ -98,9 +82,7 @@ describe("redactDiagnosticValue", () => {
   });
 
   posixEngineTest("a directory that only differs in case is a different directory", () => {
-    expect(redactDiagnosticValue("KESHA_CACHE_DIR", "/tmp/Home/cache", "/tmp/home")).toBe(
-      "/tmp/Home/cache",
-    );
+    expect(redactDiagnosticValue("KESHA_CACHE_DIR", "/tmp/Home/cache", "/tmp/home")).toBe("/tmp/Home/cache");
   });
 });
 
@@ -147,15 +129,7 @@ describe("collectDoctorReport", () => {
         recursive: true,
       });
       writeFileSync(
-        join(
-          dir,
-          ".cache",
-          "fluidaudio",
-          "Models",
-          "kokoro",
-          "kokoro_21_15s.mlmodelc",
-          "coremldata.bin",
-        ),
+        join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_15s.mlmodelc", "coremldata.bin"),
         "coreml",
       );
 
@@ -190,9 +164,7 @@ describe("collectDoctorReport", () => {
         {
           path: "~/.cache/fluidaudio",
           sizeBytes: 6,
-          subsystems: [
-            { label: "TTS (Kokoro G2P)", path: "~/.cache/fluidaudio/Models/kokoro", sizeBytes: 6 },
-          ],
+          subsystems: [{ label: "TTS (Kokoro G2P)", path: "~/.cache/fluidaudio/Models/kokoro", sizeBytes: 6 }],
           otherBytes: 0,
         },
       ]);
@@ -230,24 +202,14 @@ describe("collectDoctorReport", () => {
         recursive: true,
       });
       writeFileSync(
-        join(
-          dir,
-          ".cache",
-          "fluidaudio",
-          "Models",
-          "kokoro",
-          "kokoro_21_5s.mlmodelc",
-          "coremldata.bin",
-        ),
+        join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_5s.mlmodelc", "coremldata.bin"),
         "coreml",
       );
 
       const report = await collectDoctorReport({ redact: false });
       const root = report.cache.externalRoots[0];
       expect(root?.path).toBe(join(dir, ".cache", "fluidaudio"));
-      expect(root?.subsystems.map((s) => s.path)).toEqual([
-        join(dir, ".cache", "fluidaudio", "Models", "kokoro"),
-      ]);
+      expect(root?.subsystems.map((s) => s.path)).toEqual([join(dir, ".cache", "fluidaudio", "Models", "kokoro")]);
       expect(report.cache.grandTotalBytes).toBe(report.cache.totalBytes + root!.sizeBytes);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -283,8 +245,7 @@ describe("collectDoctorReport", () => {
       rmSync(join(ane, KOKORO_ANE_EN_REQUIRED[0]!), { recursive: true, force: true });
       const partial = formatDoctorReport(await collectDoctorReport({ redact: false }));
       expect(partial).toContain(
-        `TTS (Kokoro ANE): incomplete - missing ${KOKORO_ANE_EN_REQUIRED[0]}; ` +
-          "re-run `kesha install --tts`",
+        `TTS (Kokoro ANE): incomplete - missing ${KOKORO_ANE_EN_REQUIRED[0]}; ` + "re-run `kesha install --tts`",
       );
       expect(partial).toContain("TTS (Kokoro G2P): installed");
     } finally {
@@ -306,10 +267,7 @@ describe("collectDoctorReport", () => {
       // Stage a >1 KB cached model so the cache-size line exercises
       // humanBytes' KB/MB scaling, not just the sub-1 KB "N B" branch.
       mkdirSync(join(dir, ".cache", "kesha", "models", "silero-vad"), { recursive: true });
-      writeFileSync(
-        join(dir, ".cache", "kesha", "models", "silero-vad", "model.onnx"),
-        "x".repeat(4096),
-      );
+      writeFileSync(join(dir, ".cache", "kesha", "models", "silero-vad", "model.onnx"), "x".repeat(4096));
 
       const output = formatDoctorReport(await collectDoctorReport({ redact: true }));
       expect(output).toContain("Kesha Doctor");
@@ -411,7 +369,6 @@ exit 2
       rmSync(dir, { recursive: true, force: true });
     }
   });
-
 });
 
 describe("the human report states what each component is doing (#770)", () => {
@@ -479,18 +436,16 @@ describe("the human report states what each component is doing (#770)", () => {
   }
 
   function engineLine(report: DoctorReport): string {
-    return formatDoctorReport(report).split("\n").find((l) => l.includes("Binary:"))!;
+    return formatDoctorReport(report)
+      .split("\n")
+      .find((l) => l.includes("Binary:"))!;
   }
 
   test("the binary is missing, installed, or corrupt — and never two of those", () => {
-    expect(engineLine(doctorReport({ engine: { ...doctorReport().engine, installed: false } }))).toContain(
-      "(missing)",
-    );
+    expect(engineLine(doctorReport({ engine: { ...doctorReport().engine, installed: false } }))).toContain("(missing)");
     expect(engineLine(doctorReport())).toContain("(installed)");
 
-    const corrupt = engineLine(
-      doctorReport({ engine: { ...doctorReport().engine, runnable: false } }),
-    );
+    const corrupt = engineLine(doctorReport({ engine: { ...doctorReport().engine, runnable: false } }));
     expect(corrupt).toContain("corrupt");
     expect(corrupt).toContain("kesha install");
     expect(corrupt).not.toContain("(installed)");
@@ -499,9 +454,7 @@ describe("the human report states what each component is doing (#770)", () => {
   // #801: an engine that spawns is not thereby working. Nothing may read clean while
   // the binary is present and its capabilities are null.
   test("a runnable engine with no capabilities is a fault of its own", () => {
-    const mute = engineLine(
-      doctorReport({ engine: { ...doctorReport().engine, capabilities: null } }),
-    );
+    const mute = engineLine(doctorReport({ engine: { ...doctorReport().engine, capabilities: null } }));
     expect(mute).toContain("installed but not functional (reports no capabilities)");
     expect(mute).toContain("kesha install");
     expect(mute).not.toContain("(installed)");
@@ -534,9 +487,7 @@ describe("the human report states what each component is doing (#770)", () => {
     expect(drift).toContain("kesha install");
 
     expect(
-      formatDoctorReport(
-        doctorReport({ engine: { ...engine, versionMarker: null, versionState: "unrecorded" } }),
-      ),
+      formatDoctorReport(doctorReport({ engine: { ...engine, versionMarker: null, versionState: "unrecorded" } })),
     ).toContain("Version marker: missing");
     expect(
       formatDoctorReport(
@@ -549,19 +500,13 @@ describe("the human report states what each component is doing (#770)", () => {
 
   test("capabilities carry the probe error when there are none to report", () => {
     const engine = doctorReport().engine;
-    expect(formatDoctorReport(doctorReport())).toContain(
-      "Capabilities: onnx, protocol v3, tts, diarize",
-    );
+    expect(formatDoctorReport(doctorReport())).toContain("Capabilities: onnx, protocol v3, tts, diarize");
     expect(
-      formatDoctorReport(
-        doctorReport({ engine: { ...engine, capabilities: null, probeError: "it exploded" } }),
-      ),
+      formatDoctorReport(doctorReport({ engine: { ...engine, capabilities: null, probeError: "it exploded" } })),
     ).toContain("Capabilities: it exploded");
-    expect(
-      formatDoctorReport(
-        doctorReport({ engine: { ...engine, capabilities: null, probeError: null } }),
-      ),
-    ).toContain("Capabilities: not available");
+    expect(formatDoctorReport(doctorReport({ engine: { ...engine, capabilities: null, probeError: null } }))).toContain(
+      "Capabilities: not available",
+    );
   });
 
   test("a cache row shows its size when present and `missing` when not", () => {
@@ -580,9 +525,9 @@ describe("the human report states what each component is doing (#770)", () => {
     expect(output).toContain("Engine: 4.1 KB");
     expect(output).toContain("TTS (Vosk): missing");
 
-    expect(
-      formatDoctorReport(doctorReport({ cache: cacheReport({ exists: false, totalBytes: 0 }) })),
-    ).toContain("Cache: /cache (missing)");
+    expect(formatDoctorReport(doctorReport({ cache: cacheReport({ exists: false, totalBytes: 0 }) }))).toContain(
+      "Cache: /cache (missing)",
+    );
   });
 
   test("a FluidAudio root outside the cache is named with its path and the grand total", () => {
@@ -613,16 +558,12 @@ describe("the human report states what each component is doing (#770)", () => {
   });
 
   test("stale Sortformer compilations are sized with the command that removes them", () => {
-    const output = formatDoctorReport(
-      doctorReport({ cache: cacheReport({ staleSortformerBytes: 5_300_000_000 }) }),
-    );
-    expect(output).toContain(
-      "Stale Sortformer compilations: 5.3 GB; run `kesha install --diarize` to remove them",
-    );
+    const output = formatDoctorReport(doctorReport({ cache: cacheReport({ staleSortformerBytes: 5_300_000_000 }) }));
+    expect(output).toContain("Stale Sortformer compilations: 5.3 GB; run `kesha install --diarize` to remove them");
 
-    expect(
-      formatDoctorReport(doctorReport({ cache: cacheReport({ staleSortformerBytes: 0 }) })),
-    ).not.toContain("Stale Sortformer");
+    expect(formatDoctorReport(doctorReport({ cache: cacheReport({ staleSortformerBytes: 0 }) }))).not.toContain(
+      "Stale Sortformer",
+    );
   });
 
   test("stats report either their counters or the error that hid them", () => {
@@ -655,9 +596,7 @@ describe("the human report states what each component is doing (#770)", () => {
   });
 
   test("unset environment variables are named as unset rather than blank", () => {
-    const output = formatDoctorReport(
-      doctorReport({ env: { KESHA_CACHE_DIR: "/cache", KESHA_DEBUG: null } }),
-    );
+    const output = formatDoctorReport(doctorReport({ env: { KESHA_CACHE_DIR: "/cache", KESHA_DEBUG: null } }));
     expect(output).toContain("KESHA_CACHE_DIR: /cache");
     expect(output).toContain("KESHA_DEBUG: unset");
   });
@@ -846,9 +785,7 @@ exit 2
       mkdirSync(outside, { recursive: true });
       writeEngineStub(join(outside, "kesha-engine"), "#!/bin/sh\nexit 2\n");
       process.env.KESHA_ENGINE_BIN = join(outside, "kesha-engine");
-      expect((await collectDoctorReport()).cache.totalBytes).toBe(
-        engineBytes + 128 + engineBytes,
-      );
+      expect((await collectDoctorReport()).cache.totalBytes).toBe(engineBytes + 128 + engineBytes);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1271,7 +1208,9 @@ describe("doctor on an unspawnable KESHA_ENGINE_BIN", () => {
       process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
       process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
       const probeError = (await collectDoctorReport()).engine.probeError ?? "";
-      expect(probeError.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`")).toHaveLength(2);
+      expect(
+        probeError.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`"),
+      ).toHaveLength(2);
       expect(probeError).not.toContain("error [");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -1382,14 +1321,7 @@ fi
 exit 2
 `,
     );
-    const asr = join(
-      fluidHome,
-      "Library",
-      "Application Support",
-      "FluidAudio",
-      "Models",
-      "parakeet-tdt-0.6b-v3",
-    );
+    const asr = join(fluidHome, "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3");
     mkdirSync(asr, { recursive: true });
     for (const file of [
       "Preprocessor.mlmodelc",
@@ -1440,10 +1372,7 @@ describe("doctor reports the TTS voices and languages", () => {
 
     const report = await collectDoctorReport({ redact: false, homeDir: home.dir });
 
-    expect(report.tts.voices).toEqual([
-      "en-am_michael",
-      "macos-com.apple.voice.compact.ru-RU.Milena",
-    ]);
+    expect(report.tts.voices).toEqual(["en-am_michael", "macos-com.apple.voice.compact.ru-RU.Milena"]);
     expect(report.tts.languagesStaged).toEqual(["en", "es"]);
     expect(report.tts.languagesMissing).toEqual(["fr", "hi", "it", "ja", "pt", "zh"]);
     expect(formatDoctorReport(report)).toContain("Languages staged: en, es");

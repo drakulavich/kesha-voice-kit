@@ -119,7 +119,7 @@ export async function maybeAskForStar(
     if (starred.exitCode === 0) return; // already starred — slot consumed by verification
     log.info("\n⭐ If you enjoy Kesha Voice Kit, star it on GitHub:");
     log.info("  https://github.com/drakulavich/kesha-voice-kit");
-    log.info('  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit');
+    log.info("  Or run: gh api -X PUT /user/starred/drakulavich/kesha-voice-kit");
   } catch (err) {
     // A cosmetic prompt must never fail a completed, verified install (#936) —
     // and neither may its own failure-to-log: log.warn is process.stderr.write,

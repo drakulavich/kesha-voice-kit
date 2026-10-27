@@ -64,15 +64,11 @@ describe("resolveSayVoice native-script ja/hi routing", () => {
   });
 
   test("romanized Japanese still reaches the Kokoro voice that can read it", async () => {
-    expect(await resolveSayVoice(undefined, "ja", "konnichiwa sekai", installed)).toBe(
-      "ja-jm_kumo",
-    );
+    expect(await resolveSayVoice(undefined, "ja", "konnichiwa sekai", installed)).toBe("ja-jm_kumo");
   });
 
   test("an explicit --voice is never re-routed by the script of the text", async () => {
-    expect(await resolveSayVoice("ja-jm_kumo", undefined, "こんにちは世界", installed)).toBe(
-      "ja-jm_kumo",
-    );
+    expect(await resolveSayVoice("ja-jm_kumo", undefined, "こんにちは世界", installed)).toBe("ja-jm_kumo");
   });
 
   // No male ja-JP voice is installed on every Mac; the locale still speaks.

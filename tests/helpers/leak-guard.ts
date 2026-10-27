@@ -13,7 +13,10 @@ import { reapTempDirs, sweepStaleTempDirs, tempDir } from "./temp-dir";
 
 installInterruptReaper();
 // Without it every suite appends to the developer's real diagnostic log and Stats DB; only logs, Stats and MCP audio move (#741).
-Object.assign(process.env, harnessHome(process.env, () => tempDir("kesha-home-")));
+Object.assign(
+  process.env,
+  harnessHome(process.env, () => tempDir("kesha-home-")),
+);
 // A SIGKILLed run reaches no handler at all, so the next run is the only thing that can clean up after it (#1175).
 sweepStaleTempDirs();
 // An interrupted run reaches no `afterAll`, which is exactly when these directories used to survive (#1175).

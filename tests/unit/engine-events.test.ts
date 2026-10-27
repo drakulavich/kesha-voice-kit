@@ -191,9 +191,7 @@ describe("readEvents", () => {
   });
 
   test("an interior blank line separates an error render from a following prose paragraph", async () => {
-    const out = await readEvents(
-      streamOf('{"kind":"error","code":"E_A","message":"1"}\n\nsecond paragraph\n'),
-    );
+    const out = await readEvents(streamOf('{"kind":"error","code":"E_A","message":"1"}\n\nsecond paragraph\n'));
     expect(out.stderr).toBe("error [E_A]: 1\n\nsecond paragraph\n");
     expect(out.invalid).toEqual(["second paragraph"]);
   });
@@ -202,7 +200,10 @@ describe("readEvents", () => {
 describe("KeshaError.render() keeps the transcript without letting it hide the code", () => {
   test("the coded line comes first when the transcript does not carry it", () => {
     const transcript = "warning: slow disk\nthread 'main' panicked at src/tts/kokoro.rs:88";
-    const err = new KeshaError("E_INTERNAL", "kesha-engine transcribe exited with code 101", { exitCode: 101, stderr: transcript });
+    const err = new KeshaError("E_INTERNAL", "kesha-engine transcribe exited with code 101", {
+      exitCode: 101,
+      stderr: transcript,
+    });
     expect(errorMessage(err)).toBe(`error [E_INTERNAL]: kesha-engine transcribe exited with code 101\n${transcript}`);
   });
 
@@ -217,10 +218,14 @@ describe("KeshaError.render() keeps the transcript without letting it hide the c
 
 describe("KeshaError.render() only trusts a transcript that renders this very error", () => {
   test("a legacy line with the same code but another message does not hide the diagnosis", () => {
-    const err = new KeshaError("E_INTERNAL", 'kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"', {
-      exitCode: 1,
-      stderr: "error [E_INTERNAL]: kokoro session init failed",
-    });
+    const err = new KeshaError(
+      "E_INTERNAL",
+      'kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"',
+      {
+        exitCode: 1,
+        stderr: "error [E_INTERNAL]: kokoro session init failed",
+      },
+    );
     expect(errorMessage(err)).toBe(
       'error [E_INTERNAL]: kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"\nerror [E_INTERNAL]: kokoro session init failed',
     );
@@ -266,7 +271,16 @@ describe("engineFailure() is the one way a run becomes a KeshaError", () => {
   });
 
   test("an error event carries its code, message and hint", () => {
-    const outcome = { stderr: "error [E_VOICE_UNKNOWN]: no such voice: xx\n  hint: kesha say --list-voices\n", error: { kind: "error" as const, code: "E_VOICE_UNKNOWN", message: "no such voice: xx", hint: "kesha say --list-voices" }, invalid: [] };
+    const outcome = {
+      stderr: "error [E_VOICE_UNKNOWN]: no such voice: xx\n  hint: kesha say --list-voices\n",
+      error: {
+        kind: "error" as const,
+        code: "E_VOICE_UNKNOWN",
+        message: "no such voice: xx",
+        hint: "kesha say --list-voices",
+      },
+      invalid: [],
+    };
     const err = engineFailure("say", outcome, 1);
     expect(err.code).toBe("E_VOICE_UNKNOWN");
     expect(err.hint).toBe("kesha say --list-voices");

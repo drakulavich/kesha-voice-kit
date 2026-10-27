@@ -29,13 +29,13 @@ on:
   # `rust/**` and `package.json` feed this derivation too, so a new crate needing a system library or a `build.rs` change is caught only by the weekly cron below — accepted, because a two-OS build on every Rust push is the cost #1105 removed; widen on the first real instance.
   pull_request:
     paths:
-      - 'flake.nix'
-      - 'flake.lock'
-      - '.github/workflows/nix-build.yml'
+      - "flake.nix"
+      - "flake.lock"
+      - ".github/workflows/nix-build.yml"
   # Catches drift no PR would: nixpkgs-unstable moving, or another upstream
   # policy change like the crates.io User-Agent block this job found (#1105).
   schedule:
-    - cron: '17 5 * * 1'
+    - cron: "17 5 * * 1"
   workflow_dispatch:
 
 permissions:

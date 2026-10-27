@@ -52,26 +52,51 @@ describe("classifyRelease — tag pushes", () => {
 describe("classifyRelease — main pushes and dispatches", () => {
   test("a push to main is the per-merge CLI alpha: no Engine build, alpha dist-tag, version derived later", () => {
     const out = classifyRelease(input({ refType: "branch", refName: "main" }));
-    expect(out).toMatchObject({ path: "cli-alpha", channel: "alpha", distTag: "alpha", buildEngine: false, prerelease: true });
+    expect(out).toMatchObject({
+      path: "cli-alpha",
+      channel: "alpha",
+      distTag: "alpha",
+      buildEngine: false,
+      prerelease: true,
+    });
     expect(out.version).toBe("");
   });
 
   test("a dispatched beta carries its version and must extend package.json#version", () => {
     const out = classifyRelease(
-      input({ eventName: "workflow_dispatch", refType: "branch", refName: "main", dispatch: { channel: "beta", version: "2.0.0-beta.2" } }),
+      input({
+        eventName: "workflow_dispatch",
+        refType: "branch",
+        refName: "main",
+        dispatch: { channel: "beta", version: "2.0.0-beta.2" },
+      }),
     );
-    expect(out).toMatchObject({ path: "beta", channel: "beta", version: "2.0.0-beta.2", tag: "v2.0.0-beta.2", buildEngine: true });
+    expect(out).toMatchObject({
+      path: "beta",
+      channel: "beta",
+      version: "2.0.0-beta.2",
+      tag: "v2.0.0-beta.2",
+      buildEngine: true,
+    });
   });
 
   test("a dispatched beta of another base is refused", () => {
     expect(() =>
-      classifyRelease(input({ eventName: "workflow_dispatch", refType: "branch", dispatch: { channel: "beta", version: "2.1.0-beta.1" } })),
+      classifyRelease(
+        input({
+          eventName: "workflow_dispatch",
+          refType: "branch",
+          dispatch: { channel: "beta", version: "2.1.0-beta.1" },
+        }),
+      ),
     ).toThrow(/2\.0\.0/);
   });
 
   test("a dispatched beta without a beta-shaped version is refused", () => {
     expect(() =>
-      classifyRelease(input({ eventName: "workflow_dispatch", refType: "branch", dispatch: { channel: "beta", version: "2.0.0" } })),
+      classifyRelease(
+        input({ eventName: "workflow_dispatch", refType: "branch", dispatch: { channel: "beta", version: "2.0.0" } }),
+      ),
     ).toThrow(/beta/);
   });
 
@@ -90,7 +115,11 @@ describe("classifyRelease — main pushes and dispatches", () => {
   test("an unshaped engine-prerelease is refused", () => {
     expect(() =>
       classifyRelease(
-        input({ eventName: "workflow_dispatch", refType: "branch", dispatch: { channel: "alpha", enginePrerelease: "v2.0.0" } }),
+        input({
+          eventName: "workflow_dispatch",
+          refType: "branch",
+          dispatch: { channel: "alpha", enginePrerelease: "v2.0.0" },
+        }),
       ),
     ).toThrow(/prerelease/);
   });
@@ -105,11 +134,23 @@ describe("classifyRelease — main pushes and dispatches", () => {
 describe("classifyRelease — rehearsal", () => {
   test("a pull request rehearses the stable path and publishes nothing", () => {
     const out = classifyRelease(input({ eventName: "pull_request", refType: "branch", refName: "1/merge" }));
-    expect(out).toMatchObject({ path: "rehearsal", channel: "stable", publish: false, buildEngine: true, version: "2.0.0" });
+    expect(out).toMatchObject({
+      path: "rehearsal",
+      channel: "stable",
+      publish: false,
+      buildEngine: true,
+      version: "2.0.0",
+    });
   });
 
   test("a rehearsal builds the one committed version, whatever else package.json carries", () => {
-    const out = classifyRelease(input({ eventName: "pull_request", refType: "branch", pkg: { version: "1.32.0", keshaEngine: { version: "1.26.0" } } as { version: string } }));
+    const out = classifyRelease(
+      input({
+        eventName: "pull_request",
+        refType: "branch",
+        pkg: { version: "1.32.0", keshaEngine: { version: "1.26.0" } } as { version: string },
+      }),
+    );
     expect(out.version).toBe("1.32.0");
   });
 
@@ -129,7 +170,9 @@ describe("formatOutputs", () => {
 
   test("carries the whole classification as one JSON line, booleans intact, for the plan job", () => {
     const c = classifyRelease(input({ eventName: "pull_request", refType: "branch" }));
-    const json = formatOutputs(c).split("\n").find((line) => line.startsWith("json="))!;
+    const json = formatOutputs(c)
+      .split("\n")
+      .find((line) => line.startsWith("json="))!;
     expect(JSON.parse(json.slice(5))).toEqual(c);
   });
 });

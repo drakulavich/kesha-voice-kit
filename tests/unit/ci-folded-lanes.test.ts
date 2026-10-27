@@ -23,7 +23,9 @@ describe("lanes folded into ci.yml", () => {
   });
 
   test("the cross-OS cache probe runs its three jobs in order on a matching PR only", () => {
-    expect(ci.jobs["cache-probe-save"]!.if).toBe("github.event_name == 'pull_request' && needs.changes.outputs.cache_probe == 'true'");
+    expect(ci.jobs["cache-probe-save"]!.if).toBe(
+      "github.event_name == 'pull_request' && needs.changes.outputs.cache_probe == 'true'",
+    );
     expect(needs("cache-probe-restore")).toContain("cache-probe-save");
     expect(needs("cache-probe-cleanup")).toContain("cache-probe-restore");
     expect(ci.jobs["cache-probe-cleanup"]!.if).toContain("needs.cache-probe-save.result != 'skipped'");
@@ -41,10 +43,24 @@ describe("lanes folded into ci.yml", () => {
     ];
     expect(filter("linux_packages")).toEqual(expect.arrayContaining(pr));
     expect(filter("linux_packages_main")).toEqual(
-      expect.arrayContaining([...pr, ".github/workflows/release.yml", "package.json", "bun.lock", "bin/**", "src/**", "README.md", "LICENSE", "NOTICES.md"]),
+      expect.arrayContaining([
+        ...pr,
+        ".github/workflows/release.yml",
+        "package.json",
+        "bun.lock",
+        "bin/**",
+        "src/**",
+        "README.md",
+        "LICENSE",
+        "NOTICES.md",
+      ]),
     );
     expect(filter("cache_probe")).toEqual(
-      expect.arrayContaining([".github/workflows/cache-seed.yml", ".github/actions/install-kesha-backend/action.yml", ".github/scripts/assert-cross-os-cache.sh"]),
+      expect.arrayContaining([
+        ".github/workflows/cache-seed.yml",
+        ".github/actions/install-kesha-backend/action.yml",
+        ".github/scripts/assert-cross-os-cache.sh",
+      ]),
     );
   });
 });

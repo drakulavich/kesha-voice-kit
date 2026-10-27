@@ -4,8 +4,7 @@ import { renderInvalidArg } from "./options";
 export type ActionMessage = { level: "success" | "info" | "warn"; text: string };
 
 export type ActionResult =
-  | { ok: true; messages: ActionMessage[]; stdout?: string }
-  | { ok: false; error: string; hint?: string };
+  { ok: true; messages: ActionMessage[]; stdout?: string } | { ok: false; error: string; hint?: string };
 
 /** Renders an action's messages, writing `stdout` verbatim; a rejected action exits 2. */
 export function emitActionResult(result: ActionResult): void {

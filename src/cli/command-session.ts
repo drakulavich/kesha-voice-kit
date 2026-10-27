@@ -1,9 +1,5 @@
 import { createDiagnosticLogSession } from "../diagnostic-log";
-import type {
-  DiagnosticLogFields,
-  DiagnosticLogSession,
-  DiagnosticSessionStatus,
-} from "../diagnostic-log";
+import type { DiagnosticLogFields, DiagnosticLogSession, DiagnosticSessionStatus } from "../diagnostic-log";
 import { setEngineDebugSink } from "../engine/events";
 import { errorMessage } from "../error-utils";
 import { log } from "../log";
@@ -85,11 +81,7 @@ function engineDebugFields(fields: unknown): DiagnosticLogFields {
   return out;
 }
 
-function closeSessionQuietly(
-  session: CommandSession,
-  command: StatsCommandName,
-  outcome: CommandOutcome,
-): void {
+function closeSessionQuietly(session: CommandSession, command: StatsCommandName, outcome: CommandOutcome): void {
   try {
     closeSession(session, command, outcome);
   } catch (err) {

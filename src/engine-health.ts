@@ -4,10 +4,7 @@ import { describeToCapabilities } from "./engine/describe";
 import { KeshaError } from "./engine/events";
 import { runEngineProcess } from "./engine/spawn";
 
-export type ExecutableHealth =
-  | { status: "ok" }
-  | { status: "missing" }
-  | { status: "unusable"; detail: string };
+export type ExecutableHealth = { status: "ok" } | { status: "missing" } | { status: "unusable"; detail: string };
 
 /**
  * Proves a downloaded binary actually executes — existence is not health (#770).
@@ -26,10 +23,7 @@ function spawnFailureDetail(err: unknown): string {
   return err instanceof KeshaError && err.hint ? `${err.message}; ${err.hint}` : err.message;
 }
 
-export async function probeExecutable(
-  binPath: string,
-  args: string[] = [],
-): Promise<ExecutableHealth> {
+export async function probeExecutable(binPath: string, args: string[] = []): Promise<ExecutableHealth> {
   if (!existsSync(binPath)) return { status: "missing" };
 
   let run: Awaited<ReturnType<typeof runEngineProcess>>;
@@ -83,8 +77,7 @@ export type EngineFunctionalHealth =
   | { status: "protocol"; detail: string };
 
 export const CORRUPT_STATE = "installed but not executable (corrupt) - re-run `kesha install`";
-export const NOT_FUNCTIONAL_STATE =
-  "installed but not functional (reports no capabilities) - re-run `kesha install`";
+export const NOT_FUNCTIONAL_STATE = "installed but not functional (reports no capabilities) - re-run `kesha install`";
 const MUTE_DETAIL = "reports no capabilities";
 
 /**
@@ -100,9 +93,7 @@ const MUTE_DETAIL = "reports no capabilities";
  * the same deadline as the `--version` probe, because a binary that never answers is one
  * that could not be made to answer (`unusable`), not one that answered nothing (`mute`).
  */
-export async function engineFunctionalHealth(
-  timeoutMs = ENGINE_PROBE_TIMEOUT_MS,
-): Promise<EngineFunctionalHealth> {
+export async function engineFunctionalHealth(timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<EngineFunctionalHealth> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   let protocolError: KeshaError | null = null;

@@ -185,10 +185,7 @@ type SinkWrite = ReturnType<Bun.FileSink["write"]>;
  * of throttling to disk speed, which for the engine is ~63 MB and for the Vosk voice ~937 MB
  * (#669). Exported for the test — the sentinel is not reproducible on demand.
  */
-export async function applyBackpressure(
-  writer: Pick<Bun.FileSink, "flush">,
-  written: SinkWrite,
-): Promise<void> {
+export async function applyBackpressure(writer: Pick<Bun.FileSink, "flush">, written: SinkWrite): Promise<void> {
   if (typeof written !== "number") {
     await written;
     return;
@@ -256,11 +253,7 @@ let stagingSeq = 0;
  * staging `rust/src/models/download.rs::write_verified` already does for model files. Staging beside
  * the destination keeps the rename within one filesystem, where it is atomic.
  */
-export async function streamResponseToFile(
-  res: Response,
-  destPath: string,
-  label: string,
-): Promise<number> {
+export async function streamResponseToFile(res: Response, destPath: string, label: string): Promise<number> {
   const emptyResponse = () =>
     new KeshaError("E_MODEL_DOWNLOAD", `Download failed: empty response for ${label}`, {
       hint: "try again; the server may be temporarily unavailable.",
@@ -282,9 +275,13 @@ export async function streamResponseToFile(
         try {
           next = await reader.read();
         } catch (err) {
-          throw new KeshaError("E_MODEL_DOWNLOAD", `Download of ${label} broke off after ${bytes} bytes: ${errorMessage(err)}`, {
-            hint: "check your network connection and try again.",
-          });
+          throw new KeshaError(
+            "E_MODEL_DOWNLOAD",
+            `Download of ${label} broke off after ${bytes} bytes: ${errorMessage(err)}`,
+            {
+              hint: "check your network connection and try again.",
+            },
+          );
         }
         if (next.done) break;
         await applyBackpressure(writer, writer.write(next.value));
@@ -307,7 +304,10 @@ export async function streamResponseToFile(
   return bytes;
 }
 
-export function createProgressBar(label: string, totalBytes: number): {
+export function createProgressBar(
+  label: string,
+  totalBytes: number,
+): {
   update(downloadedBytes: number): void;
   finish(): void;
 } {

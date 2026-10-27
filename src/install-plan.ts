@@ -10,12 +10,7 @@ import { engineVersion, injectedEnginePins, packageVersion } from "./package-inf
 import { KOKORO_ANE_NOTE, kokoroAneComponents, voicePackLanguage } from "./kokoro-ane";
 import { kokoroAneDir, kokoroAneZhDir, kokoroG2pDir } from "./fluid-roots";
 import modelPlan from "../model-plan.json" with { type: "json" };
-import {
-  FLUID_ASR_CACHE_NOTE,
-  fluidAsrCachePath,
-  fluidAsrCacheReady,
-  isCoremlBackend,
-} from "./fluid-asr-cache";
+import { FLUID_ASR_CACHE_NOTE, fluidAsrCachePath, fluidAsrCacheReady, isCoremlBackend } from "./fluid-asr-cache";
 
 export interface InstallPlanOptions {
   noCache?: boolean;
@@ -180,11 +175,7 @@ function engineIsCached(binPath: string, version: string): boolean {
   return existsSync(binPath) && readInstalledEngineVersion(binPath) === version;
 }
 
-function buildEngineComponent(
-  noCache: boolean,
-  version: string,
-  engineCached: boolean,
-): PlanComponent {
+function buildEngineComponent(noCache: boolean, version: string, engineCached: boolean): PlanComponent {
   const target = engineTarget();
   if (target) {
     return {
@@ -359,9 +350,7 @@ function assembleComponents(input: {
   const components: PlanComponent[] = [
     buildEngineComponent(noCache, input.version, engineCached),
     ...buildSidecarComponents(input.engineDir, noCache, input.version, engineCached),
-    input.coreml
-      ? fluidAsrComponent()
-      : modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
+    input.coreml ? fluidAsrComponent() : modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
     modelBundle(
       "Audio language ID ECAPA",
       LANG_ID_FILES,
@@ -395,12 +384,7 @@ function assembleComponents(input: {
   return components;
 }
 
-function renderHeader(
-  cacheRoot: string,
-  binPath: string,
-  backend: string | undefined,
-  version: string,
-): string[] {
+function renderHeader(cacheRoot: string, binPath: string, backend: string | undefined, version: string): string[] {
   const pinNote = version === engineVersion ? "" : ` (overrides the pinned v${engineVersion})`;
   return [
     "Kesha install plan",
@@ -420,8 +404,10 @@ function renderComponentLines(components: PlanComponent[]): string[] {
   const status = (c: PlanComponent) => (c.refresh ? "refresh" : c.cached ? "cached" : "needed");
   const lines: string[] = [];
   for (const c of components) {
-    const size = c.sizeBytes === null ? "size unknown" : c.external ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
-    const detail = c.sizeBytes === null ? "not pinned in this build" : c.external ? "approximate" : `${c.sizeBytes} bytes`;
+    const size =
+      c.sizeBytes === null ? "size unknown" : c.external ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
+    const detail =
+      c.sizeBytes === null ? "not pinned in this build" : c.external ? "approximate" : `${c.sizeBytes} bytes`;
     lines.push(`  - ${c.name}: ${size} (${detail}, ${status(c)}, ${c.source})`);
     if (c.note) lines.push(`    ${c.note}`);
   }
@@ -451,9 +437,7 @@ function renderTotalLines(components: PlanComponent[]): string[] {
   if (unknown.length > 0) lines.push(`  Not counted (size unknown): ${unknown.join(", ")}`);
   const externalPending = external.reduce((sum, c) => (c.cached ? sum : sum + bytes(c)), 0);
   if (externalPending > 0) {
-    lines.push(
-      `  Additionally fetched by the backend into its own cache: ~${humanBytes(externalPending)}`,
-    );
+    lines.push(`  Additionally fetched by the backend into its own cache: ~${humanBytes(externalPending)}`);
   }
   return lines;
 }
@@ -478,10 +462,7 @@ function renderBehaviorLines(ttsLangs: string[], wantsAnyKokoro: boolean): strin
 }
 
 /** Argv of the `kesha install` invocation a plan describes. Shared with `kesha init`, whose suggestions must stay in step with it. */
-export function installCommandTokens(
-  options: InstallPlanOptions,
-  ttsLangs: string[],
-): string[] {
+export function installCommandTokens(options: InstallPlanOptions, ttsLangs: string[]): string[] {
   return [
     "kesha",
     "install",

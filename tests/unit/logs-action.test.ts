@@ -71,9 +71,7 @@ describe("runLogsAction", () => {
 
   test("mode accepts the three documented modes", () => {
     for (const mode of ["on", "off", "retain-on-failure"]) {
-      expect(texts(runLogsAction({ action: "mode", value: mode }))[0]).toBe(
-        `Kesha diagnostic log mode set to ${mode}`,
-      );
+      expect(texts(runLogsAction({ action: "mode", value: mode }))[0]).toBe(`Kesha diagnostic log mode set to ${mode}`);
     }
   });
 

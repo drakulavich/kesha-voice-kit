@@ -98,9 +98,19 @@ describe("MCP server stdin EOF", () => {
     });
     trackPid(server.pid);
     const send = (message: unknown) => server.stdin.write(`${JSON.stringify(message)}\n`);
-    send({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } } });
+    send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "initialize",
+      params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "t", version: "0" } },
+    });
     send({ jsonrpc: "2.0", method: "notifications/initialized" });
-    send({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "transcribe_audio", arguments: { path: join(dir, "audio.wav") } } });
+    send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/call",
+      params: { name: "transcribe_audio", arguments: { path: join(dir, "audio.wav") } },
+    });
     server.stdin.flush();
     const enginePid = await waitForPidFile(enginePidPath);
 

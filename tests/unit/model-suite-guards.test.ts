@@ -96,9 +96,7 @@ describe("suite", () => {
 describe("engineDependencies", () => {
   test("names the engine a suite reaches for", () => {
     expect(engineDependencies(GATED_SUITE)).toEqual(["a functional installed engine (engineGate)"]);
-    expect(engineDependencies(PER_CASE_SUITE)).toEqual([
-      "a source-built engine (rust/target/release/kesha-engine)",
-    ]);
+    expect(engineDependencies(PER_CASE_SUITE)).toEqual(["a source-built engine (rust/target/release/kesha-engine)"]);
   });
 
   test("reads a named import spread over several lines", () => {
@@ -127,7 +125,10 @@ describe("ungatedCases", () => {
 
   test("reports a case added beside a guarded one", () => {
     const findings = ungatedCases(
-      PER_CASE_SUITE.replace('  it.skipIf(!AVAILABLE)("case", () => {});\n', (kept) => `${kept}  it("added later", () => {});\n`),
+      PER_CASE_SUITE.replace(
+        '  it.skipIf(!AVAILABLE)("case", () => {});\n',
+        (kept) => `${kept}  it("added later", () => {});\n`,
+      ),
     );
     expect(findings).toHaveLength(1);
     expect(findings[0]!.declaration).toContain("added later");

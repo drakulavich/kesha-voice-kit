@@ -15,11 +15,7 @@ export const FLUID_ASR_CACHE_NOTE =
  * probe yields nothing, fall back to the platform's shipped backend rather than to "not
  * CoreML", which would point darwin at an ONNX directory it never populates (#684).
  */
-export function isCoremlBackend(
-  backend?: string,
-  platform?: string,
-  arch?: string,
-): boolean {
+export function isCoremlBackend(backend?: string, platform?: string, arch?: string): boolean {
   return (backend ?? engineTarget(platform, arch)?.backend) === "coreml";
 }
 
@@ -30,14 +26,7 @@ export function isCoremlBackend(
  * picks unaided, which #688 keeps as a read-fallback.
  */
 export function legacyFluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
-  return join(
-    homeDir,
-    "Library",
-    "Application Support",
-    "FluidAudio",
-    "Models",
-    "parakeet-tdt-0.6b-v3",
-  );
+  return join(homeDir, "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3");
 }
 
 /**
@@ -45,14 +34,9 @@ export function legacyFluidAsrCachePath(homeDir = diagnosticHomeDir()): string {
  * complete legacy bundle keeps its place so an upgrade never re-downloads ~460 MB, and
  * anything else lives under the Kesha cache, where the engine roots a fresh install (#688).
  */
-export function fluidAsrCachePath(
-  homeDir = diagnosticHomeDir(),
-  cacheRoot = keshaCacheDir(),
-): string {
+export function fluidAsrCachePath(homeDir = diagnosticHomeDir(), cacheRoot = keshaCacheDir()): string {
   const legacy = legacyFluidAsrCachePath(homeDir);
-  return fluidAsrCacheReady(legacy)
-    ? legacy
-    : join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3");
+  return fluidAsrCacheReady(legacy) ? legacy : join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3");
 }
 
 /**

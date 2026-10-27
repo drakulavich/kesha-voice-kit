@@ -118,10 +118,7 @@ export async function collectStatus(options: ShowStatusOptions = {}): Promise<St
     paths: collectStatusPaths(),
     hint: engineHint(path, health),
     // Absent engine means no disk walk, matching the human path (#647).
-    disk:
-      installed && options.disk
-        ? collectDiskUsage(path, capabilities?.backend, options.homeDir)
-        : null,
+    disk: installed && options.disk ? collectDiskUsage(path, capabilities?.backend, options.homeDir) : null,
   };
 }
 
@@ -172,14 +169,13 @@ export function renderStatus(report: StatusReport): void {
   log.info("");
 
   log.info(formatStatusLine("Runtime", `Bun ${report.runtime.bun}`, true));
-  log.info(
-    formatStatusLine("Platform", `${report.runtime.platform} ${report.runtime.arch}`, true),
-  );
+  log.info(formatStatusLine("Platform", `${report.runtime.platform} ${report.runtime.arch}`, true));
   if (report.modelMirror) {
     log.info(formatStatusLine("Mirror", report.modelMirror, true));
   }
   for (const [label, entry] of Object.entries(report.paths)) {
-    if (entry.source !== "default") log.info(formatStatusLine(pathLabel(label), `${entry.path} (${entry.source})`, true));
+    if (entry.source !== "default")
+      log.info(formatStatusLine(pathLabel(label), `${entry.path} (${entry.source})`, true));
   }
   log.info("");
 
@@ -192,7 +188,6 @@ export function renderStatus(report: StatusReport): void {
     log.warn(report.hint);
   }
 }
-
 
 function pathLabel(key: string): string {
   switch (key) {
@@ -266,9 +261,7 @@ function showDiskUsage(disk: StatusDiskUsage): void {
   logExternalRoots(disk);
   if (disk.staleSortformerBytes > 0) log.info(staleSortformerHint(disk.staleSortformerBytes));
   log.info("");
-  log.info(
-    pc.dim(`  To reset cache: rm -rf ${disk.cachePath} — next \`kesha install\` re-downloads.`),
-  );
+  log.info(pc.dim(`  To reset cache: rm -rf ${disk.cachePath} — next \`kesha install\` re-downloads.`));
   log.info("");
 }
 
@@ -282,9 +275,13 @@ export async function assertReady(timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<
     ({ backend } = await getDescribe({ signal }));
   } catch (err) {
     if (!signal.aborted || !(err instanceof KeshaError) || err.code !== "E_INTERRUPTED") throw err;
-    throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s`, {
-      hint: replaceEngineHint(),
-    });
+    throw new KeshaError(
+      "E_ENGINE_PROTOCOL",
+      `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s`,
+      {
+        hint: replaceEngineHint(),
+      },
+    );
   }
   if (isCoremlBackend(backend)) {
     const asrPath = fluidAsrCachePath();

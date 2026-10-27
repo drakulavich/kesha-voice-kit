@@ -42,7 +42,11 @@ async function git(cwd: string, ...args: string[]): Promise<string> {
 }
 
 async function blobOf(dir: string, bytes: number): Promise<string> {
-  const proc = Bun.spawn(["git", "hash-object", "-w", "--stdin"], { cwd: dir, stdin: Buffer.alloc(bytes), stdout: "pipe" });
+  const proc = Bun.spawn(["git", "hash-object", "-w", "--stdin"], {
+    cwd: dir,
+    stdin: Buffer.alloc(bytes),
+    stdout: "pipe",
+  });
   return (await new Response(proc.stdout).text()).trim();
 }
 

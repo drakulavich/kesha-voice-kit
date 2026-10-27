@@ -50,10 +50,7 @@ async function resolveText(inline: string | undefined): Promise<string> {
   return new TextDecoder().decode(merged).trim();
 }
 
-export function shouldRejectMissingSayText(
-  inlineText: string | undefined,
-  stdinIsTty: boolean | undefined,
-): boolean {
+export function shouldRejectMissingSayText(inlineText: string | undefined, stdinIsTty: boolean | undefined): boolean {
   return inlineText === undefined && stdinIsTty === true;
 }
 
@@ -263,11 +260,7 @@ export function noExpandAbbrevRequested(args: Record<string, unknown>, rawArgs: 
   return rawArgs.includes("--no-expand-abbrev") || args["no-expand-abbrev"] === true;
 }
 
-async function synthesizeAndEmit(
-  opts: SayOpts,
-  verbose: boolean,
-  session: CommandSession,
-): Promise<CommandOutcome> {
+async function synthesizeAndEmit(opts: SayOpts, verbose: boolean, session: CommandSession): Promise<CommandOutcome> {
   const { stats } = session;
   try {
     const startedAt = performance.now();
@@ -329,7 +322,10 @@ export const sayCommand = defineCommand({
     },
     out: { type: "string", description: "Write audio to file instead of stdout (- for stdout)" },
     rate: { type: "string", description: "Speaking rate 0.5–2.0", default: "1.0" },
-    "list-voices": { type: "boolean", description: "List the voices kesha knows and exit; some need kesha install --tts <lang> first" },
+    "list-voices": {
+      type: "boolean",
+      description: "List the voices kesha knows and exit; some need kesha install --tts <lang> first",
+    },
     ssml: {
       type: "boolean",
       description: "Parse input as SSML (supports <speak>, <break>; strips unknown tags)",
@@ -345,8 +341,7 @@ export const sayCommand = defineCommand({
     },
     "sample-rate": {
       type: "string",
-      description:
-        "Opus encoder sample rate (8000/12000/16000/24000/48000). Only with --format ogg-opus.",
+      description: "Opus encoder sample rate (8000/12000/16000/24000/48000). Only with --format ogg-opus.",
     },
     "no-expand-abbrev": {
       type: "boolean",

@@ -215,9 +215,7 @@ function interpolatedNames(body: unknown): string[] {
 export function interpolatedParameters(dump: JustDump): string[] {
   return Object.entries(dump.recipes ?? {}).flatMap(([name, recipe]) => {
     const parameters = new Set((recipe.parameters ?? []).map((p) => p.name));
-    const offenders = [...new Set(interpolatedNames(recipe.body))]
-      .filter((used) => parameters.has(used))
-      .sort();
+    const offenders = [...new Set(interpolatedNames(recipe.body))].filter((used) => parameters.has(used)).sort();
     if (offenders.length === 0) return [];
     return [
       `justfile: recipe \`${name}\` interpolates ${offenders.map((o) => `{{ ${o} }}`).join(", ")} ` +

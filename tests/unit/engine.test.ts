@@ -3,7 +3,13 @@ import { chmodSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "n
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
-import { describeJson, envEchoEngine, saveEngineEnv, writeOutParsingEngine, writeTranscribingEngine } from "../helpers/fake-engine";
+import {
+  describeJson,
+  envEchoEngine,
+  saveEngineEnv,
+  writeOutParsingEngine,
+  writeTranscribingEngine,
+} from "../helpers/fake-engine";
 import { applyColorEnv } from "../../src/cli/context";
 import {
   detectAudioLanguageEngine,
@@ -186,9 +192,7 @@ function withPathEnv<T>(env: PathEnv, fn: () => T): T {
 describe("engine", () => {
   test("getEngineBinPath defaults to the XDG-style cache under $HOME", () => {
     withPathEnv({ KESHA_CACHE_DIR: undefined, KESHA_ENGINE_BIN: undefined, KESHA_HOME: undefined }, () => {
-      expect(getEngineBinPath()).toBe(
-        join(homedir(), ".cache", "kesha", "engine", "bin", engineBasename),
-      );
+      expect(getEngineBinPath()).toBe(join(homedir(), ".cache", "kesha", "engine", "bin", engineBasename));
     });
   });
 
@@ -280,17 +284,20 @@ describe("engine", () => {
     });
   });
 
-  fakeEngineTest("validateTranscribeRequest against an engine that cannot describe itself is E_ENGINE_PROTOCOL", async () => {
-    const dir = tempDir("kesha-engine-old-transcribe-");
-    const old = join(dir, "kesha-engine");
-    writeFileSync(old, "#!/bin/sh\necho 'error: unrecognized subcommand describe' >&2\nexit 2\n");
-    chmodSync(old, 0o755);
-    await withEngineEnv(old, async () => {
-      const err = await failure(() => validateTranscribeRequest({}));
-      expect(err.code).toBe("E_ENGINE_PROTOCOL");
-      expect(err.hint).toContain("kesha install");
-    });
-  });
+  fakeEngineTest(
+    "validateTranscribeRequest against an engine that cannot describe itself is E_ENGINE_PROTOCOL",
+    async () => {
+      const dir = tempDir("kesha-engine-old-transcribe-");
+      const old = join(dir, "kesha-engine");
+      writeFileSync(old, "#!/bin/sh\necho 'error: unrecognized subcommand describe' >&2\nexit 2\n");
+      chmodSync(old, 0o755);
+      await withEngineEnv(old, async () => {
+        const err = await failure(() => validateTranscribeRequest({}));
+        expect(err.code).toBe("E_ENGINE_PROTOCOL");
+        expect(err.hint).toContain("kesha install");
+      });
+    },
+  );
 
   fakeEngineTest("validateTranscribeRequest refuses a flag the build lacks before any spawn", async () => {
     await withEngineEnv(fakeEngine(["transcribe", "transcribe.segments"]), async () => {
@@ -364,7 +371,9 @@ describe("engine", () => {
       expect(err.code).toBe("E_ENGINE_PROTOCOL");
       expect(err.hint).toContain("kesha install");
       expect(errorMessage(err)).toMatch(/^error \[E_ENGINE_PROTOCOL\]:/);
-      expect(errorMessage(err)).toContain("hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`");
+      expect(errorMessage(err)).toContain(
+        "hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`",
+      );
       expect(await getEngineCapabilities()).toBeNull();
     });
   });
@@ -613,9 +622,7 @@ exit 2
   printf '%s\\n' '{"kind":"progress","message":"Listening... 2s"}' >&2
   printf '%s\\n' '{"kind":"progress","message":"Recorded /tmp/out.wav (16000 Hz, 1 channel, 160000 frames)"}' >&2`,
     );
-    const out = await withEngineEnv(engine, () =>
-      captureStderr(true, () => recordEngine({ out: "/tmp/out.wav" }, 10)),
-    );
+    const out = await withEngineEnv(engine, () => captureStderr(true, () => recordEngine({ out: "/tmp/out.wav" }, 10)));
     expect(out).toContain("Listening (16000 Hz)...");
     expect(out).toContain("Recorded /tmp/out.wav");
     expect(out).toContain("\rListening... 1s");
@@ -663,9 +670,7 @@ exit 2
       );
       // CI counts as a colour terminal, so the notice arrives cyan there and plain locally.
       expect(stripAnsi(out)).toBe("Recorded /tmp/out.wav (16000 Hz, 1 channel, 160000 frames)\n");
-      const live = await withEngineEnv(liveEngine, () =>
-        captureStderr(false, () => recordEngine({ live: true }, 10)),
-      );
+      const live = await withEngineEnv(liveEngine, () => captureStderr(false, () => recordEngine({ live: true }, 10)));
       expect(stripAnsi(live)).toBe("No speech detected.\n");
     } finally {
       log.quietEnabled = false;
@@ -797,9 +802,7 @@ exit 2
       }
       process.env.KESHA_TEST_RECORD_EXIT = "1";
       await expect(recordEngine({ live: true }, 10)).rejects.toThrow(/exited with code 1/);
-      await expect(recordEngine({ out: join(dir, "out.wav") }, 10)).rejects.toThrow(
-        /exited with code 1/,
-      );
+      await expect(recordEngine({ out: join(dir, "out.wav") }, 10)).rejects.toThrow(/exited with code 1/);
     });
     delete process.env.KESHA_TEST_RECORD_EXIT;
   });
@@ -811,9 +814,7 @@ exit 2
     writeFileSync(enginePath, "#!/bin/sh\nexit 130\n");
     chmodSync(enginePath, 0o755);
     await withEngineEnv(enginePath, async () => {
-      await expect(recordEngine({ out: join(dir, "out.wav") }, 10)).rejects.toThrow(
-        /exited with code 130/,
-      );
+      await expect(recordEngine({ out: join(dir, "out.wav") }, 10)).rejects.toThrow(/exited with code 130/);
     });
   });
 
@@ -911,7 +912,9 @@ exit 2
       const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
       expect(err.code).toBe("E_INTERNAL");
       expect(err.message).toContain("Segmentation fault (core dumped)");
-      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine transcribe wrote a line that is not a protocol event: "Segmentation fault \(core dumped\)"/);
+      expect(errorMessage(err)).toMatch(
+        /^error \[E_INTERNAL\]: kesha-engine transcribe wrote a line that is not a protocol event: "Segmentation fault \(core dumped\)"/,
+      );
     });
   });
 
@@ -934,7 +937,9 @@ exit 2
       const err = await failure(() => transcribeEngine("audio.wav"));
       expect(err.code).toBe("E_INTERNAL");
       expect(err.exitCode).toBeUndefined();
-      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine describe wrote a line that is not a protocol event: "loading models\.\.\."/);
+      expect(errorMessage(err)).toMatch(
+        /^error \[E_INTERNAL\]: kesha-engine describe wrote a line that is not a protocol event: "loading models\.\.\."/,
+      );
       expect(await getEngineCapabilities()).toBeNull();
     });
   });
@@ -989,28 +994,31 @@ exit 2
     });
   });
 
-  fakeEngineTest("a run that fails on the error event alone is not also echoed to stderr as a warning (#1163)", async () => {
-    const engine = writeTranscribingEngine(
-      "kesha-engine-error-no-echo-",
-      ["transcribe"],
-      `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the ASR model is missing"}' >&2
+  fakeEngineTest(
+    "a run that fails on the error event alone is not also echoed to stderr as a warning (#1163)",
+    async () => {
+      const engine = writeTranscribingEngine(
+        "kesha-engine-error-no-echo-",
+        ["transcribe"],
+        `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the ASR model is missing"}' >&2
   printf '%s\\n' 'this looks like a transcript but must not be returned'`,
-    );
-    const savedWrite = process.stderr.write;
-    const captured: string[] = [];
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
-      return true;
-    }) as typeof process.stderr.write;
-    try {
-      await withEngineEnv(engine, async () => {
-        await failure(() => transcribeEngine("audio.wav"));
-      });
-    } finally {
-      process.stderr.write = savedWrite;
-    }
-    expect(captured.join("")).not.toContain("E_MODEL_MISSING");
-  });
+      );
+      const savedWrite = process.stderr.write;
+      const captured: string[] = [];
+      process.stderr.write = ((chunk: string | Uint8Array) => {
+        captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+        return true;
+      }) as typeof process.stderr.write;
+      try {
+        await withEngineEnv(engine, async () => {
+          await failure(() => transcribeEngine("audio.wav"));
+        });
+      } finally {
+        process.stderr.write = savedWrite;
+      }
+      expect(captured.join("")).not.toContain("E_MODEL_MISSING");
+    },
+  );
 
   fakeEngineTest("an error event on detect-lang is null, not a confident wrong guess (#1166)", async () => {
     const engine = langDetectEngine(
@@ -1024,38 +1032,44 @@ exit 2
     });
   });
 
-  fakeEngineTest("a detect-lang killed by a signal warns with the signal and a bug report, not a reinstall (#1512)", async () => {
-    const engine = langDetectEngine("kesha-engine-detect-lang-crash-", "detect-lang", "  kill -SEGV $$");
-    const savedWrite = process.stderr.write;
-    const captured: string[] = [];
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
-      return true;
-    }) as typeof process.stderr.write;
-    try {
-      await withEngineEnv(engine, async () => {
-        expect(await detectAudioLanguageEngine("audio.wav")).toBeNull();
-      });
-    } finally {
-      process.stderr.write = savedWrite;
-    }
-    expect(captured.join("")).toContain(
-      "Audio language detection failed: kesha-engine detect-lang was killed by SIGSEGV\n" +
-        "  Fix: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
-    );
-  });
+  fakeEngineTest(
+    "a detect-lang killed by a signal warns with the signal and a bug report, not a reinstall (#1512)",
+    async () => {
+      const engine = langDetectEngine("kesha-engine-detect-lang-crash-", "detect-lang", "  kill -SEGV $$");
+      const savedWrite = process.stderr.write;
+      const captured: string[] = [];
+      process.stderr.write = ((chunk: string | Uint8Array) => {
+        captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+        return true;
+      }) as typeof process.stderr.write;
+      try {
+        await withEngineEnv(engine, async () => {
+          expect(await detectAudioLanguageEngine("audio.wav")).toBeNull();
+        });
+      } finally {
+        process.stderr.write = savedWrite;
+      }
+      expect(captured.join("")).toContain(
+        "Audio language detection failed: kesha-engine detect-lang was killed by SIGSEGV\n" +
+          "  Fix: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+      );
+    },
+  );
 
-  fakeEngineTest("a stray non-event line on detect-lang does not blind language detection (#1166 follow-up)", async () => {
-    const engine = langDetectEngine(
-      "kesha-engine-detect-lang-noisy-",
-      "detect-lang",
-      `  echo 'onnxruntime: some warning' >&2
+  fakeEngineTest(
+    "a stray non-event line on detect-lang does not blind language detection (#1166 follow-up)",
+    async () => {
+      const engine = langDetectEngine(
+        "kesha-engine-detect-lang-noisy-",
+        "detect-lang",
+        `  echo 'onnxruntime: some warning' >&2
   printf '%s\\n' '{"code":"ru","confidence":0.87}'`,
-    );
-    await withEngineEnv(engine, async () => {
-      expect(await detectAudioLanguageEngine("audio.wav")).toEqual({ code: "ru", confidence: 0.87 });
-    });
-  });
+      );
+      await withEngineEnv(engine, async () => {
+        expect(await detectAudioLanguageEngine("audio.wav")).toEqual({ code: "ru", confidence: 0.87 });
+      });
+    },
+  );
 
   /** Parses like the engine's clap: a dash-led token is a flag until `--`, and an unknown one is refused. */
   function dashStrictEngine(): string {
@@ -1139,41 +1153,47 @@ describe("text language detection degrades loudly (#770)", () => {
     expect(warned).toBe(process.platform === "darwin");
   });
 
-  fakeEngineTest("an error event on detect-text-lang is null, not a confident wrong guess, and still warns (#1166)", async () => {
-    const engine = langDetectEngine(
-      "kesha-engine-detect-text-lang-error-",
-      "detect-text-lang",
-      `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the language-id model is missing"}' >&2
+  fakeEngineTest(
+    "an error event on detect-text-lang is null, not a confident wrong guess, and still warns (#1166)",
+    async () => {
+      const engine = langDetectEngine(
+        "kesha-engine-detect-text-lang-error-",
+        "detect-text-lang",
+        `  printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the language-id model is missing"}' >&2
   printf '%s\\n' '{"code":"xx","confidence":0.99}'`,
-    );
-    const savedWrite = process.stderr.write;
-    const captured: string[] = [];
-    process.stderr.write = ((chunk: string | Uint8Array) => {
-      captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
-      return true;
-    }) as typeof process.stderr.write;
-    try {
-      await withEngineEnv(engine, async () => {
-        expect(await detectTextLanguageEngine("hello")).toBeNull();
-      });
-    } finally {
-      process.stderr.write = savedWrite;
-    }
-    const plain = captured.join("").replace(/\x1b\[[0-9;]*m/g, "");
-    expect(plain.includes("Text language detection failed")).toBe(process.platform === "darwin");
-  });
+      );
+      const savedWrite = process.stderr.write;
+      const captured: string[] = [];
+      process.stderr.write = ((chunk: string | Uint8Array) => {
+        captured.push(typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk));
+        return true;
+      }) as typeof process.stderr.write;
+      try {
+        await withEngineEnv(engine, async () => {
+          expect(await detectTextLanguageEngine("hello")).toBeNull();
+        });
+      } finally {
+        process.stderr.write = savedWrite;
+      }
+      const plain = captured.join("").replace(/\x1b\[[0-9;]*m/g, "");
+      expect(plain.includes("Text language detection failed")).toBe(process.platform === "darwin");
+    },
+  );
 
-  fakeEngineTest("a stray non-event line on detect-text-lang does not blind language detection (#1166 follow-up)", async () => {
-    const engine = langDetectEngine(
-      "kesha-engine-detect-text-lang-noisy-",
-      "detect-text-lang",
-      `  echo 'onnxruntime: some warning' >&2
+  fakeEngineTest(
+    "a stray non-event line on detect-text-lang does not blind language detection (#1166 follow-up)",
+    async () => {
+      const engine = langDetectEngine(
+        "kesha-engine-detect-text-lang-noisy-",
+        "detect-text-lang",
+        `  echo 'onnxruntime: some warning' >&2
   printf '%s\\n' '{"code":"ru","confidence":0.87}'`,
-    );
-    await withEngineEnv(engine, async () => {
-      expect(await detectTextLanguageEngine("hello")).toEqual({ code: "ru", confidence: 0.87 });
-    });
-  });
+      );
+      await withEngineEnv(engine, async () => {
+        expect(await detectTextLanguageEngine("hello")).toEqual({ code: "ru", confidence: 0.87 });
+      });
+    },
+  );
 });
 
 /**
@@ -1251,7 +1271,10 @@ describe("engine subprocess env", () => {
       delete process.env.KESHA_HOME;
       process.env.KESHA_CACHE_DIR = join("relative", "cache");
       const out = await readStdout(["KESHA_CACHE_DIR"]);
-      const value = out.split("\n").find((l) => l.startsWith("KESHA_CACHE_DIR="))!.slice("KESHA_CACHE_DIR=".length);
+      const value = out
+        .split("\n")
+        .find((l) => l.startsWith("KESHA_CACHE_DIR="))!
+        .slice("KESHA_CACHE_DIR=".length);
       expect(value.endsWith(join("relative", "cache"))).toBe(true);
       expect(value).not.toBe(join("relative", "cache"));
     } finally {
@@ -1302,7 +1325,9 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
       await withEngineEnv(transcribingEngine(payload), async () => {
         const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
         expect(err.code).toBe("E_INTERNAL");
-        expect(errorMessage(err)).toBe(`error [E_INTERNAL]: Invalid transcription JSON returned by kesha-engine: ${payload}${HINT}`);
+        expect(errorMessage(err)).toBe(
+          `error [E_INTERNAL]: Invalid transcription JSON returned by kesha-engine: ${payload}${HINT}`,
+        );
       });
     });
   }
@@ -1316,7 +1341,9 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
       await withEngineEnv(transcribingEngine(payload), async () => {
         const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
         expect(err.code).toBe("E_INTERNAL");
-        expect(errorMessage(err)).toBe(`error [E_INTERNAL]: Invalid transcription segment returned by kesha-engine: ${payload}${HINT}`);
+        expect(errorMessage(err)).toBe(
+          `error [E_INTERNAL]: Invalid transcription segment returned by kesha-engine: ${payload}${HINT}`,
+        );
       });
     });
   }
@@ -1325,7 +1352,9 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     await withEngineEnv(transcribingEngine("kesha-engine: segfault"), async () => {
       const err = await failure(() => transcribeEngineWithSegments("audio.wav"));
       expect(err.code).toBe("E_INTERNAL");
-      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: .+: kesha-engine: segfault\n {2}hint: re-run with KESHA_DEBUG=1/);
+      expect(errorMessage(err)).toMatch(
+        /^error \[E_INTERNAL\]: .+: kesha-engine: segfault\n {2}hint: re-run with KESHA_DEBUG=1/,
+      );
     });
   });
 
@@ -1418,22 +1447,25 @@ describe("the engine boundary refuses to pass a malformed reply through", () => 
     });
   });
 
-  fakeEngineTest("a binary replaced after missing the deadline is probed again even when its mtime is restored", async () => {
-    const path = join(tempDir("kesha-engine-replaced-"), "kesha-engine");
-    writeFileSync(path, "#!/bin/sh\nwhile :; do sleep 1; done\n");
-    chmodSync(path, 0o755);
-    const stamp = 1_700_000_000;
-    utimesSync(path, stamp, stamp);
-    await withEngineEnv(path, async () => {
-      expect(await getEngineCapabilities(300)).toBeNull();
-      writeFileSync(
-        path,
-        `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ backend: "onnx", features: ["tts"] })}'\n  exit 0\nfi\nexit 2\n`,
-      );
+  fakeEngineTest(
+    "a binary replaced after missing the deadline is probed again even when its mtime is restored",
+    async () => {
+      const path = join(tempDir("kesha-engine-replaced-"), "kesha-engine");
+      writeFileSync(path, "#!/bin/sh\nwhile :; do sleep 1; done\n");
+      chmodSync(path, 0o755);
+      const stamp = 1_700_000_000;
       utimesSync(path, stamp, stamp);
-      expect(await getEngineCapabilities(300)).toMatchObject({ backend: "onnx" });
-    });
-  });
+      await withEngineEnv(path, async () => {
+        expect(await getEngineCapabilities(300)).toBeNull();
+        writeFileSync(
+          path,
+          `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ backend: "onnx", features: ["tts"] })}'\n  exit 0\nfi\nexit 2\n`,
+        );
+        utimesSync(path, stamp, stamp);
+        expect(await getEngineCapabilities(300)).toMatchObject({ backend: "onnx" });
+      });
+    },
+  );
 
   fakeEngineTest("an advertised tts language list survives the probe", async () => {
     const payload = describeJson({
@@ -1505,12 +1537,14 @@ describe("the capability probe stays in step with the installed binary", () => {
     });
   });
 
-  fakeEngineTest("a describe that reports an error event fails even though its document parses (#1163 follow-up)", async () => {
-    const dir = tempDir("kesha-engine-describe-error-");
-    const path = join(dir, "kesha-engine");
-    writeFileSync(
-      path,
-      `#!/bin/sh
+  fakeEngineTest(
+    "a describe that reports an error event fails even though its document parses (#1163 follow-up)",
+    async () => {
+      const dir = tempDir("kesha-engine-describe-error-");
+      const path = join(dir, "kesha-engine");
+      writeFileSync(
+        path,
+        `#!/bin/sh
 if [ "$1" = "describe" ]; then
   printf '%s\\n' '{"kind":"error","code":"E_MODEL_MISSING","message":"the language-id model is missing"}' >&2
   printf '%s\\n' '${describeJson({ features: ["transcribe.segments"] })}'
@@ -1518,14 +1552,15 @@ if [ "$1" = "describe" ]; then
 fi
 exit 2
 `,
-    );
-    chmodSync(path, 0o755);
-    await withEngineEnv(path, async () => {
-      const err = await failure(() => getDescribe());
-      expect(err.code).toBe("E_MODEL_MISSING");
-      expect(errorMessage(err)).toBe("error [E_MODEL_MISSING]: the language-id model is missing");
-    });
-  });
+      );
+      chmodSync(path, 0o755);
+      await withEngineEnv(path, async () => {
+        const err = await failure(() => getDescribe());
+        expect(err.code).toBe("E_MODEL_MISSING");
+        expect(errorMessage(err)).toBe("error [E_MODEL_MISSING]: the language-id model is missing");
+      });
+    },
+  );
 
   // Blank text has no language to detect; spending a subprocess on it would be pure latency.
   fakeEngineTest("blank text resolves null while real text still reaches the engine", async () => {

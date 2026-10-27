@@ -38,9 +38,7 @@ describe("parseArgs", () => {
 
   // Only the darwin lane passes --text (#742); every other lane must keep the pangram.
   test("keeps the default sentence when --text is absent", () => {
-    expect(parseArgs(["out"])?.voices.map((v) => v.text)).toEqual([
-      "The quick brown fox jumps over the lazy dog.",
-    ]);
+    expect(parseArgs(["out"])?.voices.map((v) => v.text)).toEqual(["The quick brown fox jumps over the lazy dog."]);
     expect(parseArgs(["out", "--voice", "macos-Sam"])?.voices.map((v) => v.text)).toEqual([
       "The quick brown fox jumps over the lazy dog.",
     ]);

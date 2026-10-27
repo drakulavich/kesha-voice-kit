@@ -24,9 +24,7 @@ export interface RecordArgs {
   debug?: boolean;
 }
 
-export type ResolvedRecordArgs =
-  | { ok: true; target: RecordTarget; maxSeconds: number }
-  | { ok: false; error: string };
+export type ResolvedRecordArgs = { ok: true; target: RecordTarget; maxSeconds: number } | { ok: false; error: string };
 
 const DEFAULT_MAX_SECONDS = 120;
 const MAX_RECORD_SECONDS = 3600;
@@ -51,9 +49,7 @@ function resolveTarget(args: RecordArgs): { ok: true; target: RecordTarget } | R
   return { ok: true, target: live ? { live: true } : { out } };
 }
 
-function resolveMaxSeconds(
-  rawMax: string | number | undefined,
-): { ok: true; maxSeconds: number } | Rejected {
+function resolveMaxSeconds(rawMax: string | number | undefined): { ok: true; maxSeconds: number } | Rejected {
   const raw = String(rawMax ?? DEFAULT_MAX_SECONDS).trim();
   const maxSeconds = Number(raw);
   if (raw === "" || !Number.isFinite(maxSeconds)) {
@@ -113,7 +109,10 @@ function resolveAutoStop(
   if (!minSpeechMs.ok) return minSpeechMs;
   const threshold = resolveThreshold(args["auto-stop-threshold"]);
   if (!threshold.ok) return threshold;
-  return { ok: true, options: { silenceMs: silenceMs.value, threshold: threshold.value, minSpeechMs: minSpeechMs.value } };
+  return {
+    ok: true,
+    options: { silenceMs: silenceMs.value, threshold: threshold.value, minSpeechMs: minSpeechMs.value },
+  };
 }
 
 function resolvePositiveInteger(
@@ -129,9 +128,7 @@ function resolvePositiveInteger(
   return { ok: true, value };
 }
 
-function resolveThreshold(
-  rawValue: string | number | undefined,
-): { ok: true; value: number } | Rejected {
+function resolveThreshold(rawValue: string | number | undefined): { ok: true; value: number } | Rejected {
   const raw = String(rawValue ?? DEFAULT_AUTO_STOP_THRESHOLD).trim();
   const value = Number(raw);
   if (!Number.isFinite(value) || value <= 0 || value > 1) {
@@ -157,8 +154,7 @@ export const recordCommand = defineCommand({
     },
     live: {
       type: "boolean",
-      description:
-        "Transcribe the microphone live and print the transcript to stdout (CoreML on Apple Silicon only)",
+      description: "Transcribe the microphone live and print the transcript to stdout (CoreML on Apple Silicon only)",
       default: false,
     },
     "max-seconds": {

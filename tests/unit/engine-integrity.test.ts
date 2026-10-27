@@ -101,125 +101,157 @@ function sumsLine(hash: string): string {
 
 describe("the engine binary is installed only when its SHA-256 matches", () => {
   // The release's own SHA256SUMS vouches for the served bytes here, so only the pin can refuse them.
-  posixTest("the pinned release refuses a binary whose hash is not the pin, and keeps no copy of it", async () => {
-    const binPath = stageEngineDir();
-    const urls = stubRelease(sumsLine(sha256(ENGINE)));
+  posixTest(
+    "the pinned release refuses a binary whose hash is not the pin, and keeps no copy of it",
+    async () => {
+      const binPath = stageEngineDir();
+      const urls = stubRelease(sumsLine(sha256(ENGINE)));
 
-    const err = await installEngine({ version: PINNED }).then(
-      () => null,
-      (e: unknown) => e,
-    );
+      const err = await installEngine({ version: PINNED }).then(
+        () => null,
+        (e: unknown) => e,
+      );
 
-    expect(err).toBeInstanceOf(Error);
-    expect((err as Error).message).toContain(`expected sha256`);
-    expect((err as Error).message).toContain(`got ${sha256(ENGINE)}`);
-    expect(urls.filter((u) => u.endsWith("/SHA256SUMS"))).toEqual([]);
-    expect(existsSync(binPath)).toBe(false);
-    expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
-  }, 30_000);
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toContain(`expected sha256`);
+      expect((err as Error).message).toContain(`got ${sha256(ENGINE)}`);
+      expect(urls.filter((u) => u.endsWith("/SHA256SUMS"))).toEqual([]);
+      expect(existsSync(binPath)).toBe(false);
+      expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
+    },
+    30_000,
+  );
 
-  posixTest("a failed check also removes the marker a previous install left", async () => {
-    const binPath = stageEngineDir();
-    writeFileSync(binPath, "#!/bin/sh\nexit 1\n");
-    writeFileSync(getVersionMarkerPath(binPath), "1.0.0\n");
-    stubRelease(null);
+  posixTest(
+    "a failed check also removes the marker a previous install left",
+    async () => {
+      const binPath = stageEngineDir();
+      writeFileSync(binPath, "#!/bin/sh\nexit 1\n");
+      writeFileSync(getVersionMarkerPath(binPath), "1.0.0\n");
+      stubRelease(null);
 
-    await expect(installEngine({ version: PINNED })).rejects.toThrow(/sha256/i);
+      await expect(installEngine({ version: PINNED })).rejects.toThrow(/sha256/i);
 
-    expect(existsSync(binPath)).toBe(false);
-    expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
-  }, 30_000);
+      expect(existsSync(binPath)).toBe(false);
+      expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
+    },
+    30_000,
+  );
 
-  posixTest("an overridden release installs when its SHA256SUMS vouches for the binary", async () => {
-    const binPath = stageEngineDir();
-    stubRelease(`${sha256("other")}  ./SHA256SUMS.sigstore.json\n${sumsLine(sha256(ENGINE))}`);
+  posixTest(
+    "an overridden release installs when its SHA256SUMS vouches for the binary",
+    async () => {
+      const binPath = stageEngineDir();
+      stubRelease(`${sha256("other")}  ./SHA256SUMS.sigstore.json\n${sumsLine(sha256(ENGINE))}`);
 
-    await installEngine({ version: OVERRIDE });
+      await installEngine({ version: OVERRIDE });
 
-    expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
-  }, 30_000);
+      expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
+    },
+    30_000,
+  );
 
-  posixTest("an overridden release refuses a binary its SHA256SUMS does not vouch for", async () => {
-    const binPath = stageEngineDir();
-    const wrong = sha256("a different binary");
-    stubRelease(sumsLine(wrong));
+  posixTest(
+    "an overridden release refuses a binary its SHA256SUMS does not vouch for",
+    async () => {
+      const binPath = stageEngineDir();
+      const wrong = sha256("a different binary");
+      stubRelease(sumsLine(wrong));
 
-    await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(
-      `expected sha256 ${wrong}, got ${sha256(ENGINE)}`,
-    );
-    expect(existsSync(binPath)).toBe(false);
-  }, 30_000);
+      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(
+        `expected sha256 ${wrong}, got ${sha256(ENGINE)}`,
+      );
+      expect(existsSync(binPath)).toBe(false);
+    },
+    30_000,
+  );
 
-  posixTest("an overridden release without SHA256SUMS is refused before its binary is downloaded", async () => {
-    const binPath = stageEngineDir();
-    const urls = stubRelease(null);
+  posixTest(
+    "an overridden release without SHA256SUMS is refused before its binary is downloaded",
+    async () => {
+      const binPath = stageEngineDir();
+      const urls = stubRelease(null);
 
-    await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(
-      `release v${OVERRIDE} publishes no SHA256SUMS`,
-    );
-    expect(urls.filter((u) => u.endsWith(`/${getEngineBinaryName()}`))).toEqual([]);
-    expect(existsSync(binPath)).toBe(false);
-  }, 30_000);
+      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(
+        `release v${OVERRIDE} publishes no SHA256SUMS`,
+      );
+      expect(urls.filter((u) => u.endsWith(`/${getEngineBinaryName()}`))).toEqual([]);
+      expect(existsSync(binPath)).toBe(false);
+    },
+    30_000,
+  );
 
-  sidecarTest("a sidecar that does not match is discarded while the verified engine still installs", async () => {
-    const binPath = stageEngineDir();
-    const [mismatched, matching] = SIDECARS;
-    stubRelease(
-      sumsLine(sha256(ENGINE)) +
-        `${sha256("not the served sidecar")}  ./${mismatched!.assetName}\n` +
-        `${sha256(ENGINE)}  ./${matching!.assetName}\n`,
-    );
+  sidecarTest(
+    "a sidecar that does not match is discarded while the verified engine still installs",
+    async () => {
+      const binPath = stageEngineDir();
+      const [mismatched, matching] = SIDECARS;
+      stubRelease(
+        sumsLine(sha256(ENGINE)) +
+          `${sha256("not the served sidecar")}  ./${mismatched!.assetName}\n` +
+          `${sha256(ENGINE)}  ./${matching!.assetName}\n`,
+      );
 
-    await installEngine({ version: OVERRIDE });
+      await installEngine({ version: OVERRIDE });
 
-    expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
-    expect(existsSync(join(dirname(binPath), mismatched!.fileBasename))).toBe(false);
-    expect(existsSync(join(dirname(binPath), matching!.fileBasename))).toBe(true);
-  }, 30_000);
+      expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
+      expect(existsSync(join(dirname(binPath), mismatched!.fileBasename))).toBe(false);
+      expect(existsSync(join(dirname(binPath), matching!.fileBasename))).toBe(true);
+    },
+    30_000,
+  );
 
   // Greptile P2 on #1263: the previous release's helper would otherwise run beside the new engine unverified.
-  sidecarTest("a sidecar the new release's SHA256SUMS does not list is removed rather than kept from the old install", async () => {
-    const binPath = stageEngineDir();
-    for (const spec of SIDECARS) {
-      const path = join(dirname(binPath), spec.fileBasename);
-      writeFileSync(path, "#!/bin/sh\nexit 0\n");
-      chmodSync(path, 0o755);
-    }
-    stubRelease(sumsLine(sha256(ENGINE)));
+  sidecarTest(
+    "a sidecar the new release's SHA256SUMS does not list is removed rather than kept from the old install",
+    async () => {
+      const binPath = stageEngineDir();
+      for (const spec of SIDECARS) {
+        const path = join(dirname(binPath), spec.fileBasename);
+        writeFileSync(path, "#!/bin/sh\nexit 0\n");
+        chmodSync(path, 0o755);
+      }
+      stubRelease(sumsLine(sha256(ENGINE)));
 
-    await installEngine({ version: OVERRIDE });
+      await installEngine({ version: OVERRIDE });
 
-    expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
-    for (const spec of SIDECARS) expect(existsSync(join(dirname(binPath), spec.fileBasename))).toBe(false);
-  }, 30_000);
+      expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
+      for (const spec of SIDECARS) expect(existsSync(join(dirname(binPath), spec.fileBasename))).toBe(false);
+    },
+    30_000,
+  );
 
-  posixTest("kesha install renders the refusal and exits 1", async () => {
-    const binPath = stageEngineDir();
-    const dir = tempDir("kesha-integrity-cli-");
-    const script = join(dir, "install.ts");
-    writeFileSync(
-      script,
-      `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
-        `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
-        `engineChecksums.pins = ${JSON.stringify(PINS)};\n` +
-        `const body = ${JSON.stringify(ENGINE)};\n` +
-        `globalThis.fetch = (async () => new Response(body, { status: 200 })) as typeof fetch;\n` +
-        `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
-    );
-    const proc = Bun.spawn([process.execPath, script], {
-      env: { ...process.env, KESHA_ENGINE_BIN: binPath },
-      stdout: "ignore",
-      stderr: "pipe",
-    });
-    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  posixTest(
+    "kesha install renders the refusal and exits 1",
+    async () => {
+      const binPath = stageEngineDir();
+      const dir = tempDir("kesha-integrity-cli-");
+      const script = join(dir, "install.ts");
+      writeFileSync(
+        script,
+        `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
+          `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
+          `engineChecksums.pins = ${JSON.stringify(PINS)};\n` +
+          `const body = ${JSON.stringify(ENGINE)};\n` +
+          `globalThis.fetch = (async () => new Response(body, { status: 200 })) as typeof fetch;\n` +
+          `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
+      );
+      const proc = Bun.spawn([process.execPath, script], {
+        env: { ...process.env, KESHA_ENGINE_BIN: binPath },
+        stdout: "ignore",
+        stderr: "pipe",
+      });
+      const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
 
-    expect(exitCode).toBe(1);
-    expect(stderr).toContain(
-      `kesha-engine binary ${getEngineBinaryName()} from release v${PINNED} does not match its pinned SHA-256`,
-    );
-    expect(stderr).toContain("hint: re-run `kesha install`");
-    expect(existsSync(binPath)).toBe(false);
-  }, 30_000);
+      expect(exitCode).toBe(1);
+      expect(stderr).toContain(
+        `kesha-engine binary ${getEngineBinaryName()} from release v${PINNED} does not match its pinned SHA-256`,
+      );
+      expect(stderr).toContain("hint: re-run `kesha install`");
+      expect(existsSync(binPath)).toBe(false);
+    },
+    30_000,
+  );
 });
 
 /** An engine that runs and describes itself like the real one, but is not the bytes any release published. */
@@ -236,42 +268,54 @@ function stageAlteredInstall(binPath: string, marker = PINNED): void {
 }
 
 describe("a cached install of the pinned engine is held to the pin", () => {
-  posixTest("an altered engine behind a matching marker is not trusted as a cache hit", async () => {
-    const binPath = getEngineBinPath();
-    stageAlteredInstall(binPath);
-    stubRelease(null);
+  posixTest(
+    "an altered engine behind a matching marker is not trusted as a cache hit",
+    async () => {
+      const binPath = getEngineBinPath();
+      stageAlteredInstall(binPath);
+      stubRelease(null);
 
-    await expect(installEngine({ version: PINNED })).rejects.toThrow("does not match its pinned SHA-256");
+      await expect(installEngine({ version: PINNED })).rejects.toThrow("does not match its pinned SHA-256");
 
-    expect(existsSync(binPath)).toBe(false);
-    expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
-  }, 30_000);
+      expect(existsSync(binPath)).toBe(false);
+      expect(existsSync(getVersionMarkerPath(binPath))).toBe(false);
+    },
+    30_000,
+  );
 
-  posixTest("an altered engine is replaced by a verified download", async () => {
-    const binPath = getEngineBinPath();
-    stageAlteredInstall(binPath);
-    stubRelease(null);
-    expectServedBody(() => ENGINE);
+  posixTest(
+    "an altered engine is replaced by a verified download",
+    async () => {
+      const binPath = getEngineBinPath();
+      stageAlteredInstall(binPath);
+      stubRelease(null);
+      expectServedBody(() => ENGINE);
 
-    await installEngine({ version: PINNED });
+      await installEngine({ version: PINNED });
 
-    expect(readFileSync(binPath, "utf8")).toBe(ENGINE);
-    expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
-  }, 30_000);
+      expect(readFileSync(binPath, "utf8")).toBe(ENGINE);
+      expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
+    },
+    30_000,
+  );
 
-  sidecarTest("an altered sidecar next to a verified engine is replaced by a verified download", async () => {
-    const binPath = getEngineBinPath();
-    stageAlteredInstall(binPath);
-    writeFileSync(binPath, ENGINE);
-    stubRelease(null);
-    expectServedBody(() => ENGINE);
+  sidecarTest(
+    "an altered sidecar next to a verified engine is replaced by a verified download",
+    async () => {
+      const binPath = getEngineBinPath();
+      stageAlteredInstall(binPath);
+      writeFileSync(binPath, ENGINE);
+      stubRelease(null);
+      expectServedBody(() => ENGINE);
 
-    await installEngine({ version: PINNED });
+      await installEngine({ version: PINNED });
 
-    for (const spec of SIDECARS) {
-      expect(readFileSync(join(dirname(binPath), spec.fileBasename), "utf8")).toBe(ENGINE);
-    }
-  }, 30_000);
+      for (const spec of SIDECARS) {
+        expect(readFileSync(join(dirname(binPath), spec.fileBasename), "utf8")).toBe(ENGINE);
+      }
+    },
+    30_000,
+  );
 
   // Greptile P1 on #1263: sidecars are best-effort everywhere else, so one unreadable copy must not abort the install.
   (isDarwinArm64() && process.getuid?.() !== 0 ? test : test.skip)(
@@ -335,40 +379,54 @@ describe("a cached install of the pinned engine is held to the pin", () => {
       return stderr;
     }
 
-    darwinTest("a repeat install keeps the engine and sidecars it installed instead of downloading them again", async () => {
-      const binPath = getEngineBinPath();
-      expect(await keshaInstall()).toContain("Engine binary downloaded");
-      expect(readFileSync(binPath, "utf8")).toBe(`${ENGINE}# re-signed\n`);
+    darwinTest(
+      "a repeat install keeps the engine and sidecars it installed instead of downloading them again",
+      async () => {
+        const binPath = getEngineBinPath();
+        expect(await keshaInstall()).toContain("Engine binary downloaded");
+        expect(readFileSync(binPath, "utf8")).toBe(`${ENGINE}# re-signed\n`);
 
-      const stderr = await keshaInstall();
+        const stderr = await keshaInstall();
 
-      expect(stderr).toContain("Engine binary already installed");
-      expect(stderr).not.toContain("Downloading");
-    }, 30_000);
+        expect(stderr).toContain("Engine binary already installed");
+        expect(stderr).not.toContain("Downloading");
+      },
+      30_000,
+    );
 
-    darwinTest("an engine altered after it was signed is still replaced by a verified download", async () => {
-      const binPath = getEngineBinPath();
-      await keshaInstall();
-      writeFileSync(binPath, ALTERED);
+    darwinTest(
+      "an engine altered after it was signed is still replaced by a verified download",
+      async () => {
+        const binPath = getEngineBinPath();
+        await keshaInstall();
+        writeFileSync(binPath, ALTERED);
 
-      const stderr = await keshaInstall();
+        const stderr = await keshaInstall();
 
-      expect(stderr).toContain(`kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`);
-      expect(readFileSync(binPath, "utf8")).toBe(`${ENGINE}# re-signed\n`);
-    }, 30_000);
+        expect(stderr).toContain(
+          `kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`,
+        );
+        expect(readFileSync(binPath, "utf8")).toBe(`${ENGINE}# re-signed\n`);
+      },
+      30_000,
+    );
 
-    darwinTest("an unreadable signing record counts as no record, and the engine is replaced", async () => {
-      const binPath = getEngineBinPath();
-      await keshaInstall();
-      rmSync(`${binPath}.signed-sha256`);
-      mkdirSync(`${binPath}.signed-sha256`);
+    darwinTest(
+      "an unreadable signing record counts as no record, and the engine is replaced",
+      async () => {
+        const binPath = getEngineBinPath();
+        await keshaInstall();
+        rmSync(`${binPath}.signed-sha256`);
+        mkdirSync(`${binPath}.signed-sha256`);
 
-      const stderr = await keshaInstall();
+        const stderr = await keshaInstall();
 
-      expect(stderr).toContain("does not match its pinned SHA-256");
-      expect(stderr).toContain("Engine binary downloaded");
-      expect(await keshaInstall()).toContain("Engine binary already installed");
-    }, 30_000);
+        expect(stderr).toContain("does not match its pinned SHA-256");
+        expect(stderr).toContain("Engine binary downloaded");
+        expect(await keshaInstall()).toContain("Engine binary already installed");
+      },
+      30_000,
+    );
 
     (canChmod && process.platform === "darwin" ? test : test.skip)(
       "an unreadable signing record in a read-only engine dir is refused as E_CACHE_CORRUPT",
@@ -385,15 +443,19 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     );
   });
 
-  posixTest("an engine the user supplied through KESHA_ENGINE_BIN is their own build and is not held to the pin", async () => {
-    const binPath = stageEngineDir();
-    stageAlteredInstall(binPath);
-    stubRelease(null);
+  posixTest(
+    "an engine the user supplied through KESHA_ENGINE_BIN is their own build and is not held to the pin",
+    async () => {
+      const binPath = stageEngineDir();
+      stageAlteredInstall(binPath);
+      stubRelease(null);
 
-    await installEngine({ version: PINNED });
+      await installEngine({ version: PINNED });
 
-    expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
-  }, 30_000);
+      expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
+    },
+    30_000,
+  );
 });
 
 async function rejectionOf(p: Promise<unknown>): Promise<KeshaError> {
@@ -406,157 +468,183 @@ async function rejectionOf(p: Promise<unknown>): Promise<KeshaError> {
 }
 
 describe("a cached install of the pinned engine in a read-only engine dir is still held to the pin", () => {
-  readOnlyTest("an altered engine is refused as E_CACHE_CORRUPT and left in place", async () => {
-    const binPath = getEngineBinPath();
-    const engineDir = dirname(binPath);
-    stageAlteredInstall(binPath);
-    for (const spec of SIDECARS) rmSync(join(engineDir, spec.fileBasename));
-    makeReadOnly(engineDir);
-    stubRelease(null);
+  readOnlyTest(
+    "an altered engine is refused as E_CACHE_CORRUPT and left in place",
+    async () => {
+      const binPath = getEngineBinPath();
+      const engineDir = dirname(binPath);
+      stageAlteredInstall(binPath);
+      for (const spec of SIDECARS) rmSync(join(engineDir, spec.fileBasename));
+      makeReadOnly(engineDir);
+      stubRelease(null);
 
-    const err = await rejectionOf(installEngine({ version: PINNED }));
+      const err = await rejectionOf(installEngine({ version: PINNED }));
 
-    expect(err.code).toBe("E_CACHE_CORRUPT");
-    expect(err.message).toContain(`kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`);
-    expect(err.message).toContain(`got ${sha256(ALTERED)}`);
-    expect(err.hint).toContain(engineDir);
-    expect(err.hint).toContain("writable");
-    expect(err.hint).toContain("kesha install");
-    expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
-    expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
-  }, 30_000);
+      expect(err.code).toBe("E_CACHE_CORRUPT");
+      expect(err.message).toContain(
+        `kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`,
+      );
+      expect(err.message).toContain(`got ${sha256(ALTERED)}`);
+      expect(err.hint).toContain(engineDir);
+      expect(err.hint).toContain("writable");
+      expect(err.hint).toContain("kesha install");
+      expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
+      expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
+    },
+    30_000,
+  );
 
-  readOnlySidecarTest("an altered sidecar beside a verified engine is refused as E_CACHE_CORRUPT and left in place", async () => {
-    const binPath = getEngineBinPath();
-    const engineDir = dirname(binPath);
-    stageAlteredInstall(binPath);
-    writeFileSync(binPath, ENGINE);
-    makeReadOnly(engineDir);
-    stubRelease(null);
-    expectServedBody(() => ENGINE);
+  readOnlySidecarTest(
+    "an altered sidecar beside a verified engine is refused as E_CACHE_CORRUPT and left in place",
+    async () => {
+      const binPath = getEngineBinPath();
+      const engineDir = dirname(binPath);
+      stageAlteredInstall(binPath);
+      writeFileSync(binPath, ENGINE);
+      makeReadOnly(engineDir);
+      stubRelease(null);
+      expectServedBody(() => ENGINE);
 
-    const err = await rejectionOf(installEngine({ version: PINNED }));
+      const err = await rejectionOf(installEngine({ version: PINNED }));
 
-    expect(err.code).toBe("E_CACHE_CORRUPT");
-    expect(err.message).toContain(SIDECARS[0]!.assetName);
-    expect(err.hint).toContain(engineDir);
-    for (const spec of SIDECARS) {
-      expect(readFileSync(join(engineDir, spec.fileBasename), "utf8")).toBe(ALTERED);
-    }
-  }, 30_000);
+      expect(err.code).toBe("E_CACHE_CORRUPT");
+      expect(err.message).toContain(SIDECARS[0]!.assetName);
+      expect(err.hint).toContain(engineDir);
+      for (const spec of SIDECARS) {
+        expect(readFileSync(join(engineDir, spec.fileBasename), "utf8")).toBe(ALTERED);
+      }
+    },
+    30_000,
+  );
 
-  readOnlyTest("kesha install renders the refusal, exits 1 and deletes nothing", async () => {
-    const binPath = getEngineBinPath();
-    const engineDir = dirname(binPath);
-    stageAlteredInstall(binPath);
-    for (const spec of SIDECARS) rmSync(join(engineDir, spec.fileBasename));
-    makeReadOnly(engineDir);
-    const dir = tempDir("kesha-integrity-readonly-cli-");
-    const script = join(dir, "install.ts");
-    writeFileSync(
-      script,
-      `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
-        `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
-        `engineChecksums.pins = ${JSON.stringify(PINS)};\n` +
-        `globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as typeof fetch;\n` +
-        `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
-    );
-    const proc = Bun.spawn([process.execPath, script], {
-      env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
-      stdout: "ignore",
-      stderr: "pipe",
-    });
-    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  readOnlyTest(
+    "kesha install renders the refusal, exits 1 and deletes nothing",
+    async () => {
+      const binPath = getEngineBinPath();
+      const engineDir = dirname(binPath);
+      stageAlteredInstall(binPath);
+      for (const spec of SIDECARS) rmSync(join(engineDir, spec.fileBasename));
+      makeReadOnly(engineDir);
+      const dir = tempDir("kesha-integrity-readonly-cli-");
+      const script = join(dir, "install.ts");
+      writeFileSync(
+        script,
+        `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
+          `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
+          `engineChecksums.pins = ${JSON.stringify(PINS)};\n` +
+          `globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as typeof fetch;\n` +
+          `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
+      );
+      const proc = Bun.spawn([process.execPath, script], {
+        env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
+        stdout: "ignore",
+        stderr: "pipe",
+      });
+      const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
 
-    expect(stderr).toContain("error [E_CACHE_CORRUPT]: ");
-    expect(stderr.slice(stderr.indexOf("hint: "))).toContain(engineDir);
-    expect(exitCode).toBe(1);
-    expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
-    expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
-  }, 30_000);
+      expect(stderr).toContain("error [E_CACHE_CORRUPT]: ");
+      expect(stderr.slice(stderr.indexOf("hint: "))).toContain(engineDir);
+      expect(exitCode).toBe(1);
+      expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
+      expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
+    },
+    30_000,
+  );
 
-  readOnlySidecarTest("kesha install refuses a pinned sidecar it cannot read as E_INVALID_ARG, exits 2 and deletes nothing", async () => {
-    const binPath = getEngineBinPath();
-    const engineDir = dirname(binPath);
-    stageAlteredInstall(binPath);
-    writeFileSync(binPath, ENGINE);
-    const [unreadable, ...rest] = SIDECARS;
-    const unreadablePath = join(engineDir, unreadable!.fileBasename);
-    for (const spec of rest) rmSync(join(engineDir, spec.fileBasename));
-    chmodSync(unreadablePath, 0o000);
-    makeReadOnly(engineDir);
-    const pins = { ...PINS, sha256: { ...PINS.sha256, [getEngineBinaryName()]: sha256(ENGINE) } };
-    const dir = tempDir("kesha-integrity-unreadable-cli-");
-    const script = join(dir, "install.ts");
-    writeFileSync(
-      script,
-      `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
-        `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
-        `engineChecksums.pins = ${JSON.stringify(pins)};\n` +
-        `globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as typeof fetch;\n` +
-        `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
-    );
-    const proc = Bun.spawn([process.execPath, script], {
-      env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
-      stdout: "ignore",
-      stderr: "pipe",
-    });
-    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  readOnlySidecarTest(
+    "kesha install refuses a pinned sidecar it cannot read as E_INVALID_ARG, exits 2 and deletes nothing",
+    async () => {
+      const binPath = getEngineBinPath();
+      const engineDir = dirname(binPath);
+      stageAlteredInstall(binPath);
+      writeFileSync(binPath, ENGINE);
+      const [unreadable, ...rest] = SIDECARS;
+      const unreadablePath = join(engineDir, unreadable!.fileBasename);
+      for (const spec of rest) rmSync(join(engineDir, spec.fileBasename));
+      chmodSync(unreadablePath, 0o000);
+      makeReadOnly(engineDir);
+      const pins = { ...PINS, sha256: { ...PINS.sha256, [getEngineBinaryName()]: sha256(ENGINE) } };
+      const dir = tempDir("kesha-integrity-unreadable-cli-");
+      const script = join(dir, "install.ts");
+      writeFileSync(
+        script,
+        `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
+          `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
+          `engineChecksums.pins = ${JSON.stringify(pins)};\n` +
+          `globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as typeof fetch;\n` +
+          `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
+      );
+      const proc = Bun.spawn([process.execPath, script], {
+        env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
+        stdout: "ignore",
+        stderr: "pipe",
+      });
+      const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
 
-    expect(stderr).toMatch(/^error \[E_INVALID_ARG\]: /m);
-    expect(stderr.slice(0, stderr.indexOf("hint: "))).toContain(unreadablePath);
-    expect(stderr.slice(stderr.indexOf("hint: "))).toContain("readable");
-    expect(stderr.slice(stderr.indexOf("hint: "))).toContain("kesha install");
-    expect(exitCode).toBe(2);
-    expect(existsSync(unreadablePath)).toBe(true);
-    expect(readFileSync(binPath, "utf8")).toBe(ENGINE);
-  }, 30_000);
+      expect(stderr).toMatch(/^error \[E_INVALID_ARG\]: /m);
+      expect(stderr.slice(0, stderr.indexOf("hint: "))).toContain(unreadablePath);
+      expect(stderr.slice(stderr.indexOf("hint: "))).toContain("readable");
+      expect(stderr.slice(stderr.indexOf("hint: "))).toContain("kesha install");
+      expect(exitCode).toBe(2);
+      expect(existsSync(unreadablePath)).toBe(true);
+      expect(readFileSync(binPath, "utf8")).toBe(ENGINE);
+    },
+    30_000,
+  );
 
-  readOnlyTest("kesha install refuses a pinned engine binary it cannot read as E_INVALID_ARG, exits 2 and deletes nothing", async () => {
-    const binPath = getEngineBinPath();
-    const engineDir = dirname(binPath);
-    stageAlteredInstall(binPath);
-    for (const spec of SIDECARS) rmSync(join(engineDir, spec.fileBasename));
-    chmodSync(binPath, 0o000);
-    makeReadOnly(engineDir);
-    const dir = tempDir("kesha-integrity-unreadable-engine-cli-");
-    const script = join(dir, "install.ts");
-    writeFileSync(
-      script,
-      `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
-        `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
-        `engineChecksums.pins = ${JSON.stringify(PINS)};\n` +
-        `globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as typeof fetch;\n` +
-        `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
-    );
-    const proc = Bun.spawn([process.execPath, script], {
-      env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
-      stdout: "ignore",
-      stderr: "pipe",
-    });
-    const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  readOnlyTest(
+    "kesha install refuses a pinned engine binary it cannot read as E_INVALID_ARG, exits 2 and deletes nothing",
+    async () => {
+      const binPath = getEngineBinPath();
+      const engineDir = dirname(binPath);
+      stageAlteredInstall(binPath);
+      for (const spec of SIDECARS) rmSync(join(engineDir, spec.fileBasename));
+      chmodSync(binPath, 0o000);
+      makeReadOnly(engineDir);
+      const dir = tempDir("kesha-integrity-unreadable-engine-cli-");
+      const script = join(dir, "install.ts");
+      writeFileSync(
+        script,
+        `import { performInstall } from ${JSON.stringify(join(import.meta.dir, "../../src/cli/install.ts"))};\n` +
+          `import { engineChecksums } from ${JSON.stringify(join(import.meta.dir, "../../src/engine-install.ts"))};\n` +
+          `engineChecksums.pins = ${JSON.stringify(PINS)};\n` +
+          `globalThis.fetch = (async () => new Response("Not Found", { status: 404 })) as typeof fetch;\n` +
+          `await performInstall({ noCache: false, ttsLangs: [], engineVersion: ${JSON.stringify(PINNED)} });\n`,
+      );
+      const proc = Bun.spawn([process.execPath, script], {
+        env: { ...process.env, NO_COLOR: "1", FORCE_COLOR: "0" },
+        stdout: "ignore",
+        stderr: "pipe",
+      });
+      const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
 
-    expect(stderr).toMatch(/^error \[E_INVALID_ARG\]: /m);
-    expect(stderr.slice(0, stderr.indexOf("hint: "))).toContain(binPath);
-    expect(stderr.slice(stderr.indexOf("hint: "))).toContain("readable");
-    expect(stderr.slice(stderr.indexOf("hint: "))).toContain("kesha install");
-    expect(exitCode).toBe(2);
-    expect(existsSync(binPath)).toBe(true);
-    expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
-  }, 30_000);
+      expect(stderr).toMatch(/^error \[E_INVALID_ARG\]: /m);
+      expect(stderr.slice(0, stderr.indexOf("hint: "))).toContain(binPath);
+      expect(stderr.slice(stderr.indexOf("hint: "))).toContain("readable");
+      expect(stderr.slice(stderr.indexOf("hint: "))).toContain("kesha install");
+      expect(exitCode).toBe(2);
+      expect(existsSync(binPath)).toBe(true);
+      expect(readInstalledEngineVersion(binPath)).toBe(PINNED);
+    },
+    30_000,
+  );
 
-  readOnlyTest("a Nix-style from-source engine, which no pin describes, still installs from a read-only dir", async () => {
-    engineChecksums.pins = undefined;
-    const binPath = stageEngineDir();
-    stageAlteredInstall(binPath, engineVersion);
-    makeReadOnly(dirname(binPath));
-    stubRelease(null);
+  readOnlyTest(
+    "a Nix-style from-source engine, which no pin describes, still installs from a read-only dir",
+    async () => {
+      engineChecksums.pins = undefined;
+      const binPath = stageEngineDir();
+      stageAlteredInstall(binPath, engineVersion);
+      makeReadOnly(dirname(binPath));
+      stubRelease(null);
 
-    await installEngine();
+      await installEngine();
 
-    expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
-    expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
-  }, 30_000);
+      expect(readFileSync(binPath, "utf8")).toBe(ALTERED);
+      expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
+    },
+    30_000,
+  );
 });
 
 // A source checkout carries no injected pin (openspec unified-release D1).
@@ -565,71 +653,95 @@ describe("without an injected pin, the Engine is held to its release's own SHA25
     engineChecksums.pins = undefined;
   });
 
-  posixTest("a matching SHA256SUMS installs", async () => {
-    const binPath = stageEngineDir();
-    stubRelease(sumsLine(sha256(ENGINE)));
+  posixTest(
+    "a matching SHA256SUMS installs",
+    async () => {
+      const binPath = stageEngineDir();
+      stubRelease(sumsLine(sha256(ENGINE)));
 
-    await installEngine();
+      await installEngine();
 
-    expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
-  }, 30_000);
+      expect(readInstalledEngineVersion(binPath)).toBe(engineVersion);
+    },
+    30_000,
+  );
 
-  posixTest("a mismatching SHA256SUMS refuses", async () => {
-    const binPath = stageEngineDir();
-    stubRelease(sumsLine(sha256("a different binary")));
+  posixTest(
+    "a mismatching SHA256SUMS refuses",
+    async () => {
+      const binPath = stageEngineDir();
+      stubRelease(sumsLine(sha256("a different binary")));
 
-    await expect(installEngine()).rejects.toThrow(`SHA256SUMS of release v${engineVersion}`);
-    expect(existsSync(binPath)).toBe(false);
-  }, 30_000);
+      await expect(installEngine()).rejects.toThrow(`SHA256SUMS of release v${engineVersion}`);
+      expect(existsSync(binPath)).toBe(false);
+    },
+    30_000,
+  );
 
-  posixTest("a missing SHA256SUMS refuses", async () => {
-    const binPath = stageEngineDir();
-    stubRelease(null);
+  posixTest(
+    "a missing SHA256SUMS refuses",
+    async () => {
+      const binPath = stageEngineDir();
+      stubRelease(null);
 
-    await expect(installEngine()).rejects.toThrow(`release v${engineVersion} publishes no SHA256SUMS`);
-    expect(existsSync(binPath)).toBe(false);
-  }, 30_000);
+      await expect(installEngine()).rejects.toThrow(`release v${engineVersion} publishes no SHA256SUMS`);
+      expect(existsSync(binPath)).toBe(false);
+    },
+    30_000,
+  );
 
-  posixTest("a missing SHA256SUMS points to a published release instead of asking for a bug report", async () => {
-    stageEngineDir();
-    stubRelease(null);
+  posixTest(
+    "a missing SHA256SUMS points to a published release instead of asking for a bug report",
+    async () => {
+      stageEngineDir();
+      stubRelease(null);
 
-    const err = await installEngine().then(
-      () => null,
-      (e: unknown) => e as KeshaError,
-    );
+      const err = await installEngine().then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
 
-    expect(err?.hint).toContain("kesha install --engine-version <version>");
-    expect(err?.hint).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
-    expect(err?.hint).not.toContain("report it");
-  }, 30_000);
+      expect(err?.hint).toContain("kesha install --engine-version <version>");
+      expect(err?.hint).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
+      expect(err?.hint).not.toContain("report it");
+    },
+    30_000,
+  );
 
-  posixTest("a SHA256SUMS that omits the engine points to a published release instead of asking for a bug report", async () => {
-    stageEngineDir();
-    stubRelease(`${sha256("other")}  ./some-other-asset\n`);
+  posixTest(
+    "a SHA256SUMS that omits the engine points to a published release instead of asking for a bug report",
+    async () => {
+      stageEngineDir();
+      stubRelease(`${sha256("other")}  ./some-other-asset\n`);
 
-    const err = await installEngine().then(
-      () => null,
-      (e: unknown) => e as KeshaError,
-    );
+      const err = await installEngine().then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
 
-    expect(err?.message).toContain(`the SHA256SUMS of release v${engineVersion} does not list it`);
-    expect(err?.hint).toContain("kesha install --engine-version <version>");
-    expect(err?.hint).not.toContain("report it");
-  }, 30_000);
+      expect(err?.message).toContain(`the SHA256SUMS of release v${engineVersion} does not list it`);
+      expect(err?.hint).toContain("kesha install --engine-version <version>");
+      expect(err?.hint).not.toContain("report it");
+    },
+    30_000,
+  );
 
-  posixTest("an overridden release without SHA256SUMS asks for another published release, not the checkout's own", async () => {
-    stageEngineDir();
-    stubRelease(null);
+  posixTest(
+    "an overridden release without SHA256SUMS asks for another published release, not the checkout's own",
+    async () => {
+      stageEngineDir();
+      stubRelease(null);
 
-    const err = await installEngine({ version: OVERRIDE }).then(
-      () => null,
-      (e: unknown) => e as KeshaError,
-    );
+      const err = await installEngine({ version: OVERRIDE }).then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
 
-    expect(err?.message).toContain(`release v${OVERRIDE} publishes no SHA256SUMS`);
-    expect(err?.hint).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
-    expect(err?.hint).not.toContain("this source checkout installs its own version");
-    expect(err?.hint).not.toContain("without --engine-version");
-  }, 30_000);
+      expect(err?.message).toContain(`release v${OVERRIDE} publishes no SHA256SUMS`);
+      expect(err?.hint).toContain("https://github.com/drakulavich/kesha-voice-kit/releases");
+      expect(err?.hint).not.toContain("this source checkout installs its own version");
+      expect(err?.hint).not.toContain("without --engine-version");
+    },
+    30_000,
+  );
 });

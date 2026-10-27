@@ -101,9 +101,7 @@ function spawnWaiter(binPath: string, dir: string, opts: WaiterOptions) {
 
 /** The greatest number of waiters that were inside the critical section at the same time. */
 function maxHolders(logPath: string): number {
-  const lines = existsSync(logPath)
-    ? readFileSync(logPath, "utf8").split("\n").filter(Boolean)
-    : [];
+  const lines = existsSync(logPath) ? readFileSync(logPath, "utf8").split("\n").filter(Boolean) : [];
   let inside = 0;
   let peak = 0;
   for (const line of lines) {
@@ -123,64 +121,72 @@ async function waitForFiles(dir: string, prefix: string, count: number): Promise
 }
 
 describe("acquireInstallLock (#997)", () => {
-  posixTest("a waiter cannot clear the lock that replaced the dead one it judged", async () => {
-    const binPath = stageBinPath("kesha-lock-handover-");
-    const dir = tempDir("kesha-lock-handover-run-");
-    const lockDir = `${binPath}.lock`;
-    mkdirSync(lockDir, { recursive: true });
-    const crashed = "crashed-owner";
-    // The crashed owner's record is a FIFO, so the waiter blocks inside its staleness check
-    // until this test writes it. That turns "two waiters clear the same dead lock at once"
-    // from a timing coincidence into something a test can state.
-    await Bun.spawn(["mkfifo", join(lockDir, `owner-${crashed}.json`)]).exited;
+  posixTest(
+    "a waiter cannot clear the lock that replaced the dead one it judged",
+    async () => {
+      const binPath = stageBinPath("kesha-lock-handover-");
+      const dir = tempDir("kesha-lock-handover-run-");
+      const lockDir = `${binPath}.lock`;
+      mkdirSync(lockDir, { recursive: true });
+      const crashed = "crashed-owner";
+      // The crashed owner's record is a FIFO, so the waiter blocks inside its staleness check
+      // until this test writes it. That turns "two waiters clear the same dead lock at once"
+      // from a timing coincidence into something a test can state.
+      await Bun.spawn(["mkfifo", join(lockDir, `owner-${crashed}.json`)]).exited;
 
-    const waiter = spawnWaiter(binPath, dir, { maxWaitMs: 1_000 });
-    // Opening the write end returns only once the waiter has the read end open.
-    const fifo = openSync(join(lockDir, `owner-${crashed}.json`), "w");
+      const waiter = spawnWaiter(binPath, dir, { maxWaitMs: 1_000 });
+      // Opening the write end returns only once the waiter has the read end open.
+      const fifo = openSync(join(lockDir, `owner-${crashed}.json`), "w");
 
-    // The peer's takeover, completed while the waiter is still reading: the dead owner's lock
-    // moves aside and a live one stands in its place.
-    const aside = `${lockDir}.taken-over`;
-    renameSync(lockDir, aside);
-    mkdirSync(lockDir);
-    writeOwner(lockDir, "live-owner", process.pid);
+      // The peer's takeover, completed while the waiter is still reading: the dead owner's lock
+      // moves aside and a live one stands in its place.
+      const aside = `${lockDir}.taken-over`;
+      renameSync(lockDir, aside);
+      mkdirSync(lockDir);
+      writeOwner(lockDir, "live-owner", process.pid);
 
-    writeSync(
-      fifo,
-      JSON.stringify({
-        token: crashed,
-        pid: await deadPid(),
-        host: hostname(),
-        startedAt: Date.now(),
-      }),
-    );
-    closeSync(fifo);
-    const exit = await waiter.exited;
+      writeSync(
+        fifo,
+        JSON.stringify({
+          token: crashed,
+          pid: await deadPid(),
+          host: hostname(),
+          startedAt: Date.now(),
+        }),
+      );
+      closeSync(fifo);
+      const exit = await waiter.exited;
 
-    expect(ownerToken(lockDir)).toBe("live-owner");
-    expect(existsSync(join(dir, "holders.log"))).toBe(false);
-    expect(exit).not.toBe(0);
-  }, 30_000);
+      expect(ownerToken(lockDir)).toBe("live-owner");
+      expect(existsSync(join(dir, "holders.log"))).toBe(false);
+      expect(exit).not.toBe(0);
+    },
+    30_000,
+  );
 
-  posixTest("waiters that all find a dead owner still take the lock one at a time", async () => {
-    const binPath = stageBinPath("kesha-lock-takeover-");
-    const dir = tempDir("kesha-lock-takeover-run-");
-    mkdirSync(`${binPath}.lock`, { recursive: true });
-    writeOwner(`${binPath}.lock`, "crashed-owner", await deadPid());
+  posixTest(
+    "waiters that all find a dead owner still take the lock one at a time",
+    async () => {
+      const binPath = stageBinPath("kesha-lock-takeover-");
+      const dir = tempDir("kesha-lock-takeover-run-");
+      mkdirSync(`${binPath}.lock`, { recursive: true });
+      writeOwner(`${binPath}.lock`, "crashed-owner", await deadPid());
 
-    const waiters = Array.from({ length: 6 }, () =>
-      spawnWaiter(binPath, dir, { maxWaitMs: 30_000, holdMs: 60, barrier: true }),
-    );
-    await waitForFiles(dir, "ready", waiters.length);
-    writeFileSync(join(dir, "go"), "");
-    const exits = await Promise.all(waiters.map((w) => w.exited));
+      const waiters = Array.from({ length: 6 }, () =>
+        spawnWaiter(binPath, dir, { maxWaitMs: 30_000, holdMs: 60, barrier: true }),
+      );
+      await waitForFiles(dir, "ready", waiters.length);
+      writeFileSync(join(dir, "go"), "");
+      const exits = await Promise.all(waiters.map((w) => w.exited));
 
-    expect(exits).toEqual(waiters.map(() => 0));
-    const log = join(dir, "holders.log");
-    expect(maxHolders(log)).toBe(1);
-    expect(readFileSync(log, "utf8").match(/^enter /gm)).toHaveLength(waiters.length);
-    expect(existsSync(`${binPath}.lock`)).toBe(false);
-  }, 60_000);
+      expect(exits).toEqual(waiters.map(() => 0));
+      const log = join(dir, "holders.log");
+      expect(maxHolders(log)).toBe(1);
+      expect(readFileSync(log, "utf8").match(/^enter /gm)).toHaveLength(waiters.length);
+      expect(existsSync(`${binPath}.lock`)).toBe(false);
+    },
+    60_000,
+  );
 
   posixTest("an acquisition that fails partway leaves no lock behind", async () => {
     // A mode-000 directory stands in for the ENOSPC/EIO write failure: everyone but root is
@@ -202,29 +208,33 @@ describe("acquireInstallLock (#997)", () => {
     second();
   });
 
-  posixTest("a waiter says which lock to delete as soon as it starts waiting, not after the timeout (Exploratory S4-F2)", async () => {
-    const binPath = stageBinPath("kesha-lock-hint-");
-    const dir = tempDir("kesha-lock-hint-run-");
-    let release: (() => void) | null = await acquireInstallLock(binPath, 2_000);
-    const waiter = spawnWaiter(binPath, dir, { maxWaitMs: 5_000, stderr: "pipe" });
-    if (!waiter.stderr) throw new Error("the waiter's stderr is not piped");
-    const decoder = new TextDecoder();
-    let seen = "";
-    try {
-      for await (const chunk of waiter.stderr) {
-        seen += decoder.decode(chunk, { stream: true });
-        if (release && seen.includes(`delete ${binPath}.lock`)) {
-          release();
-          release = null;
+  posixTest(
+    "a waiter says which lock to delete as soon as it starts waiting, not after the timeout (Exploratory S4-F2)",
+    async () => {
+      const binPath = stageBinPath("kesha-lock-hint-");
+      const dir = tempDir("kesha-lock-hint-run-");
+      let release: (() => void) | null = await acquireInstallLock(binPath, 2_000);
+      const waiter = spawnWaiter(binPath, dir, { maxWaitMs: 5_000, stderr: "pipe" });
+      if (!waiter.stderr) throw new Error("the waiter's stderr is not piped");
+      const decoder = new TextDecoder();
+      let seen = "";
+      try {
+        for await (const chunk of waiter.stderr) {
+          seen += decoder.decode(chunk, { stream: true });
+          if (release && seen.includes(`delete ${binPath}.lock`)) {
+            release();
+            release = null;
+          }
         }
+      } finally {
+        release?.();
       }
-    } finally {
-      release?.();
-    }
 
-    expect(seen).toContain(`delete ${binPath}.lock`);
-    expect(await waiter.exited).toBe(0);
-  }, 30_000);
+      expect(seen).toContain(`delete ${binPath}.lock`);
+      expect(await waiter.exited).toBe(0);
+    },
+    30_000,
+  );
 
   test("a lock whose owner file does not parse is cleared on the first poll, not after the stale ceiling (#1224)", async () => {
     const binPath = stageBinPath("kesha-lock-corrupt-owner-");
@@ -280,17 +290,21 @@ describe("acquireInstallLock (#997)", () => {
     }
   });
 
-  posixTest("KESHA_INSTALL_LOCK_WAIT_SECS caps the wait instead of the six-hour default", async () => {
-    const binPath = stageBinPath("kesha-lock-env-wait-");
-    const release = await acquireInstallLock(binPath, 2_000);
-    const restoreEnv = withLockWaitSecs("1");
-    try {
-      await expect(acquireInstallLock(binPath)).rejects.toMatchObject({ code: "E_INSTALL_RACE" });
-    } finally {
-      restoreEnv();
-      release();
-    }
-  }, 30_000);
+  posixTest(
+    "KESHA_INSTALL_LOCK_WAIT_SECS caps the wait instead of the six-hour default",
+    async () => {
+      const binPath = stageBinPath("kesha-lock-env-wait-");
+      const release = await acquireInstallLock(binPath, 2_000);
+      const restoreEnv = withLockWaitSecs("1");
+      try {
+        await expect(acquireInstallLock(binPath)).rejects.toMatchObject({ code: "E_INSTALL_RACE" });
+      } finally {
+        restoreEnv();
+        release();
+      }
+    },
+    30_000,
+  );
 
   test("a KESHA_INSTALL_LOCK_WAIT_SECS that is not a positive number is rejected", async () => {
     const binPath = stageBinPath("kesha-lock-env-bad-");

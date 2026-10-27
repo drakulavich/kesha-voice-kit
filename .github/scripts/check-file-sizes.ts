@@ -113,7 +113,10 @@ export async function blobContents(cwd: string, oids: string[]): Promise<Map<str
 export async function lfsFindings(cwd: string, tracked: TrackedBlob[]): Promise<string[]> {
   const isAttributes = ({ path }: TrackedFile) => path === ".gitattributes" || path.endsWith("/.gitattributes");
   const candidates = tracked.filter((file) => file.bytes < LFS_POINTER_MAX_BYTES || isAttributes(file));
-  const contents = await blobContents(cwd, candidates.map(({ oid }) => oid));
+  const contents = await blobContents(
+    cwd,
+    candidates.map(({ oid }) => oid),
+  );
   return candidates.flatMap((file) => {
     const content = contents.get(file.oid) ?? Buffer.alloc(0);
     const found = isAttributes(file)
@@ -130,7 +133,9 @@ if (import.meta.main) {
   if (lfs.length > 0) {
     console.error("check:file-sizes: Git LFS is gone from this repository (#1240); these would bring it back:");
     for (const line of lfs) console.error(line);
-    console.error("commit the real bytes if they stay under 1 MiB, otherwise ship them as a release asset with a SHA-256 pin");
+    console.error(
+      "commit the real bytes if they stay under 1 MiB, otherwise ship them as a release asset with a SHA-256 pin",
+    );
   }
   const tracked = all.filter(({ path }) => !EXEMPT_PATHS.includes(path));
   const large = oversized(tracked, LIMIT_BYTES);

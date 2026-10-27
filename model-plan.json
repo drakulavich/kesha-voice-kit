@@ -11,9 +11,7 @@
     { "relPath": "models/lang-id-ecapa/lang-id-ecapa.onnx.data", "sizeBytes": 85327872 },
     { "relPath": "models/lang-id-ecapa/labels.json", "sizeBytes": 646 }
   ],
-  "vad": [
-    { "relPath": "models/silero-vad/silero_vad.onnx", "sizeBytes": 2327524 }
-  ],
+  "vad": [{ "relPath": "models/silero-vad/silero_vad.onnx", "sizeBytes": 2327524 }],
   "g2pCharsiu": [
     { "relPath": "models/g2p/byt5-tiny/encoder_model.onnx", "sizeBytes": 57234020 },
     { "relPath": "models/g2p/byt5-tiny/decoder_model.onnx", "sizeBytes": 26118052 },
@@ -169,8 +167,17 @@
   ],
   "diarize": [
     { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Manifest.json", "sizeBytes": 617 },
-    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel", "sizeBytes": 856521 },
-    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin", "sizeBytes": 8948544 },
-    { "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin", "sizeBytes": 235580992 }
+    {
+      "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/model.mlmodel",
+      "sizeBytes": 856521
+    },
+    {
+      "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
+      "sizeBytes": 8948544
+    },
+    {
+      "relPath": "models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/1-weight.bin",
+      "sizeBytes": 235580992
+    }
   ]
 }

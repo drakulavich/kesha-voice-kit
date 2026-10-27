@@ -79,7 +79,9 @@ describe("MCP audio folder errors", () => {
     process.env.KESHA_HOME = home;
     process.env.KESHA_ENGINE_BIN = sayingEngine(dir);
     try {
-      const res = await (await connectedClient()).callTool({
+      const res = await (
+        await connectedClient()
+      ).callTool({
         name: "synthesize_speech",
         arguments: { text: "hello", voice: "en-am_michael" },
       });

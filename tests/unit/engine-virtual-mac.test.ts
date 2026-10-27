@@ -4,11 +4,15 @@ import { KeshaError, SUPPORT_BUNDLE_HINT } from "../../src/engine/events";
 
 // #1419: a hosted macOS runner (VirtualMac2,1, no Neural Engine) fails every CoreML transcription this way.
 const bridgeFailure = () =>
-  new KeshaError("E_TRANSCRIBE_FAILED", "FluidAudio sample transcription failed: Swift bridge error: Transcription failed", {
-    exitCode: 1,
-    origin: "engine",
-    hint: SUPPORT_BUNDLE_HINT,
-  });
+  new KeshaError(
+    "E_TRANSCRIBE_FAILED",
+    "FluidAudio sample transcription failed: Swift bridge error: Transcription failed",
+    {
+      exitCode: 1,
+      origin: "engine",
+      hint: SUPPORT_BUNDLE_HINT,
+    },
+  );
 
 describe("withVirtualMacHint", () => {
   test("names the missing Neural Engine on a virtualised Mac over the engine's file-a-bug hint, keeping the code and message", () => {

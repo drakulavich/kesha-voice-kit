@@ -39,7 +39,7 @@ function spawnStranger(): Bun.Subprocess {
  * Its output goes nowhere, so it never holds the parent's captured stdout open.
  */
 const WAIT_FOR_SLEEPING_PARENT =
-  'sh -c "i=0; until ps -o comm= -p $$ | grep -q \'sleep$\'; do ' +
+  "sh -c \"i=0; until ps -o comm= -p $$ | grep -q 'sleep$'; do " +
   'kill -0 $$ 2>/dev/null || exit 0; i=\\$((i + 1)); [ \\$i -lt 600 ] || exit 0; sleep 0.05; done" >/dev/null 2>&1';
 
 describe("process leak guard", () => {
@@ -94,47 +94,57 @@ describe("process leak guard", () => {
   });
 
   /** #1160: `kill(pid, 0)` succeeds on an exited child its parent has not reaped yet. */
-  posix("counts an exited but unreaped child as gone", async () => {
-    const parent = Bun.spawn(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!; exec sleep 30`], {
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    try {
-      const zombie = Number(new TextDecoder().decode((await parent.stdout.getReader().read()).value));
-      const stat = () => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(zombie)]).stdout.toString();
-      const deadline = Date.now() + 15_000;
-      while (Date.now() < deadline && !stat().startsWith("Z")) await Bun.sleep(20);
-      expect(stat()).toStartWith("Z");
+  posix(
+    "counts an exited but unreaped child as gone",
+    async () => {
+      const parent = Bun.spawn(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!; exec sleep 30`], {
+        stdout: "pipe",
+        stderr: "ignore",
+      });
+      try {
+        const zombie = Number(new TextDecoder().decode((await parent.stdout.getReader().read()).value));
+        const stat = () => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(zombie)]).stdout.toString();
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline && !stat().startsWith("Z")) await Bun.sleep(20);
+        expect(stat()).toStartWith("Z");
 
-      expect(pidIsAlive(zombie)).toBe(false);
-    } finally {
-      parent.kill("SIGKILL");
-      await parent.exited;
-    }
-  }, 20_000);
+        expect(pidIsAlive(zombie)).toBe(false);
+      } finally {
+        parent.kill("SIGKILL");
+        await parent.exited;
+      }
+    },
+    20_000,
+  );
 
   /** #1449: an exited child Bun has not reaped yet is not running, but its parent still is. */
-  posix("the descendant sweep reports a live process and skips its unreaped child", async () => {
-    const parent = Bun.spawn(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!; exec sleep 30`], {
-      stdout: "pipe",
-      stderr: "ignore",
-    });
-    try {
-      const zombie = Number(new TextDecoder().decode((await parent.stdout.getReader().read()).value));
-      const stat = () => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(zombie)]).stdout.toString();
-      const deadline = Date.now() + 15_000;
-      while (Date.now() < deadline && !stat().startsWith("Z")) await Bun.sleep(20);
-      expect(stat()).toStartWith("Z");
+  posix(
+    "the descendant sweep reports a live process and skips its unreaped child",
+    async () => {
+      const parent = Bun.spawn(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!; exec sleep 30`], {
+        stdout: "pipe",
+        stderr: "ignore",
+      });
+      try {
+        const zombie = Number(new TextDecoder().decode((await parent.stdout.getReader().read()).value));
+        const stat = () => Bun.spawnSync(["ps", "-o", "stat=", "-p", String(zombie)]).stdout.toString();
+        const deadline = Date.now() + 15_000;
+        while (Date.now() < deadline && !stat().startsWith("Z")) await Bun.sleep(20);
+        expect(stat()).toStartWith("Z");
 
-      const leaked = await reapLeakedProcesses({ sweepDescendants: true });
+        const leaked = await reapLeakedProcesses({ sweepDescendants: true });
 
-      expect(leaked.filter((entry) => entry.startsWith(`pid ${parent.pid}:`))).toEqual([`pid ${parent.pid}: sleep 30`]);
-      expect(leaked.filter((entry) => entry.startsWith(`pid ${zombie}:`))).toEqual([]);
-    } finally {
-      parent.kill("SIGKILL");
-      await parent.exited;
-    }
-  }, 20_000);
+        expect(leaked.filter((entry) => entry.startsWith(`pid ${parent.pid}:`))).toEqual([
+          `pid ${parent.pid}: sleep 30`,
+        ]);
+        expect(leaked.filter((entry) => entry.startsWith(`pid ${zombie}:`))).toEqual([]);
+      } finally {
+        parent.kill("SIGKILL");
+        await parent.exited;
+      }
+    },
+    20_000,
+  );
 
   posix("the zombie fixture's child ends on its own when its parent never becomes sleep", async () => {
     const parent = Bun.spawnSync(["sh", "-c", `${WAIT_FOR_SLEEPING_PARENT} & echo $!`]);

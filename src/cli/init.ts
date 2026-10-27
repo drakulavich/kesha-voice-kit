@@ -47,8 +47,7 @@ export async function promptTtsLangs(preselect: string[]): Promise<string[]> {
   const caps = await getEngineCapabilities().catch(() => null);
   const supported = caps?.tts?.languages.map((l) => l.code) ?? installableTtsLangs();
   const selected = await multiselect({
-    message:
-      "Select TTS languages to install (space to toggle, enter to confirm; none = skip TTS):",
+    message: "Select TTS languages to install (space to toggle, enter to confirm; none = skip TTS):",
     options: supported.map((code) => ({ value: code, label: TTS_LANG_LABELS[code] ?? code })),
     initialValues: preselect.filter((l) => supported.includes(l)),
     required: false,
@@ -73,10 +72,7 @@ export interface InitSelection {
   diarize: boolean;
 }
 
-export function canInstallDiarizeOnPlatform(
-  platform = process.platform,
-  arch = process.arch,
-): boolean {
+export function canInstallDiarizeOnPlatform(platform = process.platform, arch = process.arch): boolean {
   return platform === "darwin" && arch === "arm64";
 }
 
@@ -135,10 +131,7 @@ export async function promptInitSelection(
   const vad = await prompt("Install VAD for long or silence-heavy audio?", args.vad);
   let diarize = false;
   if (canDiarize) {
-    diarize = await prompt(
-      "Install speaker diarization for `--speakers`? (installs VAD as well)",
-      args.diarize,
-    );
+    diarize = await prompt("Install speaker diarization for `--speakers`? (installs VAD as well)", args.diarize);
   } else if (args.diarize) {
     log.warn("--diarize is currently darwin-arm64 only; omitting it from the interactive install.");
   }
@@ -250,19 +243,10 @@ export const initCommand = defineCommand({
     }
 
     log.info(renderInitOverview());
-    const prompted = await promptInitSelection(
-      args,
-      promptConfirm,
-      backend,
-      canInstallDiarizeOnPlatform(),
-      noCache,
-    );
+    const prompted = await promptInitSelection(args, promptConfirm, backend, canInstallDiarizeOnPlatform(), noCache);
     log.info("");
     await printPlan(prompted);
-    const confirmed = await promptConfirm(
-      `Run \`${initInstallArgs(prompted).join(" ")}\` now?`,
-      true,
-    );
+    const confirmed = await promptConfirm(`Run \`${initInstallArgs(prompted).join(" ")}\` now?`, true);
     if (!confirmed) {
       log.info(`Skipped install. Run later: ${initInstallArgs(prompted).join(" ")}`);
       return;

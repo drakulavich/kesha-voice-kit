@@ -17,14 +17,14 @@ const recordedKeys = new Map(recorded.map(({ value }) => [value.kind as string, 
 /** Every `{"kind":…}` object literal in tests/, plain or with `\"` escapes, cut at its balanced closing brace. */
 function eventLiterals(source: string): string[] {
   const found: string[] = [];
-  for (const start of ["{\"kind\":", "{\\\"kind\\\":"]) {
+  for (const start of ['{"kind":', '{\\"kind\\":']) {
     let at = source.indexOf(start);
     while (at !== -1) {
       let depth = 0;
       for (let i = at; i < source.length; i++) {
         if (source[i] === "{") depth++;
         else if (source[i] === "}" && --depth === 0) {
-          found.push(source.slice(at, i + 1).replaceAll("\\\"", "\""));
+          found.push(source.slice(at, i + 1).replaceAll('\\"', '"'));
           break;
         }
       }

@@ -14,7 +14,7 @@ const TEXT =
 
 function wavSeconds(bytes: Buffer): number {
   let byteRate = 0;
-  for (let at = 12; at + 8 <= bytes.length; ) {
+  for (let at = 12; at + 8 <= bytes.length;) {
     const id = bytes.toString("ascii", at, at + 4);
     const size = bytes.readUInt32LE(at + 4);
     if (id === "fmt ") byteRate = bytes.readUInt32LE(at + 16);

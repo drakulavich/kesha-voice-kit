@@ -24,10 +24,10 @@ const MD = "CLAUDE.md";
 const YML = ".github/workflows/ci.yml";
 
 const recipe = (doc: string | null, isPrivate = false) => ({ doc, private: isPrivate });
-const dump = (
-  recipes: NonNullable<JustDump["recipes"]>,
-  aliases: Record<string, unknown> = {},
-): JustDump => ({ recipes, aliases });
+const dump = (recipes: NonNullable<JustDump["recipes"]>, aliases: Record<string, unknown> = {}): JustDump => ({
+  recipes,
+  aliases,
+});
 
 const names = (path: string, contents: string) => referencedRecipes(path, contents).map((r) => r.recipe);
 
@@ -61,9 +61,7 @@ describe("knownRecipeNames", () => {
 
 describe("referencedRecipes", () => {
   test("reads an inline code span", () => {
-    expect(names(MD, "- `just preflight` before every push — the executable definition")).toEqual([
-      "preflight",
-    ]);
+    expect(names(MD, "- `just preflight` before every push — the executable definition")).toEqual(["preflight"]);
   });
 
   // The whole reason this gate parses contexts rather than text: "just" is an English adverb.
@@ -76,9 +74,7 @@ describe("referencedRecipes", () => {
   });
 
   test("reads the variable-assignment form", () => {
-    expect(names(MD, "`just ALL=1 preflight` runs every gate regardless of the diff")).toEqual([
-      "preflight",
-    ]);
+    expect(names(MD, "`just ALL=1 preflight` runs every gate regardless of the diff")).toEqual(["preflight"]);
   });
 
   test("reads several assignments before the recipe name", () => {
@@ -171,19 +167,13 @@ describe("isSwept", () => {
     "docs/superpowers/specs/2026-05-30-lanes.md",
     "docs/plans/completed/2026-05-11-nix.md",
     "docs/mutation-evidence/issue-1105.md",
-  ])(
-    "excludes %s",
-    (path) => {
-      expect(isSwept(path)).toBe(false);
-    },
-  );
+  ])("excludes %s", (path) => {
+    expect(isSwept(path)).toBe(false);
+  });
 
-  test.each(["src/engine.ts", "justfile", ".claude/settings.json", "docs/assets/demo.webp"])(
-    "ignores %s",
-    (path) => {
-      expect(isSwept(path)).toBe(false);
-    },
-  );
+  test.each(["src/engine.ts", "justfile", ".claude/settings.json", "docs/assets/demo.webp"])("ignores %s", (path) => {
+    expect(isSwept(path)).toBe(false);
+  });
 });
 
 describe("sweptFiles", () => {
@@ -393,7 +383,10 @@ describe("unguardedPipelines", () => {
 
   test("a justfile-wide shell guards only when its argv really enables pipefail", () => {
     const body = { land: shebang(["git log | head -3"], false) };
-    const withShell = (args: string[]) => ({ ...dump(body), settings: { shell: { command: "bash", arguments: args } } });
+    const withShell = (args: string[]) => ({
+      ...dump(body),
+      settings: { shell: { command: "bash", arguments: args } },
+    });
     expect(unguardedPipelines(withShell(["-o", "pipefail", "-c"]))).toEqual([]);
     expect(unguardedPipelines(withShell(["-euo", "pipefail", "-c"]))).toEqual([]);
     expect(unguardedPipelines(withShell(["+o", "pipefail", "-c"]))).toHaveLength(1);

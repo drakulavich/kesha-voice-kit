@@ -142,10 +142,7 @@ function expandModelFileMacros(source: string): string {
       const args = balanced(stripped, match.index + match[0].length - 1, "(", ")");
       if (!args) break;
       const values = topLevelArgs(args.inner);
-      const expanded = arm.params.reduce(
-        (text, param, i) => text.split(param).join(values[i] ?? '""'),
-        arm.template,
-      );
+      const expanded = arm.params.reduce((text, param, i) => text.split(param).join(values[i] ?? '""'), arm.template);
       stripped = stripped.slice(0, match.index) + expanded + stripped.slice(args.end);
     }
   }

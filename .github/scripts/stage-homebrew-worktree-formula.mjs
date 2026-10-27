@@ -37,9 +37,7 @@ export function rewriteFormula(formula, { url, version, sha256 }) {
 
 if (isEntry(import.meta.url)) {
   const usage = () => {
-    console.error(
-      "usage: node .github/scripts/stage-homebrew-worktree-formula.mjs --tap-dir path --archive path",
-    );
+    console.error("usage: node .github/scripts/stage-homebrew-worktree-formula.mjs --tap-dir path --archive path");
     process.exit(2);
   };
 
@@ -60,11 +58,9 @@ if (isEntry(import.meta.url)) {
 
   const archivePath = resolve(archiveArg);
   mkdirSync(dirname(archivePath), { recursive: true });
-  execFileSync(
-    "git",
-    ["archive", "--format=tar.gz", `--prefix=${NAME}-${version}/`, "-o", archivePath, "HEAD"],
-    { stdio: ["ignore", "ignore", "inherit"] },
-  );
+  execFileSync("git", ["archive", "--format=tar.gz", `--prefix=${NAME}-${version}/`, "-o", archivePath, "HEAD"], {
+    stdio: ["ignore", "ignore", "inherit"],
+  });
 
   const sha256 = createHash("sha256").update(readFileSync(archivePath)).digest("hex");
 

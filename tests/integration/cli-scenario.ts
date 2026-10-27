@@ -88,7 +88,7 @@ export function installFakeDiarizeModel(cacheDir: string): void {
 
 function resolveStdin(stdin: CliScenarioOptions["stdin"]): "ignore" | "pipe" | Uint8Array | Bun.BunFile {
   if (stdin === undefined) return "ignore";
-  if (stdin === "open" || typeof stdin === "object" && "openAfter" in stdin) return "pipe";
+  if (stdin === "open" || (typeof stdin === "object" && "openAfter" in stdin)) return "pipe";
   return typeof stdin === "string" ? new TextEncoder().encode(stdin) : stdin;
 }
 
@@ -101,10 +101,7 @@ async function closeStdin(proc: { stdin: unknown }): Promise<void> {
   }
 }
 
-export async function runCliScenario(
-  args: string[],
-  opts: CliScenarioOptions = {},
-): Promise<CliScenarioResult> {
+export async function runCliScenario(args: string[], opts: CliScenarioOptions = {}): Promise<CliScenarioResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const startedAt = performance.now();
   const envOverrides = {
@@ -119,9 +116,7 @@ export async function runCliScenario(
     cwd: opts.cwd ?? DEFAULT_CWD,
     env: {
       ...process.env,
-      PATH: [STUB_BIN_DIR, dirname(process.execPath), process.env.PATH]
-        .filter(Boolean)
-        .join(delimiter),
+      PATH: [STUB_BIN_DIR, dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
       ...envOverrides,
     },
   });
@@ -147,11 +142,7 @@ export async function runCliScenario(
     forceKill = setTimeout(() => proc.kill("SIGKILL"), FORCE_KILL_GRACE_MS);
   }
 
-  const [rawStdout, rawStderr, exitCode] = await Promise.all([
-    stdoutPromise,
-    stderrPromise,
-    proc.exited,
-  ]);
+  const [rawStdout, rawStderr, exitCode] = await Promise.all([stdoutPromise, stderrPromise, proc.exited]);
   if (forceKill) clearTimeout(forceKill);
 
   const elapsedMs = Math.round(performance.now() - startedAt);

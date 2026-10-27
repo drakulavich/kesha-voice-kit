@@ -47,8 +47,6 @@ describe("guard-sha-bump.sh", () => {
   });
 
   test("allows a swap that carries a justification", async () => {
-    expect(
-      await edit("rust/src/models/manifest.rs", `    // bumped: upstream re-export\n${silentSwap}`),
-    ).toBe(0);
+    expect(await edit("rust/src/models/manifest.rs", `    // bumped: upstream re-export\n${silentSwap}`)).toBe(0);
   });
 });

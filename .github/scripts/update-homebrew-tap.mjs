@@ -37,10 +37,7 @@ export async function buildUpdatedFormula({ tag, formula = readFileSync(SOURCE_F
   }
 
   const tarballUrl = `https://github.com/${REPOSITORY}/archive/refs/tags/${tag}.tar.gz`;
-  const [sha256, cliVersion] = await Promise.all([
-    sha256ForUrl(tarballUrl, fetchImpl),
-    versionForTag(tag, fetchImpl),
-  ]);
+  const [sha256, cliVersion] = await Promise.all([sha256ForUrl(tarballUrl, fetchImpl), versionForTag(tag, fetchImpl)]);
 
   const tagVersion = tag.slice(1);
   // Homebrew scans this exact string from the url; an explicit version equal to it fails `brew audit --strict` as redundant (#1105).
@@ -51,9 +48,7 @@ export async function buildUpdatedFormula({ tag, formula = readFileSync(SOURCE_F
 
 if (isEntry(import.meta.url)) {
   const usage = () => {
-    console.error(
-      "usage: node .github/scripts/update-homebrew-tap.mjs --tag vX.Y.Z --tap-dir path",
-    );
+    console.error("usage: node .github/scripts/update-homebrew-tap.mjs --tag vX.Y.Z --tap-dir path");
     process.exit(2);
   };
 

@@ -17,14 +17,12 @@ const FORCE_KILL_GRACE_MS = 1_000;
 const SIGNAL_EXIT_BUFFER_MS = 50;
 const activeProcesses = new Set<ActiveProcess>();
 let signalHandlersInstalled = false;
-let pendingSignalCleanup:
-  | {
-      signal: ReceivedSignal;
-      exitCode: number;
-      done: Promise<void>;
-      settle: () => void;
-    }
-  | null = null;
+let pendingSignalCleanup: {
+  signal: ReceivedSignal;
+  exitCode: number;
+  done: Promise<void>;
+  settle: () => void;
+} | null = null;
 
 /** The rejection for a cancelled run; `name` stays `AbortError` so signal-driven callers can keep matching on it. */
 export function engineAbortError(): KeshaError {

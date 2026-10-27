@@ -153,16 +153,20 @@ describe("readExecutableVersion (#997)", () => {
     expect(await readExecutableVersion(binPath)).toBe("1.24.9");
   });
 
-  posixTest("a binary that never exits is no version within the deadline, and is killed", async () => {
-    const binPath = stageEngine("kesha-version-hang-", hangingEngine("63.5"));
+  posixTest(
+    "a binary that never exits is no version within the deadline, and is killed",
+    async () => {
+      const binPath = stageEngine("kesha-version-hang-", hangingEngine("63.5"));
 
-    const startedAt = performance.now();
-    expect(await readExecutableVersion(binPath, 300)).toBeNull();
-    expect(performance.now() - startedAt).toBeLessThan(5_000);
+      const startedAt = performance.now();
+      expect(await readExecutableVersion(binPath, 300)).toBeNull();
+      expect(performance.now() - startedAt).toBeLessThan(5_000);
 
-    for (let i = 0; i < 30 && (await sleepingEngineSurvives("63.5")); i++) await Bun.sleep(100);
-    expect(await sleepingEngineSurvives("63.5")).toBe(false);
-  }, 15_000);
+      for (let i = 0; i < 30 && (await sleepingEngineSurvives("63.5")); i++) await Bun.sleep(100);
+      expect(await sleepingEngineSurvives("63.5")).toBe(false);
+    },
+    15_000,
+  );
 });
 
 // #801: the developer machine's engine was MUTE_ENGINE for weeks and every health surface
@@ -201,33 +205,45 @@ describe("engineFunctionalHealth (#801)", () => {
   // The capabilities probe is the primary one, so it carries the deadline the `--version`
   // probe has had since #775 — otherwise a hung binary stalls doctor, status and the
   // install cache check for as long as it likes.
-  posixTest("a binary that hangs is unusable within the deadline, never mute", async () => {
-    stageEngine("kesha-functional-hang-", hangingEngine("61.5"));
+  posixTest(
+    "a binary that hangs is unusable within the deadline, never mute",
+    async () => {
+      stageEngine("kesha-functional-hang-", hangingEngine("61.5"));
 
-    const startedAt = performance.now();
-    const health = await engineFunctionalHealth(500);
-    const elapsed = performance.now() - startedAt;
+      const startedAt = performance.now();
+      const health = await engineFunctionalHealth(500);
+      const elapsed = performance.now() - startedAt;
 
-    expect(health.status).toBe("unusable");
-    expect(health.status === "unusable" && health.detail).toContain("no exit within");
-    expect(elapsed).toBeLessThan(5_000);
-  }, 15_000);
+      expect(health.status).toBe("unusable");
+      expect(health.status === "unusable" && health.detail).toContain("no exit within");
+      expect(elapsed).toBeLessThan(5_000);
+    },
+    15_000,
+  );
 
-  posixTest("the hung engine is killed, not left running behind us", async () => {
-    stageEngine("kesha-functional-hang-kill-", hangingEngine("62.5"));
+  posixTest(
+    "the hung engine is killed, not left running behind us",
+    async () => {
+      stageEngine("kesha-functional-hang-kill-", hangingEngine("62.5"));
 
-    await engineFunctionalHealth(500);
+      await engineFunctionalHealth(500);
 
-    // SIGTERM first, SIGKILL after a 1s grace, so give the tree time to actually go.
-    for (let i = 0; i < 30 && (await sleepingEngineSurvives("62.5")); i++) await Bun.sleep(100);
-    expect(await sleepingEngineSurvives("62.5")).toBe(false);
-  }, 15_000);
+      // SIGTERM first, SIGKILL after a 1s grace, so give the tree time to actually go.
+      for (let i = 0; i < 30 && (await sleepingEngineSurvives("62.5")); i++) await Bun.sleep(100);
+      expect(await sleepingEngineSurvives("62.5")).toBe(false);
+    },
+    15_000,
+  );
 
-  posixTest("an engine that answers slowly is ok, not timed out", async () => {
-    stageEngine("kesha-functional-slow-", SLOW_ENGINE);
-    const health = await engineFunctionalHealth(10_000);
-    expect(health.status).toBe("ok");
-  }, 20_000);
+  posixTest(
+    "an engine that answers slowly is ok, not timed out",
+    async () => {
+      stageEngine("kesha-functional-slow-", SLOW_ENGINE);
+      const health = await engineFunctionalHealth(10_000);
+      expect(health.status).toBe("ok");
+    },
+    20_000,
+  );
 
   // A protocol mismatch used to fall through to `mute`, hiding the real cause from status/doctor.
   posixTest("a stale engine is protocol-mismatched, not mute", async () => {
@@ -243,59 +259,79 @@ describe("engineFunctionalHealth (#801)", () => {
     stageEngine("kesha-functional-noise-", LOADER_NOISE_ENGINE);
     const health = await engineFunctionalHealth();
     expect(health.status).toBe("protocol");
-    expect(health.status === "protocol" && health.detail).toContain("error [E_INTERNAL]: kesha-engine describe wrote a line that is not a protocol event: \"ld.so: warning: cannot enable executable stack\"");
+    expect(health.status === "protocol" && health.detail).toContain(
+      'error [E_INTERNAL]: kesha-engine describe wrote a line that is not a protocol event: "ld.so: warning: cannot enable executable stack"',
+    );
   });
 
   posixTest("a describe the engine itself fails is a protocol fault, not mute", async () => {
     stageEngine("kesha-functional-describe-error-", DESCRIBE_ERROR_ENGINE);
     const health = await engineFunctionalHealth();
     expect(health.status).toBe("protocol");
-    expect(health.status === "protocol" && health.detail).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
+    expect(health.status === "protocol" && health.detail).toContain(
+      "error [E_MODEL_MISSING]: the TTS bundle is missing",
+    );
   });
 });
 
 describe("install repairs a corrupt engine (#770)", () => {
-  posixTest("a matching version marker no longer vouches for a binary that cannot run", async () => {
-    const binPath = stageEngine("kesha-repair-corrupt-", CORRUPT_ENGINE);
-    const urls = stubRelease();
+  posixTest(
+    "a matching version marker no longer vouches for a binary that cannot run",
+    async () => {
+      const binPath = stageEngine("kesha-repair-corrupt-", CORRUPT_ENGINE);
+      const urls = stubRelease();
 
-    await installEngine();
+      await installEngine();
 
-    expect(engineDownloads(urls)).toHaveLength(1);
-    expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
-  }, 30_000);
+      expect(engineDownloads(urls)).toHaveLength(1);
+      expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
+    },
+    30_000,
+  );
 
   // #801: exit 0 satisfied the #770 probe, so the marker vouched for a binary that
   // could not answer a single question about itself.
-  posixTest("a cached engine that describes nothing is re-downloaded, marker or not", async () => {
-    const binPath = stageEngine("kesha-repair-mute-", MUTE_ENGINE);
-    const urls = stubRelease();
+  posixTest(
+    "a cached engine that describes nothing is re-downloaded, marker or not",
+    async () => {
+      const binPath = stageEngine("kesha-repair-mute-", MUTE_ENGINE);
+      const urls = stubRelease();
 
-    await installEngine();
+      await installEngine();
 
-    expect(engineDownloads(urls)).toHaveLength(1);
-    expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
-  }, 30_000);
+      expect(engineDownloads(urls)).toHaveLength(1);
+      expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
+    },
+    30_000,
+  );
 
   // A stale protocol used to fall through with a wrong "binary disappeared" diagnosis, but must still repair.
-  posixTest("a cached engine that speaks a stale protocol is re-downloaded", async () => {
-    const binPath = stageEngine("kesha-repair-protocol-", STALE_ENGINE);
-    const urls = stubRelease();
+  posixTest(
+    "a cached engine that speaks a stale protocol is re-downloaded",
+    async () => {
+      const binPath = stageEngine("kesha-repair-protocol-", STALE_ENGINE);
+      const urls = stubRelease();
 
-    await installEngine();
+      await installEngine();
 
-    expect(engineDownloads(urls)).toHaveLength(1);
-    expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
-  }, 30_000);
+      expect(engineDownloads(urls)).toHaveLength(1);
+      expect(readFileSync(binPath, "utf8")).toBe(WORKING_ENGINE);
+    },
+    30_000,
+  );
 
-  posixTest("a healthy cached engine is still not re-downloaded", async () => {
-    stageEngine("kesha-repair-healthy-", WORKING_ENGINE);
-    const urls = stubRelease();
+  posixTest(
+    "a healthy cached engine is still not re-downloaded",
+    async () => {
+      stageEngine("kesha-repair-healthy-", WORKING_ENGINE);
+      const urls = stubRelease();
 
-    await installEngine();
+      await installEngine();
 
-    expect(engineDownloads(urls)).toHaveLength(0);
-  }, 30_000);
+      expect(engineDownloads(urls)).toHaveLength(0);
+    },
+    30_000,
+  );
 
   // getEngineCapabilities() reads null on any KeshaError since protocol v4 (Task 4) — no reject to survive here anymore.
   posixTest("the pre-install capabilities probe survives an unspawnable engine", async () => {
@@ -307,18 +343,22 @@ describe("install repairs a corrupt engine (#770)", () => {
 
   // A cache hit used to top up only ABSENT sidecars, so a truncated one was re-trusted
   // forever and doctor's "re-run kesha install" hint was a lie for it.
-  sidecarTest("a cache hit repairs a sidecar that is present but cannot run", async () => {
-    const binPath = stageEngine("kesha-repair-sidecar-", WORKING_ENGINE);
-    const sidecarPath = join(dirname(binPath), SIDECARS[0]!.fileBasename);
-    writeFileSync(sidecarPath, CORRUPT_ENGINE);
-    chmodSync(sidecarPath, 0o755);
-    const urls = stubRelease(true);
+  sidecarTest(
+    "a cache hit repairs a sidecar that is present but cannot run",
+    async () => {
+      const binPath = stageEngine("kesha-repair-sidecar-", WORKING_ENGINE);
+      const sidecarPath = join(dirname(binPath), SIDECARS[0]!.fileBasename);
+      writeFileSync(sidecarPath, CORRUPT_ENGINE);
+      chmodSync(sidecarPath, 0o755);
+      const urls = stubRelease(true);
 
-    await installEngine();
+      await installEngine();
 
-    expect(engineDownloads(urls)).toHaveLength(0);
-    expect(readFileSync(sidecarPath, "utf8")).toBe(WORKING_ENGINE);
-  }, 60_000);
+      expect(engineDownloads(urls)).toHaveLength(0);
+      expect(readFileSync(sidecarPath, "utf8")).toBe(WORKING_ENGINE);
+    },
+    60_000,
+  );
 });
 
 describe("--tts codes are validated before the engine download (#770)", () => {
@@ -331,11 +371,9 @@ describe("--tts codes are validated before the engine download (#770)", () => {
   // Without a static list, `kesha install --tts ja` on linux downloaded a full engine and
   // only then heard "unsupported" from it.
   test("an unsupported code fails without an engine to ask", () => {
-    expect(() =>
-      resolveTtsLangs({ tts: true, positionals: ["ja"] }, installableTtsLangs("linux", "x64")),
-    ).toThrow(/ja/);
-    expect(
-      resolveTtsLangs({ tts: true, positionals: ["ru"] }, installableTtsLangs("linux", "x64")),
-    ).toEqual(["ru"]);
+    expect(() => resolveTtsLangs({ tts: true, positionals: ["ja"] }, installableTtsLangs("linux", "x64"))).toThrow(
+      /ja/,
+    );
+    expect(resolveTtsLangs({ tts: true, positionals: ["ru"] }, installableTtsLangs("linux", "x64"))).toEqual(["ru"]);
   });
 });

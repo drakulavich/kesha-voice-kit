@@ -19,18 +19,14 @@ function isFalsey(v: string): boolean {
 }
 
 /** True when NO_COLOR came from the user's environment, so re-enabling colors must not clear it. */
-export const USER_FORCED_NO_COLOR =
-  process.env.NO_COLOR !== undefined && !isFalsey(process.env.NO_COLOR);
+export const USER_FORCED_NO_COLOR = process.env.NO_COLOR !== undefined && !isFalsey(process.env.NO_COLOR);
 
 /**
  * Strip a boolean global flag out of rawArgs so citty never sees it. Matches
  * any of `names` bare (sets the flag) and the `--name=<value>` form for the
  * long names (`<falsey>` explicitly turns the flag back off).
  */
-function stripBooleanFlag(
-  rawArgs: string[],
-  names: string[],
-): { value: boolean; rawArgs: string[] } {
+function stripBooleanFlag(rawArgs: string[], names: string[]): { value: boolean; rawArgs: string[] } {
   const valuedPrefixes = names.filter((n) => n.startsWith("--")).map((n) => `${n}=`);
   let value = false;
   const cleaned: string[] = [];

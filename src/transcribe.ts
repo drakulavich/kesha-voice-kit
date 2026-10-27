@@ -52,11 +52,15 @@ function truncatedWavSeconds(path: string): { declared: number; present: number 
     fd = openSync(path, "r");
     const size = fstatSync(fd).size;
     const buf = Buffer.alloc(20);
-    if (readSync(fd, buf, 0, 12, 0) < 12 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") {
+    if (
+      readSync(fd, buf, 0, 12, 0) < 12 ||
+      buf.toString("ascii", 0, 4) !== "RIFF" ||
+      buf.toString("ascii", 8, 12) !== "WAVE"
+    ) {
       return null;
     }
     let byteRate = 0;
-    for (let offset = 12; offset + 8 <= size; ) {
+    for (let offset = 12; offset + 8 <= size;) {
       readSync(fd, buf, 0, 20, offset);
       const id = buf.toString("ascii", 0, 4);
       const length = buf.readUInt32LE(4);
@@ -115,7 +119,9 @@ export function assertAudioFileArgument(audioPath: string): void {
     throw new KeshaError("E_INVALID_ARG", `${audioPath}: is a directory (expected an audio file)`);
   }
   if (isSpecialFilePath(audioPath)) {
-    throw new KeshaError("E_INVALID_ARG", `${audioPath}: is not a regular file (expected an audio file)`, { hint: SPECIAL_FILE_HINT });
+    throw new KeshaError("E_INVALID_ARG", `${audioPath}: is not a regular file (expected an audio file)`, {
+      hint: SPECIAL_FILE_HINT,
+    });
   }
 }
 

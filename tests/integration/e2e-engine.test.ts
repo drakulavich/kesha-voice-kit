@@ -1,4 +1,4 @@
-import { describe, test, expect, } from "bun:test";
+import { describe, test, expect } from "bun:test";
 import { join, resolve } from "node:path";
 import { engineGate, modelsRequired } from "../helpers/model-gate";
 import { getEngineBinPath, TRANSCRIBE_DIARIZE_FEATURE } from "../../src/engine";
@@ -47,15 +47,18 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
 
-test.skipIf(!engineInstalled)("a CLI run from this suite keeps its log and Stats DB in the harness home (#1582)", async () => {
-  const { stdout, exitCode } = await runCli(["status", "--json"]);
-  expect(exitCode).toBe(0);
-  const { paths } = JSON.parse(stdout);
-  expect({ logs: paths.logs.path, stats: paths.stats.path }).toEqual({
-    logs: join(resolve(process.env.KESHA_HOME!), "logs"),
-    stats: join(resolve(process.env.KESHA_HOME!), "stats.sqlite"),
-  });
-});
+test.skipIf(!engineInstalled)(
+  "a CLI run from this suite keeps its log and Stats DB in the harness home (#1582)",
+  async () => {
+    const { stdout, exitCode } = await runCli(["status", "--json"]);
+    expect(exitCode).toBe(0);
+    const { paths } = JSON.parse(stdout);
+    expect({ logs: paths.logs.path, stats: paths.stats.path }).toEqual({
+      logs: join(resolve(process.env.KESHA_HOME!), "logs"),
+      stats: join(resolve(process.env.KESHA_HOME!), "stats.sqlite"),
+    });
+  },
+);
 
 async function runEngine(
   args: string[],
@@ -123,7 +126,9 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(exitCode).toBe(0);
     const live = parseDescribe(JSON.parse(stdout));
     expect(live).not.toBeNull();
-    expect(describeDocument({ backend: live!.backend, profile: live!.profile, features: live!.features, tts: live!.tts })).toEqual(live!);
+    expect(
+      describeDocument({ backend: live!.backend, profile: live!.profile, features: live!.features, tts: live!.tts }),
+    ).toEqual(live!);
   });
 
   test("transcribe.diarize absent off darwin-arm64 (#199)", async () => {
@@ -175,14 +180,11 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     // --vad exercises multiple segments; missing VAD model surfaces as non-zero exit and is skipped below.
     // The cap stays unset for the same reason as the progress test: a cold ANE compile
     // takes ~105s once, and capping it turns #443 into a failure of this test instead.
-    const { stdout, stderr, exitCode } = await runEngine(
-      ["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN],
-      {
-        env: { KESHA_DIARIZE_TIMEOUT_SECS: undefined },
-        timeoutMs: 300_000,
-        timeoutMessage: "kesha-diarize timed out after 300s",
-      },
-    );
+    const { stdout, stderr, exitCode } = await runEngine(["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN], {
+      env: { KESHA_DIARIZE_TIMEOUT_SECS: undefined },
+      timeoutMs: 300_000,
+      timeoutMessage: "kesha-diarize timed out after 300s",
+    });
     if (exitCode !== 0) {
       if (isMissingPrerequisite(stderr)) {
         console.warn(`skipping --speakers e2e: ${stderr.split("\n")[0]}`);
@@ -202,14 +204,11 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   test("--speakers narrates its phases on stderr and leaves stdout pure JSON (#721)", async () => {
     if (!(await engineDiarizes())) return;
 
-    const { stdout, stderr, exitCode } = await runEngine(
-      ["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN],
-      {
-        env: { KESHA_DIARIZE_TIMEOUT_SECS: undefined },
-        timeoutMs: 300_000,
-        timeoutMessage: "kesha-diarize timed out after 300s",
-      },
-    );
+    const { stdout, stderr, exitCode } = await runEngine(["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN], {
+      env: { KESHA_DIARIZE_TIMEOUT_SECS: undefined },
+      timeoutMs: 300_000,
+      timeoutMessage: "kesha-diarize timed out after 300s",
+    });
     if (exitCode !== 0) {
       if (isMissingPrerequisite(stderr)) {
         console.warn(`skipping --speakers progress e2e: ${stderr.split("\n")[0]}`);
@@ -248,14 +247,11 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   test("a reached KESHA_DIARIZE_TIMEOUT_SECS fails coded, not by signal (#721)", async () => {
     if (!(await engineDiarizes())) return;
 
-    const { stdout, stderr, exitCode } = await runEngine(
-      ["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN],
-      {
-        env: { KESHA_DIARIZE_TIMEOUT_SECS: "1" },
-        timeoutMs: 300_000,
-        timeoutMessage: "engine ignored KESHA_DIARIZE_TIMEOUT_SECS=1",
-      },
-    );
+    const { stdout, stderr, exitCode } = await runEngine(["transcribe", "--json", "--vad", "--speakers", FIXTURE_EN], {
+      env: { KESHA_DIARIZE_TIMEOUT_SECS: "1" },
+      timeoutMs: 300_000,
+      timeoutMessage: "engine ignored KESHA_DIARIZE_TIMEOUT_SECS=1",
+    });
     if (!stderr.includes("E_DIARIZE_TIMEOUT")) {
       // No CI lane stages the diarize model, so this is the arm that always runs there (#721).
       if (isMissingPrerequisite(stderr)) {
@@ -500,11 +496,7 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
   }, 120_000);
 
   test("--format transcript appends a lang+confidence footer", async () => {
-    const { stdout, exitCode } = await runCli([
-      "--format",
-      "transcript",
-      FIXTURE_RU,
-    ]);
+    const { stdout, exitCode } = await runCli(["--format", "transcript", FIXTURE_RU]);
     expect(exitCode).toBe(0);
     expect(stdout).toMatch(/\[lang: [a-z]{2}, confidence: \d+\.\d+\]/);
   }, 60_000);
@@ -521,17 +513,17 @@ describe.skipIf(!engineInstalled)("e2e-transcribe", () => {
 
   test("--toon output decodes to the same shape as --json (#138)", async () => {
     const { decode: decodeToon } = await import("@toon-format/toon");
-    const [jsonRun, toonRun] = await Promise.all([
-      runCli(["--json", FIXTURE_RU]),
-      runCli(["--toon", FIXTURE_RU]),
-    ]);
+    const [jsonRun, toonRun] = await Promise.all([runCli(["--json", FIXTURE_RU]), runCli(["--toon", FIXTURE_RU])]);
     expect(jsonRun.exitCode).toBe(0);
     expect(toonRun.exitCode).toBe(0);
     const fromJson = JSON.parse(jsonRun.stdout);
     const fromToon = decodeToon(toonRun.stdout);
     // Deterministic fixture → decoded arrays must match exactly; sttTimeMs varies so strip it.
     const stripTiming = (arr: unknown[]) =>
-      arr.map((r) => { const { sttTimeMs: _, ...rest } = r as Record<string, unknown>; return rest; });
+      arr.map((r) => {
+        const { sttTimeMs: _, ...rest } = r as Record<string, unknown>;
+        return rest;
+      });
     expect(stripTiming(fromToon as unknown[])).toEqual(stripTiming(fromJson));
   }, 120_000);
 });

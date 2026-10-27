@@ -45,11 +45,7 @@ export function runLogsAction(args: LogsCommandArgs): ActionResult {
       const status = setDiagnosticLogMode("off");
       return {
         ok: true,
-        messages: info(
-          "Kesha diagnostic logs disabled",
-          `Mode: ${status.mode}`,
-          `Path: ${status.activePath}`,
-        ),
+        messages: info("Kesha diagnostic logs disabled", `Mode: ${status.mode}`, `Path: ${status.activePath}`),
       };
     }
     case "status": {
@@ -77,9 +73,7 @@ export function runLogsAction(args: LogsCommandArgs): ActionResult {
       const result = resetDiagnosticLogs();
       return {
         ok: true,
-        messages: info(
-          `Kesha diagnostic logs reset: ${result.deleted} file(s), ${humanBytes(result.bytes)} deleted`,
-        ),
+        messages: info(`Kesha diagnostic logs reset: ${result.deleted} file(s), ${humanBytes(result.bytes)} deleted`),
       };
     }
     default:

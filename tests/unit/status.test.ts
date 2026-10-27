@@ -1,5 +1,15 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync, truncateSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, sep } from "node:path";
 import { tmpdir } from "node:os";
 import {
@@ -13,7 +23,13 @@ import {
 } from "../../src/status";
 import { humanBytes } from "../../src/format";
 import { starSeenPath } from "../../src/star";
-import { describeJson, saveEngineEnv, stageEngineHome, writeFakeEngine, writeVoiceListingEngine } from "../helpers/fake-engine";
+import {
+  describeJson,
+  saveEngineEnv,
+  stageEngineHome,
+  writeFakeEngine,
+  writeVoiceListingEngine,
+} from "../helpers/fake-engine";
 import { KeshaError, exitCodeFor } from "../../src/engine/events";
 import modelPlan from "../../model-plan.json" with { type: "json" };
 
@@ -430,11 +446,7 @@ exit 2
         "runtime",
         "voices",
       ]);
-      expect(Object.keys(roundTripped.engine).sort()).toEqual([
-        "capabilities",
-        "installed",
-        "path",
-      ]);
+      expect(Object.keys(roundTripped.engine).sort()).toEqual(["capabilities", "installed", "path"]);
       expect(Object.keys(roundTripped.paths).sort()).toEqual(["cache", "logs", "mcpAudio", "stats"]);
       expect(roundTripped.paths.cache).toEqual({ path: join(dir, ".cache", "kesha"), source: "KESHA_CACHE_DIR" });
     } finally {
@@ -631,9 +643,7 @@ describe("renderStatus turns a report into the states a user acts on", () => {
     const output = render(
       report({
         disk: diskUsage({
-          externalRoots: [
-            { path: fluidRoot, sizeBytes: 900_000, subsystems: [], otherBytes: 900_000 },
-          ],
+          externalRoots: [{ path: fluidRoot, sizeBytes: 900_000, subsystems: [], otherBytes: 900_000 }],
           externalTotalBytes: 900_000,
           grandTotalBytes: 910_000,
         }),
@@ -654,9 +664,7 @@ describe("renderStatus turns a report into the states a user acts on", () => {
           components: [],
           componentTotalBytes: 0,
           totalBytes: 0,
-          externalRoots: [
-            { path: fluidRoot, sizeBytes: 900_000, subsystems: [], otherBytes: 900_000 },
-          ],
+          externalRoots: [{ path: fluidRoot, sizeBytes: 900_000, subsystems: [], otherBytes: 900_000 }],
           externalTotalBytes: 900_000,
           grandTotalBytes: 900_000,
         }),
@@ -978,7 +986,15 @@ exit 2
   posixEngineTest("stale Sortformer compilations are sized with the command that removes them", async () => {
     const { dir, fluidHome } = stage("kesha-status-fluid-stale-sortformer-");
     write(
-      join(fluidHome, "Library", "Application Support", "fluidaudio-rs", "SortformerCompiled", "old.mlmodelc", "model.mil"),
+      join(
+        fluidHome,
+        "Library",
+        "Application Support",
+        "fluidaudio-rs",
+        "SortformerCompiled",
+        "old.mlmodelc",
+        "model.mil",
+      ),
       234,
     );
 
@@ -1172,10 +1188,7 @@ describe("human status output is a load-bearing contract (#647)", () => {
       },
     });
     try {
-      const [stdout, stderr] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-      ]);
+      const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
       await proc.exited;
       const binaryLine = stdout.split("\n").find((l) => l.includes("Binary:"));
       expect(binaryLine).toContain("not installed");
@@ -1188,37 +1201,38 @@ describe("human status output is a load-bearing contract (#647)", () => {
 
   // #801: the human path is where the false clean bill was read — the mute engine printed
   // a green Binary line and nothing on stderr at all.
-  posixEngineTest("a mute engine reaches stderr with the repair command", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-status-mute-"));
-    const binDir = join(dir, ".cache", "kesha", "engine", "bin");
-    mkdirSync(binDir, { recursive: true });
-    const binPath = join(binDir, "kesha-engine");
-    writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
-    chmodSync(binPath, 0o755);
-    const proc = Bun.spawn([process.execPath, "bin/kesha.js", "status"], {
-      stdout: "pipe",
-      stderr: "pipe",
-      cwd: `${import.meta.dir}/../..`,
-      env: {
-        ...process.env,
-        KESHA_ENGINE_BIN: binPath,
-        KESHA_CACHE_DIR: join(dir, ".cache", "kesha"),
-        HOME: dir,
-        NO_COLOR: "1",
-      },
-    });
-    try {
-      const [, stderr] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-      ]);
-      await proc.exited;
-      expect(stderr).toContain("not functional (reports no capabilities)");
-      expect(stderr).toContain("kesha install");
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  }, 15_000);
+  posixEngineTest(
+    "a mute engine reaches stderr with the repair command",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "kesha-status-mute-"));
+      const binDir = join(dir, ".cache", "kesha", "engine", "bin");
+      mkdirSync(binDir, { recursive: true });
+      const binPath = join(binDir, "kesha-engine");
+      writeFileSync(binPath, "#!/bin/sh\nexit 0\n");
+      chmodSync(binPath, 0o755);
+      const proc = Bun.spawn([process.execPath, "bin/kesha.js", "status"], {
+        stdout: "pipe",
+        stderr: "pipe",
+        cwd: `${import.meta.dir}/../..`,
+        env: {
+          ...process.env,
+          KESHA_ENGINE_BIN: binPath,
+          KESHA_CACHE_DIR: join(dir, ".cache", "kesha"),
+          HOME: dir,
+          NO_COLOR: "1",
+        },
+      });
+      try {
+        const [, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
+        await proc.exited;
+        expect(stderr).toContain("not functional (reports no capabilities)");
+        expect(stderr).toContain("kesha install");
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+    15_000,
+  );
 });
 
 // T2-6: the cache scan sees neither the ANE packs nor AVSpeech, so status advertised 6 of 214.
@@ -1228,12 +1242,7 @@ describe("collectStatus reports what the engine can speak with", () => {
   beforeEach(restoreEnv);
   afterEach(restoreEnv);
 
-  const ENGINE_VOICES = [
-    "en-am_michael",
-    "es-em_alex",
-    "macos-com.apple.voice.compact.ru-RU.Milena",
-    "ru-vosk-m02",
-  ];
+  const ENGINE_VOICES = ["en-am_michael", "es-em_alex", "macos-com.apple.voice.compact.ru-RU.Milena", "ru-vosk-m02"];
 
   posixEngineTest("an installed engine's --list-voices union is the inventory", async () => {
     const home = stageEngineHome("kesha-status-engine-voices-");
@@ -1316,98 +1325,126 @@ describe("kesha status --check", () => {
     }
   });
 
-  posixEngineTest("an engine that never answers describe fails as E_ENGINE_PROTOCOL with exit 1, not an interrupt (#1580)", async () => {
-    const restoreEnv = saveEngineEnv();
-    const dir = mkdtempSync(join(tmpdir(), "kesha-status-check-hang-"));
-    try {
-      const binPath = join(dir, "kesha-engine");
-      writeFileSync(binPath, "#!/bin/sh\nexec sleep 30\n");
-      chmodSync(binPath, 0o755);
-      process.env.KESHA_ENGINE_BIN = binPath;
-      const err = await assertReady(300).then(() => null, (e: unknown) => e);
-      expect(err).toBeInstanceOf(KeshaError);
-      const { code, message } = err as KeshaError;
-      expect({ code, exit: exitCodeFor(err) }).toEqual({ code: "E_ENGINE_PROTOCOL", exit: 1 });
-      expect(message).toContain(`${binPath} did not answer \`describe\` within 0.3s`);
-    } finally {
-      restoreEnv();
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+  posixEngineTest(
+    "an engine that never answers describe fails as E_ENGINE_PROTOCOL with exit 1, not an interrupt (#1580)",
+    async () => {
+      const restoreEnv = saveEngineEnv();
+      const dir = mkdtempSync(join(tmpdir(), "kesha-status-check-hang-"));
+      try {
+        const binPath = join(dir, "kesha-engine");
+        writeFileSync(binPath, "#!/bin/sh\nexec sleep 30\n");
+        chmodSync(binPath, 0o755);
+        process.env.KESHA_ENGINE_BIN = binPath;
+        const err = await assertReady(300).then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect(err).toBeInstanceOf(KeshaError);
+        const { code, message } = err as KeshaError;
+        expect({ code, exit: exitCodeFor(err) }).toEqual({ code: "E_ENGINE_PROTOCOL", exit: 1 });
+        expect(message).toContain(`${binPath} did not answer \`describe\` within 0.3s`);
+      } finally {
+        restoreEnv();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
-  posixEngineTest("an engine KESHA_ENGINE_BIN points at that answers describe with garbage names the variable in its hint (#1581)", async () => {
-    const restoreEnv = saveEngineEnv();
-    const dir = mkdtempSync(join(tmpdir(), "kesha-status-check-garbage-"));
-    try {
-      const binPath = join(dir, "kesha-engine");
-      writeFileSync(binPath, "#!/bin/sh\necho garbage\n");
-      chmodSync(binPath, 0o755);
-      process.env.KESHA_ENGINE_BIN = binPath;
-      const err = await assertReady().then(() => null, (e: unknown) => e);
-      expect(err).toBeInstanceOf(KeshaError);
-      const { code, hint } = err as KeshaError;
-      expect({ code, hint }).toEqual({
-        code: "E_ENGINE_PROTOCOL",
-        hint: "KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`",
-      });
-    } finally {
-      restoreEnv();
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+  posixEngineTest(
+    "an engine KESHA_ENGINE_BIN points at that answers describe with garbage names the variable in its hint (#1581)",
+    async () => {
+      const restoreEnv = saveEngineEnv();
+      const dir = mkdtempSync(join(tmpdir(), "kesha-status-check-garbage-"));
+      try {
+        const binPath = join(dir, "kesha-engine");
+        writeFileSync(binPath, "#!/bin/sh\necho garbage\n");
+        chmodSync(binPath, 0o755);
+        process.env.KESHA_ENGINE_BIN = binPath;
+        const err = await assertReady().then(
+          () => null,
+          (e: unknown) => e,
+        );
+        expect(err).toBeInstanceOf(KeshaError);
+        const { code, hint } = err as KeshaError;
+        expect({ code, hint }).toEqual({
+          code: "E_ENGINE_PROTOCOL",
+          hint: "KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`",
+        });
+      } finally {
+        restoreEnv();
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 
-  posixEngineTest("an engine without the ASR model exits 1 naming the model directory", async () => {
-    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-noasr-"));
-    try {
-      writeOnnxEngine(home);
-      const { stdout, stderr, exitCode } = await runCheck(home);
-      expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
-      expect(stderr).toContain("error [E_MODEL_MISSING]");
-      expect(stderr).toContain(join(home, "cache", "models", "parakeet-tdt-v3"));
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  }, 15_000);
+  posixEngineTest(
+    "an engine without the ASR model exits 1 naming the model directory",
+    async () => {
+      const home = mkdtempSync(join(tmpdir(), "kesha-status-check-noasr-"));
+      try {
+        writeOnnxEngine(home);
+        const { stdout, stderr, exitCode } = await runCheck(home);
+        expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
+        expect(stderr).toContain("error [E_MODEL_MISSING]");
+        expect(stderr).toContain(join(home, "cache", "models", "parakeet-tdt-v3"));
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    },
+    15_000,
+  );
 
-  posixEngineTest("an ASR file of the wrong size exits 1 naming that file", async () => {
-    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-badasr-"));
-    try {
-      writeOnnxEngine(home);
-      writeAsrFiles(home, { ...ASR_SIZES, "vocab.txt": 0 });
-      const { stdout, stderr, exitCode } = await runCheck(home);
-      expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
-      expect(stderr).toContain("error [E_MODEL_MISSING]");
-      expect(stderr).toContain(join(home, "cache", "models", "parakeet-tdt-v3", "vocab.txt"));
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  }, 15_000);
+  posixEngineTest(
+    "an ASR file of the wrong size exits 1 naming that file",
+    async () => {
+      const home = mkdtempSync(join(tmpdir(), "kesha-status-check-badasr-"));
+      try {
+        writeOnnxEngine(home);
+        writeAsrFiles(home, { ...ASR_SIZES, "vocab.txt": 0 });
+        const { stdout, stderr, exitCode } = await runCheck(home);
+        expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
+        expect(stderr).toContain("error [E_MODEL_MISSING]");
+        expect(stderr).toContain(join(home, "cache", "models", "parakeet-tdt-v3", "vocab.txt"));
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    },
+    15_000,
+  );
 
-  posixEngineTest("an engine that cannot be launched fails with E_ENGINE_SPAWN even when the ASR files are there", async () => {
-    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-noexec-"));
-    try {
-      writeOnnxEngine(home);
-      const binPath = join(home, "cache", "engine", "bin", "kesha-engine");
-      chmodSync(binPath, 0o644);
-      writeAsrFiles(home, ASR_SIZES);
-      const { stdout, stderr, exitCode } = await runCheck(home);
-      expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
-      expect(stderr).toContain("error [E_ENGINE_SPAWN]");
-      expect(stderr).toContain(binPath);
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  }, 15_000);
+  posixEngineTest(
+    "an engine that cannot be launched fails with E_ENGINE_SPAWN even when the ASR files are there",
+    async () => {
+      const home = mkdtempSync(join(tmpdir(), "kesha-status-check-noexec-"));
+      try {
+        writeOnnxEngine(home);
+        const binPath = join(home, "cache", "engine", "bin", "kesha-engine");
+        chmodSync(binPath, 0o644);
+        writeAsrFiles(home, ASR_SIZES);
+        const { stdout, stderr, exitCode } = await runCheck(home);
+        expect({ exitCode, stdout }).toEqual({ exitCode: 1, stdout: "" });
+        expect(stderr).toContain("error [E_ENGINE_SPAWN]");
+        expect(stderr).toContain(binPath);
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    },
+    15_000,
+  );
 
-  posixEngineTest("an installed engine and ASR model exit 0 with nothing on stdout", async () => {
-    const home = mkdtempSync(join(tmpdir(), "kesha-status-check-ready-"));
-    try {
-      writeOnnxEngine(home);
-      writeAsrFiles(home, ASR_SIZES);
-      const { stdout, stderr, exitCode } = await runCheck(home);
-      expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
-    } finally {
-      rmSync(home, { recursive: true, force: true });
-    }
-  }, 15_000);
+  posixEngineTest(
+    "an installed engine and ASR model exit 0 with nothing on stdout",
+    async () => {
+      const home = mkdtempSync(join(tmpdir(), "kesha-status-check-ready-"));
+      try {
+        writeOnnxEngine(home);
+        writeAsrFiles(home, ASR_SIZES);
+        const { stdout, stderr, exitCode } = await runCheck(home);
+        expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
+      } finally {
+        rmSync(home, { recursive: true, force: true });
+      }
+    },
+    15_000,
+  );
 });

@@ -25,26 +25,14 @@ rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
 
 const binary = join(OUT_DIR, "kesha");
-run("bun", [
-  "build",
-  "--compile",
-  "--target=bun-linux-x64",
-  `--outfile=${binary}`,
-  "./bin/kesha.js",
-]);
+run("bun", ["build", "--compile", "--target=bun-linux-x64", `--outfile=${binary}`, "./bin/kesha.js"]);
 
 const nfpmEnv = {
   KESHA_VERSION: version,
   KESHA_PACKAGE_RELEASE: LINUX_PACKAGE_RELEASE,
 };
 for (const packager of ["deb", "rpm"]) {
-  run("nfpm", [
-    "package",
-    "--config",
-    "packaging/nfpm.yaml",
-    "--packager",
-    packager,
-    "--target",
-    OUT_DIR,
-  ], { env: nfpmEnv });
+  run("nfpm", ["package", "--config", "packaging/nfpm.yaml", "--packager", packager, "--target", OUT_DIR], {
+    env: nfpmEnv,
+  });
 }

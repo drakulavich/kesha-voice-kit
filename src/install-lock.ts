@@ -227,8 +227,7 @@ function configuredMaxWaitMs(): number {
  * fix — so a consumer retrying on that code does the right thing here too (#1018).
  */
 function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: number): KeshaError {
-  const waited =
-    waitedMs >= 60_000 ? `${Math.round(waitedMs / 60_000)} min` : `${Math.round(waitedMs / 1_000)}s`;
+  const waited = waitedMs >= 60_000 ? `${Math.round(waitedMs / 60_000)} min` : `${Math.round(waitedMs / 1_000)}s`;
   const who = holder ? `pid ${holder.pid} on ${holder.host}` : "an install it cannot identify";
   return new KeshaError(
     "E_INSTALL_RACE",
@@ -247,10 +246,7 @@ function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: numbe
  * running unserialised rather than failing an install that would otherwise work — the
  * post-install version check is what keeps the outcome honest either way.
  */
-export async function acquireInstallLock(
-  binPath: string,
-  maxWaitMs = configuredMaxWaitMs(),
-): Promise<() => void> {
+export async function acquireInstallLock(binPath: string, maxWaitMs = configuredMaxWaitMs()): Promise<() => void> {
   const lockDir = `${binPath}.lock`;
   const owner: LockOwner = {
     token: randomUUID(),

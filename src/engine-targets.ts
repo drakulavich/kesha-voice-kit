@@ -59,8 +59,7 @@ export const SIDECARS: SidecarSpec[] = [
     assetName: "kesha-textlang-darwin-arm64",
     displayName: "Text-lang sidecar",
     availableHint: "detect-text-lang fast path",
-    unavailableHint:
-      "detect-text-lang will fail until next `kesha install` (no swift -e fallback)",
+    unavailableHint: "detect-text-lang will fail until next `kesha install` (no swift -e fallback)",
   },
 ];
 
@@ -84,10 +83,7 @@ export function parseSha256Sums(text: string): Map<string, string> {
  * Swift sidecars and diarization. Kept beside the target table because that is what makes
  * it true — no build for another key ships those features.
  */
-export function isDarwinArm64(
-  platform: string = process.platform,
-  arch: string = process.arch,
-): boolean {
+export function isDarwinArm64(platform: string = process.platform, arch: string = process.arch): boolean {
   return platform === "darwin" && arch === "arm64";
 }
 
@@ -96,10 +92,7 @@ export function targetKey(platform: string = process.platform, arch: string = pr
 }
 
 /** Returns null for a platform with no published engine — callers choose how loudly to fail. */
-export function engineTarget(
-  platform: string = process.platform,
-  arch: string = process.arch,
-): EngineTarget | null {
+export function engineTarget(platform: string = process.platform, arch: string = process.arch): EngineTarget | null {
   return ENGINE_TARGETS[`${platform}-${arch}`] ?? null;
 }
 

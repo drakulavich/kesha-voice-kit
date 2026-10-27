@@ -45,28 +45,19 @@ export function parseArgs(argv: string[]): SmokeArgs | null {
   if (!workDir) return null;
 
   const text = textOverride ?? ENGLISH;
-  const voices = voiceOverride
-    ? [{ voice: voiceOverride, text }]
-    : ALL_VOICES.map((v) => ({ ...v, text }));
+  const voices = voiceOverride ? [{ voice: voiceOverride, text }] : ALL_VOICES.map((v) => ({ ...v, text }));
   return { workDir, noRoundtrip, voices };
 }
 
-
 // Without a timeout a hung `kesha say` burns the whole job budget and reports nothing useful.
-async function run(
-  args: string[],
-  timeoutMs = 300_000,
-): Promise<{ stdout: string; stderr: string; code: number }> {
+async function run(args: string[], timeoutMs = 300_000): Promise<{ stdout: string; stderr: string; code: number }> {
   // Release smoke stages a draft binary behind a tag checkout rather than a global link.  The
   // override preserves the ordinary `kesha` default while making that exact CLI path observable.
   const command = process.env.KESHA_COMMAND || "kesha";
   const proc = Bun.spawn([command, ...args], { stdout: "pipe", stderr: "pipe" });
   const timer = setTimeout(() => proc.kill(), timeoutMs);
   try {
-    const [stdout, stderr] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     return { stdout, stderr, code: await proc.exited };
   } finally {
     clearTimeout(timer);
@@ -81,9 +72,7 @@ function fail(message: string): never {
 if (import.meta.main) {
   const parsed = parseArgs(process.argv.slice(2));
   if (!parsed) {
-    console.error(
-      "usage: smoke-synthesis.ts [--no-roundtrip] [--voice <id>] [--text <sentence>] <work-dir>",
-    );
+    console.error("usage: smoke-synthesis.ts [--no-roundtrip] [--voice <id>] [--text <sentence>] <work-dir>");
     process.exit(2);
   }
   const { workDir, noRoundtrip, voices } = parsed;

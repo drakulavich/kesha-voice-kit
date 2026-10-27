@@ -67,7 +67,13 @@ function usage(message: string): never {
   process.exit(2);
 }
 
-function parseArgs(argv: string[]): { binary: string; version: string; target: string; check: boolean; fromRelease: boolean } {
+function parseArgs(argv: string[]): {
+  binary: string;
+  version: string;
+  target: string;
+  check: boolean;
+  fromRelease: boolean;
+} {
   let binary = "";
   let version = "";
   let target = "";
@@ -161,9 +167,7 @@ export function verify(target: string, binary: string, recorded: string, engineV
   const previous = JSON.parse(readNormalised(provenance)) as PactProvenance;
   const failures: string[] = [];
   if (previous.engineVersion !== engineVersion) {
-    failures.push(
-      `recorded from engine v${previous.engineVersion} but the binary checked is v${engineVersion}`,
-    );
+    failures.push(`recorded from engine v${previous.engineVersion} but the binary checked is v${engineVersion}`);
   }
   const sha256 = createHash("sha256").update(readFileSync(binary)).digest("hex");
   if (previous.sha256 !== sha256) {

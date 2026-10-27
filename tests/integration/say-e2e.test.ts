@@ -25,8 +25,7 @@ const BUILT_ENGINE = `${new URL("../..", import.meta.url).pathname}rust/target/r
 // is committed, a model is now always present, so a model-only gate would have
 // this suite run in every lane — including the ones that never build the binary
 // it drives (#741).
-const SPIKE_AVAILABLE =
-  existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE) && existsSync(BUILT_ENGINE);
+const SPIKE_AVAILABLE = existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE) && existsSync(BUILT_ENGINE);
 
 beforeAll(() => {
   if (!SPIKE_AVAILABLE) return;

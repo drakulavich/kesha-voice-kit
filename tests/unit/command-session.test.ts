@@ -99,12 +99,7 @@ describe("runCommandSession", () => {
 
   test("closes both recorders with the outcome status", async () => {
     const f = fakeSession();
-    await runCommandSession(
-      "transcribe",
-      {},
-      async () => ({ status: "failed", itemCount: 3 }),
-      f.factories,
-    );
+    await runCommandSession("transcribe", {}, async () => ({ status: "failed", itemCount: 3 }), f.factories);
 
     expect(f.statsFinishes).toEqual([{ status: "failed", itemCount: 3 }]);
     expect(f.finishes).toEqual(["failed"]);
@@ -157,9 +152,14 @@ describe("runCommandSession", () => {
     const f = fakeSession();
 
     await expect(
-      runCommandSession("say", {}, async () => {
-        throw new Error("engine crashed");
-      }, withFailingFlush(f.factories)),
+      runCommandSession(
+        "say",
+        {},
+        async () => {
+          throw new Error("engine crashed");
+        },
+        withFailingFlush(f.factories),
+      ),
     ).rejects.toThrow("engine crashed");
   });
 
@@ -180,12 +180,7 @@ describe("runCommandSession", () => {
     const f = fakeSession();
 
     await expect(
-      runCommandSession(
-        "say",
-        {},
-        async () => ({ status: "success", itemCount: 1 }),
-        withFailingFlush(f.factories),
-      ),
+      runCommandSession("say", {}, async () => ({ status: "success", itemCount: 1 }), withFailingFlush(f.factories)),
     ).rejects.toThrow("disk full");
   });
 
@@ -194,9 +189,14 @@ describe("runCommandSession", () => {
     const boom = new Error("boom");
 
     await expect(
-      runCommandSession("transcribe", {}, async () => {
-        throw boom;
-      }, f.factories),
+      runCommandSession(
+        "transcribe",
+        {},
+        async () => {
+          throw boom;
+        },
+        f.factories,
+      ),
     ).rejects.toThrow("boom");
 
     expect(f.events[1]?.event).toBe("command.finish");
@@ -246,7 +246,10 @@ describe("runCommandSession", () => {
       );
 
       const raw = readFileSync(resolveDiagnosticLogPath(), "utf8");
-      const lines = raw.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+      const lines = raw
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
       expect(lines.find((line) => line.event === "engine.debug")).toMatchObject({
         t_ms: 7,
         engineEvent: "asr.backend_loaded",

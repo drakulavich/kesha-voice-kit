@@ -40,7 +40,11 @@ export function resolveStatePaths(
   const home = setting(env, "KESHA_HOME");
   const homeRoot = home === undefined ? undefined : anchor(home);
 
-  const pick = (specific: "KESHA_CACHE_DIR" | "KESHA_LOG_DIR" | "KESHA_STATS_DB" | null, under: string, fallback: string): StatePath => {
+  const pick = (
+    specific: "KESHA_CACHE_DIR" | "KESHA_LOG_DIR" | "KESHA_STATS_DB" | null,
+    under: string,
+    fallback: string,
+  ): StatePath => {
     const own = specific === null ? undefined : setting(env, specific);
     if (own !== undefined && specific !== null) return { path: anchor(own), source: specific };
     if (homeRoot !== undefined) return { path: p.join(homeRoot, under), source: "KESHA_HOME" };

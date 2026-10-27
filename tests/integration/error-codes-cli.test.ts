@@ -1,14 +1,5 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import {
-  accessSync,
-  chmodSync,
-  constants,
-  mkdirSync,
-  mkdtempSync,
-  rmSync,
-  symlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { accessSync, chmodSync, constants, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { DEFAULT_TIMEOUT_MS, runCliScenario } from "./cli-scenario";
@@ -150,7 +141,10 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       return {
         args: ["missing.wav"],
         code: "E_INPUT_NOT_FOUND",
-        stderrContains: ["missing.wav: error [E_INPUT_NOT_FOUND]: File not found", `hint: check the path, relative to the current directory ${REPO_ROOT}`],
+        stderrContains: [
+          "missing.wav: error [E_INPUT_NOT_FOUND]: File not found",
+          `hint: check the path, relative to the current directory ${REPO_ROOT}`,
+        ],
       };
     },
   },
@@ -176,11 +170,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         env: { KESHA_CACHE_DIR: readOnly },
         code: "E_INVALID_ARG",
         exitCode: 2,
-        stderrContains: [
-          "KESHA_CACHE_DIR",
-          readOnly,
-          "Fix: point KESHA_CACHE_DIR at a writable directory",
-        ],
+        stderrContains: ["KESHA_CACHE_DIR", readOnly, "Fix: point KESHA_CACHE_DIR at a writable directory"],
         stderrNotContains: ["EACCES:"],
       };
     },
@@ -195,11 +185,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         env: { KESHA_CACHE_DIR: file },
         code: "E_INVALID_ARG",
         exitCode: 2,
-        stderrContains: [
-          "KESHA_CACHE_DIR",
-          file,
-          "Fix: point KESHA_CACHE_DIR at a directory instead of a file",
-        ],
+        stderrContains: ["KESHA_CACHE_DIR", file, "Fix: point KESHA_CACHE_DIR at a directory instead of a file"],
         stderrNotContains: ["ENOTDIR:"],
       };
     },
@@ -218,11 +204,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         env: { KESHA_ENGINE_BIN: binPath },
         code: "E_INVALID_ARG",
         exitCode: 2,
-        stderrContains: [
-          "KESHA_ENGINE_BIN",
-          binPath,
-          "Fix: point KESHA_ENGINE_BIN at a writable path",
-        ],
+        stderrContains: ["KESHA_ENGINE_BIN", binPath, "Fix: point KESHA_ENGINE_BIN at a writable path"],
         stderrNotContains: ["EACCES:"],
       };
     },
@@ -294,11 +276,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         env: { KESHA_ENGINE_BIN: binPath, KESHA_INSTALL_LOCK_WAIT_SECS: "1" },
         code: "E_INSTALL_RACE",
         exitCode: 1,
-        stderrContains: [
-          "Gave up after",
-          `held by pid ${process.pid}`,
-          `${lockDir} and re-run`,
-        ],
+        stderrContains: ["Gave up after", `held by pid ${process.pid}`, `${lockDir} and re-run`],
       };
     },
   },
@@ -324,16 +302,7 @@ describe("failures the CLI answers without the engine", () => {
       const dir = makeTempDir();
       const spec = input.prepare(dir);
       if (!spec) return;
-      const {
-        args,
-        env,
-        code,
-        exitCode,
-        stderrContains,
-        stderrNotContains = [],
-        stdoutContains = [],
-        stdin,
-      } = spec;
+      const { args, env, code, exitCode, stderrContains, stderrNotContains = [], stdoutContains = [], stdin } = spec;
       const run = await runCliScenario(args, {
         env: {
           HOME: dir,

@@ -25,9 +25,9 @@ describe("buildInstallCommand", () => {
   });
 
   test("flags appear in the documented order", () => {
-    expect(
-      buildInstallCommand({ noCache: true, backend: "coreml", vad: true, diarize: true }, ["en", "ru"]),
-    ).toBe("kesha install --no-cache --coreml --tts en ru --vad --diarize");
+    expect(buildInstallCommand({ noCache: true, backend: "coreml", vad: true, diarize: true }, ["en", "ru"])).toBe(
+      "kesha install --no-cache --coreml --tts en ru --vad --diarize",
+    );
   });
 
   test("the onnx backend renders its own flag", () => {
@@ -36,9 +36,9 @@ describe("buildInstallCommand", () => {
 
   // #738: reproducing a different version than the plan previewed is worse than no Run: line.
   test("an engine override leads the reproduced command", () => {
-    expect(
-      buildInstallCommand({ engineVersion: "1.24.8-alpha.1", noCache: true }, ["en"]),
-    ).toBe("kesha install --engine-version 1.24.8-alpha.1 --no-cache --tts en");
+    expect(buildInstallCommand({ engineVersion: "1.24.8-alpha.1", noCache: true }, ["en"])).toBe(
+      "kesha install --engine-version 1.24.8-alpha.1 --no-cache --tts en",
+    );
   });
 
   test("languages are only emitted with --tts", () => {

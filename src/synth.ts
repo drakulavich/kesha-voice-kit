@@ -122,7 +122,11 @@ function decodeCharRefs(ssml: string): string {
         ? part
         : part.replace(NUMERIC_REF, (ref, hex?: string, dec?: string) => {
             const cp = hex !== undefined ? parseInt(hex, 16) : Number(dec);
-            const plain = cp >= 0x20 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) && !`<>&'"`.includes(String.fromCodePoint(cp));
+            const plain =
+              cp >= 0x20 &&
+              cp <= 0x10ffff &&
+              !(cp >= 0xd800 && cp <= 0xdfff) &&
+              !`<>&'"`.includes(String.fromCodePoint(cp));
             return plain ? String.fromCodePoint(cp) : ref;
           }),
     )
@@ -138,7 +142,10 @@ export function validateSayText(text: string, ssml = false): void {
     throw new KeshaError("E_TEXT_EMPTY", "text is empty", { exitCode: 2, stderr: "" });
   }
   if (!ssml && text.replace(KEPT_SYMBOL, "$1").replace(EMOJI, "").trim().length === 0) {
-    throw new KeshaError("E_TEXT_EMPTY", "text has nothing to speak: emoji are not read aloud", { exitCode: 2, stderr: "" });
+    throw new KeshaError("E_TEXT_EMPTY", "text has nothing to speak: emoji are not read aloud", {
+      exitCode: 2,
+      stderr: "",
+    });
   }
   const chars = Array.from(text).length;
   if (chars > MAX_TEXT_CHARS) {
@@ -178,7 +185,10 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   if (!isEngineInstalled()) {
     throw engineMissingError("speech synthesis", "--tts");
   }
-  const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe({ signal: opts.signal }));
+  const { argv: args, warnings } = validateArgv(
+    buildSayArgs({ ...opts, text: undefined }),
+    await getDescribe({ signal: opts.signal }),
+  );
   for (const warning of warnings) log.warn(warning);
   const before = outStamp(opts.out);
   const { exitCode, signalCode, aborted, stdout, events } = await runEngineProcess(getEngineBinPath(), args, {
@@ -193,7 +203,12 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   if (exitCode === 0 && events.invalid.length === 0 && !events.error) {
     if (stderrText.length > 0) process.stderr.write(stderrText);
     const missing = missingAudio(opts.out, stdout.byteLength, before);
-    if (missing) throw new KeshaError("E_INTERNAL", `kesha-engine exited 0 but wrote ${missing}`, { exitCode: 1, stderr: "", hint: SUPPORT_BUNDLE_HINT });
+    if (missing)
+      throw new KeshaError("E_INTERNAL", `kesha-engine exited 0 but wrote ${missing}`, {
+        exitCode: 1,
+        stderr: "",
+        hint: SUPPORT_BUNDLE_HINT,
+      });
     return new Uint8Array(stdout);
   }
   const interrupted = interruptedRun(exitCode);
@@ -221,7 +236,12 @@ export async function listVoiceIds(sinks: EventSinks = {}, signal?: AbortSignal)
   if (signal?.aborted) throw engineAbortError();
   const { argv, warnings } = validateArgv(["say", "--list-voices"], await getDescribe({ signal }));
   for (const warning of warnings) log.warn(warning);
-  const { exitCode, aborted, stdout: out, events } = await runEngineProcess(getEngineBinPath(), argv, {
+  const {
+    exitCode,
+    aborted,
+    stdout: out,
+    events,
+  } = await runEngineProcess(getEngineBinPath(), argv, {
     stdio: ["ignore", "pipe", "pipe"],
     readStdout: (stream) => new Response(stream).text(),
     sinks,
@@ -230,7 +250,8 @@ export async function listVoiceIds(sinks: EventSinks = {}, signal?: AbortSignal)
   if (aborted) throw engineAbortError();
   const interrupted = interruptedRun(exitCode);
   if (interrupted) throw interrupted;
-  if (exitCode !== 0 || events.invalid.length > 0 || events.error) throw engineFailure("say --list-voices", events, exitCode);
+  if (exitCode !== 0 || events.invalid.length > 0 || events.error)
+    throw engineFailure("say --list-voices", events, exitCode);
   if (events.stderr.length > 0) process.stderr.write(events.stderr);
   return out
     .split("\n")

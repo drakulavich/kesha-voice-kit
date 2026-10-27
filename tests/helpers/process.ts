@@ -6,10 +6,7 @@ const PID_FILE_POLL_ATTEMPTS = 400;
 const PID_EXIT_POLL_ATTEMPTS = 400;
 const REAP_GRACE_MS = 500;
 
-export async function waitForPidFile(
-  path: string,
-  attempts: number = PID_FILE_POLL_ATTEMPTS,
-): Promise<number> {
+export async function waitForPidFile(path: string, attempts: number = PID_FILE_POLL_ATTEMPTS): Promise<number> {
   for (let i = 0; i < attempts; i++) {
     const pid = existsSync(path) ? Number.parseInt(readFileSync(path, "utf8"), 10) : NaN;
     if (pid > 0) return trackPid(pid);
@@ -138,9 +135,7 @@ async function waitForAllExit(rows: ProcessRow[]): Promise<void> {
  * no test ever saw a pid for — an engine spawned in-process announces nothing — and costs one `ps`,
  * so the per-test pass leaves it off and the per-file pass turns it on.
  */
-export async function reapLeakedProcesses(
-  opts: { sweepDescendants?: boolean } = {},
-): Promise<string[]> {
+export async function reapLeakedProcesses(opts: { sweepDescendants?: boolean } = {}): Promise<string[]> {
   const leaked = survivors(opts.sweepDescendants === true);
   if (leaked.length === 0) return [];
 
@@ -151,9 +146,7 @@ export async function reapLeakedProcesses(
   await waitForAllExit(leaked);
 
   for (const row of leaked) trackedPids.delete(row.pid);
-  return leaked.map(
-    (row) => `pid ${row.pid}${pidIsAlive(row.pid) ? " (survived SIGKILL)" : ""}: ${row.command}`,
-  );
+  return leaked.map((row) => `pid ${row.pid}${pidIsAlive(row.pid) ? " (survived SIGKILL)" : ""}: ${row.command}`);
 }
 
 let interruptReaperInstalled = false;

@@ -17,9 +17,7 @@ function loadPlugin() {
   return require("../../openclaw-plugin.cjs") as {
     id: string;
     name: string;
-    register: (api: {
-      registerMediaUnderstandingProvider: (reg: MediaProviderRegistration) => void;
-    }) => void;
+    register: (api: { registerMediaUnderstandingProvider: (reg: MediaProviderRegistration) => void }) => void;
   };
 }
 

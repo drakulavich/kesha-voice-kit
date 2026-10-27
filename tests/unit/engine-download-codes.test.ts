@@ -87,7 +87,10 @@ function expectNoEngineLeftBehind(): void {
 }
 
 async function rejectionOf(p: Promise<unknown>): Promise<KeshaError> {
-  const err = await p.then(() => null, (e: unknown) => e);
+  const err = await p.then(
+    () => null,
+    (e: unknown) => e,
+  );
   expect(err).toBeInstanceOf(KeshaError);
   return err as KeshaError;
 }
@@ -119,10 +122,34 @@ describe("an engine download failure carries a code and a hint", () => {
 });
 
 const CLI_CASES = [
-  { name: "a body stream that breaks mid-download", fetch: `async () => new Response(${BROKEN_MID_STREAM}, { status: 200 })`, served: ENGINE, code: "E_MODEL_DOWNLOAD", hint: "network connection" },
-  { name: "a body stream that yields zero bytes", fetch: `async () => new Response(${ZERO_BYTES}, { status: 200 })`, served: ENGINE, code: "E_MODEL_DOWNLOAD", hint: "try again" },
-  { name: "an HTTP 404", fetch: `async () => new Response("Not Found", { status: 404 })`, served: ENGINE, code: "E_MODEL_DOWNLOAD", hint: "releases" },
-  { name: "a SHA-256 mismatch", fetch: `async () => new Response(${JSON.stringify(ENGINE)}, { status: 200 })`, served: "the bytes the release published", code: "E_CACHE_CORRUPT", hint: "re-run `kesha install`" },
+  {
+    name: "a body stream that breaks mid-download",
+    fetch: `async () => new Response(${BROKEN_MID_STREAM}, { status: 200 })`,
+    served: ENGINE,
+    code: "E_MODEL_DOWNLOAD",
+    hint: "network connection",
+  },
+  {
+    name: "a body stream that yields zero bytes",
+    fetch: `async () => new Response(${ZERO_BYTES}, { status: 200 })`,
+    served: ENGINE,
+    code: "E_MODEL_DOWNLOAD",
+    hint: "try again",
+  },
+  {
+    name: "an HTTP 404",
+    fetch: `async () => new Response("Not Found", { status: 404 })`,
+    served: ENGINE,
+    code: "E_MODEL_DOWNLOAD",
+    hint: "releases",
+  },
+  {
+    name: "a SHA-256 mismatch",
+    fetch: `async () => new Response(${JSON.stringify(ENGINE)}, { status: 200 })`,
+    served: "the bytes the release published",
+    code: "E_CACHE_CORRUPT",
+    hint: "re-run `kesha install`",
+  },
 ];
 
 describe("kesha install reports an engine download failure by its code", () => {
@@ -162,7 +189,11 @@ const SUMS_CASES = [
   { name: "HTTP 503", respond: `new Response("Service Unavailable", { status: 503 })`, hint: SUMS_HINT },
   { name: "HTTP 404", respond: `new Response("Not Found", { status: 404 })`, hint: SUMS_HINT },
   { name: "HTTP 200 with an empty body", respond: `new Response("", { status: 200 })`, hint: SUMS_HINT },
-  { name: "a body that breaks while it is read", respond: `new Response(${BROKEN_MID_STREAM}, { status: 200 })`, hint: ["network connection"] },
+  {
+    name: "a body that breaks while it is read",
+    respond: `new Response(${BROKEN_MID_STREAM}, { status: 200 })`,
+    hint: ["network connection"],
+  },
 ];
 
 function sumsFetch(respond: string): string {
@@ -215,7 +246,13 @@ describe("a SHA256SUMS the installer cannot use is E_MODEL_DOWNLOAD with a hint"
 const WRITE_FAILURES = [
   { errno: "ENOSPC", code: "E_INTERNAL", exit: 4, why: /no space left/i, hint: /the disk is full: free space/ },
   { errno: "EIO", code: "E_INTERNAL", exit: 4, why: /input\/output error/i, hint: /resolve that filesystem error/ },
-  { errno: "EACCES", code: "E_INVALID_ARG", exit: 2, why: /permission denied/i, hint: /KESHA_ENGINE_BIN|KESHA_CACHE_DIR/ },
+  {
+    errno: "EACCES",
+    code: "E_INVALID_ARG",
+    exit: 2,
+    why: /permission denied/i,
+    hint: /KESHA_ENGINE_BIN|KESHA_CACHE_DIR/,
+  },
   { errno: "EROFS", code: "E_INVALID_ARG", exit: 2, why: /read-only/i, hint: /KESHA_ENGINE_BIN|KESHA_CACHE_DIR/ },
 ] as const;
 
@@ -234,7 +271,10 @@ describe("a disk failure while the engine is written is not reported as a downlo
         const fault = failStagingWrites(getEngineBinPath(), w.errno);
         restoreWrites = fault.restore;
 
-        const outcome = await run().then(() => null, (e: unknown) => e);
+        const outcome = await run().then(
+          () => null,
+          (e: unknown) => e,
+        );
 
         expect(fault.hits()).toBeGreaterThan(0);
         expect(outcome).toBeInstanceOf(KeshaError);

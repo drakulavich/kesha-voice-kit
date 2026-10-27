@@ -41,23 +41,10 @@ export {
 export type { ResolvedOutputFormat, ValidatedTranscribeArgs } from "./cli/main";
 export { runCli } from "./cli/dispatch";
 
-export type {
-  TranscribeErrorRecord,
-  TranscribeJsonOutput,
-  TranscribeResult,
-} from "./types";
-export {
-  formatJsonOutput,
-  formatTextOutput,
-  formatTranscriptOutput,
-  formatVerboseDiagnostics,
-} from "./format";
+export type { TranscribeErrorRecord, TranscribeJsonOutput, TranscribeResult } from "./types";
+export { formatJsonOutput, formatTextOutput, formatTranscriptOutput, formatVerboseDiagnostics } from "./format";
 export { formatToonOutput } from "./toon";
-export {
-  collectDoctorReport,
-  formatDoctorReport,
-  redactDiagnosticValue,
-} from "./doctor";
+export { collectDoctorReport, formatDoctorReport, redactDiagnosticValue } from "./doctor";
 export type { DoctorReport } from "./doctor";
 export { createSupportBundle } from "./support-bundle";
 export type { SupportBundleResult } from "./support-bundle";

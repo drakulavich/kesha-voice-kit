@@ -47,7 +47,7 @@ export async function parseJunit(path: string): Promise<TestResult[]> {
             let message = "";
             if (tc.failure) {
               status = "failed";
-              const msg = typeof tc.failure === "string" ? tc.failure : tc.failure["@_message"] ?? "";
+              const msg = typeof tc.failure === "string" ? tc.failure : (tc.failure["@_message"] ?? "");
               message = msg.slice(0, 100);
             } else if (tc.skipped !== undefined) {
               status = "skipped";
@@ -74,9 +74,9 @@ export async function parseJunit(path: string): Promise<TestResult[]> {
 }
 
 export function toMarkdown(title: string, results: TestResult[], summaryOnly: boolean): string {
-  const passed = results.filter(r => r.status === "passed").length;
-  const failed = results.filter(r => r.status === "failed").length;
-  const skipped = results.filter(r => r.status === "skipped").length;
+  const passed = results.filter((r) => r.status === "passed").length;
+  const failed = results.filter((r) => r.status === "failed").length;
+  const skipped = results.filter((r) => r.status === "skipped").length;
   const total = results.length;
   const icon = failed === 0 ? "✅" : "❌";
   const statusIcons = { passed: "✅", failed: "❌", skipped: "⏭️" } as const;
@@ -99,11 +99,12 @@ export function toMarkdown(title: string, results: TestResult[], summaryOnly: bo
     return lines.join("\n");
   }
 
-  const failures = results.filter(r => r.status === "failed");
-  const skippedResults = results.filter(r => r.status === "skipped");
+  const failures = results.filter((r) => r.status === "failed");
+  const skippedResults = results.filter((r) => r.status === "skipped");
   const baseShow = failed > 0 && total > 20 ? failures : results;
-  const show = (skippedResults.length > 0 ? baseShow.filter(r => r.status !== "skipped") : baseShow)
-    .toSorted((a, b) => b.timeMs - a.timeMs);
+  const show = (skippedResults.length > 0 ? baseShow.filter((r) => r.status !== "skipped") : baseShow).toSorted(
+    (a, b) => b.timeMs - a.timeMs,
+  );
 
   if (show.length > 0) {
     lines.push("| Suite | Test | Status | Time |", "|-------|------|--------|------|");
@@ -127,7 +128,7 @@ export function toMarkdown(title: string, results: TestResult[], summaryOnly: bo
 
 // CLI
 const summaryOnly = process.argv.includes("--summary");
-const args = process.argv.slice(2).filter(a => !a.startsWith("--"));
+const args = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 
 if (args.length < 2) {
   console.error("Usage: bun junit-to-markdown.ts [--summary] <title> <xml...>");

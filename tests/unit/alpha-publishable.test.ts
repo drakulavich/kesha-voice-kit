@@ -14,9 +14,7 @@ const deleted = (path: string) => ({ status: "D", path });
 
 describe("publishableChanges", () => {
   test("a change to a packed file publishes", () => {
-    expect(publishableChanges([modified("src/engine.ts")], PACKED, FILES)).toEqual([
-      "src/engine.ts",
-    ]);
+    expect(publishableChanges([modified("src/engine.ts")], PACKED, FILES)).toEqual(["src/engine.ts"]);
   });
 
   test("repo tooling that is not packed publishes nothing", () => {
@@ -32,9 +30,7 @@ describe("publishableChanges", () => {
 
   // The packer cannot answer for a file that no longer exists (Greptile #703 P1).
   test("deleting a shipped file publishes, even though the packer no longer lists it", () => {
-    expect(publishableChanges([deleted("src/legacy.ts")], PACKED, FILES)).toEqual([
-      "src/legacy.ts",
-    ]);
+    expect(publishableChanges([deleted("src/legacy.ts")], PACKED, FILES)).toEqual(["src/legacy.ts"]);
   });
 
   test("deleting something that never shipped publishes nothing", () => {

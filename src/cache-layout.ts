@@ -93,11 +93,7 @@ function existingPath(path: string): string {
  * Whatever stayed in FluidAudio's own trees is outside this cache and is reported separately
  * by `fluidExternalRoots`.
  */
-export function cacheComponents(
-  cacheRoot: string,
-  binPath: string,
-  coreml: boolean,
-): CacheComponentSize[] {
+export function cacheComponents(cacheRoot: string, binPath: string, coreml: boolean): CacheComponentSize[] {
   const engine = engineFootprint(binPath, cacheRoot);
   const engineRow = {
     label: "Engine",

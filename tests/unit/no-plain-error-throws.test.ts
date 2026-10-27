@@ -14,7 +14,10 @@ const ALLOWED: Array<[string, string]> = [
   ["src/engine-install.ts", "fires only under NODE_ENV=test, to stop a test writing the real cache"],
   ["src/cli/install.ts", "both callers report it as E_INVALID_ARG"],
   ["src/cli/install.ts", "both callers report it as E_INVALID_ARG"],
-  ["src/mcp/tools.ts", "MCP SDK copies the numeric code into the JSON-RPC error; the message already carries the E_ code and hint"],
+  [
+    "src/mcp/tools.ts",
+    "MCP SDK copies the numeric code into the JSON-RPC error; the message already carries the E_ code and hint",
+  ],
 ];
 
 test("src builds a plain Error only where ALLOWED says why", async () => {

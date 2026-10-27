@@ -145,9 +145,7 @@ export function protocolMismatch(doc: DescribeDocument, binPath: string): KeshaE
     "E_ENGINE_PROTOCOL",
     `kesha-engine at ${binPath} speaks protocol ${doc.protocolVersion}; this CLI speaks protocol ${PROTOCOL_VERSION}`,
     {
-      hint: stale
-        ? replaceEngineHint()
-        : `the engine is newer than this CLI; run \`${UPGRADE_CLI}\``,
+      hint: stale ? replaceEngineHint() : `the engine is newer than this CLI; run \`${UPGRADE_CLI}\``,
       versionMismatch: true,
     },
   );

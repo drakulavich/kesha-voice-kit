@@ -75,15 +75,11 @@ describe("buildSayArgs", () => {
   });
 
   it("passes --lang when given", () => {
-    expect(buildSayArgs({ text: "Hi", lang: "en-gb" })).toEqual(
-      expect.arrayContaining(["--lang", "en-gb"]),
-    );
+    expect(buildSayArgs({ text: "Hi", lang: "en-gb" })).toEqual(expect.arrayContaining(["--lang", "en-gb"]));
   });
 
   it("passes --out when given", () => {
-    expect(buildSayArgs({ text: "Hi", out: "reply.wav" })).toEqual(
-      expect.arrayContaining(["--out=reply.wav"]),
-    );
+    expect(buildSayArgs({ text: "Hi", out: "reply.wav" })).toEqual(expect.arrayContaining(["--out=reply.wav"]));
   });
 
   it("omits --rate when default (1.0)", () => {
@@ -91,9 +87,7 @@ describe("buildSayArgs", () => {
   });
 
   it("includes --rate when non-default", () => {
-    expect(buildSayArgs({ text: "Hi", rate: 1.25 })).toEqual(
-      expect.arrayContaining(["--rate", "1.25"]),
-    );
+    expect(buildSayArgs({ text: "Hi", rate: 1.25 })).toEqual(expect.arrayContaining(["--rate", "1.25"]));
   });
 
   it("omits --ssml when false or undefined", () => {
@@ -145,7 +139,10 @@ describe("listVoiceIds under cancellation", () => {
       // A long-lived MCP server has the describe document cached, so the guard itself must refuse, not the describe run.
       await getDescribe();
       const startedAt = performance.now();
-      const err = await listVoiceIds({}, AbortSignal.abort()).then(() => null, (e: unknown) => e as KeshaError);
+      const err = await listVoiceIds({}, AbortSignal.abort()).then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_INTERRUPTED");
       expect(performance.now() - startedAt).toBeLessThan(2000);
@@ -176,7 +173,10 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as KeshaError);
+      const err = await say({ text: "hi", voice: "xx" }).then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_VOICE_UNKNOWN");
       expect(err!.hint).toBe("kesha say --list-voices");
@@ -195,11 +195,16 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as KeshaError);
+      const err = await say({ text: "hi" }).then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_INTERNAL");
       expect(err!.exitCode).toBe(4);
-      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
+      expect(errorMessage(err)).toMatch(
+        /^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "loading voice pack\.\.\."/,
+      );
     } finally {
       restore();
     }
@@ -211,10 +216,15 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as KeshaError);
+      const err = await say({ text: "hi" }).then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
       expect(err!.code).toBe("E_INTERNAL");
       const rendered = errorMessage(err);
-      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "thread 'main' panicked/);
+      expect(rendered).toMatch(
+        /^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "thread 'main' panicked/,
+      );
       expect(rendered).toContain("kesha-engine was killed by SIGABRT and produced no audio");
     } finally {
       restore();
@@ -227,7 +237,10 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi" }).then(() => null, (e: unknown) => e as KeshaError);
+      const err = await say({ text: "hi" }).then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
       expect(err!.code).toBe("E_INTERNAL");
       expect(err!.exitCode).toBe(134);
       const rendered = errorMessage(err);
@@ -248,7 +261,10 @@ describe("say on protocol 4", () => {
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
-      const err = await say({ text: "hi", voice: "xx" }).then(() => null, (e: unknown) => e as KeshaError);
+      const err = await say({ text: "hi", voice: "xx" }).then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_VOICE_UNKNOWN");
       expect(err!.exitCode).toBe(4);
@@ -260,7 +276,9 @@ describe("say on protocol 4", () => {
   });
 
   posixIt("returns the audio and is spawned with KESHA_PROTOCOL=4", async () => {
-    const engine = sayEngine(`  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2\n  printf 'RIFF'\n  exit 0`);
+    const engine = sayEngine(
+      `  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2\n  printf 'RIFF'\n  exit 0`,
+    );
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     const written: string[] = [];
@@ -297,47 +315,61 @@ describe("an abort mid-run", () => {
     ["listVoiceIds", (signal) => listVoiceIds({}, signal)],
   ];
   for (const [name, run] of runs) {
-    posixIt(`${name} rejects with E_INTERRUPTED and leaves no engine running`, async () => {
-      const pidFile = join(tempDir("kesha-synth-abort-pid-"), "engine.pid");
+    posixIt(
+      `${name} rejects with E_INTERRUPTED and leaves no engine running`,
+      async () => {
+        const pidFile = join(tempDir("kesha-synth-abort-pid-"), "engine.pid");
+        const restore = saveEngineEnv();
+        process.env.KESHA_ENGINE_BIN = hangingEngine(pidFile);
+        try {
+          const controller = new AbortController();
+          const pending = run(controller.signal).then(
+            () => null,
+            (e: unknown) => e as KeshaError,
+          );
+          const pid = await waitForPidFile(pidFile);
+          controller.abort();
+          const err = await pending;
+          expect(err).toBeInstanceOf(KeshaError);
+          expect(err!.code).toBe("E_INTERRUPTED");
+          expect(await waitForPidExit(pid)).toBe(true);
+        } finally {
+          restore();
+        }
+      },
+      15_000,
+    );
+  }
+
+  // listVoiceIds hands its signal to the describe run; say did not, so a cold describe outlived the abort.
+  posixIt(
+    "say aborted while the engine is still describing itself rejects and leaves no engine running",
+    async () => {
+      const dir = tempDir("kesha-say-abort-describe-");
+      const pidFile = join(dir, "describe.pid");
+      const path = join(dir, "kesha-engine");
+      writeFileSync(path, `#!/bin/sh\necho $$ > "${pidFile}"\nexec sleep 30\n`);
+      chmodSync(path, 0o755);
       const restore = saveEngineEnv();
-      process.env.KESHA_ENGINE_BIN = hangingEngine(pidFile);
+      process.env.KESHA_ENGINE_BIN = path;
       try {
         const controller = new AbortController();
-        const pending = run(controller.signal).then(() => null, (e: unknown) => e as KeshaError);
+        const pending = say({ text: "hi", signal: controller.signal }).then(
+          () => null,
+          (e: unknown) => e as KeshaError,
+        );
         const pid = await waitForPidFile(pidFile);
         controller.abort();
-        const err = await pending;
-        expect(err).toBeInstanceOf(KeshaError);
-        expect(err!.code).toBe("E_INTERRUPTED");
+        const err = await Promise.race([pending, Bun.sleep(5_000).then(() => "still running" as const)]);
+        expect(err).not.toBe("still running");
+        expect((err as KeshaError).code).toBe("E_INTERRUPTED");
         expect(await waitForPidExit(pid)).toBe(true);
       } finally {
         restore();
       }
-    }, 15_000);
-  }
-
-  // listVoiceIds hands its signal to the describe run; say did not, so a cold describe outlived the abort.
-  posixIt("say aborted while the engine is still describing itself rejects and leaves no engine running", async () => {
-    const dir = tempDir("kesha-say-abort-describe-");
-    const pidFile = join(dir, "describe.pid");
-    const path = join(dir, "kesha-engine");
-    writeFileSync(path, `#!/bin/sh\necho $$ > "${pidFile}"\nexec sleep 30\n`);
-    chmodSync(path, 0o755);
-    const restore = saveEngineEnv();
-    process.env.KESHA_ENGINE_BIN = path;
-    try {
-      const controller = new AbortController();
-      const pending = say({ text: "hi", signal: controller.signal }).then(() => null, (e: unknown) => e as KeshaError);
-      const pid = await waitForPidFile(pidFile);
-      controller.abort();
-      const err = await Promise.race([pending, Bun.sleep(5_000).then(() => "still running" as const)]);
-      expect(err).not.toBe("still running");
-      expect((err as KeshaError).code).toBe("E_INTERRUPTED");
-      expect(await waitForPidExit(pid)).toBe(true);
-    } finally {
-      restore();
-    }
-  }, 15_000);
+    },
+    15_000,
+  );
 });
 
 describe("say input preflight", () => {

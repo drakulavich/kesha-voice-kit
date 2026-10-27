@@ -47,19 +47,14 @@ describe("formatTextOutput", () => {
   });
 
   test("multiple results get file headers", () => {
-    const out = formatTextOutput([
-      result({ file: "a.ogg", text: "one" }),
-      result({ file: "b.ogg", text: "two" }),
-    ]);
+    const out = formatTextOutput([result({ file: "a.ogg", text: "one" }), result({ file: "b.ogg", text: "two" })]);
     expect(out).toBe("=== a.ogg ===\none\n\n=== b.ogg ===\ntwo\n");
   });
 });
 
 describe("formatTranscriptOutput", () => {
   test("appends lang line with confidence", () => {
-    const out = formatTranscriptOutput([
-      result({ textLanguage: { code: "ru", confidence: 0.987, source: "engine" } }),
-    ]);
+    const out = formatTranscriptOutput([result({ textLanguage: { code: "ru", confidence: 0.987, source: "engine" } })]);
     expect(out).toBe("hello\n[lang: ru, confidence: 0.99]\n");
   });
 
@@ -89,9 +84,7 @@ describe("formatVerboseDiagnostics", () => {
       }),
     ]);
     expect(out).toBe(
-      "Audio language: en (confidence: 0.50)\n" +
-        "Text language: en (confidence: 0.75)\n" +
-        "STT time: 120ms\n",
+      "Audio language: en (confidence: 0.50)\n" + "Text language: en (confidence: 0.75)\n" + "STT time: 120ms\n",
     );
   });
 

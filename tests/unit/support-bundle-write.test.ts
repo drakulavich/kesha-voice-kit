@@ -14,7 +14,11 @@ const ERRNO_TEXT: Record<string, string> = {
 };
 
 describe("support-bundle --output a disk refuses (#1345)", () => {
-  const savedEnv = { HOME: process.env.HOME, KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR, KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN };
+  const savedEnv = {
+    HOME: process.env.HOME,
+    KESHA_CACHE_DIR: process.env.KESHA_CACHE_DIR,
+    KESHA_ENGINE_BIN: process.env.KESHA_ENGINE_BIN,
+  };
   let restoreWrite: (() => void) | null = null;
 
   beforeEach(() => {
@@ -36,11 +40,17 @@ describe("support-bundle --output a disk refuses (#1345)", () => {
   async function failWriting(code: string): Promise<{ error: KeshaError; output: string }> {
     const output = join(process.env.HOME!, "out", "bundle.tar.gz");
     const spy = spyOn(fs, "writeFileSync").mockImplementation((path) => {
-      throw Object.assign(new Error(`${code}: ${ERRNO_TEXT[code]}, open '${String(path)}'`), { code, syscall: "open", path });
+      throw Object.assign(new Error(`${code}: ${ERRNO_TEXT[code]}, open '${String(path)}'`), {
+        code,
+        syscall: "open",
+        path,
+      });
     });
     restoreWrite = () => spy.mockRestore();
     const error = await createSupportBundle({ output }).then(
-      () => { throw new Error("expected the bundle write to fail"); },
+      () => {
+        throw new Error("expected the bundle write to fail");
+      },
       (e: unknown) => e,
     );
     expect(error).toBeInstanceOf(KeshaError);
@@ -70,7 +80,8 @@ describe("support-bundle --output a disk refuses (#1345)", () => {
     const output = join(process.env.HOME!, "bundle.tar.gz");
     const realStat = fs.statSync;
     const spy = spyOn(fs, "statSync").mockImplementation(((path: fs.PathLike, opts?: fs.StatSyncOptions) => {
-      if (String(path) === output) throw Object.assign(new Error(`EIO: input/output error, stat '${output}'`), { code: "EIO" });
+      if (String(path) === output)
+        throw Object.assign(new Error(`EIO: input/output error, stat '${output}'`), { code: "EIO" });
       return realStat(path, opts);
     }) as typeof fs.statSync);
     restoreWrite = () => spy.mockRestore();
@@ -81,41 +92,51 @@ describe("support-bundle --output a disk refuses (#1345)", () => {
     expect(bundle.sizeBytes).toBe(fs.readFileSync(output).byteLength);
   });
 
-  (process.platform === "win32" ? test.skip : test)("a dangling symlink in the way is named as the blocker", async () => {
-    const link = join(process.env.HOME!, "link");
-    fs.symlinkSync(join(process.env.HOME!, "nowhere"), link);
-    const output = join(link, "bundle.tar.gz");
+  (process.platform === "win32" ? test.skip : test)(
+    "a dangling symlink in the way is named as the blocker",
+    async () => {
+      const link = join(process.env.HOME!, "link");
+      fs.symlinkSync(join(process.env.HOME!, "nowhere"), link);
+      const output = join(link, "bundle.tar.gz");
 
-    const error = await createSupportBundle({ output }).then(
-      () => { throw new Error("expected the bundle write to fail"); },
-      (e: unknown) => e,
-    );
-
-    expect(error).toBeInstanceOf(KeshaError);
-    expect((error as KeshaError).code).toBe("E_INVALID_ARG");
-    expect((error as KeshaError).hint).toContain(`remove or rename the file blocking ${link}`);
-  });
-
-  (process.platform === "win32" || process.getuid?.() === 0 ? test.skip : test)("a symlink to a directory this user cannot reach reports the permission, not a blocker", async () => {
-    const locked = join(process.env.HOME!, "locked");
-    fs.mkdirSync(join(locked, "target"), { recursive: true });
-    const link = join(process.env.HOME!, "link");
-    fs.symlinkSync(join(locked, "target"), link);
-    fs.chmodSync(locked, 0o000);
-    try {
-      const error = await createSupportBundle({ output: join(link, "bundle.tar.gz") }).then(
-        () => { throw new Error("expected the bundle write to fail"); },
+      const error = await createSupportBundle({ output }).then(
+        () => {
+          throw new Error("expected the bundle write to fail");
+        },
         (e: unknown) => e,
       );
 
       expect(error).toBeInstanceOf(KeshaError);
       expect((error as KeshaError).code).toBe("E_INVALID_ARG");
-      expect((error as KeshaError).message).toContain("permission denied");
-      expect((error as KeshaError).hint).not.toContain("remove or rename");
-    } finally {
-      fs.chmodSync(locked, 0o755);
-    }
-  });
+      expect((error as KeshaError).hint).toContain(`remove or rename the file blocking ${link}`);
+    },
+  );
+
+  (process.platform === "win32" || process.getuid?.() === 0 ? test.skip : test)(
+    "a symlink to a directory this user cannot reach reports the permission, not a blocker",
+    async () => {
+      const locked = join(process.env.HOME!, "locked");
+      fs.mkdirSync(join(locked, "target"), { recursive: true });
+      const link = join(process.env.HOME!, "link");
+      fs.symlinkSync(join(locked, "target"), link);
+      fs.chmodSync(locked, 0o000);
+      try {
+        const error = await createSupportBundle({ output: join(link, "bundle.tar.gz") }).then(
+          () => {
+            throw new Error("expected the bundle write to fail");
+          },
+          (e: unknown) => e,
+        );
+
+        expect(error).toBeInstanceOf(KeshaError);
+        expect((error as KeshaError).code).toBe("E_INVALID_ARG");
+        expect((error as KeshaError).message).toContain("permission denied");
+        expect((error as KeshaError).hint).not.toContain("remove or rename");
+      } finally {
+        fs.chmodSync(locked, 0o755);
+      }
+    },
+  );
 
   test("any other disk errno is E_INTERNAL naming the path", async () => {
     const { error, output } = await failWriting("EIO");

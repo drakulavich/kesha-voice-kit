@@ -45,7 +45,7 @@ describe("enginePublishesJson", () => {
   });
 
   posixTest("an engine that answers the flag with entries publishes them", () => {
-    const bin = stageEngine("#!/bin/sh\necho '[{\"code\":\"E_DEMO\"}]'\n");
+    const bin = stageEngine('#!/bin/sh\necho \'[{"code":"E_DEMO"}]\'\n');
     expect(enginePublishesJson(bin, "describe")).toBe(true);
   });
 });

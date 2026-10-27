@@ -48,7 +48,9 @@ function getSystemInfo(): BenchmarkReport["platform"] {
   let ram = "Unknown";
 
   if (os === "Darwin") {
-    chip = Bun.spawnSync(["sysctl", "-n", "machdep.cpu.brand_string"], { stdout: "pipe" }).stdout.toString().trim() || "Unknown";
+    chip =
+      Bun.spawnSync(["sysctl", "-n", "machdep.cpu.brand_string"], { stdout: "pipe" }).stdout.toString().trim() ||
+      "Unknown";
     const profiler = Bun.spawnSync(["system_profiler", "SPHardwareDataType"], { stdout: "pipe" }).stdout.toString();
     ram = profiler.match(/Memory:\s+(.+)/)?.[1] ?? "Unknown";
   } else if (os === "Linux") {
@@ -75,7 +77,8 @@ function ensureVenv(): string {
 
   if (existsSync(python)) {
     const check = Bun.spawnSync([python, "-c", "import whisper; import faster_whisper"], {
-      stdout: "pipe", stderr: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
     });
     if (check.exitCode === 0) return python;
   }
@@ -94,7 +97,10 @@ function ensureVenv(): string {
 
   console.error("Installing faster-whisper...");
   // faster-whisper 1.2.1 passes av.open(metadata_errors=), which PyAV 19 rejects (#1421).
-  const fasterInstall = Bun.spawnSync([pip, "install", "-q", "faster-whisper", "av==15.1.0"], { stdout: "pipe", stderr: "inherit" });
+  const fasterInstall = Bun.spawnSync([pip, "install", "-q", "faster-whisper", "av==15.1.0"], {
+    stdout: "pipe",
+    stderr: "inherit",
+  });
   if (fasterInstall.exitCode !== 0) throw new Error("Failed to install faster-whisper");
 
   console.error("Venv ready.\n");
@@ -128,7 +134,8 @@ print(json.dumps(results, ensure_ascii=False))
 `;
 
   const proc = Bun.spawnSync([python, "-c", script, ...files], {
-    stdout: "pipe", stderr: "inherit",
+    stdout: "pipe",
+    stderr: "inherit",
   });
   if (proc.exitCode !== 0) throw new Error("openai-whisper benchmark failed");
   return JSON.parse(proc.stdout.toString());
@@ -158,7 +165,8 @@ print(json.dumps(results, ensure_ascii=False))
 `;
 
   const proc = Bun.spawnSync([python, "-c", script, ...files], {
-    stdout: "pipe", stderr: "inherit",
+    stdout: "pipe",
+    stderr: "inherit",
   });
   if (proc.exitCode !== 0) throw new Error("faster-whisper benchmark failed");
   return JSON.parse(proc.stdout.toString());
@@ -306,7 +314,10 @@ async function main(): Promise<void> {
 
   const groups: GroupResult[] = [];
 
-  for (const [name, files] of [["Russian", ruFiles], ["English", enFiles]] as const) {
+  for (const [name, files] of [
+    ["Russian", ruFiles],
+    ["English", enFiles],
+  ] as const) {
     if (files.length === 0) continue;
 
     console.error(`\n--- ${name} (${files.length} files) ---\n`);

@@ -64,13 +64,9 @@ describe("buildUpdatedFormula", () => {
 
   test("rejects when the tagged package.json has no version, rather than falling back to the tag", async () => {
     const fetchImpl = async (url: string) =>
-      url.endsWith("package.json")
-        ? new Response(JSON.stringify({}))
-        : new Response(Buffer.from("fake tarball"));
+      url.endsWith("package.json") ? new Response(JSON.stringify({})) : new Response(Buffer.from("fake tarball"));
 
-    await expect(
-      buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl }),
-    ).rejects.toThrow(/version/i);
+    await expect(buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl })).rejects.toThrow(/version/i);
   });
 
   test("rejects when the package.json fetch itself fails", async () => {
@@ -79,9 +75,7 @@ describe("buildUpdatedFormula", () => {
         ? new Response("not found", { status: 404 })
         : new Response(Buffer.from("fake tarball"));
 
-    await expect(buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl })).rejects.toThrow(
-      /HTTP 404/,
-    );
+    await expect(buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl })).rejects.toThrow(/HTTP 404/);
   });
 
   test("publishes the in-repo formula, so a fix to its body reaches the tap", async () => {

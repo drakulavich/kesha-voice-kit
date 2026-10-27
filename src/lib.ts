@@ -13,7 +13,12 @@ import {
 import { detectTextLanguageFallback, routeLanguage } from "./language-routing";
 import { say as synthesize, type SayOptions } from "./synth";
 import { log } from "./log";
-import { assertAudioFileArgument, transcribeWithSegments, truncatedWavWarning, type TranscribeOptions } from "./transcribe";
+import {
+  assertAudioFileArgument,
+  transcribeWithSegments,
+  truncatedWavWarning,
+  type TranscribeOptions,
+} from "./transcribe";
 import type { TranscribeResult } from "./types";
 
 export { KeshaError };

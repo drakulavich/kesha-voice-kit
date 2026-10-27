@@ -62,7 +62,12 @@ describe("record-capability-pacts verify()", () => {
 describe("record-capability-pacts arguments", () => {
   test("refuses --binary without the version it was released as", () => {
     const run = Bun.spawnSync(
-      [process.execPath, join(import.meta.dir, "..", "..", ".github", "scripts", "record-capability-pacts.ts"), "--binary", "./missing"],
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "..", ".github", "scripts", "record-capability-pacts.ts"),
+        "--binary",
+        "./missing",
+      ],
       { stdout: "pipe", stderr: "pipe" },
     );
     expect(run.exitCode).toBe(2);
@@ -70,7 +75,13 @@ describe("record-capability-pacts arguments", () => {
 
   test("refuses --from-release with a --version it would ignore", () => {
     const run = Bun.spawnSync(
-      [process.execPath, join(import.meta.dir, "..", "..", ".github", "scripts", "record-capability-pacts.ts"), "--from-release", "--version", "1.2.3"],
+      [
+        process.execPath,
+        join(import.meta.dir, "..", "..", ".github", "scripts", "record-capability-pacts.ts"),
+        "--from-release",
+        "--version",
+        "1.2.3",
+      ],
       { stdout: "pipe", stderr: "pipe" },
     );
     expect(run.exitCode).toBe(2);

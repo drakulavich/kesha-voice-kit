@@ -11,7 +11,12 @@ interface NpmView {
   dist?: { integrity?: unknown; attestations?: { provenance?: { predicateType?: unknown } } };
 }
 
-export function assertNpmReleaseMetadata(raw: string, pkg: string, version: string, exitCode: number): { version: string; provenance: string } {
+export function assertNpmReleaseMetadata(
+  raw: string,
+  pkg: string,
+  version: string,
+  exitCode: number,
+): { version: string; provenance: string } {
   const spec = `${pkg}@${version}`;
   if (exitCode !== 0) throw new Error(`${spec}: npm view exited ${exitCode}; the registry answer above is not trusted`);
   let doc: NpmView;
@@ -68,7 +73,10 @@ if (import.meta.main) {
   // The whole document: a comma-joined field list makes npm print nothing at all (v1.29.1-cli, v1.30.0-cli lanes).
   const view = await viewWhenPublished(
     () => {
-      const run = Bun.spawnSync(["npm", "view", `${pkg}@${version}`, "--json", "--prefer-online"], { stdout: "pipe", stderr: "inherit" });
+      const run = Bun.spawnSync(["npm", "view", `${pkg}@${version}`, "--json", "--prefer-online"], {
+        stdout: "pipe",
+        stderr: "inherit",
+      });
       return { stdout: run.stdout.toString(), exitCode: run.exitCode ?? 1 };
     },
     pkg,

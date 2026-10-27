@@ -19,12 +19,7 @@ import { performInstall } from "./install";
 import type { LangDetectResult } from "../engine";
 import { log } from "../log";
 import type { TextLangDetectResult, TranscribeErrorRecord, TranscribeResult } from "../types";
-import {
-  formatJsonOutput,
-  formatTextOutput,
-  formatTranscriptOutput,
-  formatVerboseDiagnostics,
-} from "../format";
+import { formatJsonOutput, formatTextOutput, formatTranscriptOutput, formatVerboseDiagnostics } from "../format";
 import { packageVersion } from "../package-info";
 import { formatToonOutput } from "../toon";
 import { artifactFromFile, type StatsRecorder } from "../stats";
@@ -86,8 +81,7 @@ export function detectLanguage(text: string): string {
  * with its own clearer error first.
  */
 export type ResolvedOutputFormat =
-  | { ok: true; format: "json" | "toon" | "transcript" | "text" }
-  | { ok: false; error: string };
+  { ok: true; format: "json" | "toon" | "transcript" | "text" } | { ok: false; error: string };
 
 const SUPPORTED_FORMATS = ["transcript", "json", "toon"] as const;
 
@@ -95,11 +89,7 @@ function isSupportedFormat(format: string): format is (typeof SUPPORTED_FORMATS)
   return SUPPORTED_FORMATS.some((supported) => supported === format);
 }
 
-export function resolveOutputFormat(input: {
-  json?: boolean;
-  toon?: boolean;
-  format?: string;
-}): ResolvedOutputFormat {
+export function resolveOutputFormat(input: { json?: boolean; toon?: boolean; format?: string }): ResolvedOutputFormat {
   if (input.format !== undefined && !isSupportedFormat(input.format)) {
     return {
       ok: false,
@@ -122,9 +112,7 @@ export function resolveOutputFormat(input: {
   if (input.format === "transcript" && (input.json || input.toon)) {
     return {
       ok: false,
-      error:
-        "--format transcript is mutually exclusive with --json / --toon " +
-        "(pick one output format).",
+      error: "--format transcript is mutually exclusive with --json / --toon " + "(pick one output format).",
     };
   }
   return { ok: true, format: input.json ? "json" : input.toon ? "toon" : (input.format ?? "text") };
@@ -178,10 +166,7 @@ export type ValidatedTranscribeArgs = {
 
 type MainVadArgs = Pick<MainCommandArgs, "vad" | "no-vad">;
 
-export function normalizeMainCommandArgs<T extends MainVadArgs>(
-  args: T,
-  rawArgs: string[],
-): T & { noVad: boolean } {
+export function normalizeMainCommandArgs<T extends MainVadArgs>(args: T, rawArgs: string[]): T & { noVad: boolean } {
   return {
     ...args,
     vad: rawArgs.includes("--vad") || args.vad,
@@ -189,9 +174,7 @@ export function normalizeMainCommandArgs<T extends MainVadArgs>(
   };
 }
 
-export type TranscribeArgsValidation =
-  | ({ ok: true } & ValidatedTranscribeArgs)
-  | { ok: false; error: string };
+export type TranscribeArgsValidation = ({ ok: true } & ValidatedTranscribeArgs) | { ok: false; error: string };
 
 /** Validates cross-flag consistency that citty can't express. */
 export function validateTranscribeArgs(
@@ -347,7 +330,9 @@ async function processFile(
   const { stats, diagnosticLog } = recorders;
 
   if (file === "-") {
-    const err = new KeshaError("E_INVALID_ARG", "reading audio from stdin is not supported", { hint: SPECIAL_FILE_HINT });
+    const err = new KeshaError("E_INVALID_ARG", "reading audio from stdin is not supported", {
+      hint: SPECIAL_FILE_HINT,
+    });
     stats.recordError("input", err, err.code);
     diagnosticLog.event("input.invalid", {
       command: "transcribe",
@@ -524,7 +509,7 @@ export const MAIN_VAD_ARGS = {
 
 const BRIEF_HELP_DESCRIPTION =
   "Kesha Voice Kit listens and talks back: local speech for agents and scripts.\n" +
-  "Try: kesha audio.ogg, or kesha say \"hello\"\n" +
+  'Try: kesha audio.ogg, or kesha say "hello"\n' +
   "\n" +
   "Commands:\n" +
   "  init      Interactive setup guide.\n" +
@@ -562,7 +547,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         "Examples:\n" +
         "  kesha audio.ogg          Transcribe an audio file.\n" +
         "  kesha --json audio.ogg   Transcribe with machine-readable output.\n" +
-        "  kesha say \"hello\"        Speak text (text-to-speech).\n" +
+        '  kesha say "hello"        Speak text (text-to-speech).\n' +
         "  kesha init               Guided first-time setup.\n" +
         "\n" +
         "Commands:\n" +
@@ -602,17 +587,20 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       },
       speakers: {
         type: "boolean",
-        description: "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).",
+        description:
+          "Include speaker labels in segments. Needs --json/--toon and darwin-arm64; run `kesha install --diarize` first (it installs VAD too). Implies --timestamps, and engages VAD windowing at any duration (so it cannot be combined with --no-vad).",
         default: false,
       },
       itn: {
         type: "boolean",
-        description: "Rewrite spoken-form numbers, money, dates and times to written form (\"two hundred thirty two\" -> \"232\"). English-only; other languages pass through unchanged.",
+        description:
+          'Rewrite spoken-form numbers, money, dates and times to written form ("two hundred thirty two" -> "232"). English-only; other languages pass through unchanged.',
         default: false,
       },
       "include-errors": {
         type: "boolean",
-        description: "With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr",
+        description:
+          "With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr",
         default: false,
       },
       verbose: {
@@ -678,7 +666,9 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
 
       if (
         !isEngineInstalled() &&
-        process.stdin.isTTY && process.stdout.isTTY && process.stderr.isTTY &&
+        process.stdin.isTTY &&
+        process.stdout.isTTY &&
+        process.stderr.isTTY &&
         files.every((f) => existsSync(f) && !isDirectoryPath(f)) &&
         (!args.speakers || canInstallDiarizeOnPlatform())
       ) {

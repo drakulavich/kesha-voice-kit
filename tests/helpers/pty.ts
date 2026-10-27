@@ -51,7 +51,8 @@ export function runInPty(argv: string[], env: Record<string, string | undefined>
       const timer = setTimeout(() => proc.kill("SIGKILL"), timeoutMs);
       const code = await proc.exited;
       clearTimeout(timer);
-      if (proc.signalCode === "SIGKILL") throw new Error(`still running after ${timeoutMs} ms; the terminal showed:\n${screen}`);
+      if (proc.signalCode === "SIGKILL")
+        throw new Error(`still running after ${timeoutMs} ms; the terminal showed:\n${screen}`);
       return code;
     },
   };
