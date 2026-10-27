@@ -89,6 +89,9 @@ jobs:
               - '.bun-version'
               - 'tsconfig.json'
               - 'biome.json'
+              # `bun run lint` runs `bun fmt --check`, which reads both.
+              - 'bunfig.toml'
+              - '.prettierignore'
               # `rust/Cargo.toml` is in the SUPERSET filter so the
               # version-drift check (#267 F16) always fires on a
               # Cargo-only version bump PR. Without it, `unit-tests`

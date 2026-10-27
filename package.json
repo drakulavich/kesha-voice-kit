@@ -50,7 +50,8 @@
     "coverage:rust": "mkdir -p coverage/rust && cd rust && cargo llvm-cov nextest --features tts --lcov --output-path ../coverage/rust/lcov.info",
     "coverage:check:rust": "bun .github/scripts/check-coverage.ts --preset=rust --lcov=coverage/rust/lcov.info --summary=coverage/rust/summary.md",
     "generate:shell-artifacts": "bun scripts/generate-shell-artifacts.ts",
-    "lint": "bun check && biome ci .",
+    "fmt": "bun fmt",
+    "lint": "bun fmt --check && bun check && biome ci .",
     "check:fast": "bun run lint && bun run check:versions && bun run check:recipes && bun run test:cli-fast",
     "check:workflows": "bun .github/scripts/check-workflows.ts",
     "check:recipes": "bun .github/scripts/check-recipes.ts",
@@ -83,7 +84,7 @@
     "url": "https://github.com/drakulavich/kesha-voice-kit/issues"
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.4"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

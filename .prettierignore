@@ -1,0 +1,4 @@
+*.md
+raycast/
+# Recorded by .github/scripts/record-capability-pacts.ts with JSON.stringify.
+tests/fixtures/capabilities/
