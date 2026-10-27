@@ -1,24 +1,52 @@
 import { describe, test, expect } from "bun:test";
 import { parseArgs, renderUsage } from "citty";
 import { decode as decodeToon } from "@toon-format/toon";
-import { createMainCommand, completionsCommand, doctorCommand, initCommand, installCommand, logsCommand, manpageCommand, recordCommand, statusCommand, statsCommand, supportBundleCommand, sayCommand, formatJsonOutput, formatToonOutput, detectLanguage, detectTextLanguageFallback, checkLanguageMismatch, estimateTranscriptDurationSeconds, isDirectoryPath, noRecordingBackendMessage, resolveOutputFormat, resolveRecordArgs, shouldReportTranscribeProgress, shouldRunAudioLanguageDetection, validateTranscribeArgs } from "../../src/cli";
+import {
+  createMainCommand,
+  completionsCommand,
+  doctorCommand,
+  initCommand,
+  installCommand,
+  logsCommand,
+  manpageCommand,
+  recordCommand,
+  statusCommand,
+  statsCommand,
+  supportBundleCommand,
+  sayCommand,
+  formatJsonOutput,
+  formatToonOutput,
+  detectLanguage,
+  detectTextLanguageFallback,
+  checkLanguageMismatch,
+  estimateTranscriptDurationSeconds,
+  isDirectoryPath,
+  noRecordingBackendMessage,
+  resolveOutputFormat,
+  resolveRecordArgs,
+  shouldReportTranscribeProgress,
+  shouldRunAudioLanguageDetection,
+  validateTranscribeArgs,
+} from "../../src/cli";
 import type { ResolvedOutputFormat, TranscribeResult } from "../../src/cli";
 import { folderGlobHint, MAIN_VAD_ARGS, normalizeMainCommandArgs } from "../../src/cli/main";
 import { getEngineBinPath } from "../../src/engine";
 
 function normalizeUsage(usage: string): string {
-  return usage
-    // Strip ANSI SGR escapes (color/bold/underline). citty colorizes usage when
-    // it detects a TTY or a color-forcing env (FORCE_COLOR), so the raw output
-    // differs between CI (NO_COLOR) and a local color terminal. The golden
-    // strings are plain text — normalize both to that.
-    // eslint-disable-next-line no-control-regex
-    .replace(/\u001b\[[0-9;]*m/g, "")
-    .replace(/\(kesha v\d+\.\d+\.\d+(?:[-+][^)]+)?\)/g, "(kesha v<version>)")
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .join("\n")
-    .trim();
+  return (
+    usage
+      // Strip ANSI SGR escapes (color/bold/underline). citty colorizes usage when
+      // it detects a TTY or a color-forcing env (FORCE_COLOR), so the raw output
+      // differs between CI (NO_COLOR) and a local color terminal. The golden
+      // strings are plain text — normalize both to that.
+      // eslint-disable-next-line no-control-regex
+      .replace(/\u001b\[[0-9;]*m/g, "")
+      .replace(/\(kesha v\d+\.\d+\.\d+(?:[-+][^)]+)?\)/g, "(kesha v<version>)")
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .join("\n")
+      .trim()
+  );
 }
 
 type MainCommandArgs = Parameters<typeof validateTranscribeArgs>[0];
@@ -191,8 +219,7 @@ describe("record command validation", () => {
   test("rejects --live combined with --out", () => {
     expect(resolveRecordArgs({ live: true, out: "mic.wav" })).toEqual({
       ok: false,
-      error:
-        "kesha record cannot combine --live with --out; --live prints the transcript to stdout.",
+      error: "kesha record cannot combine --live with --out; --live prints the transcript to stdout.",
     });
   });
 
@@ -259,7 +286,8 @@ describe("directory input rejection (#directory-check)", () => {
 
 describe("CLI help golden contracts (#324 P1)", () => {
   test("main help matches the normalized golden output", async () => {
-    expect(normalizeUsage(await renderUsage(createMainCommand()))).toBe(`Kesha Voice Kit listens and talks back: local speech for agents and scripts.
+    expect(normalizeUsage(await renderUsage(createMainCommand())))
+      .toBe(`Kesha Voice Kit listens and talks back: local speech for agents and scripts.
 
 Examples:
   kesha audio.ogg          Transcribe an audio file.
@@ -336,7 +364,8 @@ OPTIONS
   });
 
   test("say help matches the normalized golden output", async () => {
-    expect(normalizeUsage(await renderUsage(sayCommand))).toBe(`Synthesize speech from text (TTS). Writes audio to stdout (or --out file). Defaults to WAV; use --format ogg-opus for messenger-ready voice notes. (say)
+    expect(normalizeUsage(await renderUsage(sayCommand)))
+      .toBe(`Synthesize speech from text (TTS). Writes audio to stdout (or --out file). Defaults to WAV; use --format ogg-opus for messenger-ready voice notes. (say)
 
 USAGE say [OPTIONS] [TEXT]
 
@@ -398,10 +427,7 @@ describe("output formatting", () => {
   });
 
   test("JSON output with --include-errors and no errors still uses envelope shape", () => {
-    const output = formatJsonOutput(
-      [{ file: "ok.ogg", text: "Hello", lang: "en" }],
-      [],
-    );
+    const output = formatJsonOutput([{ file: "ok.ogg", text: "Hello", lang: "en" }], []);
     expect(JSON.parse(output)).toEqual({
       results: [{ file: "ok.ogg", text: "Hello", lang: "en" }],
       errors: [],
@@ -559,7 +585,6 @@ describe("language detection", () => {
   });
 });
 
-
 describe("sttTimeMs field (#139)", () => {
   test("JSON output preserves sttTimeMs when set", () => {
     const results = [{ file: "a.ogg", text: "Hello", lang: "en", sttTimeMs: 427 }];
@@ -571,16 +596,19 @@ describe("sttTimeMs field (#139)", () => {
     const parsed = JSON.parse(formatJsonOutput([{ file: "a.ogg", text: "Hello", lang: "en" }]));
     expect(parsed[0].sttTimeMs).toBeUndefined();
   });
-
 });
 
 describe("JSON output with lang-id fields", () => {
   test("JSON includes audioLanguage and textLanguage when present", () => {
-    const results = [{
-      file: "a.ogg", text: "Hello", lang: "en",
-      audioLanguage: { code: "en", confidence: 0.94 },
-      textLanguage: { code: "en", confidence: 0.98, source: "engine" as const },
-    }];
+    const results = [
+      {
+        file: "a.ogg",
+        text: "Hello",
+        lang: "en",
+        audioLanguage: { code: "en", confidence: 0.94 },
+        textLanguage: { code: "en", confidence: 0.98, source: "engine" as const },
+      },
+    ];
     const parsed = JSON.parse(formatJsonOutput(results));
     expect(parsed[0].audioLanguage).toEqual({ code: "en", confidence: 0.94 });
     expect(parsed[0].textLanguage).toEqual({ code: "en", confidence: 0.98, source: "engine" });
@@ -684,7 +712,7 @@ describe("resolveOutputFormat (#300 regression)", () => {
       }
     });
 
-    test("--format \"\" → error (empty string is not a valid value)", () => {
+    test('--format "" → error (empty string is not a valid value)', () => {
       const r = resolveOutputFormat({ format: "" });
       expect(r.ok).toBe(false);
       if (!r.ok) expect(r.error).toContain("unknown --format");
@@ -767,35 +795,29 @@ describe("validateTranscribeArgs guards", () => {
   });
 
   test("--timestamps without machine-readable output is rejected", () => {
-    expect(expectRejected({ timestamps: true }, ["--timestamps"], okFmt())).toContain(
-      "--timestamps requires --json",
-    );
+    expect(expectRejected({ timestamps: true }, ["--timestamps"], okFmt())).toContain("--timestamps requires --json");
   });
 
   test("--timestamps with --json is accepted", () => {
     expect(
-      expectAccepted({ timestamps: true, json: true }, ["--timestamps", "--json"], okFmt("json"))
-        .outputFormat,
+      expectAccepted({ timestamps: true, json: true }, ["--timestamps", "--json"], okFmt("json")).outputFormat,
     ).toBe("json");
   });
 
   test("--speakers without machine-readable output is rejected", () => {
-    expect(expectRejected({ speakers: true }, ["--speakers"], okFmt())).toContain(
-      "--speakers requires --json",
-    );
+    expect(expectRejected({ speakers: true }, ["--speakers"], okFmt())).toContain("--speakers requires --json");
   });
 
   test("--speakers with --toon is accepted", () => {
-    expect(
-      expectAccepted({ speakers: true, toon: true }, ["--speakers", "--toon"], okFmt("toon"))
-        .outputFormat,
-    ).toBe("toon");
+    expect(expectAccepted({ speakers: true, toon: true }, ["--speakers", "--toon"], okFmt("toon")).outputFormat).toBe(
+      "toon",
+    );
   });
 
   test("--include-errors without a machine-readable format is rejected", () => {
-    expect(
-      expectRejected({ "include-errors": true }, ["--include-errors"], okFmt()),
-    ).toContain("--include-errors requires --json");
+    expect(expectRejected({ "include-errors": true }, ["--include-errors"], okFmt())).toContain(
+      "--include-errors requires --json",
+    );
   });
 
   test("--include-errors with --json is accepted", () => {
@@ -807,21 +829,14 @@ describe("validateTranscribeArgs guards", () => {
 
   test("--include-errors with --toon is accepted (#839)", () => {
     expect(
-      expectAccepted(
-        { "include-errors": true, toon: true },
-        ["--include-errors", "--toon"],
-        okFmt("toon"),
-      ).outputFormat,
+      expectAccepted({ "include-errors": true, toon: true }, ["--include-errors", "--toon"], okFmt("toon"))
+        .outputFormat,
     ).toBe("toon");
   });
 
   test("--vad and --no-vad are mutually exclusive", () => {
-    expect(expectRejected({}, ["--vad", "--no-vad"], okFmt())).toContain(
-      "mutually exclusive",
-    );
-    expect(expectRejected({}, ["--no-vad", "--vad"], okFmt())).toContain(
-      "mutually exclusive",
-    );
+    expect(expectRejected({}, ["--vad", "--no-vad"], okFmt())).toContain("mutually exclusive");
+    expect(expectRejected({}, ["--no-vad", "--vad"], okFmt())).toContain("mutually exclusive");
   });
 
   test("vadMode derives from the production parse and normalization boundary", () => {
@@ -832,15 +847,15 @@ describe("validateTranscribeArgs guards", () => {
   });
 
   test("--speakers with --no-vad is rejected (#768)", () => {
-    expect(
-      expectRejected({ speakers: true, json: true }, ["--speakers", "--no-vad"], okFmt("json")),
-    ).toContain("--speakers cannot be combined with --no-vad");
+    expect(expectRejected({ speakers: true, json: true }, ["--speakers", "--no-vad"], okFmt("json"))).toContain(
+      "--speakers cannot be combined with --no-vad",
+    );
   });
 
   test("--speakers alone still routes through auto VAD", () => {
-    expect(
-      expectAccepted({ speakers: true, json: true }, ["--speakers", "--json"], okFmt("json")).vadMode,
-    ).toBe("auto");
+    expect(expectAccepted({ speakers: true, json: true }, ["--speakers", "--json"], okFmt("json")).vadMode).toBe(
+      "auto",
+    );
   });
 });
 

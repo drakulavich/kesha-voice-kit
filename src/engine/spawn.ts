@@ -87,7 +87,11 @@ export interface EngineProcessRun<T> {
 const FAULT_SIGNALS: Record<number, string> = { 4: "SIGILL", 6: "SIGABRT", 8: "SIGFPE", 11: "SIGSEGV" };
 
 /** The signal that killed the engine, or null; the wait status outranks Bun's signalCode (10 is SIGBUS on darwin, SIGUSR1 to Bun). */
-export function engineSignal(exitCode: number, signalCode: string | null, platform: string = process.platform): string | null {
+export function engineSignal(
+  exitCode: number,
+  signalCode: string | null,
+  platform: string = process.platform,
+): string | null {
   const number = exitCode > 128 ? exitCode - 128 : undefined;
   const sigbus = platform === "darwin" ? 10 : 7;
   const signal =
@@ -102,7 +106,9 @@ export function engineSignal(exitCode: number, signalCode: string | null, platfo
 /** What a run that reported nothing ended with: the signal that killed it, else its exit status. */
 export function engineExitCause(command: string, exitCode: number, signalCode: string | null): string {
   const signal = engineSignal(exitCode, signalCode);
-  return signal ? `kesha-engine ${command} was killed by ${signal}` : `kesha-engine ${command} exited with code ${exitCode}`;
+  return signal
+    ? `kesha-engine ${command} was killed by ${signal}`
+    : `kesha-engine ${command} exited with code ${exitCode}`;
 }
 
 /** Spawns the engine (or a sidecar) as its own process tree and waits for it; the tree is unregistered however the run ends. */

@@ -11,10 +11,7 @@ import { encode as encodeToon } from "@toon-format/toon";
  * `cli.ts`. Callers that have the concrete `TranscribeResult[]` type will
  * still get a type-checked call via structural compatibility.
  */
-export function formatToonOutput<T extends object, E extends object>(
-  results: T[],
-  errors?: E[],
-): string {
+export function formatToonOutput<T extends object, E extends object>(results: T[], errors?: E[]): string {
   const payload = errors === undefined ? results : { results, errors };
   return `${encodeToon(JSON.parse(JSON.stringify(payload)))}\n`;
 }

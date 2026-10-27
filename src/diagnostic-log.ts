@@ -123,9 +123,13 @@ function writeConfig(config: DiagnosticLogConfig): void {
   } catch (err) {
     const errno = (err as NodeJS.ErrnoException).code ?? "";
     const why = PATH_ERRNOS[errno];
-    throw new KeshaError(why ? "E_INVALID_ARG" : "E_INTERNAL", `cannot write the diagnostic log settings ${statePath}: ${why ? `${why} (${errno})` : errorMessage(err)}`, {
-      hint: `make ${dirname(statePath)} writable, or set KESHA_LOG_DIR to a folder you can write to.`,
-    });
+    throw new KeshaError(
+      why ? "E_INVALID_ARG" : "E_INTERNAL",
+      `cannot write the diagnostic log settings ${statePath}: ${why ? `${why} (${errno})` : errorMessage(err)}`,
+      {
+        hint: `make ${dirname(statePath)} writable, or set KESHA_LOG_DIR to a folder you can write to.`,
+      },
+    );
   }
 }
 

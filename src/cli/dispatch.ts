@@ -111,7 +111,10 @@ function reportThrows<T extends ArgsDef>(command: CommandDef<T>): CommandDef<T> 
       try {
         return await run(context);
       } catch (err) {
-        const coded = err instanceof KeshaError ? err : new KeshaError("E_INTERNAL", errorMessage(err), { hint: SUPPORT_BUNDLE_HINT });
+        const coded =
+          err instanceof KeshaError
+            ? err
+            : new KeshaError("E_INTERNAL", errorMessage(err), { hint: SUPPORT_BUNDLE_HINT });
         log.error(coded.render());
         process.exit(exitCodeFor(coded));
       }

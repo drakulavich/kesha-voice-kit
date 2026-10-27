@@ -17,12 +17,13 @@
  */
 import { describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
+import { pactPath, provenancePath, type PactProvenance } from "../../.github/scripts/record-capability-pacts";
 import {
-  pactPath,
-  provenancePath,
-  type PactProvenance,
-} from "../../.github/scripts/record-capability-pacts";
-import { buildRecordArgs, buildTranscribeArgs, TRANSCRIBE_DIARIZE_FEATURE, textLangFailureWarning } from "../../src/engine";
+  buildRecordArgs,
+  buildTranscribeArgs,
+  TRANSCRIBE_DIARIZE_FEATURE,
+  textLangFailureWarning,
+} from "../../src/engine";
 import { parseDescribe, protocolMismatch, validateArgv, type DescribeDocument } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
 import { buildEngineInstallArgs } from "../../src/engine-install";
@@ -76,8 +77,16 @@ for (const { platform, arch, target } of engineTargetEntries()) {
 }
 
 const EVERY_SAY_OPTION: SayOptions = {
-  text: "hi", voice: "en-am_michael", lang: "en", out: "x.wav", rate: 1.2, ssml: true,
-  format: "ogg-opus", bitrate: 32000, sampleRate: 24000, noExpandAbbrev: true,
+  text: "hi",
+  voice: "en-am_michael",
+  lang: "en",
+  out: "x.wav",
+  rate: 1.2,
+  ssml: true,
+  format: "ogg-opus",
+  bitrate: 32000,
+  sampleRate: 24000,
+  noExpandAbbrev: true,
 };
 
 /** The argument text of the call whose opening paren precedes `start`, which may span lines. */
@@ -123,9 +132,7 @@ describe("capability pact — recordings", () => {
     });
 
     it(`${key} says it was recorded from the asset and release it recorded`, () => {
-      expect(provenance.recordedFrom).toBe(
-        `${provenance.assetName} from release v${provenance.engineVersion}`,
-      );
+      expect(provenance.recordedFrom).toBe(`${provenance.assetName} from release v${provenance.engineVersion}`);
     });
   }
 
@@ -182,7 +189,11 @@ describe("capability pact — recordings", () => {
     const cliOnly = ["E_ENGINE_PROTOCOL", "E_ENGINE_SPAWN", "E_INSTALL_RACE", "E_INTERRUPTED"];
     const shared = [...raised].filter((c) => !cliOnly.includes(c)).sort();
     for (const t of TARGETS) {
-      const byOrigin = (origin: string) => t.pact.errors.filter((e) => e.origin === origin).map((e) => e.code).sort();
+      const byOrigin = (origin: string) =>
+        t.pact.errors
+          .filter((e) => e.origin === origin)
+          .map((e) => e.code)
+          .sort();
       expect(byOrigin("cli")).toEqual(cliOnly);
       expect(byOrigin("both")).toEqual(shared);
       expect(byOrigin("cli").length + byOrigin("both").length + byOrigin("engine").length).toBe(t.pact.errors.length);
@@ -190,44 +201,45 @@ describe("capability pact — recordings", () => {
   });
 });
 
-for (const t of TARGETS) describe(`${t.key} accepts what the CLI would send it`, () => {
-  const doc = t.pact;
+for (const t of TARGETS)
+  describe(`${t.key} accepts what the CLI would send it`, () => {
+    const doc = t.pact;
 
-  it("takes every transcribe flag its features allow", () => {
-    const argv = buildTranscribeArgs("a.wav", { vad: "on", itn: true, speakers: t.backend === "coreml" }, true);
-    expect(validateArgv(argv, doc).argv).toEqual(argv);
-  });
+    it("takes every transcribe flag its features allow", () => {
+      const argv = buildTranscribeArgs("a.wav", { vad: "on", itn: true, speakers: t.backend === "coreml" }, true);
+      expect(validateArgv(argv, doc).argv).toEqual(argv);
+    });
 
-  it("refuses --speakers unless it diarizes", () => {
-    const err = rejection(() => validateArgv(buildTranscribeArgs("a.wav", { speakers: true }, true), doc));
-    expect(err === null).toBe(t.pact.features.includes("transcribe.diarize"));
-  });
+    it("refuses --speakers unless it diarizes", () => {
+      const err = rejection(() => validateArgv(buildTranscribeArgs("a.wav", { speakers: true }, true), doc));
+      expect(err === null).toBe(t.pact.features.includes("transcribe.diarize"));
+    });
 
-  it("takes every install flag, refusing --diarize where the build lacks it", () => {
-    const base = buildEngineInstallArgs({ noCache: true, ttsLangs: ["en"], vad: true });
-    expect(validateArgv(base, doc).argv).toEqual(base);
-    const err = rejection(() => validateArgv(buildEngineInstallArgs({ noCache: false, diarize: true }), doc));
-    expect(err === null).toBe(t.pact.features.includes("transcribe.diarize"));
-  });
+    it("takes every install flag, refusing --diarize where the build lacks it", () => {
+      const base = buildEngineInstallArgs({ noCache: true, ttsLangs: ["en"], vad: true });
+      expect(validateArgv(base, doc).argv).toEqual(base);
+      const err = rejection(() => validateArgv(buildEngineInstallArgs({ noCache: false, diarize: true }), doc));
+      expect(err === null).toBe(t.pact.features.includes("transcribe.diarize"));
+    });
 
-  it("advertises record.live only on the CoreML build", () => {
-    expect(t.pact.features.includes("record.live")).toBe(t.backend === "coreml");
-  });
+    it("advertises record.live only on the CoreML build", () => {
+      expect(t.pact.features.includes("record.live")).toBe(t.backend === "coreml");
+    });
 
-  it("takes the record argv its features allow, live auto-stop included", () => {
-    const file = buildRecordArgs({ out: "x.wav" }, 60);
-    expect(validateArgv(file, doc).argv).toEqual(file);
-    const live = buildRecordArgs({ live: true, autoStop: { silenceMs: 800, threshold: 0.5, minSpeechMs: 300 } }, 60);
-    expect(rejection(() => validateArgv(live, doc)) === null).toBe(t.pact.features.includes("record.live.auto-stop"));
-  });
+    it("takes the record argv its features allow, live auto-stop included", () => {
+      const file = buildRecordArgs({ out: "x.wav" }, 60);
+      expect(validateArgv(file, doc).argv).toEqual(file);
+      const live = buildRecordArgs({ live: true, autoStop: { silenceMs: 800, threshold: 0.5, minSpeechMs: 300 } }, 60);
+      expect(rejection(() => validateArgv(live, doc)) === null).toBe(t.pact.features.includes("record.live.auto-stop"));
+    });
 
-  it("takes every say flag, dropping only --no-expand-abbrev where the build cannot expand", () => {
-    const { argv, warnings } = validateArgv(buildSayArgs(EVERY_SAY_OPTION), doc);
-    const expands = t.pact.features.some((f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion");
-    expect(argv.includes("--no-expand-abbrev")).toBe(expands);
-    expect(warnings).toHaveLength(expands ? 0 : 1);
+    it("takes every say flag, dropping only --no-expand-abbrev where the build cannot expand", () => {
+      const { argv, warnings } = validateArgv(buildSayArgs(EVERY_SAY_OPTION), doc);
+      const expands = t.pact.features.some((f) => f === "tts.ru_acronym_expansion" || f === "tts.en_acronym_expansion");
+      expect(argv.includes("--no-expand-abbrev")).toBe(expands);
+      expect(warnings).toHaveLength(expands ? 0 : 1);
+    });
   });
-});
 
 describe("capability pact — platform behaviour derived from the recordings", () => {
   // "darwin-arm64 only" is repeated in five user-facing strings; this is the one place the
@@ -247,9 +259,7 @@ describe("capability pact — platform behaviour derived from the recordings", (
 
     it(`routes only voices ${key}'s engine can synthesise`, () => {
       const advertised = new Set(pact.tts?.languages.map((l) => l.code) ?? []);
-      const everyLanguage = new Set(
-        TARGETS.flatMap((t) => t.pact.tts?.languages.map((l) => l.code) ?? []),
-      );
+      const everyLanguage = new Set(TARGETS.flatMap((t) => t.pact.tts?.languages.map((l) => l.code) ?? []));
       const unsupported: string[] = [];
       for (const lang of everyLanguage) {
         const voice = pickVoiceForLang(lang, 0.95, platform, arch);

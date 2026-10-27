@@ -20,7 +20,10 @@ describe("staleRootNotice", () => {
       `The root checkout ${ROOT} is 2 commits behind origin/main, so its CLAUDE.md may be stale. ` +
         `Fast-forward it: cd '${ROOT}' && git fetch origin && git merge --ff-only origin/main`,
     );
-    expect(notice?.hookSpecificOutput).toEqual({ hookEventName: "SessionStart", additionalContext: notice!.systemMessage });
+    expect(notice?.hookSpecificOutput).toEqual({
+      hookEventName: "SessionStart",
+      additionalContext: notice!.systemMessage,
+    });
   });
 
   test("uses the singular for one commit", () => {
@@ -44,7 +47,9 @@ describe("staleRootNotice", () => {
   });
 
   test("offers no fast-forward to a root off main whose main has diverged", () => {
-    expect(staleRootNotice({ branch: "feat/x", behind: 3, ahead: 1 }, ROOT)?.systemMessage).toEndWith(`Switch it back: cd '${ROOT}' && git switch main`);
+    expect(staleRootNotice({ branch: "feat/x", behind: 3, ahead: 1 }, ROOT)?.systemMessage).toEndWith(
+      `Switch it back: cd '${ROOT}' && git switch main`,
+    );
   });
 
   test("says nothing when main is only ahead of origin/main, since its CLAUDE.md is not stale", () => {
@@ -59,7 +64,9 @@ describe("staleRootNotice", () => {
   });
 
   test("calls a detached HEAD out as not being on main", () => {
-    expect(staleRootNotice({ branch: null, behind: 0, ahead: 0 }, ROOT)?.systemMessage).toContain("is on a detached HEAD rather than main");
+    expect(staleRootNotice({ branch: null, behind: 0, ahead: 0 }, ROOT)?.systemMessage).toContain(
+      "is on a detached HEAD rather than main",
+    );
   });
 
   test("reports a diverged main without suggesting a fast-forward that would fail", () => {

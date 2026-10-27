@@ -23,7 +23,10 @@ export function parseNameStatus(diff: string): ChangedPath[] {
       const code = status[0] ?? "";
       // A rename is a delete plus an add to the tarball, and either side alone can ship.
       return code === "R"
-        ? [{ status: "D", path: rest[0] ?? "" }, { status: "A", path }]
+        ? [
+            { status: "D", path: rest[0] ?? "" },
+            { status: "A", path },
+          ]
         : [{ status: code, path }];
     });
 }
@@ -40,18 +43,12 @@ function underPrefix(path: string, prefixes: string[]): boolean {
   return prefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
 }
 
-export function publishableChanges(
-  changed: ChangedPath[],
-  packed: string[],
-  files: string[],
-): string[] {
+export function publishableChanges(changed: ChangedPath[], packed: string[], files: string[]): string[] {
   const shipped = new Set(packed);
   const { allow, deny } = shippedPrefixes(files);
   return changed
     .filter(({ status, path }) =>
-      status === "D"
-        ? underPrefix(path, allow) && !underPrefix(path, deny)
-        : shipped.has(path),
+      status === "D" ? underPrefix(path, allow) && !underPrefix(path, deny) : shipped.has(path),
     )
     .map(({ path }) => path);
 }

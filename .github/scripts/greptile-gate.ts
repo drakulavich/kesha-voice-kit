@@ -84,7 +84,18 @@ async function resolvedRootIds(gh: GhApi, repo: string, pr: string): Promise<Set
   let after: string | null = null;
   do {
     const cursor = after === null ? [] : ["-f", `after=${after}`];
-    const page = (await gh(["graphql", "-f", `query=${THREADS_QUERY}`, "-f", `owner=${owner}`, "-f", `name=${name}`, "-F", `pr=${pr}`, ...cursor])) as ThreadsPage;
+    const page = (await gh([
+      "graphql",
+      "-f",
+      `query=${THREADS_QUERY}`,
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `name=${name}`,
+      "-F",
+      `pr=${pr}`,
+      ...cursor,
+    ])) as ThreadsPage;
     const threads = page.data.repository.pullRequest.reviewThreads;
     for (const thread of threads.nodes) {
       const root = thread.comments.nodes[0]?.databaseId;
@@ -106,7 +117,15 @@ export async function fetchReviewState(
 
 export async function runGate(gh: GhApi, repo: string, pr: string, sha: string): Promise<number> {
   const setStatus = (state: string, description: string) =>
-    gh([`repos/${repo}/statuses/${sha}`, "-f", `state=${state}`, "-f", "context=unanswered-findings", "-f", `description=${description}`]);
+    gh([
+      `repos/${repo}/statuses/${sha}`,
+      "-f",
+      `state=${state}`,
+      "-f",
+      "context=unanswered-findings",
+      "-f",
+      `description=${description}`,
+    ]);
   await setStatus("pending", "Checking Greptile findings");
   const { comments, resolved } = await fetchReviewState(gh, repo, pr);
   const findings = blockingFindings(comments, resolved);

@@ -1,5 +1,15 @@
 #!/usr/bin/env bun
-import { closeSync, fsyncSync, linkSync, openSync, readFileSync, rmSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
+import {
+  closeSync,
+  fsyncSync,
+  linkSync,
+  openSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+  writeSync,
+} from "node:fs";
 
 export type MutationResult = { replacements: number; source: string };
 
@@ -43,7 +53,13 @@ function counted(n: number, noun: string, plural = `${noun}s`): string {
 
 function positiveNumber(name: string, raw: string | undefined, unit: string, integer = false): number {
   const value = Number(raw);
-  if (raw === undefined || raw === "" || !Number.isFinite(value) || value <= 0 || (integer && !Number.isInteger(value))) {
+  if (
+    raw === undefined ||
+    raw === "" ||
+    !Number.isFinite(value) ||
+    value <= 0 ||
+    (integer && !Number.isInteger(value))
+  ) {
     usage(`${name} needs a positive ${unit}, got '${raw ?? ""}'`);
   }
   return value;
@@ -52,7 +68,9 @@ function positiveNumber(name: string, raw: string | undefined, unit: string, int
 function parseOptions(argv: string[], env: NodeJS.ProcessEnv): Options {
   const envTimeout = env.MUTATE_TIMEOUT_SECONDS;
   let timeoutSeconds =
-    envTimeout === undefined ? DEFAULT_TIMEOUT_SECONDS : positiveNumber("MUTATE_TIMEOUT_SECONDS", envTimeout, "number of seconds");
+    envTimeout === undefined
+      ? DEFAULT_TIMEOUT_SECONDS
+      : positiveNumber("MUTATE_TIMEOUT_SECONDS", envTimeout, "number of seconds");
   let occurrences: number | undefined;
   const rest = [...argv];
   while (rest[0]?.startsWith("--")) {
@@ -108,7 +126,7 @@ export function collectFrozenTree(
   for (let round = 1; round <= rounds; round++) {
     const children = readChildren() ?? new Map<number, number[]>();
     let grew = false;
-    for (const queue = [...frozen]; queue.length > 0; ) {
+    for (const queue = [...frozen]; queue.length > 0;) {
       for (const child of children.get(queue.shift()!) ?? []) {
         if (frozen.has(child)) continue;
         stop(child);
@@ -130,7 +148,9 @@ function killTree(root: number): void {
   }
   const tree = collectFrozenTree(root, childrenByParent, (pid) => safeSignal(pid, "SIGSTOP"), SWEEP_ROUNDS);
   const bound = tree.bounded ? ` (bound of ${SWEEP_ROUNDS} hit; a descendant was still forking)` : "";
-  console.error(`==> froze ${counted(tree.frozen.length, "process", "processes")} in ${counted(tree.rounds, "round")}${bound}`);
+  console.error(
+    `==> froze ${counted(tree.frozen.length, "process", "processes")} in ${counted(tree.rounds, "round")}${bound}`,
+  );
   for (const pid of [...tree.frozen].reverse()) safeSignal(pid, "SIGKILL");
 }
 
@@ -167,12 +187,17 @@ export type SidecarFs = {
 const nodeFs: SidecarFs = { openSync, writeSync, fsyncSync, closeSync, linkSync, unlinkSync };
 
 /** The sidecar is only ever seen holding the whole original: the bytes go to a same-directory temp file first and `link` publishes it in one step, refusing (EEXIST) rather than overwriting — a `rename` would replace a sidecar another run still owns. */
-export function publishSidecar(sidecar: string, content: string, fs: SidecarFs = nodeFs, pid = process.pid): "published" | "exists" {
+export function publishSidecar(
+  sidecar: string,
+  content: string,
+  fs: SidecarFs = nodeFs,
+  pid = process.pid,
+): "published" | "exists" {
   const tmp = `${sidecar}.${pid}.tmp`;
   const fd = fs.openSync(tmp, "wx");
   try {
     const bytes = Buffer.from(content);
-    for (let written = 0; written < bytes.length; ) {
+    for (let written = 0; written < bytes.length;) {
       written += fs.writeSync(fd, bytes, written, bytes.length - written);
     }
     fs.fsyncSync(fd);
@@ -228,7 +253,8 @@ function onInterrupt(): void {
 
 function exitCodeOf(outcome: RunOutcome, timeoutSeconds: number): number {
   if ("notStarted" in outcome) notAValidRun(`the test command could not be started (${outcome.notStarted})`);
-  if ("timedOut" in outcome) notAValidRun(`the test command ran longer than ${timeoutSeconds} s — a hang is not a caught mutation`);
+  if ("timedOut" in outcome)
+    notAValidRun(`the test command ran longer than ${timeoutSeconds} s — a hang is not a caught mutation`);
   return outcome.exitCode;
 }
 
@@ -242,7 +268,10 @@ function matchLines(source: string, find: string): number[] {
 }
 
 async function main(): Promise<void> {
-  const { timeoutSeconds, occurrences, file, find, replace, command } = parseOptions(process.argv.slice(2), process.env);
+  const { timeoutSeconds, occurrences, file, find, replace, command } = parseOptions(
+    process.argv.slice(2),
+    process.env,
+  );
   process.on("SIGINT", onInterrupt);
   process.on("SIGTERM", onInterrupt);
 
@@ -255,7 +284,9 @@ async function main(): Promise<void> {
   const lines = matchLines(original, find).join(", ");
   const where = `occurs ${counted(replacements, "time")} in ${file} (lines ${lines})`;
   if (occurrences === undefined && replacements > 1) {
-    refuse(`'${find}' ${where} — pass --occurrences ${replacements} to replace all ${replacements}, or narrow the text`);
+    refuse(
+      `'${find}' ${where} — pass --occurrences ${replacements} to replace all ${replacements}, or narrow the text`,
+    );
   }
   if (occurrences !== undefined && occurrences !== replacements) {
     refuse(`'${find}' ${where}, not the ${occurrences} that --occurrences names`);
@@ -265,7 +296,9 @@ async function main(): Promise<void> {
   console.error(`==> baseline on the unmodified ${file}; running: ${command.join(" ")}`);
   const baseline = exitCodeOf(await runCommand(command, timeoutSeconds), timeoutSeconds);
   if (baseline !== 0) {
-    notAValidRun(`the test command failed before any mutation (exit ${baseline}) — fix the command, cwd or build first`);
+    notAValidRun(
+      `the test command failed before any mutation (exit ${baseline}) — fix the command, cwd or build first`,
+    );
   }
 
   restoreMutated = () => {

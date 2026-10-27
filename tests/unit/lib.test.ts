@@ -18,7 +18,13 @@ import {
 } from "../../src/lib";
 // @ts-expect-error -- removed in 2.0.0; `transcribe` returns the structured result (docs/api.md#migrating-to-200)
 import type { TranscriptionOutput } from "../../src/lib";
-import { describeJson, isolateEngineCache, saveEngineEnv, writeFakeEngine, writeTranscribingEngine } from "../helpers/fake-engine";
+import {
+  describeJson,
+  isolateEngineCache,
+  saveEngineEnv,
+  writeFakeEngine,
+  writeTranscribingEngine,
+} from "../helpers/fake-engine";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
 import { SIDECARS } from "../../src/engine-install";
 import { isDarwinArm64 } from "../../src/engine-targets";
@@ -111,17 +117,15 @@ describe("transcribe.ts internals", () => {
   // transcribeWithSegments skips the CLI gate, so the refusal comes from the spawn-side validation (#710).
   fakeEngineIt("refuses itn on the plain-text path when the engine lacks it", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
-      await expect(transcribeWithSegments("audio.wav", { itn: true })).rejects.toThrow(
-        "--itn needs transcribe.itn",
-      );
+      await expect(transcribeWithSegments("audio.wav", { itn: true })).rejects.toThrow("--itn needs transcribe.itn");
     });
   });
 
   fakeEngineIt("refuses itn alongside timestamps when the engine lacks it", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
-      await expect(
-        transcribeWithSegments("audio.wav", { timestamps: true, itn: true }),
-      ).rejects.toThrow("--itn needs transcribe.itn");
+      await expect(transcribeWithSegments("audio.wav", { timestamps: true, itn: true })).rejects.toThrow(
+        "--itn needs transcribe.itn",
+      );
     });
   });
 
@@ -215,8 +219,15 @@ describe("transcribe() on a named pipe (#1468)", () => {
 
 /** Compile-time pin, checked by `bun run lint`: every public type resolves from `./core`; the removed one is the `@ts-expect-error` import above. */
 export type PublicSurface = [
-  EngineDescription, InstallOptions, SayOptions, TranscribeOptions, TranscribeResult,
-  TranscriptionSegment, VadMode, WordTiming, TranscriptionOutput,
+  EngineDescription,
+  InstallOptions,
+  SayOptions,
+  TranscribeOptions,
+  TranscribeResult,
+  TranscriptionSegment,
+  VadMode,
+  WordTiming,
+  TranscriptionOutput,
 ];
 
 async function rejectionOf(promise: Promise<unknown>): Promise<KeshaError> {
@@ -476,10 +487,13 @@ exit 0
     expect(requested).toEqual([]);
   });
 
-  (isDarwinArm64() || !platformBackend ? it.skip : it)("reports diarize before an unavailable backend, in the CLI's order", async () => {
-    stageAbsentEngine();
-    const other: InstallOptions["backend"] = platformBackend === "coreml" ? "onnx" : "coreml";
-    const err = await rejectionOf(install({ diarize: true, backend: other }));
-    expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
-  });
+  (isDarwinArm64() || !platformBackend ? it.skip : it)(
+    "reports diarize before an unavailable backend, in the CLI's order",
+    async () => {
+      stageAbsentEngine();
+      const other: InstallOptions["backend"] = platformBackend === "coreml" ? "onnx" : "coreml";
+      const err = await rejectionOf(install({ diarize: true, backend: other }));
+      expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
+    },
+  );
 });

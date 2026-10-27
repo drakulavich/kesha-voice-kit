@@ -8,9 +8,7 @@ export function formatTextOutput(results: TranscribeResult[]): string {
   if (first && results.length === 1) {
     return `${first.text}\n`;
   }
-  return results
-    .map((r, i) => `${i > 0 ? "\n" : ""}=== ${r.file} ===\n${r.text}\n`)
-    .join("");
+  return results.map((r, i) => `${i > 0 ? "\n" : ""}=== ${r.file} ===\n${r.text}\n`).join("");
 }
 
 /** The `--verbose` block for stderr: detection details and timing, never the transcript (that is stdout's). */
@@ -26,7 +24,9 @@ export function formatVerboseDiagnostics(results: TranscribeResult[]): string {
       const route = routeLanguage({ audioLanguage: r.audioLanguage, textLanguage: r.textLanguage });
       if (r.audioLanguage) {
         const note = route.belowFloor.audio ? `, ${BELOW_FLOOR_NOTE}` : "";
-        lines.push(`Audio language: ${r.audioLanguage.code} (confidence: ${r.audioLanguage.confidence.toFixed(2)}${note})`);
+        lines.push(
+          `Audio language: ${r.audioLanguage.code} (confidence: ${r.audioLanguage.confidence.toFixed(2)}${note})`,
+        );
       }
       const textLang = r.textLanguage ?? (r.lang ? { code: r.lang, confidence: 0 } : null);
       if (textLang) {
@@ -51,7 +51,9 @@ export function formatTranscriptOutput(results: TranscribeResult[]): string {
         lines.push(`=== ${r.file} ===`);
       }
       lines.push(r.text);
-      const detected = unsupportedAudioLanguageWarning(r.audioLanguage, r.textLanguage) ? r.audioLanguage : (r.textLanguage ?? r.audioLanguage);
+      const detected = unsupportedAudioLanguageWarning(r.audioLanguage, r.textLanguage)
+        ? r.audioLanguage
+        : (r.textLanguage ?? r.audioLanguage);
       const lang = detected?.code || r.lang;
       const confidence = detected?.confidence;
       if (lang) lines.push(`[lang: ${lang}${confidence != null ? `, confidence: ${confidence.toFixed(2)}` : ""}]`);
@@ -60,12 +62,8 @@ export function formatTranscriptOutput(results: TranscribeResult[]): string {
     .join("\n")}\n`;
 }
 
-export function formatJsonOutput(
-  results: TranscribeResult[],
-  errors?: TranscribeErrorRecord[],
-): string {
-  const payload: TranscribeJsonOutput =
-    errors === undefined ? results : { results, errors };
+export function formatJsonOutput(results: TranscribeResult[], errors?: TranscribeErrorRecord[]): string {
+  const payload: TranscribeJsonOutput = errors === undefined ? results : { results, errors };
   return `${JSON.stringify(payload, null, 2)}\n`;
 }
 

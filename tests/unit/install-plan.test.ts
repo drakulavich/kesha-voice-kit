@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { renderInstallPlan } from "../../src/install-plan";
@@ -44,9 +54,7 @@ describe("renderInstallPlan", () => {
       expect(output).toContain("Run: kesha install --tts en ru");
       if (process.platform === "darwin" && process.arch === "arm64") {
         expect(output).toContain("Warm-ups:");
-        expect(output).toContain(
-          "TTS Kokoro (ANE): staged and hash-verified by `kesha install --tts`",
-        );
+        expect(output).toContain("TTS Kokoro (ANE): staged and hash-verified by `kesha install --tts`");
         // Both staged sets, named where doctor names them (#831).
         expect(output).toContain(join("fluidaudio", "kokoro-82m-coreml", "ANE"));
         expect(output).toContain(join(".cache", "fluidaudio", "Models", "kokoro"));
@@ -214,26 +222,18 @@ describe("the plan's download economics", () => {
 
   test("a component is cached only once every file is present at its pinned size", async () => {
     await withCache("cached", async (cacheRoot) => {
-      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
-        "needed",
-      );
+      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe("needed");
 
       for (const file of modelPlan.langId) seed(cacheRoot, file.relPath, file.sizeBytes);
-      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
-        "cached",
-      );
+      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe("cached");
 
       const firstLangId = modelPlan.langId[0];
       if (!firstLangId) throw new Error("model-plan.json langId is empty — fixture invariant broken");
       seed(cacheRoot, firstLangId.relPath, 0);
-      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
-        "needed",
-      );
+      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe("needed");
 
       seed(cacheRoot, firstLangId.relPath, 1000);
-      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe(
-        "needed",
-      );
+      expect(status(await renderInstallPlan({ backend: "onnx" }), "Audio language ID ECAPA")).toBe("needed");
     });
   });
 
@@ -324,7 +324,12 @@ describe("release asset sizes come from the injected Engine pin", () => {
         const probe = `import { renderInstallPlan } from "./src/install-plan"; process.stdout.write(await renderInstallPlan(${JSON.stringify({ engineVersion })}));`;
         const run = Bun.spawnSync(["bun", "-e", probe], {
           cwd: dir,
-          env: { ...process.env, HOME: dir, KESHA_CACHE_DIR: join(dir, "cache"), KESHA_ENGINE_BIN: join(dir, "engine", "kesha-engine") },
+          env: {
+            ...process.env,
+            HOME: dir,
+            KESHA_CACHE_DIR: join(dir, "cache"),
+            KESHA_ENGINE_BIN: join(dir, "engine", "kesha-engine"),
+          },
         });
         return run.stdout.toString();
       };
@@ -359,9 +364,7 @@ describe("install plan with --engine-version (#738)", () => {
       expect(pinned).toMatch(/Engine kesha-engine-[^:]+: [^(]+\([^,]+, cached,/);
 
       const overridden = await renderInstallPlan({ engineVersion: "9.9.9-alpha.1" });
-      expect(overridden).toContain(
-        `Engine release: v9.9.9-alpha.1 (overrides the pinned v${engineVersion})`,
-      );
+      expect(overridden).toContain(`Engine release: v9.9.9-alpha.1 (overrides the pinned v${engineVersion})`);
       expect(overridden).toContain("GitHub release v9.9.9-alpha.1");
       expect(overridden).not.toContain(`GitHub release v${engineVersion}`);
       expect(overridden).toMatch(/Engine kesha-engine-[^:]+: [^(]+\([^,]+, needed,/);
@@ -401,8 +404,7 @@ describe("install plan carries no platform block (#216)", () => {
 
 // T2-8: the darwin arm pushed an unsized warm-up, so every `--plan --tts <lang>` promised 0 B.
 describe("the darwin-arm64 plan quotes the FluidAudio ANE bytes", () => {
-  const darwinArmTest =
-    process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
+  const darwinArmTest = process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
 
   const sum = (files: { sizeBytes: number }[]) => files.reduce((n, f) => n + f.sizeBytes, 0);
   const esPack = modelPlan.aneVoices.filter((f) => f.relPath.startsWith("e"));
@@ -454,8 +456,7 @@ describe("the darwin-arm64 plan quotes the FluidAudio ANE bytes", () => {
         modelPlan.aneVoices.filter((f) => /^[ab]/.test(f.relPath)),
       );
 
-      const expectedNetwork = (out: string) =>
-        /Expected Kesha-managed network for this run: (.+)/.exec(out)?.[1];
+      const expectedNetwork = (out: string) => /Expected Kesha-managed network for this run: (.+)/.exec(out)?.[1];
       const english = await renderInstallPlan({ ttsLangs: ["en"] });
       expect(english).toContain(`(${sum(modelPlan.aneEn)} bytes, cached,`);
       expect(english).toContain(`(${sum(modelPlan.kokoroG2p)} bytes, cached,`);
@@ -480,9 +481,7 @@ describe("the darwin-arm64 plan quotes the FluidAudio ANE bytes", () => {
 
       const zhDir = join(staged.cache, "fluidaudio", "kokoro-82m-coreml", "ANE-zh");
       stageFiles(zhDir, [...modelPlan.aneZh, ...modelPlan.aneZhG2p]);
-      expect(await renderInstallPlan({ ttsLangs: ["zh"] })).toContain(
-        `(${bundleBytes} bytes, cached,`,
-      );
+      expect(await renderInstallPlan({ ttsLangs: ["zh"] })).toContain(`(${bundleBytes} bytes, cached,`);
     } finally {
       rmSync(staged.home, { recursive: true, force: true });
     }

@@ -22,10 +22,11 @@ async function runCompiled(args: string[]): Promise<{ stdout: string; stderr: st
 beforeAll(async () => {
   workDir = mkdtempSync(join(tmpdir(), "kesha-compiled-"));
   compiledBin = join(workDir, process.platform === "win32" ? "kesha.exe" : "kesha");
-  const build = Bun.spawn(
-    ["bun", "build", "--compile", `--outfile=${compiledBin}`, repoPath("bin/kesha.js")],
-    { cwd: repoPath("."), stdout: "pipe", stderr: "pipe" },
-  );
+  const build = Bun.spawn(["bun", "build", "--compile", `--outfile=${compiledBin}`, repoPath("bin/kesha.js")], {
+    cwd: repoPath("."),
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [stderr, exitCode] = await Promise.all([new Response(build.stderr).text(), build.exited]);
   if (exitCode !== 0) throw new Error(`compiling the CLI failed (${exitCode}):\n${stderr}`);
 }, 120_000);

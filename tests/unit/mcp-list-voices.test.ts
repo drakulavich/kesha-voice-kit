@@ -51,7 +51,9 @@ async function withMissingEngine<T>(fn: () => Promise<T>): Promise<T> {
 describe("list_voices / list_languages guard when the engine is missing", () => {
   test("listVoices() throws an install-hint error, not a raw spawn exception", async () => {
     await withMissingEngine(async () => {
-      await expect(listVoices()).rejects.toThrow(`No speech synthesis backend is installed: no kesha-engine at ${getEngineBinPath()}`);
+      await expect(listVoices()).rejects.toThrow(
+        `No speech synthesis backend is installed: no kesha-engine at ${getEngineBinPath()}`,
+      );
     });
   });
 
@@ -119,14 +121,18 @@ function babblingVoicesEngine(): string {
 describe("list_voices() surfaces a non-event stderr line even on a clean exit", () => {
   skipOnWin32("rejects with E_INTERNAL quoting the offending line", async () => {
     await withEngineBin(babblingVoicesEngine(), async () => {
-      await expect(listVoices()).rejects.toThrow('kesha-engine say --list-voices wrote a line that is not a protocol event: "loading voice pack..."');
+      await expect(listVoices()).rejects.toThrow(
+        'kesha-engine say --list-voices wrote a line that is not a protocol event: "loading voice pack..."',
+      );
       try {
         await listVoices();
         throw new Error("expected listVoices() to reject");
       } catch (err) {
         expect(err).toBeInstanceOf(Error);
         expect((err as { code?: string }).code).toBe("E_INTERNAL");
-        expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine say --list-voices wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
+        expect(errorMessage(err)).toMatch(
+          /^error \[E_INTERNAL\]: kesha-engine say --list-voices wrote a line that is not a protocol event: "loading voice pack\.\.\."/,
+        );
       }
     });
   });
@@ -139,7 +145,9 @@ describe("list_voices tool", () => {
       const res = await call("list_voices");
       expect(res.isError).toBeUndefined();
       // The hint verb follows stderr's TTY-ness (kesha init in a terminal), as the sibling case above allows.
-      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(/^0 voices installed\. Run: kesha (install|init) --tts$/);
+      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(
+        /^0 voices installed\. Run: kesha (install|init) --tts$/,
+      );
       expect((res.structuredContent as { voices: unknown[] }).voices).toEqual([]);
     });
   });
@@ -149,7 +157,14 @@ describe("list_voices tool", () => {
       const res = await call("list_voices");
       expect(res.isError).toBeUndefined();
       const sc = res.structuredContent as {
-        voices: Array<{ voiceId: string; modelId: string; modelName: string; languageCode: string; languageName: string; gender: string | null }>;
+        voices: Array<{
+          voiceId: string;
+          modelId: string;
+          modelName: string;
+          languageCode: string;
+          languageName: string;
+          gender: string | null;
+        }>;
       };
       // The English default is a brand contract; naming it pins every field, BCP-47 tag included.
       expect(sc.voices.find((v) => v.voiceId === "en-am_michael")).toEqual({
@@ -192,10 +207,15 @@ describe("list_voices() validates against describe before spawning", () => {
     );
     chmodSync(path, 0o755);
     await withEngineBin(path, async () => {
-      const err = await listVoices().then(() => null, (e: unknown) => e as KeshaError);
+      const err = await listVoices().then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_ENGINE_PROTOCOL");
-      expect(errorMessage(err)).toContain("hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`");
+      expect(errorMessage(err)).toContain(
+        "hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`",
+      );
     });
   });
 
@@ -209,7 +229,10 @@ describe("list_voices() validates against describe before spawning", () => {
     );
     chmodSync(path, 0o755);
     await withEngineBin(path, async () => {
-      const err = await listVoices().then(() => null, (e: unknown) => e as KeshaError);
+      const err = await listVoices().then(
+        () => null,
+        (e: unknown) => e as KeshaError,
+      );
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_INVALID_ARG");
       expect(existsSync(marker)).toBe(false);

@@ -1,10 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import {
-  applyCliContext,
-  applyColorEnv,
-  resolveCliContext,
-  USER_FORCED_NO_COLOR,
-} from "../../src/cli/context";
+import { applyCliContext, applyColorEnv, resolveCliContext, USER_FORCED_NO_COLOR } from "../../src/cli/context";
 import { log, setColorEnabled } from "../../src/log";
 
 describe("resolveCliContext", () => {

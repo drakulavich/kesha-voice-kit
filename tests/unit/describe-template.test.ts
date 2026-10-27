@@ -10,7 +10,12 @@ describe("the fake engine's describe template", () => {
       const recorded = parseDescribe(JSON.parse(readRepoFile(`tests/fixtures/capabilities/${target}.json`)))!;
       expect(recorded).not.toBeNull();
       expect(
-        describeDocument({ backend: recorded.backend, profile: recorded.profile, features: recorded.features, tts: recorded.tts }),
+        describeDocument({
+          backend: recorded.backend,
+          profile: recorded.profile,
+          features: recorded.features,
+          tts: recorded.tts,
+        }),
       ).toEqual(recorded);
     });
   }

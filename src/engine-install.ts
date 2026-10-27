@@ -24,18 +24,10 @@ import { keshaCacheDir } from "./paths";
 import { createLiveStatus, streamResponseToFile } from "./progress";
 import { interruptedRun } from "./process-tree";
 import { DEFAULT_VOICE_ID } from "./voice-routing";
-import {
-  getVersionMarkerPath,
-  readInstalledEngineVersion,
-  writeInstalledEngineVersion,
-} from "./engine-version-marker";
+import { getVersionMarkerPath, readInstalledEngineVersion, writeInstalledEngineVersion } from "./engine-version-marker";
 
 export { SIDECARS } from "./engine-targets";
-export {
-  getVersionMarkerPath,
-  readInstalledEngineVersion,
-  writeInstalledEngineVersion,
-} from "./engine-version-marker";
+export { getVersionMarkerPath, readInstalledEngineVersion, writeInstalledEngineVersion } from "./engine-version-marker";
 
 const GITHUB_REPO = "drakulavich/kesha-voice-kit";
 const NETWORK_HINT = "check your network connection and try again.";
@@ -102,10 +94,14 @@ export function releaseChecksums(
     if (version === pins?.version) {
       const pinned = pins.sha256[assetName];
       if (!pinned) {
-        throw new KeshaError("E_INTERNAL", `No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete`, {
-          exitCode: 1,
-          hint: `report it at https://github.com/${GITHUB_REPO}/issues`,
-        });
+        throw new KeshaError(
+          "E_INTERNAL",
+          `No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete`,
+          {
+            exitCode: 1,
+            hint: `report it at https://github.com/${GITHUB_REPO}/issues`,
+          },
+        );
       }
       return { sha256: pinned, source: "its pinned SHA-256" };
     }
@@ -210,13 +206,12 @@ async function cachedAssetMatchesPin(
   return false;
 }
 
-export function getEngineBinaryName(
-  platform: string = process.platform,
-  arch: string = process.arch,
-): string {
+export function getEngineBinaryName(platform: string = process.platform, arch: string = process.arch): string {
   const target = engineTarget(platform, arch);
   if (!target) {
-    const supported = engineTargetEntries().map((e) => targetKey(e.platform, e.arch)).join(", ");
+    const supported = engineTargetEntries()
+      .map((e) => targetKey(e.platform, e.arch))
+      .join(", ");
     throw new KeshaError("E_UNSUPPORTED_PLATFORM", `no published kesha-engine for ${platform} ${arch}`, {
       hint: `supported: ${supported} (docs/product-positioning.md#platform-matrix)`,
     });
@@ -260,9 +255,7 @@ export function cleanupRetiredSidecars(engineDir: string): string[] {
       rmSync(path);
       removed.push(filename);
     } catch (e) {
-      log.warn(
-        `Could not remove retired sidecar ${filename} (${errorMessage(e)}); continuing.`,
-      );
+      log.warn(`Could not remove retired sidecar ${filename} (${errorMessage(e)}); continuing.`);
     }
   }
 
@@ -274,18 +267,12 @@ export function cleanupRetiredSidecars(engineDir: string): string[] {
 }
 
 /** Best-effort; `alreadyDoneExit1` marks the exit-1 stderr that means the work was already done. */
-function trustStep(
-  argv: string[],
-  label: string,
-  displayName: string,
-  alreadyDoneExit1?: RegExp,
-): boolean {
+function trustStep(argv: string[], label: string, displayName: string, alreadyDoneExit1?: RegExp): boolean {
   try {
     const proc = Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe" });
     const stderr = new TextDecoder().decode(proc.stderr).trim();
     const ok =
-      proc.exitCode === 0 ||
-      (proc.exitCode === 1 && alreadyDoneExit1 !== undefined && alreadyDoneExit1.test(stderr));
+      proc.exitCode === 0 || (proc.exitCode === 1 && alreadyDoneExit1 !== undefined && alreadyDoneExit1.test(stderr));
     if (!ok) log.debug(`${label} on ${displayName} exited ${proc.exitCode}: ${stderr}`);
     return ok;
   } catch (e) {
@@ -307,18 +294,9 @@ function trustStep(
  */
 function darwinTrustBinary(path: string, displayName: string): void {
   if (process.platform !== "darwin") return;
-  const codesignOk = trustStep(
-    ["codesign", "--force", "--sign", "-", path],
-    "codesign",
-    displayName,
-  );
+  const codesignOk = trustStep(["codesign", "--force", "--sign", "-", path], "codesign", displayName);
   // A file placed by `bun link` was never downloaded, so exit 1 "No such xattr" is the outcome we wanted.
-  const xattrOk = trustStep(
-    ["xattr", "-d", "com.apple.provenance", path],
-    "xattr -d",
-    displayName,
-    /No such xattr/i,
-  );
+  const xattrOk = trustStep(["xattr", "-d", "com.apple.provenance", path], "xattr -d", displayName, /No such xattr/i);
   if (!codesignOk && !xattrOk) {
     // POSIX single-quote escape so spaces/metachars in the path don't break paste-into-shell.
     const q = (p: string) => `'${p.replace(/'/g, `'\\''`)}'`;
@@ -360,23 +338,24 @@ async function downloadSidecar(
   try {
     res = await fetch(url, { redirect: "follow" });
   } catch (e) {
-    log.warn(
-      `Could not fetch ${spec.displayName} (${errorMessage(e)}); ${spec.unavailableHint}.`,
-    );
+    log.warn(`Could not fetch ${spec.displayName} (${errorMessage(e)}); ${spec.unavailableHint}.`);
     return;
   }
 
   if (!res.ok) {
-    log.warn(
-      `${spec.displayName} not in release v${version} (HTTP ${res.status}); ${spec.unavailableHint}.`,
-    );
+    log.warn(`${spec.displayName} not in release v${version} (HTTP ${res.status}); ${spec.unavailableHint}.`);
     return;
   }
 
   // Catch stream/chmod failures so a sidecar error can't poison the engine install.
   try {
     await streamResponseToFile(res, sidecarPath, spec.displayName);
-    const refusal = await rejectMismatchedDownload(sidecarPath, `${spec.displayName} ${spec.assetName}`, version, expected);
+    const refusal = await rejectMismatchedDownload(
+      sidecarPath,
+      `${spec.displayName} ${spec.assetName}`,
+      version,
+      expected,
+    );
     if (refusal) {
       log.warn(`${refusal}\n  Fix: ${MISMATCH_HINT}\n  ${spec.displayName} not installed; ${spec.unavailableHint}.`);
       return;
@@ -385,9 +364,7 @@ async function downloadSidecar(
     await trustVerifiedDownload(sidecarPath, spec.displayName, expected.sha256);
     log.progress(`${spec.displayName} installed (${spec.availableHint}).`);
   } catch (e) {
-    log.warn(
-      `${spec.displayName} install failed (${errorMessage(e)}); ${spec.unavailableHint}.`,
-    );
+    log.warn(`${spec.displayName} install failed (${errorMessage(e)}); ${spec.unavailableHint}.`);
   }
 }
 
@@ -402,7 +379,10 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
   const outPath = join(tmpdir(), `kesha-kokoro-warmup-${process.pid}.wav`);
   let args: string[];
   try {
-    const validated = validateArgv(["say", "--voice", DEFAULT_VOICE_ID, "--out", outPath, "Kesha warmup."], await getDescribe());
+    const validated = validateArgv(
+      ["say", "--voice", DEFAULT_VOICE_ID, "--out", outPath, "Kesha warmup."],
+      await getDescribe(),
+    );
     for (const warning of validated.warnings) log.warn(warning);
     args = validated.argv;
   } catch (e) {
@@ -427,23 +407,15 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
     }
     if (exitCode !== 0 || events.invalid.length > 0 || events.error) {
       const err = engineFailure("say", events, exitCode);
-      log.warn(
-        `FluidAudio Kokoro warmup failed (${errorMessage(err)}); first ` +
-          "`kesha say en-*` may still be slow.",
-      );
+      log.warn(`FluidAudio Kokoro warmup failed (${errorMessage(err)}); first \`kesha say en-*\` may still be slow.`);
       return;
     }
 
-    log.progress(
-      `FluidAudio Kokoro warmed (${Math.round(performance.now() - startedAt)}ms).`,
-    );
+    log.progress(`FluidAudio Kokoro warmed (${Math.round(performance.now() - startedAt)}ms).`);
   } catch (e) {
     // A launch failure was never the warmup's to swallow, and an interrupt is the user's.
     if (e instanceof KeshaError && (e.code === "E_INTERRUPTED" || e.code === "E_ENGINE_SPAWN")) throw e;
-    log.warn(
-      `FluidAudio Kokoro warmup failed (${errorMessage(e)}); ` +
-        "first `kesha say en-*` may still be slow.",
-    );
+    log.warn(`FluidAudio Kokoro warmup failed (${errorMessage(e)}); first \`kesha say en-*\` may still be slow.`);
   } finally {
     try {
       rmSync(outPath, { force: true });
@@ -485,9 +457,7 @@ async function sidecarNeedsDownload(spec: SidecarSpec, engineDir: string): Promi
   const health = await probeExecutable(join(engineDir, spec.fileBasename));
   if (health.status === "ok") return false;
   if (health.status === "unusable") {
-    log.warn(
-      `${spec.displayName} is installed but does not run (${health.detail}); re-downloading it.`,
-    );
+    log.warn(`${spec.displayName} is installed but does not run (${health.detail}); re-downloading it.`);
   }
   return true;
 }
@@ -525,9 +495,12 @@ async function refreshCachedEngine(
         // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
         let pinned = false;
         try {
-          pinned = existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version, true));
+          pinned =
+            existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version, true));
         } catch (e) {
-          log.warn(`Could not read ${spec.displayName} at ${path} (${errorMessage(e)}); removing it and downloading it again.`);
+          log.warn(
+            `Could not read ${spec.displayName} at ${path} (${errorMessage(e)}); removing it and downloading it again.`,
+          );
           rmSync(path, { force: true });
         }
         if (pinned) darwinTrustBinary(path, spec.displayName);
@@ -607,8 +580,7 @@ async function engineWorks(binPath: string): Promise<boolean> {
   if (health.status === "ok") return true;
   if (health.status === "mute") {
     log.warn(
-      `Installed engine at ${binPath} runs but ${health.detail}; it is corrupt or truncated ` +
-        "— re-downloading it.",
+      `Installed engine at ${binPath} runs but ${health.detail}; it is corrupt or truncated — re-downloading it.`,
     );
     return false;
   }
@@ -625,16 +597,10 @@ async function engineWorks(binPath: string): Promise<boolean> {
 }
 
 /** Cold path: download the engine binary (and sidecars, concurrently). */
-async function fetchEngineBinary(
-  binPath: string,
-  installedVersion: string | null,
-  version: string,
-): Promise<void> {
+async function fetchEngineBinary(binPath: string, installedVersion: string | null, version: string): Promise<void> {
   // Log why we're downloading — helps diagnose surprising re-downloads.
   if (existsSync(binPath) && installedVersion && installedVersion !== version) {
-    log.progress(
-      `Replacing engine v${installedVersion} → v${version}...`,
-    );
+    log.progress(`Replacing engine v${installedVersion} → v${version}...`);
   }
   const binaryName = getEngineBinaryName();
   const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/${binaryName}`;
@@ -643,9 +609,7 @@ async function fetchEngineBinary(
 
   // Overlap sidecar fetches with the engine fetch (~15-30s saved on cold install).
   const checksums = engineChecksums.forRelease(version);
-  const sidecarPromises = SIDECARS.map((s) =>
-    downloadSidecar(s, binPath, version, checksums),
-  );
+  const sidecarPromises = SIDECARS.map((s) => downloadSidecar(s, binPath, version, checksums));
   // If the engine fetch throws, silence in-flight sidecar rejections so unhandledRejection doesn't obscure the engine error.
   const muteSidecarRejections = () => {
     for (const p of sidecarPromises) p.catch(() => {});
@@ -664,15 +628,21 @@ async function fetchEngineBinary(
     res = await fetch(url, { redirect: "follow" });
   } catch (e) {
     muteSidecarRejections();
-    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to fetch engine binary: ${errorMessage(e)}`, { hint: NETWORK_HINT });
+    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to fetch engine binary: ${errorMessage(e)}`, {
+      hint: NETWORK_HINT,
+    });
   }
 
   if (!res.ok) {
     muteSidecarRejections();
     // Names the tag: nothing falls back to the pin, so the caller must see which release 404ed.
-    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to download engine binary from release v${version} (HTTP ${res.status})`, {
-      hint: `check https://github.com/${GITHUB_REPO}/releases for available versions.`,
-    });
+    throw new KeshaError(
+      "E_MODEL_DOWNLOAD",
+      `Failed to download engine binary from release v${version} (HTTP ${res.status})`,
+      {
+        hint: `check https://github.com/${GITHUB_REPO}/releases for available versions.`,
+      },
+    );
   }
 
   try {
@@ -749,7 +719,12 @@ async function validateInstallRequest(
     for (const warning of warnings) log.warn(warning);
     return argv;
   } catch (err) {
-    if (opts.diarize && err instanceof KeshaError && err.code === "E_INVALID_ARG" && err.message.includes("--diarize")) {
+    if (
+      opts.diarize &&
+      err instanceof KeshaError &&
+      err.code === "E_INVALID_ARG" &&
+      err.message.includes("--diarize")
+    ) {
       throw new KeshaError(
         "E_INVALID_ARG",
         "The installed engine was built without the system_diarize feature, so --diarize is unavailable " +
@@ -798,11 +773,15 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
   }
   if (events.error || events.invalid.length > 0) throw engineFailure("install", events, exitCode);
   if (exitCode !== 0) {
-    throw new KeshaError("E_INTERNAL", `Failed to install models: ${engineExitCause("install", exitCode, run.signalCode)}`, {
-      exitCode: 1,
-      stderr: events.stderr.trim(),
-      hint: SUPPORT_BUNDLE_HINT,
-    });
+    throw new KeshaError(
+      "E_INTERNAL",
+      `Failed to install models: ${engineExitCause("install", exitCode, run.signalCode)}`,
+      {
+        exitCode: 1,
+        stderr: events.stderr.trim(),
+        hint: SUPPORT_BUNDLE_HINT,
+      },
+    );
   }
 }
 
@@ -957,9 +936,13 @@ function engineWriteFailure(binPath: string, e: unknown): KeshaError | null {
   }
   if (!errno) return null;
   if (errno === "ENOSPC") {
-    return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${into}: no space left on its disk (ENOSPC)`, {
-      hint: `the disk is full: free space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
-    });
+    return new KeshaError(
+      "E_INTERNAL",
+      `Cannot write the engine binary into ${into}: no space left on its disk (ENOSPC)`,
+      {
+        hint: `the disk is full: free space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
+      },
+    );
   }
   return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${into}: ${errorMessage(e)}`, {
     hint: `resolve that filesystem error on ${engineDir} and re-run \`kesha install\`; if it persists, file a bug with \`kesha support-bundle\`.`,
@@ -999,10 +982,7 @@ export async function installEngine(
   }
 }
 
-async function installLockedEngine(
-  binPath: string,
-  request: EngineInstallRequest,
-): Promise<string> {
+async function installLockedEngine(binPath: string, request: EngineInstallRequest): Promise<string> {
   const { noCache = false, backend, version = engineVersion, ...options } = request;
   const installedVersion = readInstalledEngineVersion(binPath);
   const engineDir = dirname(binPath);

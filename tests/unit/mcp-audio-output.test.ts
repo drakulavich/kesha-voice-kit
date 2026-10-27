@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { audioDir, allocAudioPath, sweepOldAudio } from "../../src/mcp/audio-output";
 
 afterEach(() => {
-  try { rmSync(audioDir(), { recursive: true, force: true }); } catch {}
+  try {
+    rmSync(audioDir(), { recursive: true, force: true });
+  } catch {}
 });
 
 describe("mcp audio-output", () => {

@@ -60,7 +60,13 @@ export function parseEventLine(line: string): ParsedLine {
     case "error": {
       if (typeof o.code !== "string") return { ok: false, raw: line };
       const hint = optionalString(o.hint);
-      return { ok: true, event: hint === undefined ? { kind: "error", code: o.code, message } : { kind: "error", code: o.code, message, hint } };
+      return {
+        ok: true,
+        event:
+          hint === undefined
+            ? { kind: "error", code: o.code, message }
+            : { kind: "error", code: o.code, message, hint },
+      };
     }
     case "debug": {
       if (typeof o.t_ms !== "number") return { ok: false, raw: line };
@@ -129,7 +135,9 @@ export class KeshaError extends Error {
     if (!transcript) return renderError(this);
     const line = renderError(this).split("\n")[0] ?? "";
     if (!transcript.split("\n").some((l) => l === line)) return `${renderError(this)}\n${transcript}`;
-    return this.hint && !transcript.includes(`  hint: ${this.hint}`) ? `${transcript}\n  hint: ${this.hint}` : transcript;
+    return this.hint && !transcript.includes(`  hint: ${this.hint}`)
+      ? `${transcript}\n  hint: ${this.hint}`
+      : transcript;
   }
 }
 
@@ -156,10 +164,7 @@ export interface StderrOutcome {
 }
 
 /** Reads a protocol 4 stderr stream to EOF, accepting `\r\n`, delivering progress live. */
-export async function readEvents(
-  stream: ReadableStream<Uint8Array>,
-  sinks: EventSinks = {},
-): Promise<StderrOutcome> {
+export async function readEvents(stream: ReadableStream<Uint8Array>, sinks: EventSinks = {}): Promise<StderrOutcome> {
   const outcome: StderrOutcome = { stderr: "", error: null, invalid: [] };
   const take = (raw: string) => {
     const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
@@ -249,16 +254,29 @@ export function offProtocolLine(command: string, line: string): string {
 }
 
 /** The KeshaError for a run that wrote a non-event line, reported an error event, or exited non-zero in silence; `stderr` is the transcript unless the caller substitutes one. */
-export function engineFailure(command: string, outcome: StderrOutcome, exitCode: number | undefined, stderr = outcome.stderr.trim()): KeshaError {
+export function engineFailure(
+  command: string,
+  outcome: StderrOutcome,
+  exitCode: number | undefined,
+  stderr = outcome.stderr.trim(),
+): KeshaError {
   const extra = { exitCode, stderr, origin: "engine" as const };
   if (outcome.invalid.length > 0) {
-    const rest = stderr.split("\n").filter((line) => !outcome.invalid.includes(line)).join("\n").trim();
-    return new KeshaError(
-      "E_INTERNAL",
-      offProtocolLine(command, outcome.invalid[0]!),
-      { ...extra, stderr: rest, hint: `the engine and CLI may not match: run \`kesha install\`; if it persists, ${SUPPORT_BUNDLE_HINT}` },
-    );
+    const rest = stderr
+      .split("\n")
+      .filter((line) => !outcome.invalid.includes(line))
+      .join("\n")
+      .trim();
+    return new KeshaError("E_INTERNAL", offProtocolLine(command, outcome.invalid[0]!), {
+      ...extra,
+      stderr: rest,
+      hint: `the engine and CLI may not match: run \`kesha install\`; if it persists, ${SUPPORT_BUNDLE_HINT}`,
+    });
   }
-  if (outcome.error) return new KeshaError(outcome.error.code, outcome.error.message, { ...extra, hint: outcome.error.hint });
-  return new KeshaError("E_INTERNAL", `kesha-engine ${command} exited with code ${exitCode}`, { ...extra, hint: SUPPORT_BUNDLE_HINT });
+  if (outcome.error)
+    return new KeshaError(outcome.error.code, outcome.error.message, { ...extra, hint: outcome.error.hint });
+  return new KeshaError("E_INTERNAL", `kesha-engine ${command} exited with code ${exitCode}`, {
+    ...extra,
+    hint: SUPPORT_BUNDLE_HINT,
+  });
 }

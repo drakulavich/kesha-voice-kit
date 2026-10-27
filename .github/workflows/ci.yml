@@ -13,7 +13,7 @@ on:
   # Nightly heavy real-engine e2e on main: model-format/engine drift gate, and
   # it warms the default-branch-scoped model cache so PR heavy runs restore it.
   schedule:
-    - cron: '0 4 * * *'
+    - cron: "0 4 * * *"
 
 permissions:
   contents: read
@@ -89,6 +89,9 @@ jobs:
               - '.bun-version'
               - 'tsconfig.json'
               - 'biome.json'
+              # `bun run lint` runs `bun fmt --check`, which reads both.
+              - 'bunfig.toml'
+              - '.prettierignore'
               # `rust/Cargo.toml` is in the SUPERSET filter so the
               # version-drift check (#267 F16) always fires on a
               # Cargo-only version bump PR. Without it, `unit-tests`
@@ -917,7 +920,7 @@ jobs:
         env:
           # OpenSpec already disables its PostHog telemetry when CI=true; the
           # explicit opt-out keeps the lane offline if that heuristic changes.
-          OPENSPEC_TELEMETRY: '0'
+          OPENSPEC_TELEMETRY: "0"
         run: bun run check:specs
 
   # Moved from docker.yml (openspec unified-release D4); a main push publishes only after the CLI it packs passed its tests; `always()` so a skipped suite does not skip it.

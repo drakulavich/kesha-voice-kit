@@ -39,9 +39,7 @@ describe("flattenPlan", () => {
   });
 
   test("refuses an entry with no recorded size rather than skipping it", () => {
-    expect(() => flattenPlan({ vad: [{ relPath: "models/silero-vad/silero_vad.onnx" }] })).toThrow(
-      /sizeBytes/,
-    );
+    expect(() => flattenPlan({ vad: [{ relPath: "models/silero-vad/silero_vad.onnx" }] })).toThrow(/sizeBytes/);
   });
 });
 
@@ -86,9 +84,7 @@ describe("parseManifestUrls", () => {
       const KOKORO_EN_VOICE: ModelFile = kokoro_voice!("am_michael", "cc");
     `);
 
-    expect(urls.get("models/kokoro-82m/voices/am_michael.bin")).toBe(
-      "https://example.test/voices/am_michael.bin",
-    );
+    expect(urls.get("models/kokoro-82m/voices/am_michael.bin")).toBe("https://example.test/voices/am_michael.bin");
   });
 
   test("resolves a url for every model-plan.json entry against the real manifest", () => {
@@ -107,9 +103,7 @@ describe("parseManifestUrls", () => {
     expect(urls.get("models/kokoro-82m/voices/am_michael.bin")).toBe(
       "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/1939ad2a8e416c0acfeecc08a694d14ef25f2231/voices/am_michael.bin",
     );
-    expect(
-      urls.get("models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin"),
-    ).toBe(
+    expect(urls.get("models/diarize/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin")).toBe(
       "https://huggingface.co/FluidInference/diar-streaming-sortformer-coreml/resolve/ae9a27ab45dc0aa3abede7d2d6bad2b7a69aa6d1/SortformerNvidiaLow_v2.mlpackage/Data/com.apple.CoreML/weights/0-weight.bin",
     );
   });
@@ -150,9 +144,7 @@ describe("parseManifestUrls", () => {
   });
 
   test("the silero-vad manifest URL pins a 40-hex commit, not the movable v6.2.1 tag", () => {
-    const vad = realManifestEntries().find(
-      (entry) => entry.relPath === "models/silero-vad/silero_vad.onnx",
-    );
+    const vad = realManifestEntries().find((entry) => entry.relPath === "models/silero-vad/silero_vad.onnx");
     const ref = vad?.url.split("/raw/")[1]?.split("/")[0] ?? "";
     expect(/^[0-9a-f]{40}$/.test(ref)).toBe(true);
   });
@@ -204,15 +196,11 @@ describe("contentLength", () => {
   });
 
   test("refuses a compressed length, which measures the transfer and not the file", () => {
-    expect(
-      contentLength(new Headers({ "content-length": "31000", "content-encoding": "gzip" })),
-    ).toBeNull();
+    expect(contentLength(new Headers({ "content-length": "31000", "content-encoding": "gzip" }))).toBeNull();
   });
 
   test("accepts an explicit identity encoding", () => {
-    expect(
-      contentLength(new Headers({ "content-length": "646", "content-encoding": "identity" })),
-    ).toBe(646);
+    expect(contentLength(new Headers({ "content-length": "646", "content-encoding": "identity" }))).toBe(646);
   });
 
   test("yields nothing when the header is absent or unparseable", () => {

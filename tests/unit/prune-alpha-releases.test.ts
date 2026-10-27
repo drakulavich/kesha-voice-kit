@@ -13,9 +13,7 @@ const release = (tagName: string, age: number, isDraft = false) => ({
 
 describe("prunable", () => {
   test("takes alpha releases past the window", () => {
-    expect(prunable([release("v1.24.8-alpha.1", RETENTION_DAYS + 1)], NOW)).toEqual([
-      "v1.24.8-alpha.1",
-    ]);
+    expect(prunable([release("v1.24.8-alpha.1", RETENTION_DAYS + 1)], NOW)).toEqual(["v1.24.8-alpha.1"]);
   });
 
   test("leaves an alpha inside the window", () => {
@@ -25,9 +23,9 @@ describe("prunable", () => {
   // The whole point of the window: an old stable release must survive it.
   test("never takes a stable or beta release, however old", () => {
     const old = 10 * 365;
-    expect(
-      prunable([release("v1.0.0", old), release("v1.0.0-beta.1", old), release("v1.0.0-cli", old)], NOW),
-    ).toEqual([]);
+    expect(prunable([release("v1.0.0", old), release("v1.0.0-beta.1", old), release("v1.0.0-cli", old)], NOW)).toEqual(
+      [],
+    );
   });
 
   test("leaves a draft alone", () => {
@@ -54,9 +52,7 @@ describe("prunable", () => {
 
   // Silently keeping it would read as "nothing aged out" on every future run.
   test("refuses a date it cannot parse rather than skipping the release", () => {
-    expect(() =>
-      prunable([{ tagName: "v1.24.8-alpha.4", publishedAt: "soon", isDraft: false }], NOW),
-    ).toThrow(
+    expect(() => prunable([{ tagName: "v1.24.8-alpha.4", publishedAt: "soon", isDraft: false }], NOW)).toThrow(
       /unparsable publishedAt/,
     );
   });

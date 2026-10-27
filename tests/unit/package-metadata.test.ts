@@ -35,9 +35,7 @@ describe("package metadata", () => {
   // `bun test` exits 0 on a filter that matches nothing whenever another one does.
   test("every repo path a script names still exists", () => {
     const repoRoot = new URL("../../", import.meta.url);
-    const pkg = JSON.parse(
-      readFileSync(fileURLToPath(new URL("package.json", repoRoot)), "utf8"),
-    ) as PackageJson;
+    const pkg = JSON.parse(readFileSync(fileURLToPath(new URL("package.json", repoRoot)), "utf8")) as PackageJson;
 
     const missing = Object.entries(pkg.scripts ?? {}).flatMap(([name, script]) =>
       repoPathsIn(script)

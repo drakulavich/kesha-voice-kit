@@ -5,7 +5,20 @@ import { classifyFirstArg, hoistLeadingFlags, unknownCommandMessages } from "../
 // classifyFirstArg
 // ---------------------------------------------------------------------------
 
-const KNOWN = ["doctor", "init", "install", "logs", "status", "record", "say", "stats", "support-bundle", "completions", "manpage", "mcp"];
+const KNOWN = [
+  "doctor",
+  "init",
+  "install",
+  "logs",
+  "status",
+  "record",
+  "say",
+  "stats",
+  "support-bundle",
+  "completions",
+  "manpage",
+  "mcp",
+];
 
 describe("classifyFirstArg — subcommand", () => {
   test("exact subcommand name → 'subcommand'", () => {

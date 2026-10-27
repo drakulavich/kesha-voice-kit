@@ -1,13 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
 import {
@@ -60,9 +52,7 @@ function shQuote(value: string): string {
  * stub never depends on the env-forwarding it is used to verify (#876).
  */
 function engineScript({ caps = PLAIN_CAPS, installExit = 0, sayExit = 0 }: EngineStub = {}): string {
-  const capsCase = caps
-    ? `  describe) printf '%s\\n' ${shQuote(caps)}; exit 0 ;;\n`
-    : `  describe) exit 2 ;;\n`;
+  const capsCase = caps ? `  describe) printf '%s\\n' ${shQuote(caps)}; exit 0 ;;\n` : `  describe) exit 2 ;;\n`;
   return (
     `#!/bin/sh\n` +
     `echo "$*" >> ${shQuote(argvLog)}\n` +
@@ -176,20 +166,22 @@ const realEngineBin = join(homedir(), ".cache", "kesha", "engine", "bin", "kesha
 // The developer's real ~/.cache/kesha was overwritten with a test stub because pointing
 // KESHA_ENGINE_BIN at a temp path is opt-in per test, and the fallback is the real cache.
 describe("an install only ever writes where it was pointed (#796)", () => {
-  posixTest("with no KESHA_ENGINE_BIN it installs under KESHA_CACHE_DIR", async () => {
-    delete process.env.KESHA_ENGINE_BIN;
-    const cacheDir = process.env.KESHA_CACHE_DIR!;
-    // Also the cold-install case: nothing under the cache dir exists yet, so the install
-    // has to create the engine dir rather than refuse it as unwritable.
-    expect(existsSync(join(cacheDir, "engine"))).toBe(false);
-    stubRelease();
+  posixTest(
+    "with no KESHA_ENGINE_BIN it installs under KESHA_CACHE_DIR",
+    async () => {
+      delete process.env.KESHA_ENGINE_BIN;
+      const cacheDir = process.env.KESHA_CACHE_DIR!;
+      // Also the cold-install case: nothing under the cache dir exists yet, so the install
+      // has to create the engine dir rather than refuse it as unwritable.
+      expect(existsSync(join(cacheDir, "engine"))).toBe(false);
+      stubRelease();
 
-    await installEngine();
+      await installEngine();
 
-    expect(readFileSync(join(cacheDir, "engine", "bin", "kesha-engine"), "utf8")).toContain(
-      "#!/bin/sh",
-    );
-  }, 30_000);
+      expect(readFileSync(join(cacheDir, "engine", "bin", "kesha-engine"), "utf8")).toContain("#!/bin/sh");
+    },
+    30_000,
+  );
 
   // The adversarial half: isolation is opt-in, so prove that forgetting it fails loudly
   // rather than reaching ~/.cache/kesha. Asserted on the predicate, never by running an
@@ -247,282 +239,374 @@ describe("an install only ever writes where it was pointed (#796)", () => {
  * path, which an isolated `KESHA_ENGINE_BIN` satisfies on its own (#876).
  */
 describe("the engine children see the cache dir the parent resolved (#876)", () => {
-  posixTest("the model install is handed the cache dir set after startup", async () => {
-    stageInstalledEngine("kesha-install-env-");
+  posixTest(
+    "the model install is handed the cache dir set after startup",
+    async () => {
+      stageInstalledEngine("kesha-install-env-");
 
-    await installEngine();
+      await installEngine();
 
-    expect(engineCacheSightings()).toContain(
-      `install KESHA_CACHE_DIR=${process.env.KESHA_CACHE_DIR}`,
-    );
-  }, 30_000);
+      expect(engineCacheSightings()).toContain(`install KESHA_CACHE_DIR=${process.env.KESHA_CACHE_DIR}`);
+    },
+    30_000,
+  );
 
-  darwinArmTest("the Kokoro warm-up is handed the same cache dir", async () => {
-    stageInstalledEngine("kesha-warmup-env-");
+  darwinArmTest(
+    "the Kokoro warm-up is handed the same cache dir",
+    async () => {
+      stageInstalledEngine("kesha-warmup-env-");
 
-    await installEngine({ ttsLangs: ["en"] });
+      await installEngine({ ttsLangs: ["en"] });
 
-    expect(engineCacheSightings()).toContain(`say KESHA_CACHE_DIR=${process.env.KESHA_CACHE_DIR}`);
-  }, 30_000);
+      expect(engineCacheSightings()).toContain(`say KESHA_CACHE_DIR=${process.env.KESHA_CACHE_DIR}`);
+    },
+    30_000,
+  );
 });
 
 describe("capabilities gate the flags forwarded to the engine (#772)", () => {
-  posixTest("a backend the installed engine does not provide fails by name", async () => {
-    const binPath = stageInstalledEngine("kesha-caps-backend-mismatch-");
-    const before = readFileSync(binPath, "utf8");
-    stubRelease();
+  posixTest(
+    "a backend the installed engine does not provide fails by name",
+    async () => {
+      const binPath = stageInstalledEngine("kesha-caps-backend-mismatch-");
+      const before = readFileSync(binPath, "utf8");
+      stubRelease();
 
-    await expect(installEngine({ backend: "coreml" })).rejects.toThrow(/coreml.*onnx|onnx.*coreml/s);
+      await expect(installEngine({ backend: "coreml" })).rejects.toThrow(/coreml.*onnx|onnx.*coreml/s);
 
-    expect(readFileSync(binPath, "utf8")).toBe(before);
-  }, 30_000);
+      expect(readFileSync(binPath, "utf8")).toBe(before);
+    },
+    30_000,
+  );
 
-  posixTest("the backend the engine reports is accepted", async () => {
-    const binPath = stageInstalledEngine("kesha-caps-backend-match-");
-    stubRelease();
+  posixTest(
+    "the backend the engine reports is accepted",
+    async () => {
+      const binPath = stageInstalledEngine("kesha-caps-backend-match-");
+      stubRelease();
 
-    expect(await installEngine({ backend: "onnx" })).toBe(binPath);
-  }, 30_000);
+      expect(await installEngine({ backend: "onnx" })).toBe(binPath);
+    },
+    30_000,
+  );
 
   // A non-diarize build omits the `--diarize` row entirely (gate_rows retention), so this is an unknown-flag rejection, not an ungated one.
-  posixTest("--diarize on an engine built without it is refused with the npm-release remedy", async () => {
-    const binPath = stageInstalledEngine("kesha-caps-no-diarize-");
-    const before = readFileSync(binPath, "utf8");
-    stubRelease();
+  posixTest(
+    "--diarize on an engine built without it is refused with the npm-release remedy",
+    async () => {
+      const binPath = stageInstalledEngine("kesha-caps-no-diarize-");
+      const before = readFileSync(binPath, "utf8");
+      stubRelease();
 
-    const err = await failure(() => installEngine({ diarize: true }, ...DARWIN_ARM64));
-    expect(err.message).toContain("system_diarize");
-    expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
+      const err = await failure(() => installEngine({ diarize: true }, ...DARWIN_ARM64));
+      expect(err.message).toContain("system_diarize");
+      expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit");
 
-    expect(readFileSync(binPath, "utf8")).toBe(before);
-  }, 30_000);
+      expect(readFileSync(binPath, "utf8")).toBe(before);
+    },
+    30_000,
+  );
 
-  posixTest("a supported --tts request reaches the engine unmangled", async () => {
-    stageInstalledEngine("kesha-caps-tts-argv-");
-    stubRelease();
+  posixTest(
+    "a supported --tts request reaches the engine unmangled",
+    async () => {
+      stageInstalledEngine("kesha-caps-tts-argv-");
+      stubRelease();
 
-    await installEngine({ noCache: true, ttsLangs: ["en"] });
+      await installEngine({ noCache: true, ttsLangs: ["en"] });
 
-    expect(engineInvocations().find((a) => a.startsWith("install"))).toBe("install --no-cache --tts en");
-  }, 30_000);
+      expect(engineInvocations().find((a) => a.startsWith("install"))).toBe("install --no-cache --tts en");
+    },
+    30_000,
+  );
 
-  posixTest("--diarize off darwin-arm64 is refused before the lock, the download or any engine", async () => {
-    stageEmptyEngineDir("kesha-caps-precheck-");
-    const urls = stubRelease();
+  posixTest(
+    "--diarize off darwin-arm64 is refused before the lock, the download or any engine",
+    async () => {
+      stageEmptyEngineDir("kesha-caps-precheck-");
+      const urls = stubRelease();
 
-    const err = await failure(() => installEngine({ diarize: true }, "linux", "x64"));
-    expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
-    expect(err.message).toBe("--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64");
+      const err = await failure(() => installEngine({ diarize: true }, "linux", "x64"));
+      expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
+      expect(err.message).toBe(
+        "--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64",
+      );
 
-    expect(urls).toHaveLength(0);
-    expect(engineInvocations()).toHaveLength(0);
-  }, 30_000);
+      expect(urls).toHaveLength(0);
+      expect(engineInvocations()).toHaveLength(0);
+    },
+    30_000,
+  );
 
   // Reached through a download because a cached engine that describes nothing is repaired before any flag is validated (#801); every protocol-4 gate treats a silent `describe` as E_ENGINE_PROTOCOL, not a command-specific message (see validateRecordRequest's equivalent case).
-  posixTest("--diarize is refused when the engine cannot describe itself", async () => {
-    stageEmptyEngineDir("kesha-caps-silent-");
-    stubRelease({ caps: null });
+  posixTest(
+    "--diarize is refused when the engine cannot describe itself",
+    async () => {
+      stageEmptyEngineDir("kesha-caps-silent-");
+      stubRelease({ caps: null });
 
-    await expect(installEngine({ diarize: true }, ...DARWIN_ARM64)).rejects.toThrow(/did not answer `describe`/);
-  }, 30_000);
+      await expect(installEngine({ diarize: true }, ...DARWIN_ARM64)).rejects.toThrow(/did not answer `describe`/);
+    },
+    30_000,
+  );
 
-  posixTest("a cached engine that describes nothing is repaired before the flag is judged", async () => {
-    const binPath = stageInstalledEngine("kesha-caps-mute-cache-", { caps: null });
-    const urls = stubRelease();
+  posixTest(
+    "a cached engine that describes nothing is repaired before the flag is judged",
+    async () => {
+      const binPath = stageInstalledEngine("kesha-caps-mute-cache-", { caps: null });
+      const urls = stubRelease();
 
-    await expect(installEngine({ diarize: true }, ...DARWIN_ARM64)).rejects.toThrow(/system_diarize/);
+      await expect(installEngine({ diarize: true }, ...DARWIN_ARM64)).rejects.toThrow(/system_diarize/);
 
-    expect(engineDownloads(urls)).toHaveLength(1);
-    expect(readFileSync(binPath, "utf8")).toContain("describe");
-  }, 30_000);
+      expect(engineDownloads(urls)).toHaveLength(1);
+      expect(readFileSync(binPath, "utf8")).toContain("describe");
+    },
+    30_000,
+  );
 
   // The rewrap fires on `opts.diarize`, not on which flag actually failed; a build with diarize but not tts must still report the real --tts failure.
-  posixTest("--diarize present but --tts is the actual failure keeps the --tts message", async () => {
-    stageInstalledEngine("kesha-caps-diarize-no-tts-", { caps: DIARIZE_NO_TTS_CAPS });
-    stubRelease();
+  posixTest(
+    "--diarize present but --tts is the actual failure keeps the --tts message",
+    async () => {
+      stageInstalledEngine("kesha-caps-diarize-no-tts-", { caps: DIARIZE_NO_TTS_CAPS });
+      stubRelease();
 
-    await expect(installEngine({ diarize: true, ttsLangs: ["en"] }, ...DARWIN_ARM64)).rejects.toThrow(/--tts/);
-  }, 30_000);
+      await expect(installEngine({ diarize: true, ttsLangs: ["en"] }, ...DARWIN_ARM64)).rejects.toThrow(/--tts/);
+    },
+    30_000,
+  );
 
-  posixTest("--diarize reaches the engine, and pulls --vad with it (#768)", async () => {
-    stageInstalledEngine("kesha-caps-diarize-", { caps: DIARIZE_CAPS });
-    stubRelease();
+  posixTest(
+    "--diarize reaches the engine, and pulls --vad with it (#768)",
+    async () => {
+      stageInstalledEngine("kesha-caps-diarize-", { caps: DIARIZE_CAPS });
+      stubRelease();
 
-    await installEngine({ diarize: true }, ...DARWIN_ARM64);
+      await installEngine({ diarize: true }, ...DARWIN_ARM64);
 
-    const install = engineInvocations().find((a) => a.startsWith("install"));
-    expect(install).toContain("--diarize");
-    expect(install).toContain("--vad");
-  }, 30_000);
+      const install = engineInvocations().find((a) => a.startsWith("install"));
+      expect(install).toContain("--diarize");
+      expect(install).toContain("--vad");
+    },
+    30_000,
+  );
 });
 
 describe("a failing model install is not reported as success", () => {
-  posixTest("the engine's exit code reaches the caller", async () => {
-    stageInstalledEngine("kesha-model-install-fails-", { installExit: 42 });
-    stubRelease();
+  posixTest(
+    "the engine's exit code reaches the caller",
+    async () => {
+      stageInstalledEngine("kesha-model-install-fails-", { installExit: 42 });
+      stubRelease();
 
-    await expect(installEngine()).rejects.toThrow(/42/);
-  }, 30_000);
+      await expect(installEngine()).rejects.toThrow(/42/);
+    },
+    30_000,
+  );
 });
 
 describe("cache validity (#775)", () => {
-  posixTest("--no-cache re-downloads an engine the marker vouches for", async () => {
-    stageInstalledEngine("kesha-nocache-writable-");
-    const urls = stubRelease();
+  posixTest(
+    "--no-cache re-downloads an engine the marker vouches for",
+    async () => {
+      stageInstalledEngine("kesha-nocache-writable-");
+      const urls = stubRelease();
 
-    await installEngine({ noCache: true });
+      await installEngine({ noCache: true });
 
-    expect(engineDownloads(urls)).toHaveLength(1);
-  }, 30_000);
+      expect(engineDownloads(urls)).toHaveLength(1);
+    },
+    30_000,
+  );
 
-  posixTest("without --no-cache the same install downloads nothing", async () => {
-    stageInstalledEngine("kesha-nocache-off-");
-    const urls = stubRelease();
+  posixTest(
+    "without --no-cache the same install downloads nothing",
+    async () => {
+      stageInstalledEngine("kesha-nocache-off-");
+      const urls = stubRelease();
 
-    await installEngine();
+      await installEngine();
 
-    expect(engineDownloads(urls)).toHaveLength(0);
-  }, 30_000);
+      expect(engineDownloads(urls)).toHaveLength(0);
+    },
+    30_000,
+  );
 
   // On a read-only engine dir --no-cache cannot re-download, and turning that into a hard
   // error would break the Nix-store install, which is read-only by construction.
-  posixTest("--no-cache on a read-only engine dir keeps the cached binary", async () => {
-    if (process.getuid?.() === 0) return; // root writes through the mode bits
-    const binPath = stageInstalledEngine("kesha-nocache-readonly-");
-    chmodSync(dirname(binPath), 0o555);
-    const urls = stubRelease();
+  posixTest(
+    "--no-cache on a read-only engine dir keeps the cached binary",
+    async () => {
+      if (process.getuid?.() === 0) return; // root writes through the mode bits
+      const binPath = stageInstalledEngine("kesha-nocache-readonly-");
+      chmodSync(dirname(binPath), 0o555);
+      const urls = stubRelease();
 
-    await installEngine({ noCache: true });
+      await installEngine({ noCache: true });
 
-    expect(engineDownloads(urls)).toHaveLength(0);
-    // The flag is still forwarded: only the engine binary is uncacheable here, not the models.
-    expect(engineInvocations().find((a) => a.startsWith("install"))).toContain("--no-cache");
-  }, 30_000);
+      expect(engineDownloads(urls)).toHaveLength(0);
+      // The flag is still forwarded: only the engine binary is uncacheable here, not the models.
+      expect(engineInvocations().find((a) => a.startsWith("install"))).toContain("--no-cache");
+    },
+    30_000,
+  );
 
   // A read-only dir's skipped health probe (#801) must not force a bare install through describe too.
-  posixTest.skipIf(process.getuid?.() === 0)("a bare install on a read-only engine dir does not need the engine to describe itself", async () => {
-    const binPath = stageInstalledEngine("kesha-bare-readonly-no-describe-", { caps: null });
-    chmodSync(dirname(binPath), 0o555);
-    stubRelease();
+  posixTest.skipIf(process.getuid?.() === 0)(
+    "a bare install on a read-only engine dir does not need the engine to describe itself",
+    async () => {
+      const binPath = stageInstalledEngine("kesha-bare-readonly-no-describe-", { caps: null });
+      chmodSync(dirname(binPath), 0o555);
+      stubRelease();
 
-    await installEngine();
+      await installEngine();
 
-    expect(engineInvocations()).toContain("install");
-  }, 30_000);
+      expect(engineInvocations()).toContain("install");
+    },
+    30_000,
+  );
 });
 
 describe("a download that never starts", () => {
-  posixTest("a fetch that throws blames the network and keeps the old binary", async () => {
-    const binPath = stageEmptyEngineDir("kesha-fetch-throws-");
-    writeFileSync(binPath, "previous engine");
-    writeFileSync(`${binPath}.version`, "1.0.0\n");
-    globalThis.fetch = (async (_input: Request | URL | string): Promise<Response> => {
-      throw new Error("getaddrinfo ENOTFOUND github.com");
-    }) as typeof fetch;
+  posixTest(
+    "a fetch that throws blames the network and keeps the old binary",
+    async () => {
+      const binPath = stageEmptyEngineDir("kesha-fetch-throws-");
+      writeFileSync(binPath, "previous engine");
+      writeFileSync(`${binPath}.version`, "1.0.0\n");
+      globalThis.fetch = (async (_input: Request | URL | string): Promise<Response> => {
+        throw new Error("getaddrinfo ENOTFOUND github.com");
+      }) as typeof fetch;
 
-    // The cause has to survive: "download failed" without the DNS failure is not actionable.
-    await expect(installEngine()).rejects.toThrow(/ENOTFOUND/);
+      // The cause has to survive: "download failed" without the DNS failure is not actionable.
+      await expect(installEngine()).rejects.toThrow(/ENOTFOUND/);
 
-    expect(readFileSync(binPath, "utf8")).toBe("previous engine");
-  }, 30_000);
+      expect(readFileSync(binPath, "utf8")).toBe("previous engine");
+    },
+    30_000,
+  );
 });
 
 describe("Kokoro warmup follows the languages asked for", () => {
-  darwinArmTest("a Russian-only install warms nothing — ru routes through Vosk", async () => {
-    stageInstalledEngine("kesha-warm-ru-");
-    stubRelease();
+  darwinArmTest(
+    "a Russian-only install warms nothing — ru routes through Vosk",
+    async () => {
+      stageInstalledEngine("kesha-warm-ru-");
+      stubRelease();
 
-    await installEngine({ ttsLangs: ["ru"] });
+      await installEngine({ ttsLangs: ["ru"] });
 
-    expect(engineInvocations().some((a) => a.startsWith("say"))).toBe(false);
-  }, 60_000);
+      expect(engineInvocations().some((a) => a.startsWith("say"))).toBe(false);
+    },
+    60_000,
+  );
 
-  darwinArmTest("an English install warms the Kokoro cache", async () => {
-    stageInstalledEngine("kesha-warm-en-");
-    stubRelease();
+  darwinArmTest(
+    "an English install warms the Kokoro cache",
+    async () => {
+      stageInstalledEngine("kesha-warm-en-");
+      stubRelease();
 
-    await installEngine({ ttsLangs: ["en"] });
+      await installEngine({ ttsLangs: ["en"] });
 
-    expect(engineInvocations().some((a) => a.startsWith("say"))).toBe(true);
-  }, 60_000);
+      expect(engineInvocations().some((a) => a.startsWith("say"))).toBe(true);
+    },
+    60_000,
+  );
 
   // The warmup is an optimisation; a failing one must not cost the user their install.
-  darwinArmTest("a warmup that fails leaves the install successful", async () => {
-    stageInstalledEngine("kesha-warm-fails-", { sayExit: 3 });
-    stubRelease();
+  darwinArmTest(
+    "a warmup that fails leaves the install successful",
+    async () => {
+      stageInstalledEngine("kesha-warm-fails-", { sayExit: 3 });
+      stubRelease();
 
-    await installEngine({ ttsLangs: ["en"] });
+      await installEngine({ ttsLangs: ["en"] });
 
-    expect(engineInvocations().some((a) => a.startsWith("say"))).toBe(true);
-  }, 60_000);
+      expect(engineInvocations().some((a) => a.startsWith("say"))).toBe(true);
+    },
+    60_000,
+  );
 });
 
 describe("a Kokoro warmup that outlives its timeout", () => {
-  darwinArmTest("is force-killed with its tree, and the install goes on with one warning", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "kesha-warm-stuck-"));
-    tempDirs.push(dir);
-    const binPath = join(dir, "kesha-engine");
-    const pidFile = join(dir, "say.pid");
-    writeFileSync(
-      binPath,
-      `#!/bin/sh\ncase "$1" in\n  describe) printf '%s\\n' ${shQuote(PLAIN_CAPS)}; exit 0 ;;\n  say) echo $$ > ${shQuote(pidFile)}; ${stubbornShell("TERM")} ;;\nesac\nexit 2\n`,
-    );
-    chmodSync(binPath, 0o755);
-    process.env.KESHA_ENGINE_BIN = binPath;
-    const warnings: string[] = [];
-    const savedWarn = log.warn;
-    log.warn = (msg: string) => void warnings.push(msg);
-    const startedAt = performance.now();
-    try {
-      await warmDarwinKokoro(binPath, 200);
-    } finally {
-      log.warn = savedWarn;
-    }
+  darwinArmTest(
+    "is force-killed with its tree, and the install goes on with one warning",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "kesha-warm-stuck-"));
+      tempDirs.push(dir);
+      const binPath = join(dir, "kesha-engine");
+      const pidFile = join(dir, "say.pid");
+      writeFileSync(
+        binPath,
+        `#!/bin/sh\ncase "$1" in\n  describe) printf '%s\\n' ${shQuote(PLAIN_CAPS)}; exit 0 ;;\n  say) echo $$ > ${shQuote(pidFile)}; ${stubbornShell("TERM")} ;;\nesac\nexit 2\n`,
+      );
+      chmodSync(binPath, 0o755);
+      process.env.KESHA_ENGINE_BIN = binPath;
+      const warnings: string[] = [];
+      const savedWarn = log.warn;
+      log.warn = (msg: string) => void warnings.push(msg);
+      const startedAt = performance.now();
+      try {
+        await warmDarwinKokoro(binPath, 200);
+      } finally {
+        log.warn = savedWarn;
+      }
 
-    expect(performance.now() - startedAt).toBeLessThan(5_000);
-    expect(await waitForPidExit(await waitForPidFile(pidFile))).toBe(true);
-    expect(warnings).toEqual(["FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow."]);
-  }, 30_000);
+      expect(performance.now() - startedAt).toBeLessThan(5_000);
+      expect(await waitForPidExit(await waitForPidFile(pidFile))).toBe(true);
+      expect(warnings).toEqual(["FluidAudio Kokoro warmup timed out; first `kesha say en-*` may still be slow."]);
+    },
+    30_000,
+  );
 });
 
 describe("sidecar failures cannot fail the engine install", () => {
-  darwinArmTest("a sidecar that 404s still leaves a working engine", async () => {
-    const binPath = stageEmptyEngineDir("kesha-sidecar-404-");
-    const body = engineScript();
-    const binaryName = getEngineBinaryName();
-    expectServedBody(() => body);
-    globalThis.fetch = (async (input: Request | URL | string) => {
-      const url = String(input instanceof Request ? input.url : input);
-      return url.endsWith(binaryName)
-        ? new Response(body, {
-            status: 200,
-            headers: { "content-length": String(Buffer.byteLength(body)) },
-          })
-        : new Response("Not Found", { status: 404 });
-    }) as typeof fetch;
+  darwinArmTest(
+    "a sidecar that 404s still leaves a working engine",
+    async () => {
+      const binPath = stageEmptyEngineDir("kesha-sidecar-404-");
+      const body = engineScript();
+      const binaryName = getEngineBinaryName();
+      expectServedBody(() => body);
+      globalThis.fetch = (async (input: Request | URL | string) => {
+        const url = String(input instanceof Request ? input.url : input);
+        return url.endsWith(binaryName)
+          ? new Response(body, {
+              status: 200,
+              headers: { "content-length": String(Buffer.byteLength(body)) },
+            })
+          : new Response("Not Found", { status: 404 });
+      }) as typeof fetch;
 
-    await installEngine();
+      await installEngine();
 
-    expect(existsSync(binPath)).toBe(true);
-    expect(existsSync(join(dirname(binPath), SIDECARS[0]!.fileBasename))).toBe(false);
-  }, 60_000);
+      expect(existsSync(binPath)).toBe(true);
+      expect(existsSync(join(dirname(binPath), SIDECARS[0]!.fileBasename))).toBe(false);
+    },
+    60_000,
+  );
 
-  darwinArmTest("a sidecar whose fetch throws still leaves a working engine", async () => {
-    const binPath = stageEmptyEngineDir("kesha-sidecar-throws-");
-    const body = engineScript();
-    const binaryName = getEngineBinaryName();
-    expectServedBody(() => body);
-    globalThis.fetch = (async (input: Request | URL | string) => {
-      const url = String(input instanceof Request ? input.url : input);
-      if (!url.endsWith(binaryName)) throw new Error("socket hang up");
-      return new Response(body, {
-        status: 200,
-        headers: { "content-length": String(Buffer.byteLength(body)) },
-      });
-    }) as typeof fetch;
+  darwinArmTest(
+    "a sidecar whose fetch throws still leaves a working engine",
+    async () => {
+      const binPath = stageEmptyEngineDir("kesha-sidecar-throws-");
+      const body = engineScript();
+      const binaryName = getEngineBinaryName();
+      expectServedBody(() => body);
+      globalThis.fetch = (async (input: Request | URL | string) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (!url.endsWith(binaryName)) throw new Error("socket hang up");
+        return new Response(body, {
+          status: 200,
+          headers: { "content-length": String(Buffer.byteLength(body)) },
+        });
+      }) as typeof fetch;
 
-    await installEngine();
+      await installEngine();
 
-    expect(existsSync(binPath)).toBe(true);
-  }, 60_000);
+      expect(existsSync(binPath)).toBe(true);
+    },
+    60_000,
+  );
 });

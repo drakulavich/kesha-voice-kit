@@ -14,7 +14,11 @@ const classify = (over: Partial<ClassifyInput>) =>
 
 describe("deriveReleaseAlpha", () => {
   test("counts past alphas of both the unified and the legacy -cli shape, so no npm version is reused", () => {
-    expect(deriveReleaseAlpha("1.32.0", TAGS)).toEqual({ version: "1.32.0-alpha.3", tag: "v1.32.0-alpha.3", previous: "v1.32.0-alpha.2" });
+    expect(deriveReleaseAlpha("1.32.0", TAGS)).toEqual({
+      version: "1.32.0-alpha.3",
+      tag: "v1.32.0-alpha.3",
+      previous: "v1.32.0-alpha.2",
+    });
   });
 
   test("a legacy -cli alpha higher than every unified one still advances the sequence", () => {
@@ -53,26 +57,55 @@ describe("planRelease", () => {
       releases: RELEASES,
       publishable: true,
     });
-    expect(plan).toEqual({ version: "1.32.0-alpha.3", tag: "v1.32.0-alpha.3", engineVersion: "1.26.0", publish: true, previous: "v1.32.0-alpha.2" });
+    expect(plan).toEqual({
+      version: "1.32.0-alpha.3",
+      tag: "v1.32.0-alpha.3",
+      engineVersion: "1.26.0",
+      publish: true,
+      previous: "v1.32.0-alpha.2",
+    });
   });
 
   test("an unlabelled or unpacked merge plans nothing and derives nothing", () => {
-    const plan = planRelease({ classification: classify({ refType: "branch", refName: "main" }), pkgVersion: "1.32.0", tags: [], releases: [], publishable: false });
+    const plan = planRelease({
+      classification: classify({ refType: "branch", refName: "main" }),
+      pkgVersion: "1.32.0",
+      tags: [],
+      releases: [],
+      publishable: false,
+    });
     expect(plan).toEqual({ version: "", tag: "", engineVersion: "", publish: false, previous: "" });
   });
 
   test("a dispatched alpha resolves the Engine it builds, or the prerelease it names", () => {
     const dispatched = (enginePrerelease?: string) =>
-      classify({ eventName: "workflow_dispatch", refType: "branch", refName: "main", dispatch: { channel: "alpha", enginePrerelease } });
-    expect(planRelease({ classification: dispatched(), pkgVersion: "1.32.0", tags: TAGS, releases: [] }).engineVersion).toBe("1.32.0-alpha.3");
+      classify({
+        eventName: "workflow_dispatch",
+        refType: "branch",
+        refName: "main",
+        dispatch: { channel: "alpha", enginePrerelease },
+      });
     expect(
-      planRelease({ classification: dispatched("v1.32.0-beta.1"), pkgVersion: "1.32.0", tags: TAGS, releases: [], enginePrerelease: "v1.32.0-beta.1" })
-        .engineVersion,
+      planRelease({ classification: dispatched(), pkgVersion: "1.32.0", tags: TAGS, releases: [] }).engineVersion,
+    ).toBe("1.32.0-alpha.3");
+    expect(
+      planRelease({
+        classification: dispatched("v1.32.0-beta.1"),
+        pkgVersion: "1.32.0",
+        tags: TAGS,
+        releases: [],
+        enginePrerelease: "v1.32.0-beta.1",
+      }).engineVersion,
     ).toBe("1.32.0-beta.1");
   });
 
   test("a rehearsal plans the classified version and publishes nothing", () => {
-    const plan = planRelease({ classification: classify({ eventName: "pull_request", refType: "branch" }), pkgVersion: "1.32.0", tags: [], releases: [] });
+    const plan = planRelease({
+      classification: classify({ eventName: "pull_request", refType: "branch" }),
+      pkgVersion: "1.32.0",
+      tags: [],
+      releases: [],
+    });
     expect(plan).toMatchObject({ version: "1.32.0", engineVersion: "1.32.0", publish: false });
   });
 });

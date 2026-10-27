@@ -4,12 +4,7 @@ import { errorMessage } from "./error-utils";
 import { humanBytes } from "./format";
 import { dirname, join } from "node:path";
 import { getEngineBinPath, isEngineInstalled, type EngineCapabilities } from "./engine";
-import {
-  CORRUPT_STATE,
-  engineFunctionalHealth,
-  NOT_FUNCTIONAL_STATE,
-  probeExecutable,
-} from "./engine-health";
+import { CORRUPT_STATE, engineFunctionalHealth, NOT_FUNCTIONAL_STATE, probeExecutable } from "./engine-health";
 import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
 import { keshaCacheDir } from "./paths";
 import { installedVoiceIds } from "./voice-inventory";
@@ -27,11 +22,7 @@ import {
 } from "./fluid-roots";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import { collectStatusPaths, type StatusPaths } from "./status";
-import {
-  getDiagnosticLogStatus,
-  resolveDiagnosticLogDir,
-  type DiagnosticLogStatus,
-} from "./diagnostic-log";
+import { getDiagnosticLogStatus, resolveDiagnosticLogDir, type DiagnosticLogStatus } from "./diagnostic-log";
 
 const KNOWN_ENV_KEYS = [
   "KESHA_HOME",
@@ -92,10 +83,7 @@ type DoctorDiagnosticLogStatus = DiagnosticLogStatus & { error?: string };
  */
 export type EngineVersionState = "matches-pin" | "differs-from-pin" | "unsupported" | "unrecorded";
 
-export function engineVersionState(
-  versionMarker: string | null,
-  pinnedVersion: string,
-): EngineVersionState {
+export function engineVersionState(versionMarker: string | null, pinnedVersion: string): EngineVersionState {
   if (versionMarker === null) return "unrecorded";
   if (predatesMinimumEngine(versionMarker)) return "unsupported";
   return versionMarker === pinnedVersion ? "matches-pin" : "differs-from-pin";
@@ -154,9 +142,7 @@ function pathSummary(path: string): PathSummary {
 
 function isSecretKey(key: string): boolean {
   const secretParts = ["TOKEN", "KEY", "SECRET", "PASSWORD", "CREDENTIAL", "AUTH"];
-  return key
-    .split(/[^a-z0-9]+/i)
-    .some((part) => secretParts.includes(part.toUpperCase()));
+  return key.split(/[^a-z0-9]+/i).some((part) => secretParts.includes(part.toUpperCase()));
 }
 
 function redactUrl(value: string): string | null {
@@ -192,11 +178,7 @@ function redactHomePaths(value: string, homeDir: string): string | null {
   return redacted === normalizedValue ? null : redacted;
 }
 
-export function redactDiagnosticValue(
-  key: string,
-  value: string | null,
-  homeDir = diagnosticHomeDir(),
-): string | null {
+export function redactDiagnosticValue(key: string, value: string | null, homeDir = diagnosticHomeDir()): string | null {
   if (value === null) return null;
   if (isSecretKey(key)) return "[REDACTED]";
 
@@ -214,7 +196,7 @@ export function redactDiagnosticValue(
 }
 
 function redactPath(path: string, redact: boolean): string {
-  return redact ? redactDiagnosticValue("path", path) ?? path : path;
+  return redact ? (redactDiagnosticValue("path", path) ?? path) : path;
 }
 
 function redactString(key: string, value: string | null, redact: boolean): string | null {
@@ -233,9 +215,7 @@ async function collectEngine(redact: boolean): Promise<DoctorReport["engine"]> {
   let probeError: string | null = null;
   // A truncated download exists and the #796 stub even runs, so neither `installed` nor a
   // clean spawn says the engine works — only its own account of itself does (#801).
-  const health = installed
-    ? await engineFunctionalHealth()
-    : ({ status: "missing" } as const);
+  const health = installed ? await engineFunctionalHealth() : ({ status: "missing" } as const);
 
   if (health.status === "unusable") {
     probeError = `binary is present but does not run (${health.detail}); re-run \`kesha install\``;
@@ -270,11 +250,7 @@ function redactExternalRoot(root: FluidExternalRoot, redact: boolean): FluidExte
   };
 }
 
-function collectCache(
-  redact: boolean,
-  backend?: string,
-  homeDir?: string,
-): DoctorReport["cache"] {
+function collectCache(redact: boolean, backend?: string, homeDir?: string): DoctorReport["cache"] {
   const cache = keshaCacheDir();
   const binPath = getEngineBinPath();
   const components: CacheComponent[] = cacheComponents(cache, binPath, isCoremlBackend(backend));
@@ -311,10 +287,7 @@ async function sidecarComponent(
   return { ...base, runnable: health.status === "ok" };
 }
 
-async function collectOptionalComponents(
-  redact: boolean,
-  homeDir?: string,
-): Promise<OptionalComponent[]> {
+async function collectOptionalComponents(redact: boolean, homeDir?: string): Promise<OptionalComponent[]> {
   const cache = keshaCacheDir();
   const sidecarDir = dirname(getEngineBinPath());
   const components: OptionalComponent[] = [
@@ -368,9 +341,7 @@ async function collectTts(homeDir?: string): Promise<DoctorTts> {
 function collectStats(redact: boolean): DoctorReport["stats"] {
   try {
     const status = getStatsStatus();
-    return redact
-      ? { ...status, dbPath: redactPath(status.dbPath, true) }
-      : status;
+    return redact ? { ...status, dbPath: redactPath(status.dbPath, true) } : status;
   } catch (err) {
     return {
       error: redactString("statsError", errorMessage(err), redact) ?? "unknown",
@@ -404,9 +375,7 @@ function collectDiagnosticLogs(redact: boolean): DoctorReport["diagnosticLogs"] 
       mode: "retain-on-failure",
       maxBytes: 10_000_000,
       retain: 5,
-      error:
-        redactString("diagnosticLogsError", errorMessage(err), redact) ??
-        "unknown",
+      error: redactString("diagnosticLogsError", errorMessage(err), redact) ?? "unknown",
     };
   }
 }
@@ -419,9 +388,7 @@ function collectEnv(redact: boolean): DoctorReport["env"] {
   return env;
 }
 
-export async function collectDoctorReport(
-  options: DoctorOptions = {},
-): Promise<DoctorReport> {
+export async function collectDoctorReport(options: DoctorOptions = {}): Promise<DoctorReport> {
   const redact = options.redact === true;
   const engine = await collectEngine(redact);
   return {
@@ -447,7 +414,12 @@ export async function collectDoctorReport(
 function collectPaths(redact: boolean): StatusPaths {
   const paths = collectStatusPaths();
   const entry = (p: StatusPaths[keyof StatusPaths]) => ({ ...p, path: redactPath(p.path, redact) });
-  return { cache: entry(paths.cache), logs: entry(paths.logs), stats: entry(paths.stats), mcpAudio: entry(paths.mcpAudio) };
+  return {
+    cache: entry(paths.cache),
+    logs: entry(paths.logs),
+    stats: entry(paths.stats),
+    mcpAudio: entry(paths.mcpAudio),
+  };
 }
 
 function formatPathsSection(paths: StatusPaths): string[] {

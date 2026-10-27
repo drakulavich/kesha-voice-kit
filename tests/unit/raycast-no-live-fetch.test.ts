@@ -30,7 +30,9 @@ describe("raycast-no-live-fetch.cjs", () => {
 
   for (const host of ["raycast.com.", "www.raycast.com."]) {
     test(`blocks the fully qualified ${host}`, async () => {
-      expect(await probe(PROBES["https.request"], `https://${host}/api/v1/users/x`)).toContain("blocked live fetch of http");
+      expect(await probe(PROBES["https.request"], `https://${host}/api/v1/users/x`)).toContain(
+        "blocked live fetch of http",
+      );
     });
   }
 

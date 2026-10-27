@@ -63,9 +63,7 @@ export function kokoroG2pDir(homeDir = diagnosticHomeDir()): string {
  */
 export function kokoroBundleRoot(options: FluidRootsOptions = {}): string {
   const legacy = legacyKokoroAneDir(options.homeDir ?? diagnosticHomeDir());
-  return dirHasEntries(legacy)
-    ? legacy
-    : join(options.cacheRoot ?? keshaCacheDir(), "fluidaudio", "kokoro-82m-coreml");
+  return dirHasEntries(legacy) ? legacy : join(options.cacheRoot ?? keshaCacheDir(), "fluidaudio", "kokoro-82m-coreml");
 }
 
 /** Where `models/staging.rs::stage_fluidaudio_kokoro_assets` puts the English ANE chain. */
@@ -126,12 +124,7 @@ export function fluidSubsystemDirs(options: FluidRootsOptions = {}): FluidSubsys
     { label: "TTS (Kokoro G2P)", path: kokoroG2pDir(homeDir) },
     {
       label: "Diarization (Sortformer)",
-      path: at(
-        sortformerLegacy,
-        dirHasEntries(sortformerLegacy),
-        "fluidaudio-rs",
-        "SortformerCompiled",
-      ),
+      path: at(sortformerLegacy, dirHasEntries(sortformerLegacy), "fluidaudio-rs", "SortformerCompiled"),
     },
   ].map((subsystem) => ({ ...subsystem, inCache: isInsideDir(subsystem.path, cacheRoot) }));
 }
@@ -201,12 +194,8 @@ export function staleSortformerHint(bytes: number): string {
 /** Bytes in compiled Sortformer bundles other than the installed package's (#1473 S5-6). */
 export function staleSortformerBytes(options: FluidRootsOptions = {}): number {
   const cacheRoot = options.cacheRoot ?? keshaCacheDir();
-  const dir = fluidSubsystemDirs({ ...options, cacheRoot }).find(
-    (s) => s.label === "Diarization (Sortformer)",
-  )!.path;
-  const current = sortformerCompiledName(
-    join(cacheRoot, "models", "diarize", "SortformerNvidiaLow_v2.mlpackage"),
-  );
+  const dir = fluidSubsystemDirs({ ...options, cacheRoot }).find((s) => s.label === "Diarization (Sortformer)")!.path;
+  const current = sortformerCompiledName(join(cacheRoot, "models", "diarize", "SortformerNvidiaLow_v2.mlpackage"));
   let names: string[];
   try {
     names = readdirSync(dir);

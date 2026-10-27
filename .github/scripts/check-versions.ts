@@ -21,7 +21,6 @@ function parseOrExit(raw: string, label: string): SemVer {
   }
 }
 
-
 const pkgRaw = JSON.parse(readFileSync("package.json", "utf8"));
 const cargoToml = readFileSync("rust/Cargo.toml", "utf8");
 let serverJson: { version?: string; packages?: Array<{ version?: string }> };
@@ -38,7 +37,7 @@ try {
 // Anchor to column-zero `version` to avoid matching workspace-member or dependency version fields.
 const cargoVersionMatch = cargoToml.match(/^version\s*=\s*"([^"]+)"$/m);
 if (!cargoVersionMatch) {
-  console.error("rust/Cargo.toml: missing top-level `version = \"x.y.z\"`");
+  console.error('rust/Cargo.toml: missing top-level `version = "x.y.z"`');
   process.exit(1);
 }
 
@@ -71,12 +70,10 @@ for (const [label] of committedPins) {
 
 const serverVersions: Array<[string, string]> = [
   ["server.json#version", serverJson.version ?? ""],
-  ...(serverJson.packages ?? []).map(
-    (pkg: { version?: string }, i: number): [string, string] => [
-      `server.json#packages[${i}].version`,
-      pkg.version ?? "",
-    ],
-  ),
+  ...(serverJson.packages ?? []).map((pkg: { version?: string }, i: number): [string, string] => [
+    `server.json#packages[${i}].version`,
+    pkg.version ?? "",
+  ]),
 ];
 
 for (const [label, raw] of serverVersions) {

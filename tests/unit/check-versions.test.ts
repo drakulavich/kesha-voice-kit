@@ -47,7 +47,10 @@ describe("one version for both artifacts", () => {
   });
 
   test("a committed kesha.engine pin fails: it is injected at publish, never committed", async () => {
-    const { accepted, stderr } = await check({ cli: "1.32.0", extra: { kesha: { engine: { version: "1.32.0", sha256: {} } } } });
+    const { accepted, stderr } = await check({
+      cli: "1.32.0",
+      extra: { kesha: { engine: { version: "1.32.0", sha256: {} } } },
+    });
     expect(accepted).toBe(false);
     expect(stderr).toContain("package.json#kesha.engine");
   });

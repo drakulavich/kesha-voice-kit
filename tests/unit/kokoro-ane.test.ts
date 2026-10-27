@@ -40,10 +40,8 @@ function stage(dir: string, required: readonly string[]): void {
   for (const entry of required) write(join(dir, entry));
 }
 
-const freshAne = (cacheRoot: string) =>
-  join(cacheRoot, "fluidaudio", "kokoro-82m-coreml", "ANE");
-const legacyAne = (home: string) =>
-  join(home, ".cache", "fluidaudio", "Models", "kokoro-82m-coreml", "ANE");
+const freshAne = (cacheRoot: string) => join(cacheRoot, "fluidaudio", "kokoro-82m-coreml", "ANE");
+const legacyAne = (home: string) => join(home, ".cache", "fluidaudio", "Models", "kokoro-82m-coreml", "ANE");
 const g2p = (home: string) => join(home, ".cache", "fluidaudio", "Models", "kokoro");
 const aneZh = (cacheRoot: string) => join(cacheRoot, "fluidaudio", "kokoro-82m-coreml", "ANE-zh");
 
@@ -51,10 +49,7 @@ describe("kokoroAneComponents", () => {
   test("a machine that never installed TTS reports both sets absent", () => {
     withHome((home, cacheRoot) => {
       const components = componentsIn(home, cacheRoot);
-      expect(components.map((c) => c.label)).toEqual([
-        "TTS (Kokoro ANE)",
-        "TTS (Kokoro G2P)",
-      ]);
+      expect(components.map((c) => c.label)).toEqual(["TTS (Kokoro ANE)", "TTS (Kokoro G2P)"]);
       expect(components.every((c) => !c.exists)).toBe(true);
       expect(components[0]!.missing).toEqual(KOKORO_ANE_EN_REQUIRED);
       expect(components[1]!.missing).toEqual(KOKORO_G2P_REQUIRED);
@@ -109,9 +104,7 @@ describe("kokoroAneComponents", () => {
 
   test("no ANE story on a platform whose engine has no FluidAudio", () => {
     withHome((home, cacheRoot) => {
-      expect(
-        kokoroAneComponents({ platform: "linux", arch: "x64", homeDir: home, cacheRoot }),
-      ).toEqual([]);
+      expect(kokoroAneComponents({ platform: "linux", arch: "x64", homeDir: home, cacheRoot })).toEqual([]);
     });
   });
 });
@@ -119,8 +112,7 @@ describe("kokoroAneComponents", () => {
 // Retargeting one surface and not the other is what #828 declined to do: an install
 // preview that contradicts doctor is worse than a consistent stale story (#831).
 describe("doctor and `install --plan` tell the same Kokoro ANE story", () => {
-  const darwinArmTest =
-    process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
+  const darwinArmTest = process.platform === "darwin" && process.arch === "arm64" ? test : test.skip;
 
   darwinArmTest("both name the directories the shared resolver names", async () => {
     const home = mkdtempSync(join(tmpdir(), "kesha-kokoro-ane-agreement-"));
@@ -206,11 +198,7 @@ describe("staged Kokoro languages", () => {
       write(join(freshAne(cacheRoot), "em_alex.bin"));
       write(join(freshAne(cacheRoot), "jm_kumo.bin"));
 
-      expect(kokoroTtsLanguages({ ...DARWIN, homeDir: home, cacheRoot }).staged).toEqual([
-        "en",
-        "es",
-        "ja",
-      ]);
+      expect(kokoroTtsLanguages({ ...DARWIN, homeDir: home, cacheRoot }).staged).toEqual(["en", "es", "ja"]);
     });
   });
 
@@ -236,9 +224,10 @@ describe("staged Kokoro languages", () => {
 
   test("no Kokoro language story on a platform whose engine has no FluidAudio", () => {
     withHome((home, cacheRoot) => {
-      expect(
-        kokoroTtsLanguages({ platform: "linux", arch: "x64", homeDir: home, cacheRoot }),
-      ).toEqual({ staged: [], missing: [] });
+      expect(kokoroTtsLanguages({ platform: "linux", arch: "x64", homeDir: home, cacheRoot })).toEqual({
+        staged: [],
+        missing: [],
+      });
     });
   });
 });

@@ -29,14 +29,11 @@ function withHome(run: (home: string, cacheRoot: string) => void): void {
 }
 
 const legacy = {
-  asr: (home: string) =>
-    join(home, "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3"),
+  asr: (home: string) => join(home, "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3"),
   ane: (home: string) => join(home, ".cache", "fluidaudio", "Models", "kokoro-82m-coreml"),
   g2p: (home: string) => join(home, ".cache", "fluidaudio", "Models", "kokoro"),
-  vad: (home: string) =>
-    join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad"),
-  sortformer: (home: string) =>
-    join(home, "Library", "Application Support", "fluidaudio-rs", "SortformerCompiled"),
+  vad: (home: string) => join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad"),
+  sortformer: (home: string) => join(home, "Library", "Application Support", "fluidaudio-rs", "SortformerCompiled"),
 };
 
 function writeCompleteAsr(dir: string, bytesPerFile = 10): void {
@@ -44,9 +41,7 @@ function writeCompleteAsr(dir: string, bytesPerFile = 10): void {
 }
 
 function dirsByLabel(home: string, cacheRoot: string): Record<string, string> {
-  return Object.fromEntries(
-    fluidSubsystemDirs({ homeDir: home, cacheRoot }).map((s) => [s.label, s.path]),
-  );
+  return Object.fromEntries(fluidSubsystemDirs({ homeDir: home, cacheRoot }).map((s) => [s.label, s.path]));
 }
 
 describe("fluidSubsystemDirs", () => {
@@ -85,9 +80,7 @@ describe("fluidSubsystemDirs", () => {
   // every machine — a total that omits it is wrong even on a fresh install (#688).
   test("the Kokoro G2P assets stay outside the cache even on a fresh install", () => {
     withHome((home, cacheRoot) => {
-      const g2p = fluidSubsystemDirs({ homeDir: home, cacheRoot }).find(
-        (s) => s.label === "TTS (Kokoro G2P)",
-      );
+      const g2p = fluidSubsystemDirs({ homeDir: home, cacheRoot }).find((s) => s.label === "TTS (Kokoro G2P)");
       expect(g2p?.path).toBe(legacy.g2p(home));
       expect(g2p?.inCache).toBe(false);
     });
@@ -176,9 +169,7 @@ describe("fluidExternalRoots", () => {
 
       const roots = fluidExternalRoots({ homeDir: home, cacheRoot });
       expect(roots).toHaveLength(1);
-      expect(roots[0]!.subsystems).toEqual([
-        { label: "ASR (Parakeet)", path: legacy.asr(home), sizeBytes: 50 },
-      ]);
+      expect(roots[0]!.subsystems).toEqual([{ label: "ASR (Parakeet)", path: legacy.asr(home), sizeBytes: 50 }]);
       expect(fluidExternalTotalBytes(roots)).toBe(50);
     });
   });
@@ -195,10 +186,7 @@ describe("fluidExternalRoots", () => {
 
       const roots = fluidExternalRoots({ homeDir: home, cacheRoot });
       expect(roots[0]!.sizeBytes).toBe(125);
-      expect(roots[0]!.subsystems.map((s) => s.label)).toEqual([
-        "ASR (Parakeet)",
-        "VAD (Silero, FluidAudio)",
-      ]);
+      expect(roots[0]!.subsystems.map((s) => s.label)).toEqual(["ASR (Parakeet)", "VAD (Silero, FluidAudio)"]);
       expect(roots[0]!.otherBytes).toBe(70);
     });
   });
@@ -207,14 +195,7 @@ describe("fluidExternalRoots", () => {
   // the models root is — calling it unread would invite deleting a model still in use (#688).
   test("FluidAudio's own VAD copy is named, and stays external on a fresh install", () => {
     withHome((home, cacheRoot) => {
-      const vad = join(
-        home,
-        "Library",
-        "Application Support",
-        "FluidAudio",
-        "Models",
-        "silero-vad",
-      );
+      const vad = join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad");
       write(join(vad, "model.mlmodelc"), 12);
 
       const resolved = fluidSubsystemDirs({ homeDir: home, cacheRoot }).find(
@@ -251,9 +232,7 @@ describe("Sortformer compilations (#1473 S5-6)", () => {
     withHome((_home, cacheRoot) => {
       const pkg = stagePackage(cacheRoot);
       const material = `${pkg}|12|1700000200`;
-      expect(sortformerCompiledName(pkg)).toBe(
-        `${createHash("sha256").update(material).digest("hex")}.mlmodelc`,
-      );
+      expect(sortformerCompiledName(pkg)).toBe(`${createHash("sha256").update(material).digest("hex")}.mlmodelc`);
     });
   });
 

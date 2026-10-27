@@ -116,7 +116,10 @@ describe("requirePreUploadSynthesisSmoke", () => {
 
 describe("requireDarwinSmokeCoversBothEngines", () => {
   const DARWIN = "darwin-synthesis-smoke";
-  const KOKORO = { name: "kokoro", run: 'bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." out' };
+  const KOKORO = {
+    name: "kokoro",
+    run: 'bun .github/scripts/smoke-synthesis.ts --no-roundtrip --text "Kesha speaks." out',
+  };
   const AVSPEECH = {
     name: "avspeech",
     if: "${{ !cancelled() }}",
@@ -176,7 +179,10 @@ describe("requireDarwinSmokeCoversBothEngines", () => {
 
 describe("requireOfflineBeforeOnlineSpeech", () => {
   const LINUX = "published-engine-smoke";
-  const OFFLINE = { name: "offline", run: "bash .github/scripts/offline.sh bun .github/scripts/smoke-synthesis.ts off" };
+  const OFFLINE = {
+    name: "offline",
+    run: "bash .github/scripts/offline.sh bun .github/scripts/smoke-synthesis.ts off",
+  };
   const ONLINE = { name: "online", run: "bun .github/scripts/smoke-synthesis.ts on" };
   const lanes = (linux: unknown[], darwin: unknown[] = [OFFLINE]) => ({
     jobs: { [LINUX]: { steps: linux }, "integration-tests-full": { steps: darwin } },
@@ -221,7 +227,9 @@ describe("requireOfflineBeforeOnlineSpeech", () => {
 
 describe("requireSynthesisSourcesInOfflineFilter", () => {
   const filters = (tts: string[], realEngine: string[]) => ({
-    jobs: { changes: { steps: [{ with: { filters: JSON.stringify({ tts_e2e: tts, real_engine_e2e: realEngine }) } }] } },
+    jobs: {
+      changes: { steps: [{ with: { filters: JSON.stringify({ tts_e2e: tts, real_engine_e2e: realEngine }) } }] },
+    },
   });
 
   test("passes on the real ci.yml", () => {
@@ -303,7 +311,8 @@ describe("forbidFindPipedToHead", () => {
 
   // A dropped check wouldn't show up against the clean repo tree, only against a probe (see above).
   test("the file gate actually runs it", () => {
-    const yaml = "on: push\njobs:\n  smoke:\n    runs-on: macos-15\n    steps:\n      - run: find . -name x | head -1\n";
+    const yaml =
+      "on: push\njobs:\n  smoke:\n    runs-on: macos-15\n    steps:\n      - run: find . -name x | head -1\n";
     const path = join(tempDir("kesha-wf-"), "probe.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1088"))).toHaveLength(1);
@@ -402,10 +411,22 @@ describe("namedFilterOf", () => {
 // so what needs pinning is that each one surfaces its errors rather than crashing (#1141 review round 1).
 describe("every paths-filter rule surfaces the shared parser's errors", () => {
   const rules: Array<[string, (document: unknown) => string[], string]> = [
-    ["requireTestedScriptsInCodeFilter", (d) => requireTestedScriptsInCodeFilter(CI, d, [".github/scripts/check-versions.ts"]), "code"],
-    ["requireManifestSourcesInCodeFilter", (d) => requireManifestSourcesInCodeFilter(CI, d, ["rust/src/models.rs"]), "code"],
+    [
+      "requireTestedScriptsInCodeFilter",
+      (d) => requireTestedScriptsInCodeFilter(CI, d, [".github/scripts/check-versions.ts"]),
+      "code",
+    ],
+    [
+      "requireManifestSourcesInCodeFilter",
+      (d) => requireManifestSourcesInCodeFilter(CI, d, ["rust/src/models.rs"]),
+      "code",
+    ],
     ["requireRustSourcesInCodeFilter", (d) => requireRustSourcesInCodeFilter(CI, d, ["rust/src/models.rs"]), "code"],
-    ["requireRustReferenceTargetsInCodeFilter", (d) => requireRustReferenceTargetsInCodeFilter(CI, d, ["rust/build.rs"]), "code"],
+    [
+      "requireRustReferenceTargetsInCodeFilter",
+      (d) => requireRustReferenceTargetsInCodeFilter(CI, d, ["rust/build.rs"]),
+      "code",
+    ],
     ["requireFlakeNixInWorkflowsFilter", (d) => requireFlakeNixInWorkflowsFilter(CI, d), "workflows"],
   ];
 
@@ -456,8 +477,7 @@ const seedFilter = (paths: string[]) => ({ on: { push: { paths } } });
 // real-tree assertions have to as well or they only hold on posix (#950 round 3).
 const NO_SOURCES = { manifestSources: [], rustSources: [], referenceTargets: [] };
 
-const repoRelative = (files: string[]) =>
-  files.map((file) => file.slice(REPO_ROOT.length + 1).replaceAll("\\", "/"));
+const repoRelative = (files: string[]) => files.map((file) => file.slice(REPO_ROOT.length + 1).replaceAll("\\", "/"));
 
 describe("manifest sources stay inside both path filters", () => {
   // Both shapes defeated a cfg(test)-excluding scanner and dropped the production pin below them
@@ -503,9 +523,7 @@ describe("manifest sources stay inside both path filters", () => {
 
   // Same lesson as its sibling above: every test passes an explicit root, leaving the production default unpinned (#1132).
   test("collectManifestSources' production default root is rust/src", () => {
-    expect(collectManifestSources().map((file) => file.replaceAll("\\", "/"))).toContain(
-      "rust/src/models/manifest.rs",
-    );
+    expect(collectManifestSources().map((file) => file.replaceAll("\\", "/"))).toContain("rust/src/models/manifest.rs");
   });
 
   test("collectRustSources returns every .rs under rust/src", () => {
@@ -529,17 +547,13 @@ describe("manifest sources stay inside both path filters", () => {
   });
 
   test("ci.yml dropping the manifest path de-gates the install-plan join", () => {
-    const errors = requireManifestSourcesInCodeFilter(CI, codeFilter(["src/**"]), [
-      "rust/src/models.rs",
-    ]);
+    const errors = requireManifestSourcesInCodeFilter(CI, codeFilter(["src/**"]), ["rust/src/models.rs"]);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("skips the install-plan join");
   });
 
   test("cache-seed.yml dropping the manifest path stops the re-seed", () => {
-    const errors = requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/Cargo.lock"]), [
-      "rust/src/models.rs",
-    ]);
+    const errors = requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/Cargo.lock"]), ["rust/src/models.rs"]);
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("never re-seeds the shared model caches");
   });
@@ -550,8 +564,12 @@ describe("manifest sources stay inside both path filters", () => {
   test("narrowing the code filter to the literal-holding files fails naming the tree files it drops", () => {
     const filters = codeFilter(["rust/src/models/manifest.rs", "rust/src/models/download.rs"]);
     const tree = [
-      "rust/src/models/download.rs", "rust/src/models/manifest.rs", "rust/src/models/mod.rs",
-      "rust/src/models/paths.rs", "rust/src/models/progress.rs", "rust/src/models/staging.rs",
+      "rust/src/models/download.rs",
+      "rust/src/models/manifest.rs",
+      "rust/src/models/mod.rs",
+      "rust/src/models/paths.rs",
+      "rust/src/models/progress.rs",
+      "rust/src/models/staging.rs",
     ];
     const errors = requireRustSourcesInCodeFilter("ci.yml", filters, tree);
     expect(errors).toHaveLength(4);
@@ -587,9 +605,7 @@ describe("manifest sources stay inside both path filters", () => {
   });
 
   test("a backslash-separated source (win32's readdirSync/join output) still matches a forward-slash filter", () => {
-    expect(repoRelative([`${REPO_ROOT}\\rust\\src\\models\\paths.rs`])).toEqual([
-      "rust/src/models/paths.rs",
-    ]);
+    expect(repoRelative([`${REPO_ROOT}\\rust\\src\\models\\paths.rs`])).toEqual(["rust/src/models/paths.rs"]);
     const sources = ["rust\\src\\models\\manifest.rs", "rust\\src\\models\\download.rs"];
     expect(requireManifestSourcesInCodeFilter(CI, codeFilter(["rust/src/models/**"]), sources)).toEqual([]);
     expect(requireManifestSourcesInSeedFilter(SEED, seedFilter(["rust/src/models/**"]), sources)).toEqual([]);
@@ -618,9 +634,7 @@ describe("manifest sources stay inside both path filters", () => {
   });
 
   test("main pairs each rule with its own collector", () => {
-    const { manifestSources, rustSources } = collectRuleSources(
-      repoPath("rust/src"), repoPath("rust/src/models"),
-    );
+    const { manifestSources, rustSources } = collectRuleSources(repoPath("rust/src"), repoPath("rust/src/models"));
     expect(repoRelative(rustSources)).toContain("rust/src/models/paths.rs");
     expect(repoRelative(manifestSources)).not.toContain("rust/src/models/paths.rs");
   });
@@ -630,7 +644,10 @@ describe("manifest sources stay inside both path filters", () => {
   test("checkFile forwards each list to its own rule", () => {
     const dir = tempDir("kesha-wf-");
     const ci = join(dir, "ci.yml");
-    writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'a.rs'\n              - 'b.rs'\n");
+    writeFileSync(
+      ci,
+      "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'a.rs'\n              - 'b.rs'\n",
+    );
     const seed = join(dir, "cache-seed.yml");
     writeFileSync(seed, "on:\n  push:\n    paths:\n      - 'a.rs'\n");
 
@@ -654,7 +671,10 @@ describe("manifest sources stay inside both path filters", () => {
   test("the file gate actually runs all three", () => {
     const dir = tempDir("kesha-wf-");
     const ci = join(dir, "ci.yml");
-    writeFileSync(ci, "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n");
+    writeFileSync(
+      ci,
+      "on: push\njobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            code:\n              - 'src/**'\n",
+    );
     // Distinct fifth and sixth arguments: each rule must name the file from its OWN set, so handing
     // requireRustSourcesInCodeFilter the manifest set instead of the tree set is visible here (#950 round 3).
     const sources = {
@@ -714,8 +734,14 @@ describe("cross-reference targets stay inside the code filter", () => {
       writeFileSync(join(root, "target", "debug", "build", "x", "out", "generated.rs"), "");
       const slashed = (files: string[]) => files.map((file) => file.replaceAll("\\", "/"));
       const prefix = root.replaceAll("\\", "/");
-      expect(slashed(collectRustReferenceTargets(root))).toEqual([`${prefix}/src/lib.rs`, `${prefix}/src/target/mod.rs`]);
-      expect(slashed(collectRustSources(join(root, "src")))).toEqual([`${prefix}/src/lib.rs`, `${prefix}/src/target/mod.rs`]);
+      expect(slashed(collectRustReferenceTargets(root))).toEqual([
+        `${prefix}/src/lib.rs`,
+        `${prefix}/src/target/mod.rs`,
+      ]);
+      expect(slashed(collectRustSources(join(root, "src")))).toEqual([
+        `${prefix}/src/lib.rs`,
+        `${prefix}/src/target/mod.rs`,
+      ]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -812,7 +838,8 @@ describe("requireFlakeNixInWorkflowsFilter", () => {
   });
 
   test("the file gate actually runs it", () => {
-    const yaml = "jobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            workflows:\n              - '.github/workflows/**'\n";
+    const yaml =
+      "jobs:\n  changes:\n    steps:\n      - with:\n          filters: |\n            workflows:\n              - '.github/workflows/**'\n";
     const path = join(tempDir("kesha-wf-"), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1088"))).toHaveLength(1);
@@ -870,7 +897,9 @@ describe("requireBuildScriptInCoremlFilter", () => {
 
 describe("requireReleaseRowsNameOneProfile", () => {
   const rows = (...features: unknown[]) => ({
-    jobs: { build: { strategy: { matrix: { include: features.map((f, i) => ({ binary: `bin-${i}`, features: f })) } } } },
+    jobs: {
+      build: { strategy: { matrix: { include: features.map((f, i) => ({ binary: `bin-${i}`, features: f })) } } },
+    },
   });
 
   test("passes on the real release.yml", () => {
@@ -894,7 +923,9 @@ describe("requireReleaseRowsNameOneProfile", () => {
   });
 
   test("fails a row that names a profile plus a feature, or no features at all", () => {
-    expect(requireReleaseRowsNameOneProfile(PATH, rows("portable,system_tts", "darwin portable", undefined))).toHaveLength(3);
+    expect(
+      requireReleaseRowsNameOneProfile(PATH, rows("portable,system_tts", "darwin portable", undefined)),
+    ).toHaveLength(3);
   });
 
   test("fails when the build matrix is gone", () => {
@@ -904,7 +935,11 @@ describe("requireReleaseRowsNameOneProfile", () => {
 
 describe("requirePactVerificationCoversEveryTarget", () => {
   const matrix = (targets: string[]) => ({
-    jobs: { "capability-pact": { strategy: { matrix: { include: targets.map((target) => ({ os: "ubuntu-latest", target })) } } } },
+    jobs: {
+      "capability-pact": {
+        strategy: { matrix: { include: targets.map((target) => ({ os: "ubuntu-latest", target })) } },
+      },
+    },
   });
 
   test("passes on the real nightly.yml", () => {
@@ -1097,14 +1132,20 @@ describe("requirePipefailShell", () => {
   });
 
   test("fails on an explicit shell: sh inside a composite action's runs.steps", () => {
-    const errors = requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ ...PIPED, shell: "sh" }]));
+    const errors = requirePipefailShell(
+      ".github/actions/example/action.yml",
+      compositeAction([{ ...PIPED, shell: "sh" }]),
+    );
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("sets `shell: sh`");
   });
 
   // Composite steps can't set defaults.run.shell — pointing authors at it would be a dead end.
   test("does not suggest defaults.run.shell for a composite action", () => {
-    const errors = requirePipefailShell(".github/actions/example/action.yml", compositeAction([{ ...PIPED, shell: "sh" }]));
+    const errors = requirePipefailShell(
+      ".github/actions/example/action.yml",
+      compositeAction([{ ...PIPED, shell: "sh" }]),
+    );
     expect(errors[0]).not.toContain("defaults.run.shell");
   });
 
@@ -1145,8 +1186,7 @@ describe("requireRestoreOnlyCachesHaveAWriter", () => {
     ]);
   const MODELS = { "cache-key": "models-v1", "cache-path": "~/.cache/kesha\n~/.cache/fluidaudio\n" };
   const seeded = [{ key: "models-v1", paths: ["~/.cache/kesha", "~/.cache/fluidaudio"], crossOs: false }];
-  const errorsFor = (document: unknown, entries = seeded) =>
-    requireRestoreOnlyCachesHaveAWriter(CI, document, entries);
+  const errorsFor = (document: unknown, entries = seeded) => requireRestoreOnlyCachesHaveAWriter(CI, document, entries);
 
   test("every restore-only lane in the repo has a matching writer", () => {
     for (const file of readdirSync(repoPath(".github/workflows"))) {
@@ -1265,7 +1305,9 @@ describe("Rust toolchain pin", () => {
     const document = {
       runs: {
         using: "composite",
-        steps: [{ uses: "dtolnay/rust-toolchain@02cb101", with: { toolchain: "1.90.0", components: "rustfmt,clippy" } }],
+        steps: [
+          { uses: "dtolnay/rust-toolchain@02cb101", with: { toolchain: "1.90.0", components: "rustfmt,clippy" } },
+        ],
       },
     };
     expect(requirePinnedRustToolchain(path, document, PIN)).toEqual([
@@ -1303,7 +1345,11 @@ describe("requireStatusFunctionWithNeedsResult", () => {
   });
 
   test("does not count a status function inside a quoted string", () => {
-    const doc = { jobs: { smoke: { if: "needs.publish.result == 'success' && contains(github.event.head_commit.message, 'always()')" } } };
+    const doc = {
+      jobs: {
+        smoke: { if: "needs.publish.result == 'success' && contains(github.event.head_commit.message, 'always()')" },
+      },
+    };
     expect(requireStatusFunctionWithNeedsResult(PATH, doc)).toHaveLength(1);
   });
 
@@ -1339,7 +1385,9 @@ describe("requireJobTimeouts", () => {
   // A bare `timeout-minutes:` with nothing after the colon parses to null, not undefined;
   // Number(null) is 0, which used to read as "0 minutes, valid" (#1105 review).
   test("fails when timeout-minutes is written with no value", () => {
-    const doc = parse("jobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes:\n    steps:\n      - run: echo hi\n");
+    const doc = parse(
+      "jobs:\n  lint:\n    runs-on: ubuntu-latest\n    timeout-minutes:\n    steps:\n      - run: echo hi\n",
+    );
     expect(requireJobTimeouts(CI, doc)).toEqual([
       `${CI}: \`lint\` has no \`timeout-minutes\`; an unattended stall burns GitHub's 360-minute default (#1105)`,
     ]);
@@ -1365,7 +1413,14 @@ describe("requireJobTimeouts", () => {
         smoke: {
           "runs-on": "${{ matrix.os }}",
           "timeout-minutes": "${{ matrix.timeout }}",
-          strategy: { matrix: { include: [{ os: "ubuntu-latest", timeout: 30 }, { os: "windows-latest", timeout: 400 }] } },
+          strategy: {
+            matrix: {
+              include: [
+                { os: "ubuntu-latest", timeout: 30 },
+                { os: "windows-latest", timeout: 400 },
+              ],
+            },
+          },
           steps: [{ run: "echo hi" }],
         },
       },
@@ -1394,7 +1449,10 @@ describe("forbidReusableWorkflows", () => {
   });
 
   test("fails a workflow_call trigger and a job calling a workflow file", () => {
-    const errors = forbidReusableWorkflows(CI, { on: { workflow_call: {} }, jobs: { x: { uses: "./.github/workflows/y.yml" } } });
+    const errors = forbidReusableWorkflows(CI, {
+      on: { workflow_call: {} },
+      jobs: { x: { uses: "./.github/workflows/y.yml" } },
+    });
     expect(errors).toHaveLength(2);
     expect(errors.every((e) => e.includes("composite action"))).toBe(true);
   });
@@ -1584,7 +1642,10 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
       'current="$(git ls-remote origin "refs/tags/$TAG_NAME" "refs/tags/$TAG_NAME^{}" | tail -1 | cut -f1)"\n' +
       'if [ "$current" != "$GITHUB_SHA" ]; then exit 1; fi\n',
   };
-  const PUBLISH = { name: "Publish the release", run: "bash .github/scripts/publish-release.sh release-assets release-notes.md" };
+  const PUBLISH = {
+    name: "Publish the release",
+    run: "bash .github/scripts/publish-release.sh release-assets release-notes.md",
+  };
 
   test("passes on the real release.yml", () => {
     expect(requireReleaseVerifiesTagIsCurrent(PATH, parseRepoYaml(PATH))).toEqual([]);
@@ -1619,19 +1680,30 @@ describe("requireReleaseVerifiesTagIsCurrent", () => {
   });
 
   test("fails when the guard step is disabled", () => {
-    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [{ ...GUARD, if: "false" }, PUBLISH]));
+    const errors = requireReleaseVerifiesTagIsCurrent(
+      PATH,
+      job("github-release", [{ ...GUARD, if: "false" }, PUBLISH]),
+    );
     expect(errors[0]).toContain("#1115");
   });
 
   // `${{ false }}` disables the step exactly like bare `false`, but a naive string-equality check misses it (#1115 review round 3, Greptile P2).
   test("fails when the guard step is disabled via a wrapped expression", () => {
-    const errors = requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [{ ...GUARD, if: "${{ false }}" }, PUBLISH]));
+    const errors = requireReleaseVerifiesTagIsCurrent(
+      PATH,
+      job("github-release", [{ ...GUARD, if: "${{ false }}" }, PUBLISH]),
+    );
     expect(errors[0]).toContain("#1115");
   });
 
   test("fails when the step never compares against GITHUB_SHA", () => {
-    const noShaCheck = { ...GUARD, run: 'current="$(git ls-remote origin "refs/tags/$TAG_NAME^{}")"\necho "$current"\n' };
-    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [noShaCheck, PUBLISH]))[0]).toContain("#1115");
+    const noShaCheck = {
+      ...GUARD,
+      run: 'current="$(git ls-remote origin "refs/tags/$TAG_NAME^{}")"\necho "$current"\n',
+    };
+    expect(requireReleaseVerifiesTagIsCurrent(PATH, job("github-release", [noShaCheck, PUBLISH]))[0]).toContain(
+      "#1115",
+    );
   });
 
   test("fails when the step never mentions refs/tags", () => {
@@ -1686,7 +1758,8 @@ describe("requireRustTestCancelsSupersededRuns", () => {
   });
 
   test("the file gate actually runs it", () => {
-    const yaml = "on:\n  pull_request:\nconcurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n";
+    const yaml =
+      "on:\n  pull_request:\nconcurrency:\n  group: ${{ github.ref }}\n  cancel-in-progress: false\njobs: {}\n";
     const path = join(tempDir("kesha-wf-"), "ci.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("#1105"))).toHaveLength(1);
@@ -1791,7 +1864,8 @@ describe("forbidLongInlineRun", () => {
   });
 
   test("the file gate actually runs it", () => {
-    const yaml = "on: push\njobs:\n  j:\n    steps:\n      - run: |\n          a\n          b\n          c\n          d\n";
+    const yaml =
+      "on: push\njobs:\n  j:\n    steps:\n      - run: |\n          a\n          b\n          c\n          d\n";
     const path = join(tempDir("kesha-wf-"), "long.yml");
     writeFileSync(path, yaml);
     expect(checkFile(path, [], [], undefined, NO_SOURCES).filter((e) => e.includes("script lines"))).toHaveLength(1);
@@ -1914,7 +1988,10 @@ describe("release.yml carries the Engine release guards", () => {
     name: "Verify tag has not been superseded",
     run: 'current="$(git ls-remote origin "refs/tags/$TAG_NAME" | cut -f1)"\n[ "$current" = "$GITHUB_SHA" ] || exit 1\n',
   };
-  const PUBLISH = { name: "Publish the release", run: "bash .github/scripts/publish-release.sh release-assets notes.md" };
+  const PUBLISH = {
+    name: "Publish the release",
+    run: "bash .github/scripts/publish-release.sh release-assets notes.md",
+  };
 
   test("the real release.yml passes every Engine release rule", () => {
     const doc = real();
@@ -1942,7 +2019,11 @@ describe("release.yml carries the Engine release guards", () => {
   });
 
   test("a release.yml row naming granular features fails", () => {
-    const doc = { jobs: { build: { strategy: { matrix: { include: [{ binary: "kesha-engine-linux-x64", features: "onnx,tts" }] } } } } };
+    const doc = {
+      jobs: {
+        build: { strategy: { matrix: { include: [{ binary: "kesha-engine-linux-x64", features: "onnx,tts" }] } } },
+      },
+    };
     expect(requireReleaseRowsNameOneProfile(RELEASE, doc)[0]).toContain("kesha-engine-linux-x64");
   });
 
@@ -1963,8 +2044,12 @@ describe("release.yml carries the Engine release guards", () => {
   test("a publish queue that can cancel, evict or collapse the rehearsal lanes fails", () => {
     const concurrency = real().concurrency;
     expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, queue: undefined } })[0]).toContain("queue");
-    expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, "cancel-in-progress": false } })[0]).toContain("absent");
-    expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, group: "release-publish" } })[0]).toContain("group");
+    expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, "cancel-in-progress": false } })[0]).toContain(
+      "absent",
+    );
+    expect(requireReleaseQueue(RELEASE, { concurrency: { ...concurrency, group: "release-publish" } })[0]).toContain(
+      "group",
+    );
   });
 });
 
@@ -1987,7 +2072,12 @@ describe("requireReleaseJobOrder", () => {
   });
 
   test("fails when assemble stops needing a smoke", () => {
-    expect(flags(withJob("assemble", { needs: ["classify", "plan", "build", "packages", "roundtrip-smoke"] }), "darwin-synthesis-smoke")).toBe(true);
+    expect(
+      flags(
+        withJob("assemble", { needs: ["classify", "plan", "build", "packages", "roundtrip-smoke"] }),
+        "darwin-synthesis-smoke",
+      ),
+    ).toBe(true);
   });
 
   test("fails when an overriding if: lets assemble run past a failed smoke", () => {
@@ -1996,18 +2086,29 @@ describe("requireReleaseJobOrder", () => {
   });
 
   test("fails when github-release can publish what was not assembled", () => {
-    expect(flags(withJob("github-release", { if: "needs.plan.outputs.publish == 'true'" }), "github-release")).toBe(true);
+    expect(flags(withJob("github-release", { if: "needs.plan.outputs.publish == 'true'" }), "github-release")).toBe(
+      true,
+    );
   });
 
   test("fails when npm-publish can run without a successful github-release or a verified package", () => {
-    expect(flags(withJob("npm-publish", { if: "${{ !cancelled() && needs.plan.outputs.publish == 'true' }}" }), "npm-publish")).toBe(true);
-    expect(flags(withJob("npm-publish", { needs: ["classify", "plan", "npm", "reserve-tag"] }), "npm-publish")).toBe(true);
+    expect(
+      flags(
+        withJob("npm-publish", { if: "${{ !cancelled() && needs.plan.outputs.publish == 'true' }}" }),
+        "npm-publish",
+      ),
+    ).toBe(true);
+    expect(flags(withJob("npm-publish", { needs: ["classify", "plan", "npm", "reserve-tag"] }), "npm-publish")).toBe(
+      true,
+    );
   });
 
   test("fails when a non-building publish can reach npm before its alpha tag is reserved", () => {
     const needs = (real().jobs["npm-publish"].needs as string[]).filter((n) => n !== "reserve-tag");
     expect(flags(withJob("npm-publish", { needs }), "reserve-tag")).toBe(true);
-    expect(flags(withJob("reserve-tag", { if: "needs.classify.outputs.build_engine == 'false'" }), "reserve-tag")).toBe(true);
+    expect(flags(withJob("reserve-tag", { if: "needs.classify.outputs.build_engine == 'false'" }), "reserve-tag")).toBe(
+      true,
+    );
   });
 
   test("fails when a job holding a write or OIDC permission can run in a rehearsal", () => {
@@ -2018,8 +2119,15 @@ describe("requireReleaseJobOrder", () => {
     test(`fails when ${downstream} can run before a successful github-release or off the stable channel`, () => {
       const cond = String(real().jobs[downstream].if);
       expect(flags(withJob(downstream, { needs: ["classify"] }), downstream)).toBe(true);
-      expect(flags(withJob(downstream, { if: cond.replace("needs.classify.outputs.channel == 'stable'", "true") }), downstream)).toBe(true);
-      expect(flags(withJob(downstream, { if: cond.replace(/needs\.\w+\.outputs\.publish == 'true'/, "true") }), downstream)).toBe(true);
+      expect(
+        flags(
+          withJob(downstream, { if: cond.replace("needs.classify.outputs.channel == 'stable'", "true") }),
+          downstream,
+        ),
+      ).toBe(true);
+      expect(
+        flags(withJob(downstream, { if: cond.replace(/needs\.\w+\.outputs\.publish == 'true'/, "true") }), downstream),
+      ).toBe(true);
     });
   }
 

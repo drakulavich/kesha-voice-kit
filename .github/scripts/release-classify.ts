@@ -80,11 +80,15 @@ function fromDispatch(dispatch: ClassifyInput["dispatch"], pkgVersion: string): 
   if (channel === "alpha") {
     const engine = dispatch?.enginePrerelease ?? "";
     if (engine && !PRERELEASE_TAG.test(engine)) {
-      throw new Error(`engine-prerelease must name an Engine prerelease tag (vX.Y.Z-alpha.N or -beta.N), got ${engine}`);
+      throw new Error(
+        `engine-prerelease must name an Engine prerelease tag (vX.Y.Z-alpha.N or -beta.N), got ${engine}`,
+      );
     }
     return release("alpha", "alpha", "", engine === "");
   }
-  throw new Error(`a dispatch publishes beta or alpha; a stable release is a pushed tag (got ${JSON.stringify(channel)})`);
+  throw new Error(
+    `a dispatch publishes beta or alpha; a stable release is a pushed tag (got ${JSON.stringify(channel)})`,
+  );
 }
 
 export function classifyRelease(input: ClassifyInput): Classification {

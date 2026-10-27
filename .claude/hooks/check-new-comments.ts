@@ -18,7 +18,9 @@ if (!named) process.exit(0);
 const file = isAbsolute(named) ? named : resolve(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), named);
 const cFamily = C_FAMILY.test(file);
 if (!cFamily && !HASH_FAMILY.test(file)) process.exit(0);
-const source = await Bun.file(file).text().catch(() => null);
+const source = await Bun.file(file)
+  .text()
+  .catch(() => null);
 if (source === null) process.exit(0);
 
 const openerKind = (t: string): Kind => {

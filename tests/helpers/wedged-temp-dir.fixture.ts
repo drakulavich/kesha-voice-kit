@@ -12,10 +12,10 @@ test("leaks a process, and a directory whose removal fails", () => {
   writeFileSync(join(dir, "held"), "x");
   writeFileSync(process.env.KESHA_TEMP_DIR_FIXTURE_OUT!, dir);
 
-  const proc = Bun.spawn(
-    ["sh", "-c", stubbornShell("TERM INT", LEAK_TTL_S), "kesha-engine-leak-guard-fixture"],
-    { stdout: "ignore", stderr: "ignore" },
-  );
+  const proc = Bun.spawn(["sh", "-c", stubbornShell("TERM INT", LEAK_TTL_S), "kesha-engine-leak-guard-fixture"], {
+    stdout: "ignore",
+    stderr: "ignore",
+  });
   proc.unref();
 
   chmodSync(dir, 0o500);

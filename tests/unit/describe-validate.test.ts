@@ -104,9 +104,7 @@ describe("validateArgv", () => {
 
   test("a conflict with a documented remedy carries it as a hint (#768)", () => {
     const withDiarize = { ...DOC, features: [...DOC.features, "transcribe.diarize"] };
-    const err = failure(() =>
-      validateArgv(["transcribe", "a.wav", "--json", "--speakers", "--no-vad"], withDiarize),
-    );
+    const err = failure(() => validateArgv(["transcribe", "a.wav", "--json", "--speakers", "--no-vad"], withDiarize));
     expect(err.hint).toContain("VAD engages automatically");
   });
 
@@ -163,11 +161,36 @@ describe("parseDescribe", () => {
     ["no protocolVersion", { backend: "onnx", profile: "linux", features: [], commands: {} }],
     ["no profile", { protocolVersion: 4, backend: "onnx", features: [], commands: {} }],
     ["no commands", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [] }],
-    ["a command without flags", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: { say: {} } }],
-    ["a flag without a gate key", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: { say: { flags: { voice: {} } } } }],
+    [
+      "a command without flags",
+      { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: { say: {} } },
+    ],
+    [
+      "a flag without a gate key",
+      {
+        protocolVersion: 4,
+        backend: "onnx",
+        profile: "linux",
+        features: [],
+        commands: { say: { flags: { voice: {} } } },
+      },
+    ],
     ["a non-string feature", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [7], commands: {} }],
-    ["a tts key that is not an object", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: {}, tts: "yes" }],
-    ["a tts language with no engines", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: {}, tts: { languages: [{ code: "en" }] } }],
+    [
+      "a tts key that is not an object",
+      { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: {}, tts: "yes" },
+    ],
+    [
+      "a tts language with no engines",
+      {
+        protocolVersion: 4,
+        backend: "onnx",
+        profile: "linux",
+        features: [],
+        commands: {},
+        tts: { languages: [{ code: "en" }] },
+      },
+    ],
   ] as const) {
     test(`${shape} is not a describe document`, () => {
       expect(parseDescribe(payload)).toBeNull();

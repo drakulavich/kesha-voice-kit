@@ -147,80 +147,100 @@ function installsOverlapped(): boolean {
 }
 
 describe("concurrent kesha install (#997)", () => {
-  posixTest("a second install waits instead of racing the one already running", async () => {
-    const binPath = stageEngineDir("kesha-install-race-");
-    stubReleases();
-    const claims = captureSuccessClaims(binPath);
-    const peer = spawnPeerInstall(VERSION_B, 3);
+  posixTest(
+    "a second install waits instead of racing the one already running",
+    async () => {
+      const binPath = stageEngineDir("kesha-install-race-");
+      stubReleases();
+      const claims = captureSuccessClaims(binPath);
+      const peer = spawnPeerInstall(VERSION_B, 3);
 
-    await waitForPeerInsideEngine();
-    await installEngine({ version: VERSION_A });
-    const peerExit = await peer.exited;
+      await waitForPeerInsideEngine();
+      await installEngine({ version: VERSION_A });
+      const peerExit = await peer.exited;
 
-    expect(installsOverlapped()).toBe(false);
-    expect(peerExit).toBe(0);
-    for (const claim of claims) expect(claim.onDisk).toBe(claim.claimed);
-    expect(claims).toHaveLength(1);
-    expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
-  }, 60_000);
+      expect(installsOverlapped()).toBe(false);
+      expect(peerExit).toBe(0);
+      for (const claim of claims) expect(claim.onDisk).toBe(claim.claimed);
+      expect(claims).toHaveLength(1);
+      expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
+    },
+    60_000,
+  );
 
-  posixTest("a foreign write to the marker fails the install instead of claiming success", async () => {
-    const binPath = stageEngineDir("kesha-install-foreign-");
-    // A writer no lock can cover: a manual cache edit, or an install that predates the lock.
-    stubReleases(`  printf '%s\\n' '1.0.0' > "$0.version"`);
-    const claims = captureSuccessClaims(binPath);
+  posixTest(
+    "a foreign write to the marker fails the install instead of claiming success",
+    async () => {
+      const binPath = stageEngineDir("kesha-install-foreign-");
+      // A writer no lock can cover: a manual cache edit, or an install that predates the lock.
+      stubReleases(`  printf '%s\\n' '1.0.0' > "$0.version"`);
+      const claims = captureSuccessClaims(binPath);
 
-    await expect(installEngine({ version: VERSION_A })).rejects.toMatchObject({ code: "E_INSTALL_RACE" });
+      await expect(installEngine({ version: VERSION_A })).rejects.toMatchObject({ code: "E_INSTALL_RACE" });
 
-    expect(claims).toEqual([]);
-  }, 30_000);
+      expect(claims).toEqual([]);
+    },
+    30_000,
+  );
 
-  posixTest("an engine swapped in under our marker fails the install", async () => {
-    const binPath = stageEngineDir("kesha-install-swapped-");
-    // What a peer publishing its own engine by rename looks like from here: our marker still
-    // names the version we installed, while the binary answering every later command is theirs.
-    stubReleases(
-      [
-        `  printf '%s\\n' '#!/bin/sh' 'echo "kesha-engine ${VERSION_B}"' 'exit 0' > "$0.peer"`,
-        `  chmod +x "$0.peer"`,
-        `  mv "$0.peer" "$0"`,
-      ].join("\n"),
-    );
-    const claims = captureSuccessClaims(binPath);
+  posixTest(
+    "an engine swapped in under our marker fails the install",
+    async () => {
+      const binPath = stageEngineDir("kesha-install-swapped-");
+      // What a peer publishing its own engine by rename looks like from here: our marker still
+      // names the version we installed, while the binary answering every later command is theirs.
+      stubReleases(
+        [
+          `  printf '%s\\n' '#!/bin/sh' 'echo "kesha-engine ${VERSION_B}"' 'exit 0' > "$0.peer"`,
+          `  chmod +x "$0.peer"`,
+          `  mv "$0.peer" "$0"`,
+        ].join("\n"),
+      );
+      const claims = captureSuccessClaims(binPath);
 
-    await expect(installEngine({ version: VERSION_A })).rejects.toMatchObject({
-      code: "E_INSTALL_RACE",
-      message: expect.stringMatching(new RegExp(`reports v${VERSION_B.replace(/\./g, "\\.")}`, "s")),
-    });
+      await expect(installEngine({ version: VERSION_A })).rejects.toMatchObject({
+        code: "E_INSTALL_RACE",
+        message: expect.stringMatching(new RegExp(`reports v${VERSION_B.replace(/\./g, "\\.")}`, "s")),
+      });
 
-    expect(claims).toEqual([]);
-    expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
-  }, 30_000);
+      expect(claims).toEqual([]);
+      expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
+    },
+    30_000,
+  );
 
-  posixTest("an install killed mid-flight does not wedge the next one", async () => {
-    const binPath = stageEngineDir("kesha-install-killed-peer-");
-    stubReleases();
-    const peer = spawnPeerInstall(VERSION_B, 5);
+  posixTest(
+    "an install killed mid-flight does not wedge the next one",
+    async () => {
+      const binPath = stageEngineDir("kesha-install-killed-peer-");
+      stubReleases();
+      const peer = spawnPeerInstall(VERSION_B, 5);
 
-    await waitForPeerInsideEngine();
-    peer.kill("SIGKILL");
-    await peer.exited;
+      await waitForPeerInsideEngine();
+      peer.kill("SIGKILL");
+      await peer.exited;
 
-    await installEngine({ version: VERSION_A });
+      await installEngine({ version: VERSION_A });
 
-    expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
-  }, 60_000);
+      expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
+    },
+    60_000,
+  );
 
-  posixTest("a failed install leaves the next one able to run", async () => {
-    const binPath = stageEngineDir("kesha-install-release-");
-    globalThis.fetch = (async (_input: Request | URL | string): Promise<Response> =>
-      new Response("Not Found", { status: 404 })) as typeof fetch;
+  posixTest(
+    "a failed install leaves the next one able to run",
+    async () => {
+      const binPath = stageEngineDir("kesha-install-release-");
+      globalThis.fetch = (async (_input: Request | URL | string): Promise<Response> =>
+        new Response("Not Found", { status: 404 })) as typeof fetch;
 
-    await expect(installEngine({ version: VERSION_A })).rejects.toThrow(/HTTP 404/);
+      await expect(installEngine({ version: VERSION_A })).rejects.toThrow(/HTTP 404/);
 
-    stubReleases();
-    await installEngine({ version: VERSION_A });
+      stubReleases();
+      await installEngine({ version: VERSION_A });
 
-    expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
-  }, 30_000);
+      expect(readInstalledEngineVersion(binPath)).toBe(VERSION_A);
+    },
+    30_000,
+  );
 });

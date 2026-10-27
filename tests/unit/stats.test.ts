@@ -625,10 +625,7 @@ describe("the recorder writes what it is handed", () => {
       sampleRate: null,
       channels: null,
     });
-    expect(exported.errors.map((e: { errorCode: string | null }) => e.errorCode)).toEqual([
-      "E_DECODE",
-      null,
-    ]);
+    expect(exported.errors.map((e: { errorCode: string | null }) => e.errorCode)).toEqual(["E_DECODE", null]);
     // finish() without an item count records none rather than inventing one.
     expect(exported.runs[0].itemCount).toBe(0);
   });
@@ -705,9 +702,7 @@ describe("the default database location", () => {
     if (process.platform === "darwin") {
       expect(path).toBe(join(homedir(), "Library", "Application Support", "kesha", "stats.sqlite"));
     } else if (process.platform !== "win32") {
-      expect(path).toBe(
-        join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "kesha", "stats.sqlite"),
-      );
+      expect(path).toBe(join(process.env.XDG_DATA_HOME || join(homedir(), ".local", "share"), "kesha", "stats.sqlite"));
     }
   });
 });
@@ -753,9 +748,9 @@ describe("renderWeekSummary", () => {
   });
 
   test("the realtime factor is input audio over STT time, and n/a without both", () => {
-    expect(
-      renderWeekSummary(weekSummary({ inputDurationMs: 60_000, sttTimeMs: 20_000 })),
-    ).toContain("STT time: 20s (3.0x realtime)");
+    expect(renderWeekSummary(weekSummary({ inputDurationMs: 60_000, sttTimeMs: 20_000 }))).toContain(
+      "STT time: 20s (3.0x realtime)",
+    );
     expect(renderWeekSummary(weekSummary({ inputDurationMs: 60_000 }))).toContain("(n/a realtime)");
     expect(renderWeekSummary(weekSummary({ sttTimeMs: 20_000 }))).toContain("(n/a realtime)");
   });
@@ -768,9 +763,7 @@ describe("renderWeekSummary", () => {
       [3_725_000, "1h 2m 5s"],
     ];
     for (const [ms, expected] of cases) {
-      expect(renderWeekSummary(weekSummary({ inputDurationMs: ms }))).toContain(
-        `Input audio: ${expected}`,
-      );
+      expect(renderWeekSummary(weekSummary({ inputDurationMs: ms }))).toContain(`Input audio: ${expected}`);
     }
   });
 
@@ -799,9 +792,7 @@ describe("renderWeekSummary", () => {
         hasInputDurationData: true,
       }),
     );
-    expect(output).toContain(
-      "transcribe: count 2, failed 1, total 4s, p50 1s, p95 3s, p99 3s",
-    );
+    expect(output).toContain("transcribe: count 2, failed 1, total 4s, p50 1s, p95 3s, p99 3s");
     expect(output).toContain("Total time: transcribe 4s, lang_id 2s, tts 2s");
     expect(output).toContain("p95 latency: transcribe 3s, tts 2s, lang_id 400ms");
     expect(output).toContain("Format: wav 2");
@@ -832,9 +823,7 @@ describe("renderWeekSummary", () => {
         ],
       }),
     );
-    expect(output).toContain(
-      "transcribe failed, 2 item(s), 5s | transcribe 3s failed, lang_id 100ms success",
-    );
+    expect(output).toContain("transcribe failed, 2 item(s), 5s | transcribe 3s failed, lang_id 100ms success");
     expect(output).toContain("say success, 1 item(s), 0ms | no stages recorded");
     expect(output).not.toContain("no completed runs recorded");
   });
@@ -1015,19 +1004,14 @@ describe("stats export contracts", () => {
 
 describe("sanitizeStatsError", () => {
   test("replaces the sensitive span rather than dropping the message", () => {
-    expect(
-      sanitizeStatsError(new Error('failed {"text":"secret"} via https://example.com/a?token=x'))
-        .message,
-    ).toBe('failed {"text":"<redacted>"} via https://example.com/a?<redacted>');
-    expect(
-      sanitizeStatsError(new Error('{"transcript":"a"} {"stdout":"b"} {"stderr":"c"}')).message,
-    ).toBe('{"transcript":"<redacted>"} {"stdout":"<redacted>"} {"stderr":"<redacted>"}');
-    expect(sanitizeStatsError(new Error("open /Users/alice/a.wav failed")).message).toBe(
-      "open <path> failed",
+    expect(sanitizeStatsError(new Error('failed {"text":"secret"} via https://example.com/a?token=x')).message).toBe(
+      'failed {"text":"<redacted>"} via https://example.com/a?<redacted>',
     );
-    expect(sanitizeStatsError(new Error("open C:\\Users\\bob\\a.wav failed")).message).toBe(
-      "open <path> failed",
+    expect(sanitizeStatsError(new Error('{"transcript":"a"} {"stdout":"b"} {"stderr":"c"}')).message).toBe(
+      '{"transcript":"<redacted>"} {"stdout":"<redacted>"} {"stderr":"<redacted>"}',
     );
+    expect(sanitizeStatsError(new Error("open /Users/alice/a.wav failed")).message).toBe("open <path> failed");
+    expect(sanitizeStatsError(new Error("open C:\\Users\\bob\\a.wav failed")).message).toBe("open <path> failed");
   });
 
   test("falls back to the class when there is no message, and reports non-errors", () => {
@@ -1053,7 +1037,9 @@ describe("sanitizeStatsError", () => {
 
   test("removes paths, query strings, stack lines, and truncates long messages", () => {
     const long = "x".repeat(400);
-    const err = new Error(`/Users/alice/audio/private.wav failed at https://example.com/a?token=secret {"text":"private transcript"}\n    at frame\n${long}`);
+    const err = new Error(
+      `/Users/alice/audio/private.wav failed at https://example.com/a?token=secret {"text":"private transcript"}\n    at frame\n${long}`,
+    );
     const sanitized = sanitizeStatsError(err);
     expect(sanitized.errorClass).toBe("Error");
     expect(sanitized.message).not.toContain("/Users/alice");
@@ -1090,12 +1076,14 @@ function seedStatsRuns(inputs: SeededRun[]): void {
     db.exec("begin");
     try {
       for (const input of inputs) {
-        const run = db.query(
-          `insert into runs
+        const run = db
+          .query(
+            `insert into runs
             (command, started_at, finished_at, status, app_version, item_count)
            values (?, ?, ?, ?, 'test', ?)
            returning id`,
-        ).get(input.command, input.startedAt, input.finishedAt, input.status, input.itemCount) as { id: number };
+          )
+          .get(input.command, input.startedAt, input.finishedAt, input.status, input.itemCount) as { id: number };
 
         for (const artifact of input.inputArtifacts ?? []) {
           db.query(

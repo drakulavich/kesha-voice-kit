@@ -77,8 +77,6 @@ describe("withCargoVersion", () => {
   });
 
   test("refuses a [package] table with no version line", () => {
-    expect(() => withCargoVersion('[package]\nname = "kesha-engine"\n', "1.24.8-alpha.1")).toThrow(
-      /no version line/,
-    );
+    expect(() => withCargoVersion('[package]\nname = "kesha-engine"\n', "1.24.8-alpha.1")).toThrow(/no version line/);
   });
 });

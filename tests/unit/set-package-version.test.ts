@@ -12,11 +12,7 @@ describe("withVersion", () => {
   });
 
   test("keeps the version field in place rather than reordering the file", () => {
-    expect(Object.keys(JSON.parse(withVersion(PKG, "1.27.0-alpha.3")))).toEqual([
-      "name",
-      "version",
-      "license",
-    ]);
+    expect(Object.keys(JSON.parse(withVersion(PKG, "1.27.0-alpha.3")))).toEqual(["name", "version", "license"]);
   });
 
   test("ends with a newline, as package.json does", () => {

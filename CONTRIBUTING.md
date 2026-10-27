@@ -65,7 +65,8 @@ where tests live, and a "where to change X" table.
 ```bash
 bun run check:fast  # type check + versions + recipes + test:cli-fast (the fast path; needs just)
 just test           # bun unit + integration tests
-bun run lint        # bun check (type check), then biome ci (lint only, no formatter)
+bun run lint        # bun fmt --check, bun check (type check), then biome ci (lint only)
+bun run fmt         # format with bun fmt (bunfig.toml [fmt], .prettierignore)
 just smoke-test     # bun link → kesha install → run against fixtures
 ```
 

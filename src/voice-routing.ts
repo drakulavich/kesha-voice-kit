@@ -83,9 +83,7 @@ function dominantScript(text: string, script: RegExp): boolean {
 
 /** The male voice for the locale at any quality variant, else the first one installed. */
 function avSpeechVoiceFor(voices: string[], route: NativeScriptRoute): string | undefined {
-  const forLocale = voices.filter(
-    (id) => id.startsWith("macos-") && id.includes(`.${route.locale}.`),
-  );
+  const forLocale = voices.filter((id) => id.startsWith("macos-") && id.includes(`.${route.locale}.`));
   const preferred = route.preferredName && forLocale.find((id) => id.endsWith(`.${route.preferredName}`));
   return preferred || forLocale[0];
 }

@@ -54,9 +54,7 @@ const recordedPaths = new Set(fieldPaths(recorded));
 describe("transcribe schema pact — the parser", () => {
   it("forwards every field the engine records", () => {
     const parsedPaths = new Set(fieldPaths(parsed));
-    const dropped = [...recordedPaths].filter(
-      (path) => !parsedPaths.has(path) && !(path in EXCLUDED_FIELDS),
-    );
+    const dropped = [...recordedPaths].filter((path) => !parsedPaths.has(path) && !(path in EXCLUDED_FIELDS));
     expect(
       dropped,
       `parseTranscriptionOutput drops ${dropped.join(", ")} — forward it, or name it in EXCLUDED_FIELDS with a reason`,

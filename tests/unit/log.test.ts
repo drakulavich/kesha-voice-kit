@@ -154,14 +154,11 @@ describe("log.debug level gating (#148)", () => {
   });
 
   // OFF values from KESHA_DEBUG grammar (#275 D9)
-  test.each(["0", "false", "no", "off", "FALSE", "  Off  "])(
-    "KESHA_DEBUG=%s keeps debug silent",
-    (val) => {
-      process.env.KESHA_DEBUG = val;
-      const out = captureStderr(() => log.debug("should-not-appear"));
-      expect(out).not.toContain("should-not-appear");
-    },
-  );
+  test.each(["0", "false", "no", "off", "FALSE", "  Off  "])("KESHA_DEBUG=%s keeps debug silent", (val) => {
+    process.env.KESHA_DEBUG = val;
+    const out = captureStderr(() => log.debug("should-not-appear"));
+    expect(out).not.toContain("should-not-appear");
+  });
 
   test("debug lines include a +NNNms prefix", () => {
     log.debugEnabled = true;

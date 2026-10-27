@@ -15,7 +15,12 @@ describe("a transcription engine killed by a signal (#1500)", () => {
     writeFileSync(audio, "OggS");
 
     const run = await runCliScenario([audio], {
-      env: { HOME: dir, KESHA_HOME: join(dir, "state"), KESHA_CACHE_DIR: join(dir, "cache"), KESHA_ENGINE_BIN: enginePath },
+      env: {
+        HOME: dir,
+        KESHA_HOME: join(dir, "state"),
+        KESHA_CACHE_DIR: join(dir, "cache"),
+        KESHA_ENGINE_BIN: enginePath,
+      },
     });
 
     expect(run.exitCode).toBe(1);

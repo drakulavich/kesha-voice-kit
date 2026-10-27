@@ -9,7 +9,9 @@ const CLI_PATH = new URL("../../bin/kesha.js", import.meta.url).pathname;
 async function createFakeEngine(dir: string): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const enginePath = `${dir}/kesha-engine`;
-  await Bun.write(enginePath, `#!/usr/bin/env bun
+  await Bun.write(
+    enginePath,
+    `#!/usr/bin/env bun
 const args = Bun.argv.slice(2);
 if (args[0] === "describe") {
   console.log(${JSON.stringify(describeJson({ features: ["tts"] }))});
@@ -26,7 +28,8 @@ if (out !== undefined) {
 } else {
   process.stdout.write(new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
 }
-`);
+`,
+  );
   chmodSync(enginePath, 0o755);
   return enginePath;
 }
@@ -35,7 +38,9 @@ if (out !== undefined) {
 async function createAbbrevWarningEngine(dir: string): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const enginePath = `${dir}/kesha-engine`;
-  await Bun.write(enginePath, `#!/usr/bin/env bun
+  await Bun.write(
+    enginePath,
+    `#!/usr/bin/env bun
 const args = Bun.argv.slice(2);
 if (args[0] === "describe") {
   console.log(${JSON.stringify(describeJson({ features: ["tts", "tts.ru_acronym_expansion", "tts.en_acronym_expansion"] }))});
@@ -50,7 +55,8 @@ if (args.includes("--no-expand-abbrev")) {
   }) + "\\n");
 }
 await Bun.write(args.find((a) => a.startsWith("--out="))!.slice(6), new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
-`);
+`,
+  );
   chmodSync(enginePath, 0o755);
   return enginePath;
 }
@@ -58,7 +64,9 @@ await Bun.write(args.find((a) => a.startsWith("--out="))!.slice(6), new Uint8Arr
 async function createRecordingEngine(dir: string): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const enginePath = `${dir}/kesha-engine`;
-  await Bun.write(enginePath, `#!/usr/bin/env bun
+  await Bun.write(
+    enginePath,
+    `#!/usr/bin/env bun
 const args = Bun.argv.slice(2);
 if (args[0] === "describe") {
   console.log(${JSON.stringify(describeJson({ features: ["tts"] }))});
@@ -66,7 +74,8 @@ if (args[0] === "describe") {
 }
 await Bun.write(${JSON.stringify(dir)} + "/spoken.txt", await new Response(Bun.stdin.stream()).text());
 await Bun.write(args.find((a) => a.startsWith("--out="))!.slice(6), new Uint8Array([82, 73, 70, 70, 0, 0, 0, 0]));
-`);
+`,
+  );
   chmodSync(enginePath, 0o755);
   return enginePath;
 }
@@ -87,7 +96,9 @@ async function spokenText(sayArgs: (dir: string) => string[]): Promise<string> {
 async function createMuteEngine(dir: string): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const enginePath = `${dir}/kesha-engine`;
-  await Bun.write(enginePath, `#!/usr/bin/env bun
+  await Bun.write(
+    enginePath,
+    `#!/usr/bin/env bun
 if (Bun.argv[2] === "describe") {
   console.log(${JSON.stringify(describeJson({ features: ["tts"] }))});
   process.exit(0);
@@ -95,7 +106,8 @@ if (Bun.argv[2] === "describe") {
 await new Response(Bun.stdin.stream()).text();
 const out = Bun.argv.find((a) => a.startsWith("--out="))?.slice(6);
 if (out !== undefined && process.env.KESHA_TEST_EMPTY_OUT) await Bun.write(out, "");
-`);
+`,
+  );
   chmodSync(enginePath, 0o755);
   return enginePath;
 }
@@ -103,10 +115,13 @@ if (out !== undefined && process.env.KESHA_TEST_EMPTY_OUT) await Bun.write(out, 
 async function createFailingEngine(dir: string): Promise<string> {
   mkdirSync(dir, { recursive: true });
   const enginePath = `${dir}/kesha-engine-fail-on-use`;
-  await Bun.write(enginePath, `#!/usr/bin/env bun
+  await Bun.write(
+    enginePath,
+    `#!/usr/bin/env bun
 console.error("fake engine should not have been invoked: " + JSON.stringify(Bun.argv.slice(2)));
 process.exit(99);
-`);
+`,
+  );
   chmodSync(enginePath, 0o755);
   return enginePath;
 }
@@ -120,7 +135,10 @@ function readDiagnosticLog(logDir: string): { raw: string; events: Array<Record<
   const raw = readFileSync(`${logDir}/kesha.ndjson`, "utf8");
   return {
     raw,
-    events: raw.trim().split("\n").map((line) => JSON.parse(line)),
+    events: raw
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line)),
   };
 }
 
@@ -170,16 +188,7 @@ describe("kesha say (CLI)", () => {
       const outPath = `${dir}/${tc.outputName}`;
       const logDir = `${dir}/logs`;
       await enableDiagnosticLogs(logDir);
-      const proc = spawn([
-        "bun",
-        CLI_PATH,
-        "say",
-        "--voice",
-        "ru-vosk-m02",
-        "--out",
-        outPath,
-        "Привет",
-      ], {
+      const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", "--out", outPath, "Привет"], {
         env: {
           ...process.env,
           KESHA_CACHE_DIR: dir,
@@ -225,17 +234,7 @@ describe("kesha say (CLI)", () => {
     const dir = tempDir("kesha-fake-engine-");
     const enginePath = await createFakeEngine(dir);
     const outPath = `${dir}/reply.wav`;
-    const proc = spawn([
-      "bun",
-      CLI_PATH,
-      "say",
-      "--voice",
-      "ru-vosk-m02",
-      "--out",
-      outPath,
-      "--verbose",
-      "Привет",
-    ], {
+    const proc = spawn(["bun", CLI_PATH, "say", "--voice", "ru-vosk-m02", "--out", outPath, "--verbose", "Привет"], {
       env: {
         ...process.env,
         KESHA_CACHE_DIR: dir,
@@ -257,21 +256,24 @@ describe("kesha say (CLI)", () => {
     const dir = tempDir("kesha-abbrev-engine-");
     const enginePath = await createAbbrevWarningEngine(dir);
     const outPath = `${dir}/reply.wav`;
-    const proc = spawn([
-      "bun",
-      CLI_PATH,
-      "say",
-      "--voice",
-      "en-am_michael",
-      "--no-expand-abbrev",
-      "--out",
-      outPath,
-      "The FBI is investigating.",
-    ], {
-      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = spawn(
+      [
+        "bun",
+        CLI_PATH,
+        "say",
+        "--voice",
+        "en-am_michael",
+        "--no-expand-abbrev",
+        "--out",
+        outPath,
+        "The FBI is investigating.",
+      ],
+      {
+        env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
 
     expect(await proc.exited).toBe(0);
     const stderr = await new Response(proc.stderr).text();
@@ -307,7 +309,14 @@ describe("kesha say (CLI)", () => {
 
   it("speaks every unquoted word, flags between and after the text (#1379)", async () => {
     const spoken = await spokenText((dir) => [
-      "hello", "--voice", "ru-vosk-m02", "world", "--rate", "1.0", "--out", `${dir}/r.wav`,
+      "hello",
+      "--voice",
+      "ru-vosk-m02",
+      "world",
+      "--rate",
+      "1.0",
+      "--out",
+      `${dir}/r.wav`,
     ]);
     expect(spoken).toBe("hello world");
   });
@@ -319,7 +328,10 @@ describe("kesha say (CLI)", () => {
 
   it("drops emoji before synthesis and keeps © ® ™ (#1388)", async () => {
     const spoken = await spokenText((dir) => [
-      "--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`,
+      "--voice",
+      "ru-vosk-m02",
+      "--out",
+      `${dir}/r.wav`,
       "Придёшь? 😊 👍🏽 🇷🇺 👨‍👩‍👧 ❤️ © Acme™ ® 1️⃣",
     ]);
     expect(spoken).toBe("Придёшь?      © Acme™ ® ");
@@ -340,7 +352,9 @@ describe("kesha say (CLI)", () => {
     });
 
     expect(await proc.exited).toBe(2);
-    expect(await new Response(proc.stderr).text()).toContain("error [E_TEXT_EMPTY]: text has nothing to speak: emoji are not read aloud");
+    expect(await new Response(proc.stderr).text()).toContain(
+      "error [E_TEXT_EMPTY]: text has nothing to speak: emoji are not read aloud",
+    );
     expect(existsSync(`${dir}/spoken.txt`)).toBe(false);
   });
 
@@ -358,14 +372,23 @@ describe("kesha say (CLI)", () => {
 
   it("drops emoji inside SSML CDATA, where the CDATA is the speech", async () => {
     const spoken = await spokenText((dir) => [
-      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[Hello 😊]]></speak>",
+      "--voice",
+      "en-am_michael",
+      "--ssml",
+      "--out",
+      `${dir}/r.wav`,
+      "<speak><![CDATA[Hello 😊]]></speak>",
     ]);
     expect(spoken).toBe("<speak><![CDATA[Hello ]]></speak>");
   });
 
   it("drops emoji written as SSML character references, flags spelled across two included, and keeps ©", async () => {
     const spoken = await spokenText((dir) => [
-      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`,
+      "--voice",
+      "en-am_michael",
+      "--ssml",
+      "--out",
+      `${dir}/r.wav`,
       "<speak>Done &#x1F389; &#x1F1F7;&#x1F1FA; &#169; &#60;</speak>",
     ]);
     expect(spoken).toBe("<speak>Done   © &#60;</speak>");
@@ -373,7 +396,12 @@ describe("kesha say (CLI)", () => {
 
   it("leaves a character reference inside CDATA alone: it is literal text there", async () => {
     const spoken = await spokenText((dir) => [
-      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[a > b &#x1F60A;]]></speak>",
+      "--voice",
+      "en-am_michael",
+      "--ssml",
+      "--out",
+      `${dir}/r.wav`,
+      "<speak><![CDATA[a > b &#x1F60A;]]></speak>",
     ]);
     expect(spoken).toBe("<speak><![CDATA[a > b &#x1F60A;]]></speak>");
   });
@@ -411,7 +439,10 @@ describe("kesha say (CLI)", () => {
     expect(new TextDecoder().decode(readFileSync(`${dir}/-`).slice(0, 4))).toBe("RIFF");
   });
 
-  for (const tc of [{ left: "no file", env: {} }, { left: "an empty file", env: { KESHA_TEST_EMPTY_OUT: "1" } }]) {
+  for (const tc of [
+    { left: "no file", env: {} },
+    { left: "an empty file", env: { KESHA_TEST_EMPTY_OUT: "1" } },
+  ]) {
     it(`fails when the engine exits 0 and leaves ${tc.left} at --out (#1473 S3-10)`, async () => {
       const dir = tempDir("kesha-mute-engine-");
       const enginePath = await createMuteEngine(dir);

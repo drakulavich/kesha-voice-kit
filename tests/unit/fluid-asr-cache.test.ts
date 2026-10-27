@@ -78,10 +78,7 @@ describe("the FluidAudio ASR bundle", () => {
   test("rejects an int4-only bundle, which an int8 loader cannot use", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-cache-int4-"));
     try {
-      seed(dir, [
-        ...COMPLETE.filter((f) => f !== "Encoder.mlmodelc"),
-        "EncoderInt4.mlmodelc",
-      ]);
+      seed(dir, [...COMPLETE.filter((f) => f !== "Encoder.mlmodelc"), "EncoderInt4.mlmodelc"]);
       expect(fluidAsrCacheReady(legacyFluidAsrCachePath(dir))).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -137,9 +134,7 @@ describe("the FluidAudio ASR bundle", () => {
     const dir = mkdtempSync(join(tmpdir(), "kesha-fluid-asr-fresh-"));
     try {
       const cacheRoot = join(dir, "cache");
-      expect(fluidAsrCachePath(dir, cacheRoot)).toBe(
-        join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3"),
-      );
+      expect(fluidAsrCachePath(dir, cacheRoot)).toBe(join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3"));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -159,7 +154,6 @@ describe("the FluidAudio ASR bundle", () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
-
 });
 
 describe("unavailableBackendError", () => {

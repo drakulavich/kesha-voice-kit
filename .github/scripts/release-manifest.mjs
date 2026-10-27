@@ -49,7 +49,6 @@ const DARWIN_SIDECARS = [
   },
 ];
 
-
 function usage() {
   console.error(
     "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N|-alpha.N]] [--linux-packages] [--out path] [--check]",
@@ -192,9 +191,7 @@ const pkg = readPackage();
 const defaultTag = `v${pkg.version}`;
 const tag = getArg("--tag") ?? defaultTag;
 if (!ENGINE_TAG_RE.test(tag)) {
-  throw new Error(
-    `release manifest tag must look like vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-alpha.N, got: ${tag}`,
-  );
+  throw new Error(`release manifest tag must look like vX.Y.Z, vX.Y.Z-beta.N or vX.Y.Z-alpha.N, got: ${tag}`);
 }
 
 const manifest = buildManifest(tag, hasArg("--linux-packages"));

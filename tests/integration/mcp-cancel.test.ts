@@ -65,20 +65,24 @@ describe.skipIf(process.platform === "win32")("MCP request cancellation", () => 
     ["synthesize_speech", () => ({ text: "hello", voice: "en-am_michael" })],
   ];
 
-  test.each(calls)("cancelling %s stops the engine it started", async (name, args) => {
-    const { client, server } = await connect();
-    try {
-      const controller = new AbortController();
-      const call = client.callTool({ name, arguments: args() }, undefined, { signal: controller.signal });
-      const enginePid = await waitForPidFile(pidPath);
+  test.each(calls)(
+    "cancelling %s stops the engine it started",
+    async (name, args) => {
+      const { client, server } = await connect();
+      try {
+        const controller = new AbortController();
+        const call = client.callTool({ name, arguments: args() }, undefined, { signal: controller.signal });
+        const enginePid = await waitForPidFile(pidPath);
 
-      controller.abort();
-      await call.catch(() => {});
+        controller.abort();
+        await call.catch(() => {});
 
-      expect(await waitForPidExit(enginePid)).toBe(true);
-    } finally {
-      await client.close();
-      await server.close();
-    }
-  }, 30_000);
+        expect(await waitForPidExit(enginePid)).toBe(true);
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    },
+    30_000,
+  );
 });

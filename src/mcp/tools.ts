@@ -31,9 +31,13 @@ export function registerTools(server: McpServer): void {
         bytes = readFileSync(filePath);
       } catch {
         // The SDK sends only `message` and `code`; McpError would prepend "MCP error -32002:" to the message.
-        const coded = new KeshaError("E_INPUT_NOT_FOUND", `synthesized-audio: file not found or already swept: ${name}`, {
-          hint: "synthesized files are deleted after 24 hours; call synthesize_speech again.",
-        });
+        const coded = new KeshaError(
+          "E_INPUT_NOT_FOUND",
+          `synthesized-audio: file not found or already swept: ${name}`,
+          {
+            hint: "synthesized files are deleted after 24 hours; call synthesize_speech again.",
+          },
+        );
         throw Object.assign(new Error(errorMessage(coded)), { code: -32002 });
       }
       return { contents: [{ uri: uri.href, mimeType: mimeForExt(name), blob: bytes.toString("base64") }] };
@@ -64,7 +68,12 @@ export function registerTools(server: McpServer): void {
     },
     async ({ text, voice, rate, format }, extra) => {
       if (extra.signal?.aborted) {
-        return { isError: true, content: [{ type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) }] };
+        return {
+          isError: true,
+          content: [
+            { type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) },
+          ],
+        };
       }
       if (rate !== undefined && !(rate >= 0.5 && rate <= 2.0)) {
         const err = new KeshaError("E_INVALID_ARG", `rate ${rate} out of range (0.5-2.0)`);
@@ -77,14 +86,19 @@ export function registerTools(server: McpServer): void {
       } catch (err) {
         const errno = (err as NodeJS.ErrnoException).code ?? "";
         const why = PATH_ERRNOS[errno];
-        const coded = new KeshaError(why ? "E_INVALID_ARG" : "E_INTERNAL", `cannot create the audio folder ${audioDir()}: ${why ? `${why} (${errno})` : errorMessage(err)}`, {
-          hint: "set KESHA_HOME to a directory you can write to.",
-        });
+        const coded = new KeshaError(
+          why ? "E_INVALID_ARG" : "E_INTERNAL",
+          `cannot create the audio folder ${audioDir()}: ${why ? `${why} (${errno})` : errorMessage(err)}`,
+          {
+            hint: "set KESHA_HOME to a directory you can write to.",
+          },
+        );
         return { isError: true, content: [{ type: "text" as const, text: errorMessage(coded) }] };
       }
       try {
         // An MCP caller has no stderr to read: the voice it is told is its only record (#942).
-        const resolvedVoice = (await resolveSayVoice(voice || undefined, undefined, text, { signal: extra.signal })) ?? DEFAULT_VOICE_ID;
+        const resolvedVoice =
+          (await resolveSayVoice(voice || undefined, undefined, text, { signal: extra.signal })) ?? DEFAULT_VOICE_ID;
         await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath, signal: extra.signal });
         chmodSync(outPath, 0o600);
         const bytes = statSync(outPath).size;
@@ -94,7 +108,10 @@ export function registerTools(server: McpServer): void {
         return {
           content: [
             { type: "resource_link" as const, uri, name: file, mimeType },
-            { type: "text" as const, text: `Synthesized ${bytes} bytes (voice=${resolvedVoice}, format=${fmt}); read via resources/read ${uri}.` },
+            {
+              type: "text" as const,
+              text: `Synthesized ${bytes} bytes (voice=${resolvedVoice}, format=${fmt}); read via resources/read ${uri}.`,
+            },
           ],
           structuredContent: { uri, path: outPath, format: fmt, voice: resolvedVoice, bytes },
         };
@@ -127,9 +144,7 @@ export function registerTools(server: McpServer): void {
             speaker: z.number().optional(),
             // Absent on engines without `transcribe.words`, and on any segment
             // `--itn` rewrote (#720).
-            words: z
-              .array(z.object({ word: z.string(), start: z.number(), end: z.number() }))
-              .optional(),
+            words: z.array(z.object({ word: z.string(), start: z.number(), end: z.number() })).optional(),
           }),
         ),
       },
@@ -137,7 +152,12 @@ export function registerTools(server: McpServer): void {
     },
     async ({ path, timestamps }, extra) => {
       if (extra.signal?.aborted) {
-        return { isError: true, content: [{ type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) }] };
+        return {
+          isError: true,
+          content: [
+            { type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) },
+          ],
+        };
       }
       if (!existsSync(path)) {
         const hint = isAbsolute(path)
@@ -151,7 +171,10 @@ export function registerTools(server: McpServer): void {
         const truncated = truncatedWavWarning(path);
         const out = await transcribeWithSegments(path, { signal: extra.signal, timestamps });
         return {
-          content: [{ type: "text" as const, text: out.text }, ...(truncated ? [{ type: "text" as const, text: truncated }] : [])],
+          content: [
+            { type: "text" as const, text: out.text },
+            ...(truncated ? [{ type: "text" as const, text: truncated }] : []),
+          ],
           structuredContent: { text: out.text, segments: timestamps ? out.segments : [] },
         };
       } catch (err) {
@@ -164,7 +187,8 @@ export function registerTools(server: McpServer): void {
     "list_voices",
     {
       title: "List voices",
-      description: "List the TTS voices kesha knows, with their engine and language. Some need `kesha install --tts <lang>` before they synthesize.",
+      description:
+        "List the TTS voices kesha knows, with their engine and language. Some need `kesha install --tts <lang>` before they synthesize.",
       inputSchema: {},
       outputSchema: {
         voices: z.array(
@@ -183,7 +207,10 @@ export function registerTools(server: McpServer): void {
     async () => {
       try {
         const voices = await listVoices();
-        const text = voices.length === 0 ? `0 voices installed. Run: ${installHint("--tts")}` : `${voices.length} voices known; some need kesha install --tts <lang> before use.`;
+        const text =
+          voices.length === 0
+            ? `0 voices installed. Run: ${installHint("--tts")}`
+            : `${voices.length} voices known; some need kesha install --tts <lang> before use.`;
         return {
           content: [{ type: "text" as const, text }],
           structuredContent: { voices },

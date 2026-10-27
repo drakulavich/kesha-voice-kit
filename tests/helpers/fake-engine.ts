@@ -6,7 +6,14 @@ import type { DescribeDocument, FlagSchema, TtsLanguageCapability } from "../../
 import { engineChecksums } from "../../src/engine-install";
 import { tempDir } from "./temp-dir";
 
-const ENGINE_ENV = ["KESHA_ENGINE_BIN", "KESHA_CACHE_DIR", "KESHA_HOME", "HOME", "KESHA_MODEL_MIRROR", "KESHA_STATS_DB"] as const;
+const ENGINE_ENV = [
+  "KESHA_ENGINE_BIN",
+  "KESHA_CACHE_DIR",
+  "KESHA_HOME",
+  "HOME",
+  "KESHA_MODEL_MIRROR",
+  "KESHA_STATS_DB",
+] as const;
 
 export interface StagedEngineHome {
   /** The temp directory standing in for `$HOME`; the suite tears it down. */
@@ -213,11 +220,7 @@ export function envEchoEngine(vars: string[]): { binPath: string; args: string[]
 }
 
 /** A fake engine that answers `say --list-voices` as well as `describe`, so a caller's voice inventory is assertable without a real engine. */
-export function writeVoiceListingEngine(
-  binDir: string,
-  voices: string[],
-  features: string[] = ["tts"],
-): string {
+export function writeVoiceListingEngine(binDir: string, voices: string[], features: string[] = ["tts"]): string {
   mkdirSync(binDir, { recursive: true });
   const binPath = join(binDir, "kesha-engine");
   writeFileSync(

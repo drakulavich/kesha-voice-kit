@@ -20,7 +20,10 @@ async function openIssue(cargoStub: string, env: Record<string, string> = {}) {
   const bin = join(work, "bin");
   mkdirSync(bin);
   mkdirSync(join(work, "rust"));
-  const stubs: [string, string][] = [["gh", GH_STUB], ["cargo", `#!/usr/bin/env bash\n${cargoStub}\n`]];
+  const stubs: [string, string][] = [
+    ["gh", GH_STUB],
+    ["cargo", `#!/usr/bin/env bash\n${cargoStub}\n`],
+  ];
   for (const [name, body] of stubs) {
     writeFileSync(join(bin, name), body);
     chmodSync(join(bin, name), 0o755);

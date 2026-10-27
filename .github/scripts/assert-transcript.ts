@@ -21,7 +21,9 @@ export function assertSingleTranscript(raw: string, label: string, expected?: st
     throw new Error(`${label}: expected non-empty transcription text, got ${JSON.stringify(text)}`);
   }
   if (expected !== undefined && !text.toLowerCase().includes(expected.toLowerCase())) {
-    throw new Error(`${label}: expected the transcript to contain ${JSON.stringify(expected)}, got ${JSON.stringify(text)}`);
+    throw new Error(
+      `${label}: expected the transcript to contain ${JSON.stringify(expected)}, got ${JSON.stringify(text)}`,
+    );
   }
   return text;
 }

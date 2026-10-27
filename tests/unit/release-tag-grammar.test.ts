@@ -93,16 +93,22 @@ describe("release manifest tag check", () => {
   });
 
   // release.yml derives alphas and accepts betas as prereleases of the committed version (D3).
-  test.each(["v1.32.0-alpha.1", "v1.32.0-beta.2"])("%s, a prerelease of the committed version, is accepted", async (tag) => {
-    expect((await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"))).accepted).toBe(true);
-  });
+  test.each(["v1.32.0-alpha.1", "v1.32.0-beta.2"])(
+    "%s, a prerelease of the committed version, is accepted",
+    async (tag) => {
+      expect((await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"))).accepted).toBe(true);
+    },
+  );
 
-  test.each(["v1.31.0-alpha.1", "v1.33.0-beta.1", "v1.32.1-alpha.1"])("%s, a prerelease of another version, is rejected", async (tag) => {
-    const { accepted, stderr } = await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"));
+  test.each(["v1.31.0-alpha.1", "v1.33.0-beta.1", "v1.32.1-alpha.1"])(
+    "%s, a prerelease of another version, is rejected",
+    async (tag) => {
+      const { accepted, stderr } = await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"));
 
-    expect(accepted).toBe(false);
-    expect(stderr).toContain("or a prerelease of it");
-  });
+      expect(accepted).toBe(false);
+      expect(stderr).toContain("or a prerelease of it");
+    },
+  );
 
   test("the manifest describes the prerelease it publishes", async () => {
     const proc = Bun.spawn(["node", SCRIPT, "--tag", "v1.32.0-alpha.1"], {
@@ -162,14 +168,18 @@ describe("release manifest source consistency", () => {
 
     const run = Bun.spawnSync(["node", `${REPO_ROOT}/.github/scripts/release-manifest.mjs`, "--check"], { cwd: dir });
     expect(run.exitCode).not.toBe(0);
-    expect(run.stderr.toString()).toContain(".github/workflows/release.yml is missing release manifest token: kesha-textlang-darwin-arm64");
+    expect(run.stderr.toString()).toContain(
+      ".github/workflows/release.yml is missing release manifest token: kesha-textlang-darwin-arm64",
+    );
     for (const entry of ["src", "packaging", "package.json", ".github/scripts"]) unlinkSync(join(dir, entry));
   });
 });
 
 describe("release manifest Linux packages", () => {
   const manifestFor = (...args: string[]) => {
-    const run = Bun.spawnSync(["node", `${REPO_ROOT}/.github/scripts/release-manifest.mjs`, ...args], { cwd: REPO_ROOT });
+    const run = Bun.spawnSync(["node", `${REPO_ROOT}/.github/scripts/release-manifest.mjs`, ...args], {
+      cwd: REPO_ROOT,
+    });
     expect(run.exitCode).toBe(0);
     return JSON.parse(run.stdout.toString()) as { assets: Array<{ name: string; kind: string; checksummed: boolean }> };
   };

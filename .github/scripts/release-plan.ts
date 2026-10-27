@@ -100,7 +100,11 @@ if (import.meta.main) {
     process.stdout.write(
       `version=${plan.version}\ntag=${plan.tag}\nengine_version=${plan.engineVersion}\npublish=${plan.publish}\nprevious=${plan.previous}\n`,
     );
-    console.error(plan.publish ? `Plan: publish ${plan.version} resolving Engine v${plan.engineVersion}.` : "Plan: nothing to publish.");
+    console.error(
+      plan.publish
+        ? `Plan: publish ${plan.version} resolving Engine v${plan.engineVersion}.`
+        : "Plan: nothing to publish.",
+    );
   } catch (err) {
     console.error(`::error::${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);

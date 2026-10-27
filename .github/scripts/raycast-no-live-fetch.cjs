@@ -11,11 +11,16 @@ function refuse(target, scheme) {
         : new URL(`${scheme}//${target?.hostname ?? target?.host ?? "localhost"}${target?.path ?? "/"}`);
   const host = url.hostname.replace(/\.$/, "");
   if (host === "raycast.com" || host.endsWith(".raycast.com")) {
-    return new Error(`blocked live fetch of ${url.href}; raycast-lint.sh must pass the vendored schema and the stubbed RAY_APIURL`);
+    return new Error(
+      `blocked live fetch of ${url.href}; raycast-lint.sh must pass the vendored schema and the stubbed RAY_APIURL`,
+    );
   }
 }
 
-for (const [mod, scheme] of [[http, "http:"], [https, "https:"]]) {
+for (const [mod, scheme] of [
+  [http, "http:"],
+  [https, "https:"],
+]) {
   for (const name of ["request", "get"]) {
     const original = mod[name];
     mod[name] = function (target, ...rest) {

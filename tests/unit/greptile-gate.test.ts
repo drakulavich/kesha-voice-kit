@@ -34,7 +34,9 @@ describe("blockingFindings", () => {
   });
 
   test("a P1 with a reply passes", () => {
-    expect(ids(blockingFindings([byId(ANSWERED_P1), ...COMMENTS.filter((c) => c.in_reply_to_id === ANSWERED_P1)]))).toEqual([]);
+    expect(
+      ids(blockingFindings([byId(ANSWERED_P1), ...COMMENTS.filter((c) => c.in_reply_to_id === ANSWERED_P1)])),
+    ).toEqual([]);
   });
 
   test("a resolved thread passes without a reply", () => {
@@ -50,7 +52,10 @@ describe("blockingFindings", () => {
 
   test("an unanswered finding whose priority markup is unrecognised blocks", () => {
     const p2 = byId(UNANSWERED_P2);
-    const restyled = { ...p2, body: p2.body.replace(/<a href="#"><img [^>]*><\/a>/, '<span data-priority="P2"></span>') };
+    const restyled = {
+      ...p2,
+      body: p2.body.replace(/<a href="#"><img [^>]*><\/a>/, '<span data-priority="P2"></span>'),
+    };
 
     expect(ids(blockingFindings([restyled]))).toEqual([UNANSWERED_P2]);
     expect(failureReport([restyled])).toContain("unrecognised priority Test misses same-size replacements");
@@ -99,7 +104,11 @@ describe("failureReport", () => {
 describe("fetchReviewState", () => {
   const thread = (root: number, isResolved: boolean) => ({ isResolved, comments: { nodes: [{ databaseId: root }] } });
   const threadsPage = (nodes: unknown[], endCursor: string | null) => ({
-    data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: endCursor !== null, endCursor }, nodes } } } },
+    data: {
+      repository: {
+        pullRequest: { reviewThreads: { pageInfo: { hasNextPage: endCursor !== null, endCursor }, nodes } },
+      },
+    },
   });
   let graphqlCalls = 0;
   const fakeGh: GhApi = async (args) => {
@@ -121,7 +130,9 @@ describe("fetchReviewState", () => {
 describe("runGate (#1361)", () => {
   const SHA = "0123456789abcdef0123456789abcdef01234567";
   const threadsPage = (nodes: unknown[]) => ({
-    data: { repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } } },
+    data: {
+      repository: { pullRequest: { reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes } } },
+    },
   });
   function fakeGh(initial: ReviewComment[]) {
     const pr = { comments: initial };
@@ -129,7 +140,9 @@ describe("runGate (#1361)", () => {
     const gh: GhApi = async (args) => {
       if (args[0] === "graphql") return threadsPage([]);
       if (args[0] === `repos/drakulavich/kesha-voice-kit/statuses/${SHA}`) {
-        const fields = Object.fromEntries(args.filter((a) => a.includes("=")).map((a) => a.split(/=(.*)/s).slice(0, 2)));
+        const fields = Object.fromEntries(
+          args.filter((a) => a.includes("=")).map((a) => a.split(/=(.*)/s).slice(0, 2)),
+        );
         statuses.push(fields);
         return {};
       }

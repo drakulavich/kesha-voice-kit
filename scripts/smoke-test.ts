@@ -39,12 +39,19 @@ check(`"kesha" command works (${version})`, versionProc.exitCode === 0 && versio
 // models already cached = fast
 const installProc = Bun.spawnSync(["kesha", "install"], { stdout: "pipe", stderr: "pipe" });
 const installOut = installProc.stdout.toString() + installProc.stderr.toString();
-check("kesha install completes", installOut.includes("installed") || installOut.includes("already") || installOut.includes("models"));
+check(
+  "kesha install completes",
+  installOut.includes("installed") || installOut.includes("already") || installOut.includes("models"),
+);
 
 const testFile = resolve(fixturesDir, files[0]);
 const transcribeProc = Bun.spawnSync(["kesha", testFile], { stdout: "pipe", stderr: "pipe" });
 const transcript = transcribeProc.stdout.toString().trim();
-check("transcription produces output", transcribeProc.exitCode === 0 && transcript.length > 10, transcript.slice(0, 60));
+check(
+  "transcription produces output",
+  transcribeProc.exitCode === 0 && transcript.length > 10,
+  transcript.slice(0, 60),
+);
 
 const jsonProc = Bun.spawnSync(["kesha", "--json", testFile], { stdout: "pipe", stderr: "pipe" });
 try {
@@ -70,11 +77,7 @@ if (process.argv.includes("--tts")) {
     });
     const wavSize = Bun.file(tmpWav).size;
     const header =
-      wavSize > 0
-        ? new TextDecoder().decode(
-            new Uint8Array((await Bun.file(tmpWav).arrayBuffer()).slice(0, 4)),
-          )
-        : "";
+      wavSize > 0 ? new TextDecoder().decode(new Uint8Array((await Bun.file(tmpWav).arrayBuffer()).slice(0, 4))) : "";
     check(
       `kesha say ${label} produces WAV`,
       sayProc.exitCode === 0 && wavSize > 10_000 && header === "RIFF",

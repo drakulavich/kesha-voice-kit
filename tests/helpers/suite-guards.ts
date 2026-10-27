@@ -88,7 +88,7 @@ export function gateIdentifiers(source: string): string[] {
     initializer: m[2]!,
   }));
   const gates = new Set<string>();
-  for (let changed = true; changed; ) {
+  for (let changed = true; changed;) {
     changed = false;
     for (const { name, initializer } of declarations) {
       if (gates.has(name)) continue;

@@ -9,7 +9,15 @@ import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, interruptedRun } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
 import { engineExitCause, engineSignal, runEngineProcess, spawnHint } from "./engine/spawn";
-import { engineFailure, KeshaError, quoteInvalidLine, renderError, replaceEngineHint, SUPPORT_BUNDLE_HINT, type ErrorEvent } from "./engine/events";
+import {
+  engineFailure,
+  KeshaError,
+  quoteInvalidLine,
+  renderError,
+  replaceEngineHint,
+  SUPPORT_BUNDLE_HINT,
+  type ErrorEvent,
+} from "./engine/events";
 import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
 import {
   describeToCapabilities,
@@ -85,7 +93,11 @@ export function engineMissingError(backend: string, ...installFlags: string[]): 
     : cacheSource === "default"
       ? `bun add -g @drakulavich/kesha-voice-kit, then ${installHint(...installFlags)}`
       : `${cacheSource} is set; run \`${installHint(...installFlags)}\` to install there, or unset it`;
-  return new KeshaError("E_ENGINE_SPAWN", `No ${backend} backend is installed: no kesha-engine at ${getEngineBinPath()}`, { hint });
+  return new KeshaError(
+    "E_ENGINE_SPAWN",
+    `No ${backend} backend is installed: no kesha-engine at ${getEngineBinPath()}`,
+    { hint },
+  );
 }
 
 export interface RunEngineOptions {
@@ -126,7 +138,14 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
   if (run.exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
     process.stderr.write(`${stderr}\n`);
-  return { stdout: run.stdout.trim(), stderr, exitCode: run.exitCode, signalCode: run.signalCode, error: events.error, invalid: events.invalid };
+  return {
+    stdout: run.stdout.trim(),
+    stderr,
+    exitCode: run.exitCode,
+    signalCode: run.signalCode,
+    error: events.error,
+    invalid: events.invalid,
+  };
 }
 
 /** The run failed and said so: a non-zero status, or an error event whatever the status. */
@@ -310,11 +329,7 @@ function vadArg(vad: VadMode | undefined): string[] {
 }
 
 /** Build the argv passed to `kesha-engine transcribe` (pure, unit-testable). */
-export function buildTranscribeArgs(
-  audioPath: string,
-  opts: TranscribeEngineOptions,
-  json = false,
-): string[] {
+export function buildTranscribeArgs(audioPath: string, opts: TranscribeEngineOptions, json = false): string[] {
   const args = ["transcribe", ...(json ? ["--json"] : []), ...vadArg(opts.vad)];
   if (opts.itn) args.push("--itn");
   if (json && opts.speakers) args.push("--speakers");
@@ -370,11 +385,7 @@ function parseWordTimings(raw: unknown): WordTiming[] | undefined {
   const words: WordTiming[] = [];
   for (const entry of raw) {
     const w = entry as Record<string, unknown> | null;
-    if (
-      typeof w?.word !== "string" ||
-      typeof w.start !== "number" ||
-      typeof w.end !== "number"
-    ) {
+    if (typeof w?.word !== "string" || typeof w.start !== "number" || typeof w.end !== "number") {
       return undefined;
     }
     words.push({ word: w.word, start: w.start, end: w.end });
@@ -390,11 +401,7 @@ export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
 
   const segments = parsed.segments.map((segment: unknown) => {
     const s = segment as Record<string, unknown>;
-    if (
-      typeof s.start !== "number" ||
-      typeof s.end !== "number" ||
-      typeof s.text !== "string"
-    ) {
+    if (typeof s.start !== "number" || typeof s.end !== "number" || typeof s.text !== "string") {
       throw new KeshaError("E_INTERNAL", "Invalid transcription segment returned by kesha-engine");
     }
     const out: TranscriptionSegment = { start: s.start, end: s.end, text: s.text };
@@ -419,9 +426,13 @@ export async function transcribeEngineWithSegments(
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new KeshaError(err instanceof KeshaError ? err.code : "E_INTERNAL", `${message}: ${quoteInvalidLine(run.stdout)}`, {
-      hint: SUPPORT_BUNDLE_HINT,
-    });
+    throw new KeshaError(
+      err instanceof KeshaError ? err.code : "E_INTERNAL",
+      `${message}: ${quoteInvalidLine(run.stdout)}`,
+      {
+        hint: SUPPORT_BUNDLE_HINT,
+      },
+    );
   }
 }
 
@@ -432,9 +443,7 @@ export interface LiveAutoStopOptions {
   minSpeechMs: number;
 }
 
-export type RecordTarget =
-  | { live: true; autoStop?: LiveAutoStopOptions }
-  | { live?: false; out: string };
+export type RecordTarget = { live: true; autoStop?: LiveAutoStopOptions } | { live?: false; out: string };
 
 /**
  * A live session catches SIGINT/SIGTERM, prints the transcript it has and then
@@ -471,7 +480,11 @@ export async function validateRecordRequest(target: RecordTarget, maxSeconds: nu
  * land inside it. When the reader leaves (EPIPE), `onReaderLeft` fires once and the relay keeps
  * draining without writing, so the engine never blocks on a full pipe while it is being stopped.
  */
-async function forwardStdout(stream: ReadableStream<Uint8Array>, status: { clear(): void }, onReaderLeft: () => void): Promise<void> {
+async function forwardStdout(
+  stream: ReadableStream<Uint8Array>,
+  status: { clear(): void },
+  onReaderLeft: () => void,
+): Promise<void> {
   const reader = stream.getReader();
   let readerLeft = false;
   // Bun reports a stdout EPIPE through the write callback, never as a throw (#1001); the global guard swallows the event.
@@ -570,7 +583,9 @@ export async function detectAudioLanguageEngine(
   if (reportedFailure(run)) {
     const crashed = !run.error && engineSignal(run.exitCode, run.signalCode) !== null;
     const cause = run.error ? renderError(run.error) : engineExitCause("detect-lang", run.exitCode, run.signalCode);
-    const fix = crashed ? SUPPORT_BUNDLE_HINT : "run `kesha install` to reinstall the engine and its language-ID model.";
+    const fix = crashed
+      ? SUPPORT_BUNDLE_HINT
+      : "run `kesha install` to reinstall the engine and its language-ID model.";
     log.warn(`Audio language detection failed: ${cause}\n  Fix: ${fix}`);
     return null;
   }
@@ -599,14 +614,10 @@ export async function detectTextLanguageEngine(
  * On darwin a failure means a broken `kesha-textlang` sidecar, and swallowing it routed
  * `kesha say` to the default voice with no hint that detection had stopped working (#770).
  */
-export function textLangFailureWarning(
-  stderr: string,
-  platform: string = process.platform,
-): string | null {
+export function textLangFailureWarning(stderr: string, platform: string = process.platform): string | null {
   if (platform !== "darwin") return null;
   return (
     `Text language detection failed${stderr ? `: ${stderr}` : ""}\n` +
     "  Falling back to the default voice. Fix: run `kesha install` to reinstall the kesha-textlang sidecar."
   );
 }
-

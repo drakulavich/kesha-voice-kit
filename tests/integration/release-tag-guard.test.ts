@@ -21,7 +21,12 @@ function guardScript(): string {
 }
 
 // Mirrors GHA's real `bash --noprofile --norc -eo pipefail {0}` — plain `bash -c` masks a failed `git ls-remote` as an empty `current` instead of aborting (#1115 review round 2).
-async function runGuard(work: string, tagName: string, sha: string, refType = "tag"): Promise<{ code: number; stdout: string }> {
+async function runGuard(
+  work: string,
+  tagName: string,
+  sha: string,
+  refType = "tag",
+): Promise<{ code: number; stdout: string }> {
   const proc = Bun.spawn(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", guardScript()], {
     cwd: work,
     env: { ...process.env, TAG_NAME: tagName, GITHUB_SHA: sha, REF_TYPE: refType },

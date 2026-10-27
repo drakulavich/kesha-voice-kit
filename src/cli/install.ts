@@ -32,10 +32,7 @@ const DARWIN_ARM64_ONLY_TTS_LANGS = ["hi", "ja", "zh"];
  * What `--tts` may name when the Engine cannot be asked. Without it, a bogus code is only
  * caught by the engine that a full download had to install first (#770).
  */
-export function installableTtsLangs(
-  platform = process.platform,
-  arch = process.arch,
-): string[] {
+export function installableTtsLangs(platform = process.platform, arch = process.arch): string[] {
   return isDarwinArm64(platform, arch)
     ? [...TTS_LANGS_EVERYWHERE, ...DARWIN_ARM64_ONLY_TTS_LANGS]
     : TTS_LANGS_EVERYWHERE;
@@ -68,8 +65,7 @@ export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefi
     const bad = langs.filter((l) => !supported.includes(l));
     if (bad.length > 0) {
       throw new Error(
-        `Unsupported TTS language(s): ${bad.join(", ")}. ` +
-          `Supported on this platform: ${supported.join(", ")}.`,
+        `Unsupported TTS language(s): ${bad.join(", ")}. ` + `Supported on this platform: ${supported.join(", ")}.`,
       );
     }
   }
@@ -99,12 +95,7 @@ export function resolveNoCacheFlag(
   args: Pick<InstallCommandArgs, "no-cache" | "noCache" | "no_cache">,
   rawArgs: string[] = [],
 ): boolean {
-  return (
-    rawArgs.includes("--no-cache") ||
-    args["no-cache"] === true ||
-    args.noCache === true ||
-    args.no_cache === true
-  );
+  return rawArgs.includes("--no-cache") || args["no-cache"] === true || args.noCache === true || args.no_cache === true;
 }
 
 /**
@@ -124,9 +115,7 @@ export async function probeCapabilitiesForInstall(): Promise<EngineCapabilities 
   }
 }
 
-export type BackendSelection =
-  | { ok: true; backend: string | undefined }
-  | { ok: false; error: string };
+export type BackendSelection = { ok: true; backend: string | undefined } | { ok: false; error: string };
 
 export function selectBackend(coreml: boolean, onnx: boolean): BackendSelection {
   if (coreml && onnx) {
@@ -204,8 +193,7 @@ export interface PerformInstallOptions {
 }
 
 export async function performInstall(options: PerformInstallOptions) {
-  const { noCache, backend, ttsLangs, vad = false, diarize = false, plan = false, engineVersion } =
-    options;
+  const { noCache, backend, ttsLangs, vad = false, diarize = false, plan = false, engineVersion } = options;
   // A plan for an unavailable backend previews what its own printed command rejects (#684).
   const backendError = unavailableBackendRefusal(backend);
   if (plan) {
@@ -214,9 +202,7 @@ export async function performInstall(options: PerformInstallOptions) {
       process.exitCode = exitCodeFor(backendError);
       return;
     }
-    log.info(
-      await renderInstallPlan({ noCache, backend, ttsLangs, vad, diarize, engineVersion }),
-    );
+    log.info(await renderInstallPlan({ noCache, backend, ttsLangs, vad, diarize, engineVersion }));
     return;
   }
 
@@ -246,7 +232,8 @@ export async function performInstall(options: PerformInstallOptions) {
       throw backendError;
     }
     await installEngine({ noCache, backend, ttsLangs, vad, diarize, version: engineVersion });
-    if (!log.quietEnabled) await maybeAskForStar(getEngineBinPath(), packageVersion, { info: log.progress, warn: log.warn });
+    if (!log.quietEnabled)
+      await maybeAskForStar(getEngineBinPath(), packageVersion, { info: log.progress, warn: log.warn });
     finishInstallDiagnostic(diagnosticLog, startedAt, "success");
   } catch (err: unknown) {
     const signalExitCode = getPendingSignalExitCode();
@@ -289,7 +276,8 @@ export const installCommand = defineCommand({
     },
     tts: {
       type: "boolean",
-      description: "Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan))",
+      description:
+        "Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan))",
       default: false,
     },
     vad: {

@@ -20,7 +20,10 @@ if (/ASR backend warm-up failed/.test(log)) {
   console.error(
     "FAIL: install reported success but the ASR warm-up failed — the engine cannot " +
       "initialise an ORT session on this platform.\n" +
-      log.split("\n").filter((l) => /warm/i.test(l)).join("\n"),
+      log
+        .split("\n")
+        .filter((l) => /warm/i.test(l))
+        .join("\n"),
   );
   process.exit(1);
 }

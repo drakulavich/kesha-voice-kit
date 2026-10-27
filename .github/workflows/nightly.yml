@@ -45,7 +45,6 @@ permissions:
   contents: read
 
 jobs:
-
   # Provider verification for the recorded capability pacts (#798).
   #
   # `tests/unit/capabilities-pact.test.ts` gates flag routing per target on every PR without
@@ -426,7 +425,6 @@ jobs:
         if: steps.check.outcome == 'failure'
         shell: bash
         run: exit 1
-
 
   cargo-dependency-maintenance:
     name: "🦀 Cargo Dependency Maintenance"

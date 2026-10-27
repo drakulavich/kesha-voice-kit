@@ -42,12 +42,14 @@ describe("diagnostic log storage", () => {
     const enabled = setDiagnosticLogMode("on");
     expect(enabled.mode).toBe("on");
     const session = createDiagnosticLogSession();
-    expect(session.event("engine.exit", {
-      command: "transcribe",
-      exitCode: 0,
-      durationMs: 42,
-      backend: "coreml",
-    })).toBe(true);
+    expect(
+      session.event("engine.exit", {
+        command: "transcribe",
+        exitCode: 0,
+        durationMs: 42,
+        backend: "coreml",
+      }),
+    ).toBe(true);
 
     const line = readFileSync(resolveDiagnosticLogPath(), "utf8").trim();
     const payload = JSON.parse(line);
@@ -81,7 +83,7 @@ describe("diagnostic log storage", () => {
       { text: "hello private transcript" },
       { message: "arbitrary error prose" },
       { transcript: "private words" },
-      { stdout: "{\"text\":\"hello\"}" },
+      { stdout: '{"text":"hello"}' },
       { stderr: "raw engine output" },
       { raw: "anything" },
       { token: "secret" },
@@ -176,16 +178,15 @@ describe("diagnostic log storage", () => {
   });
 
   test("rotates active log by size and keeps bounded history", () => {
-    writeFileSync(
-      join(dir, "diagnostic-logs.json"),
-      JSON.stringify({ mode: "on", maxBytes: 180, retain: 2 }),
-    );
+    writeFileSync(join(dir, "diagnostic-logs.json"), JSON.stringify({ mode: "on", maxBytes: 180, retain: 2 }));
 
     for (let i = 0; i < 6; i++) {
-      expect(createDiagnosticLogSession().event("rotation.test", {
-        runId: `run-${i}`,
-        bucket: "aaaaaaaaaaaaaaaaaaaa",
-      })).toBe(true);
+      expect(
+        createDiagnosticLogSession().event("rotation.test", {
+          runId: `run-${i}`,
+          bucket: "aaaaaaaaaaaaaaaaaaaa",
+        }),
+      ).toBe(true);
     }
 
     const status = getDiagnosticLogStatus();
@@ -285,10 +286,7 @@ describe("rotation keeps the newest history and drops the oldest", () => {
   }
 
   test("the history is exactly `retain` files, newest first", () => {
-    writeFileSync(
-      join(dir, "diagnostic-logs.json"),
-      JSON.stringify({ mode: "on", maxBytes: 180, retain: 2 }),
-    );
+    writeFileSync(join(dir, "diagnostic-logs.json"), JSON.stringify({ mode: "on", maxBytes: 180, retain: 2 }));
 
     writeEvents(3, "older");
     writeEvents(3, "newer");
@@ -413,8 +411,6 @@ describe("a scheme-shaped value is refused whatever matches it", () => {
   }
 
   test("the colon is what disqualifies it, not the word before it", () => {
-    expect(() =>
-      buildDiagnosticLogLine("privacy.scheme", { endpoint: "mailto" }),
-    ).not.toThrow();
+    expect(() => buildDiagnosticLogLine("privacy.scheme", { endpoint: "mailto" })).not.toThrow();
   });
 });

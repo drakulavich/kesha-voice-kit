@@ -42,8 +42,6 @@ describe("--quiet gating (#526)", () => {
     expect(
       shouldReportTranscribeProgress({ stderrIsTty: true, stdoutIsTty: false, debugEnabled: false, quiet: true }),
     ).toBe(false);
-    expect(
-      shouldReportTranscribeProgress({ stderrIsTty: true, stdoutIsTty: false, debugEnabled: false }),
-    ).toBe(true);
+    expect(shouldReportTranscribeProgress({ stderrIsTty: true, stdoutIsTty: false, debugEnabled: false })).toBe(true);
   });
 });

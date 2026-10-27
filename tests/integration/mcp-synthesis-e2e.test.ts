@@ -23,8 +23,7 @@ import { tempDir } from "../helpers/temp-dir";
 const SPIKE_MODEL = process.env.KOKORO_MODEL ?? "/tmp/kokoro-spike/model.onnx";
 const SPIKE_VOICE = process.env.KOKORO_VOICE ?? "/tmp/kokoro-spike/am_michael.bin";
 const BUILT_ENGINE =
-  process.env.KESHA_ENGINE_BIN ??
-  `${new URL("../..", import.meta.url).pathname}rust/target/release/kesha-engine`;
+  process.env.KESHA_ENGINE_BIN ?? `${new URL("../..", import.meta.url).pathname}rust/target/release/kesha-engine`;
 
 const AVAILABLE = existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE) && existsSync(BUILT_ENGINE);
 
@@ -73,44 +72,34 @@ async function client() {
 }
 
 describe.skipIf(!AVAILABLE)("mcp synthesis e2e", () => {
-  test(
-    "synthesize_speech returns a readable resource_link to a valid file",
-    async () => {
-      const cl = await client();
-      const res = await cl.callTool({
-        name: "synthesize_speech",
-        arguments: { text: "Hello world", voice: "en-am_michael", format: "wav" },
-      });
+  test("synthesize_speech returns a readable resource_link to a valid file", async () => {
+    const cl = await client();
+    const res = await cl.callTool({
+      name: "synthesize_speech",
+      arguments: { text: "Hello world", voice: "en-am_michael", format: "wav" },
+    });
 
-      expect(res.isError).toBeUndefined();
-      const link = (res.content as Array<{ type: string; uri: string }>).find(
-        (c) => c.type === "resource_link",
-      );
-      expect(link?.uri.startsWith("kesha-audio://")).toBe(true);
+    expect(res.isError).toBeUndefined();
+    const link = (res.content as Array<{ type: string; uri: string }>).find((c) => c.type === "resource_link");
+    expect(link?.uri.startsWith("kesha-audio://")).toBe(true);
 
-      const sc = res.structuredContent as { uri: string; path: string; bytes: number };
-      expect(existsSync(sc.path)).toBe(true);
-      expect(statSync(sc.path).mode & 0o777).toBe(0o600);
-      expect(sc.bytes).toBeGreaterThan(1000);
+    const sc = res.structuredContent as { uri: string; path: string; bytes: number };
+    expect(existsSync(sc.path)).toBe(true);
+    expect(statSync(sc.path).mode & 0o777).toBe(0o600);
+    expect(sc.bytes).toBeGreaterThan(1000);
 
-      const read = await cl.readResource({ uri: sc.uri });
-      const blob = (read.contents[0] as { blob?: string }).blob;
-      expect(typeof blob).toBe("string");
-      expect(Buffer.from(blob as string, "base64").length).toBe(sc.bytes);
-    },
-    60_000,
-  );
+    const read = await cl.readResource({ uri: sc.uri });
+    const blob = (read.contents[0] as { blob?: string }).blob;
+    expect(typeof blob).toBe("string");
+    expect(Buffer.from(blob as string, "base64").length).toBe(sc.bytes);
+  }, 60_000);
 
-  test(
-    "an unknown voice surfaces as a tool error, not a protocol throw",
-    async () => {
-      const cl = await client();
-      const res = await cl.callTool({
-        name: "synthesize_speech",
-        arguments: { text: "Hello world", voice: "xx-nonexistent", format: "wav" },
-      });
-      expect(res.isError).toBe(true);
-    },
-    60_000,
-  );
+  test("an unknown voice surfaces as a tool error, not a protocol throw", async () => {
+    const cl = await client();
+    const res = await cl.callTool({
+      name: "synthesize_speech",
+      arguments: { text: "Hello world", voice: "xx-nonexistent", format: "wav" },
+    });
+    expect(res.isError).toBe(true);
+  }, 60_000);
 });

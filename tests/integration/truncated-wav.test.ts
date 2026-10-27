@@ -40,7 +40,12 @@ describe("a WAV shorter than its header says (#1473 S3-5)", () => {
     writeFileSync(half, pcmWav(32000, 16000));
     writeFileSync(whole, pcmWav(32000, 32000));
     writeFileSync(streamed, pcmWav(0xffffffff, 32000));
-    const env = { HOME: dir, KESHA_HOME: join(dir, "state"), KESHA_CACHE_DIR: join(dir, "cache"), KESHA_ENGINE_BIN: enginePath };
+    const env = {
+      HOME: dir,
+      KESHA_HOME: join(dir, "state"),
+      KESHA_CACHE_DIR: join(dir, "cache"),
+      KESHA_ENGINE_BIN: enginePath,
+    };
 
     const truncated = await runCliScenario([half], { env });
     expect(truncated.exitCode).toBe(0);
@@ -62,13 +67,24 @@ describe("a WAV shorter than its header says (#1473 S3-5)", () => {
 describe("a truncated WAV through the Core API and MCP (#1473 S3-5)", () => {
   scenarioTest("the Core API transcribes it and writes the warning to stderr", async () => {
     const dir = tempDir("kesha-truncated-wav-core-");
-    const enginePath = writeTranscribingEngine("kesha-truncated-wav-core-engine-", ["transcribe"], "  printf '%s\\n' 'ok'");
+    const enginePath = writeTranscribingEngine(
+      "kesha-truncated-wav-core-engine-",
+      ["transcribe"],
+      "  printf '%s\\n' 'ok'",
+    );
     const half = join(dir, "half.wav");
     const whole = join(dir, "whole.wav");
     writeFileSync(half, pcmWav(32000, 16000));
     writeFileSync(whole, pcmWav(32000, 32000));
     const script = `const { transcribe } = await import(${JSON.stringify(repoPath("src/lib.ts"))}); console.log((await transcribe(process.argv[1])).text);`;
-    const env = { ...process.env, HOME: dir, KESHA_HOME: join(dir, "state"), KESHA_CACHE_DIR: join(dir, "cache"), KESHA_ENGINE_BIN: enginePath, NO_COLOR: "1" };
+    const env = {
+      ...process.env,
+      HOME: dir,
+      KESHA_HOME: join(dir, "state"),
+      KESHA_CACHE_DIR: join(dir, "cache"),
+      KESHA_ENGINE_BIN: enginePath,
+      NO_COLOR: "1",
+    };
     const run = (file: string) => Bun.spawnSync([process.execPath, "-e", script, file], { env });
 
     const truncated = run(half);
@@ -90,7 +106,11 @@ describe("a truncated WAV through the Core API and MCP (#1473 S3-5)", () => {
       process.env.HOME = dir;
       process.env.KESHA_HOME = join(dir, "state");
       process.env.KESHA_CACHE_DIR = join(dir, "cache");
-      process.env.KESHA_ENGINE_BIN = writeTranscribingEngine("kesha-truncated-wav-mcp-engine-", ["transcribe"], "  printf '%s\\n' 'ok'");
+      process.env.KESHA_ENGINE_BIN = writeTranscribingEngine(
+        "kesha-truncated-wav-mcp-engine-",
+        ["transcribe"],
+        "  printf '%s\\n' 'ok'",
+      );
       const half = join(dir, "half.wav");
       const whole = join(dir, "whole.wav");
       writeFileSync(half, pcmWav(32000, 16000));

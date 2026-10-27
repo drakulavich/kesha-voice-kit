@@ -117,9 +117,7 @@ function referencesIn(origin: string): Reference[] {
       : [],
   );
   const modules = [...source.matchAll(MODULE_REFERENCE)].flatMap<Reference>(([, path, symbol]) =>
-    path && symbol
-      ? [{ origin, label: `${path}::${symbol}`, file: resolveModule(path), symbol, kind: "module" }]
-      : [],
+    path && symbol ? [{ origin, label: `${path}::${symbol}`, file: resolveModule(path), symbol, kind: "module" }] : [],
   );
   return [...files, ...modules];
 }

@@ -5,10 +5,7 @@ import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
 import { rustModelsSource } from "../helpers/rust-models-source";
 
 const rustSource = (...parts: string[]) =>
-  readFileSync(join(import.meta.dir, "..", "..", "rust", "src", ...parts), "utf8").replace(
-    /\r\n/g,
-    "\n",
-  );
+  readFileSync(join(import.meta.dir, "..", "..", "rust", "src", ...parts), "utf8").replace(/\r\n/g, "\n");
 
 const MODELS_RS = rustModelsSource().replace(/\r\n/g, "\n");
 
@@ -17,9 +14,7 @@ function advertisedTtsLangs(): { systemKokoro: string[]; onnx: string[] } {
   const body = MODELS_RS.match(/pub fn tts_languages\(\)[^{]*\{\n([\s\S]*?)\n\}/)?.[1];
   const arms = body ? [...body.matchAll(/#\[cfg\((not\()?[\s\S]*?vec!\[([^\]]*)\]/g)] : [];
   const langsOf = (negated: boolean) =>
-    [...(arms.find((m) => Boolean(m[1]) === negated)?.[2] ?? "").matchAll(/"([^"]+)"/g)].map(
-      (m) => m[1]!,
-    );
+    [...(arms.find((m) => Boolean(m[1]) === negated)?.[2] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
   const systemKokoro = langsOf(false);
   const onnx = langsOf(true);
   if (systemKokoro.length === 0 || onnx.length === 0) {
@@ -34,9 +29,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
   });
 
   it("returns Milena for Russian on darwin (zero-install AVSpeech path)", () => {
-    expect(pickVoiceForLang("ru", 0.95, "darwin")).toBe(
-      "macos-com.apple.voice.compact.ru-RU.Milena",
-    );
+    expect(pickVoiceForLang("ru", 0.95, "darwin")).toBe("macos-com.apple.voice.compact.ru-RU.Milena");
   });
 
   it("falls back to ru-vosk-m02 for Russian on non-darwin (Vosk replaces Piper-ruslan, #214)", () => {
@@ -85,9 +78,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
     expect(pickVoiceForLang("hi", 0.95, "darwin", "x64")).toBeUndefined();
     // en (ONNX Kokoro) and ru (AVSpeech Milena) still route on Intel Macs.
     expect(pickVoiceForLang("en", 0.95, "darwin", "x64")).toBe("en-am_michael");
-    expect(pickVoiceForLang("ru", 0.95, "darwin", "x64")).toBe(
-      "macos-com.apple.voice.compact.ru-RU.Milena",
-    );
+    expect(pickVoiceForLang("ru", 0.95, "darwin", "x64")).toBe("macos-com.apple.voice.compact.ru-RU.Milena");
   });
 
   it("returns undefined below 0.5 confidence (too ambiguous)", () => {
@@ -109,10 +100,8 @@ describe("pickVoiceForLang (auto-routing)", () => {
     "win32-x64 fr -> fr-ff_siwis": "Kokoro v1.0 ships no male French voice",
     "darwin-x64 fr -> fr-ff_siwis": "Kokoro v1.0 ships no male French voice",
     "darwin-arm64 fr -> fr-ff_siwis": "Kokoro v1.0 ships no male French voice",
-    "darwin-arm64 ru -> macos-com.apple.voice.compact.ru-RU.Milena":
-      "darwin ru is the zero-install path",
-    "darwin-x64 ru -> macos-com.apple.voice.compact.ru-RU.Milena":
-      "darwin ru is the zero-install path",
+    "darwin-arm64 ru -> macos-com.apple.voice.compact.ru-RU.Milena": "darwin ru is the zero-install path",
+    "darwin-x64 ru -> macos-com.apple.voice.compact.ru-RU.Milena": "darwin ru is the zero-install path",
   };
   // AVSpeech ids carry no gender, so every macos-* default has to declare one here.
   const AVSPEECH_GENDER: Record<string, "male" | "female"> = {
@@ -164,9 +153,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
   // Both exceptions are deliberate; this fails if someone "fixes" one of them (CLAUDE.md).
   it("keeps the two documented female routes exactly where they are", () => {
     expect(pickVoiceForLang("fr", 0.95, "linux", "x64")).toBe("fr-ff_siwis");
-    expect(pickVoiceForLang("ru", 0.95, "darwin", "arm64")).toBe(
-      "macos-com.apple.voice.compact.ru-RU.Milena",
-    );
+    expect(pickVoiceForLang("ru", 0.95, "darwin", "arm64")).toBe("macos-com.apple.voice.compact.ru-RU.Milena");
     expect(pickVoiceForLang("ru", 0.95, "linux", "x64")).toBe("ru-vosk-m02");
   });
 
@@ -202,9 +189,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
 // `kesha-engine say` still applies *that* constant when no --voice reaches it.
 describe("DEFAULT_VOICE_ID", () => {
   it("matches the engine's fallback voice", () => {
-    const engineDefault = rustSource("tts", "voices.rs").match(
-      /DEFAULT_VOICE_ID:\s*&str\s*=\s*"([^"]+)"/,
-    )?.[1];
+    const engineDefault = rustSource("tts", "voices.rs").match(/DEFAULT_VOICE_ID:\s*&str\s*=\s*"([^"]+)"/)?.[1];
     expect(engineDefault).toBe(DEFAULT_VOICE_ID);
   });
 

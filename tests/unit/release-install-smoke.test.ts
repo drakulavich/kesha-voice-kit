@@ -13,7 +13,7 @@ describe("release install smoke", () => {
     expect(script).toContain('KESHA_CACHE_DIR="$scratch/cache"');
     expect(script).toContain('bun "$repo_root/.github/scripts/assert-install-warmup.ts"');
     expect(script).toContain('bun "$repo_root/.github/scripts/smoke-synthesis.ts"');
-    expect(script).toContain('trap cleanup EXIT');
+    expect(script).toContain("trap cleanup EXIT");
     expect(synthesisSmoke).toContain('process.env.KESHA_COMMAND || "kesha"');
   });
 
@@ -25,7 +25,7 @@ describe("release install smoke", () => {
     expect(readRepoFile(".github/scripts/npm-release-metadata.ts")).toContain("`::error::FAIL: ${");
     expect(script).toContain('npm install --global "$package@$VERSION"');
     expect(script).toContain('NPM_CONFIG_PREFIX="$prefix"');
-    expect(script).toContain('installed npm package version was $installed_version, expected $VERSION');
+    expect(script).toContain("installed npm package version was $installed_version, expected $VERSION");
   });
 
   test("runs the npm smoke only after release.yml has published the version", () => {

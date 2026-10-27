@@ -26,7 +26,10 @@ export type GuardEnv = { TAG_NAME?: string; BRANCH?: string; OPEN_HEADS?: string
 export type GuardDecision = { skip: true } | { skip: false } | { refuse: string };
 
 function refs(value: string | undefined): string[] {
-  return (value ?? "").split("\n").map((line) => line.trim().split(/\s+/).pop() ?? "").filter((line) => line.length > 0);
+  return (value ?? "")
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/).pop() ?? "")
+    .filter((line) => line.length > 0);
 }
 
 /// The whole decision, so a test pins the branch taken rather than only the predicates.
@@ -73,10 +76,12 @@ if (import.meta.main && process.argv[2] === "existing") {
   }
   report(decision);
 } else if (import.meta.main) {
-  report(decideFollowup({
-    TAG_NAME: process.env.TAG_NAME,
-    BRANCH: process.env.BRANCH,
-    OPEN_HEADS: process.env.OPEN_HEADS,
-    REMOTE_HEADS: process.env.REMOTE_HEADS,
-  }));
+  report(
+    decideFollowup({
+      TAG_NAME: process.env.TAG_NAME,
+      BRANCH: process.env.BRANCH,
+      OPEN_HEADS: process.env.OPEN_HEADS,
+      REMOTE_HEADS: process.env.REMOTE_HEADS,
+    }),
+  );
 }
