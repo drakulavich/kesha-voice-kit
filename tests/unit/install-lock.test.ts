@@ -47,10 +47,7 @@ async function deadPid(): Promise<number> {
 
 /** A lock owner as it lands on disk: one `owner-<token>.json` inside the lock directory. */
 function writeOwner(lockDir: string, token: string, pid: number): void {
-  writeFileSync(
-    join(lockDir, `owner-${token}.json`),
-    JSON.stringify({ token, pid, host: hostname(), startedAt: Date.now() }),
-  );
+  writeFileSync(join(lockDir, `owner-${token}.json`), JSON.stringify({ token, pid, host: hostname(), startedAt: Date.now() }));
 }
 
 /** Scopes the override so a value the developer or the lane already set survives the test. */
@@ -80,8 +77,7 @@ interface WaiterOptions {
 function spawnWaiter(binPath: string, dir: string, opts: WaiterOptions) {
   const script = join(dir, `waiter-${Math.random().toString(36).slice(2)}.ts`);
   const barrier = opts.barrier
-    ? `const spinUntil = Date.now() + 30_000;\n` +
-      `while (!existsSync(${JSON.stringify(join(dir, "go"))})) if (Date.now() > spinUntil) process.exit(3);\n`
+    ? `const spinUntil = Date.now() + 30_000;\n` + `while (!existsSync(${JSON.stringify(join(dir, "go"))})) if (Date.now() > spinUntil) process.exit(3);\n`
     : "";
   writeFileSync(
     script,
@@ -172,9 +168,7 @@ describe("acquireInstallLock (#997)", () => {
       mkdirSync(`${binPath}.lock`, { recursive: true });
       writeOwner(`${binPath}.lock`, "crashed-owner", await deadPid());
 
-      const waiters = Array.from({ length: 6 }, () =>
-        spawnWaiter(binPath, dir, { maxWaitMs: 30_000, holdMs: 60, barrier: true }),
-      );
+      const waiters = Array.from({ length: 6 }, () => spawnWaiter(binPath, dir, { maxWaitMs: 30_000, holdMs: 60, barrier: true }));
       await waitForFiles(dir, "ready", waiters.length);
       writeFileSync(join(dir, "go"), "");
       const exits = await Promise.all(waiters.map((w) => w.exited));

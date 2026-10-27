@@ -126,8 +126,6 @@ export function cacheComponents(cacheRoot: string, binPath: string, coreml: bool
     },
     { label: "TTS (Vosk)", path: join(cacheRoot, "models/vosk-ru") },
   ].map(sized);
-  const leftoverRows = unusedRows
-    .map((row) => sized({ ...row, label: `${row.label}, unused by this engine, safe to delete` }))
-    .filter((row) => row.exists);
+  const leftoverRows = unusedRows.map((row) => sized({ ...row, label: `${row.label}, unused by this engine, safe to delete` })).filter((row) => row.exists);
   return [engineRow, ...modelRows, ...leftoverRows];
 }

@@ -2,14 +2,7 @@ import { defineCommand } from "citty";
 import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInvalidArg } from "./options";
-import {
-  engineMissingError,
-  isEngineInstalled,
-  recordEngine,
-  validateRecordRequest,
-  type LiveAutoStopOptions,
-  type RecordTarget,
-} from "../engine";
+import { engineMissingError, isEngineInstalled, recordEngine, validateRecordRequest, type LiveAutoStopOptions, type RecordTarget } from "../engine";
 import { log } from "../log";
 import { getPendingSignalExitCode, waitForPendingSignalCleanup } from "../process-tree";
 
@@ -78,15 +71,9 @@ export function resolveRecordArgs(args: RecordArgs): ResolvedRecordArgs {
   };
 }
 
-function resolveAutoStop(
-  args: RecordArgs,
-  target: RecordTarget,
-): { ok: true; options?: LiveAutoStopOptions } | Rejected {
+function resolveAutoStop(args: RecordArgs, target: RecordTarget): { ok: true; options?: LiveAutoStopOptions } | Rejected {
   const enabled = args["auto-stop"] === true;
-  const hasSettings =
-    args["auto-stop-silence-ms"] !== undefined ||
-    args["auto-stop-threshold"] !== undefined ||
-    args["auto-stop-min-speech-ms"] !== undefined;
+  const hasSettings = args["auto-stop-silence-ms"] !== undefined || args["auto-stop-threshold"] !== undefined || args["auto-stop-min-speech-ms"] !== undefined;
   if (!enabled && hasSettings) {
     return { ok: false, error: "auto-stop settings require --auto-stop." };
   }
@@ -95,17 +82,9 @@ function resolveAutoStop(
   }
   if (!enabled) return { ok: true };
 
-  const silenceMs = resolvePositiveInteger(
-    args["auto-stop-silence-ms"],
-    DEFAULT_AUTO_STOP_SILENCE_MS,
-    "--auto-stop-silence-ms",
-  );
+  const silenceMs = resolvePositiveInteger(args["auto-stop-silence-ms"], DEFAULT_AUTO_STOP_SILENCE_MS, "--auto-stop-silence-ms");
   if (!silenceMs.ok) return silenceMs;
-  const minSpeechMs = resolvePositiveInteger(
-    args["auto-stop-min-speech-ms"],
-    DEFAULT_AUTO_STOP_MIN_SPEECH_MS,
-    "--auto-stop-min-speech-ms",
-  );
+  const minSpeechMs = resolvePositiveInteger(args["auto-stop-min-speech-ms"], DEFAULT_AUTO_STOP_MIN_SPEECH_MS, "--auto-stop-min-speech-ms");
   if (!minSpeechMs.ok) return minSpeechMs;
   const threshold = resolveThreshold(args["auto-stop-threshold"]);
   if (!threshold.ok) return threshold;
@@ -115,11 +94,7 @@ function resolveAutoStop(
   };
 }
 
-function resolvePositiveInteger(
-  rawValue: string | number | undefined,
-  defaultValue: number,
-  flag: string,
-): { ok: true; value: number } | Rejected {
+function resolvePositiveInteger(rawValue: string | number | undefined, defaultValue: number, flag: string): { ok: true; value: number } | Rejected {
   const raw = String(rawValue ?? defaultValue).trim();
   const value = Number(raw);
   if (!Number.isInteger(value) || value <= 0) {

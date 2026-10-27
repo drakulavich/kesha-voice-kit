@@ -106,9 +106,7 @@ class SqliteStatsRecorder implements StatsRecorder {
   finish(status: StatsRunStatus, itemCount = 0): void {
     if (this.closed) return;
     this.safeWrite(() => {
-      this.db
-        .query("update runs set finished_at = ?, status = ?, item_count = ? where id = ?")
-        .run(new Date().toISOString(), status, itemCount, this.runId);
+      this.db.query("update runs set finished_at = ?, status = ?, item_count = ? where id = ?").run(new Date().toISOString(), status, itemCount, this.runId);
     });
     this.closed = true;
     this.db.close();
@@ -185,15 +183,11 @@ function withStatsDb<T>(fn: (db: Database) => T): T {
     return fn(db);
   } catch (err) {
     const busy = String((err as { code?: unknown }).code ?? "").startsWith("SQLITE_BUSY");
-    throw new KeshaError(
-      "E_INTERNAL",
-      `cannot read or write the Kesha Stats database ${dbPath}: ${errorMessage(err)}`,
-      {
-        hint: busy
-          ? "another kesha command is writing to it; retry when that command finishes."
-          : `check that ${dbPath} and its folder can be written and that its disk has free space, or point KESHA_STATS_DB at another file.`,
-      },
-    );
+    throw new KeshaError("E_INTERNAL", `cannot read or write the Kesha Stats database ${dbPath}: ${errorMessage(err)}`, {
+      hint: busy
+        ? "another kesha command is writing to it; retry when that command finishes."
+        : `check that ${dbPath} and its folder can be written and that its disk has free space, or point KESHA_STATS_DB at another file.`,
+    });
   } finally {
     db.close();
   }
@@ -530,10 +524,7 @@ export function getRecentErrors(limit = 20): StatsErrorRow[] {
 }
 
 export function renderWeekSummary(summary: StatsWeekSummary): string {
-  const realtime =
-    summary.inputDurationMs > 0 && summary.sttTimeMs > 0
-      ? `${(summary.inputDurationMs / summary.sttTimeMs).toFixed(1)}x`
-      : "n/a";
+  const realtime = summary.inputDurationMs > 0 && summary.sttTimeMs > 0 ? `${(summary.inputDurationMs / summary.sttTimeMs).toFixed(1)}x` : "n/a";
   const lines = [
     "Kesha Stats - last 7 days",
     `Runs: ${summary.runs} (${summary.successes} success, ${summary.failures} failed)`,
@@ -579,9 +570,7 @@ export function renderWeekSummary(summary: StatsWeekSummary): string {
         run.stages.length > 0
           ? run.stages.map((stage) => `${stage.stage} ${humanDuration(stage.durationMs)} ${stage.status}`).join(", ")
           : "no stages recorded";
-      lines.push(
-        `  ${run.command} ${run.status}, ${run.itemCount} item(s), ${humanDuration(run.durationMs ?? 0)} | ${stages}`,
-      );
+      lines.push(`  ${run.command} ${run.status}, ${run.itemCount} item(s), ${humanDuration(run.durationMs ?? 0)} | ${stages}`);
     }
   }
 
@@ -592,12 +581,7 @@ export function renderErrors(rows: StatsErrorRow[]): string {
   if (rows.length === 0) return "Kesha Stats - no recorded errors";
   const lines = ["Kesha Stats - recent errors"];
   for (const row of rows) {
-    const parts = [
-      row.occurredAt,
-      row.command ?? "unknown",
-      row.stage ?? "unknown",
-      row.errorCode ?? row.errorClass ?? "error",
-    ];
+    const parts = [row.occurredAt, row.command ?? "unknown", row.stage ?? "unknown", row.errorCode ?? row.errorClass ?? "error"];
     lines.push(`${parts.join(" | ")} | ${row.message}`);
   }
   return lines.join("\n");
@@ -621,11 +605,7 @@ export function artifactFromFile(path: string, kind: StatsArtifactInput["kind"])
   }
 }
 
-export function artifactFromBytes(
-  bytes: number,
-  kind: StatsArtifactInput["kind"],
-  format?: string,
-): StatsArtifactInput {
+export function artifactFromBytes(bytes: number, kind: StatsArtifactInput["kind"], format?: string): StatsArtifactInput {
   return {
     kind,
     format,
@@ -757,10 +737,7 @@ function currentSchemaVersion(db: Database): number {
 }
 
 function recordSchemaVersion(db: Database, version: number): void {
-  db.query("insert or ignore into schema_migrations (version, applied_at) values (?, ?)").run(
-    version,
-    new Date().toISOString(),
-  );
+  db.query("insert or ignore into schema_migrations (version, applied_at) values (?, ?)").run(version, new Date().toISOString());
 }
 
 function getStatsEnabled(db: Database): boolean {
@@ -769,10 +746,7 @@ function getStatsEnabled(db: Database): boolean {
 }
 
 function setSetting(db: Database, key: string, value: string): void {
-  db.query("insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value").run(
-    key,
-    value,
-  );
+  db.query("insert into settings (key, value) values (?, ?) on conflict(key) do update set value = excluded.value").run(key, value);
 }
 
 function insertRun(db: Database, command: StatsCommandName): number {
@@ -958,9 +932,7 @@ function renderStatsCsv(data: StatsExportData): string {
     });
   }
 
-  return `${[header.join(","), ...rows.map((row) => header.map((name) => csvCell(row[name] ?? null)).join(","))].join(
-    "\n",
-  )}\n`;
+  return `${[header.join(","), ...rows.map((row) => header.map((name) => csvCell(row[name] ?? null)).join(","))].join("\n")}\n`;
 }
 
 function csvCell(value: string | number | null): string {
@@ -1071,9 +1043,7 @@ function summarizeStages(rows: StatsStageTimingRow[]): StatsStageSummary[] {
 }
 
 function sumStageDuration(rows: StatsStageTimingRow[], stage: string): number {
-  return rows
-    .filter((row) => row.stage === stage)
-    .reduce((sum, row) => sum + Math.max(0, Number(row.durationMs ?? 0)), 0);
+  return rows.filter((row) => row.stage === stage).reduce((sum, row) => sum + Math.max(0, Number(row.durationMs ?? 0)), 0);
 }
 
 function countRuns(rows: StatsRunTimingRow[], status: StatsRunStatus): number {
@@ -1141,9 +1111,7 @@ function summarizeSlowestRuns(runs: StatsRunTimingRow[], stageRows: StatsStageTi
       status: run.status,
       durationMs,
       itemCount: Number(run.itemCount ?? 0),
-      stages: (stagesByRun.get(run.id) ?? []).sort(
-        (a, b) => b.durationMs - a.durationMs || a.stage.localeCompare(b.stage),
-      ),
+      stages: (stagesByRun.get(run.id) ?? []).sort((a, b) => b.durationMs - a.durationMs || a.stage.localeCompare(b.stage)),
     }));
 }
 
@@ -1190,9 +1158,7 @@ function renderBuckets(buckets: StatsCountBucket[]): string {
 }
 
 function sortedBuckets(buckets: Map<string, number>): StatsCountBucket[] {
-  return [...buckets.entries()]
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  return [...buckets.entries()].map(([label, count]) => ({ label, count })).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
 }
 
 function orderBuckets(buckets: Map<string, number>, order: string[]): StatsCountBucket[] {

@@ -93,22 +93,16 @@ describe("release manifest tag check", () => {
   });
 
   // release.yml derives alphas and accepts betas as prereleases of the committed version (D3).
-  test.each(["v1.32.0-alpha.1", "v1.32.0-beta.2"])(
-    "%s, a prerelease of the committed version, is accepted",
-    async (tag) => {
-      expect((await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"))).accepted).toBe(true);
-    },
-  );
+  test.each(["v1.32.0-alpha.1", "v1.32.0-beta.2"])("%s, a prerelease of the committed version, is accepted", async (tag) => {
+    expect((await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"))).accepted).toBe(true);
+  });
 
-  test.each(["v1.31.0-alpha.1", "v1.33.0-beta.1", "v1.32.1-alpha.1"])(
-    "%s, a prerelease of another version, is rejected",
-    async (tag) => {
-      const { accepted, stderr } = await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"));
+  test.each(["v1.31.0-alpha.1", "v1.33.0-beta.1", "v1.32.1-alpha.1"])("%s, a prerelease of another version, is rejected", async (tag) => {
+    const { accepted, stderr } = await manifestCheck(["--tag", tag], fixtureRepo("1.32.0"));
 
-      expect(accepted).toBe(false);
-      expect(stderr).toContain("or a prerelease of it");
-    },
-  );
+    expect(accepted).toBe(false);
+    expect(stderr).toContain("or a prerelease of it");
+  });
 
   test("the manifest describes the prerelease it publishes", async () => {
     const proc = Bun.spawn(["node", SCRIPT, "--tag", "v1.32.0-alpha.1"], {
@@ -168,9 +162,7 @@ describe("release manifest source consistency", () => {
 
     const run = Bun.spawnSync(["node", `${REPO_ROOT}/.github/scripts/release-manifest.mjs`, "--check"], { cwd: dir });
     expect(run.exitCode).not.toBe(0);
-    expect(run.stderr.toString()).toContain(
-      ".github/workflows/release.yml is missing release manifest token: kesha-textlang-darwin-arm64",
-    );
+    expect(run.stderr.toString()).toContain(".github/workflows/release.yml is missing release manifest token: kesha-textlang-darwin-arm64");
     for (const entry of ["src", "packaging", "package.json", ".github/scripts"]) unlinkSync(join(dir, entry));
   });
 });
@@ -188,10 +180,7 @@ describe("release manifest Linux packages", () => {
   test("a stable release with packages names the .deb and .rpm of its own version, checksummed", () => {
     const version = tag.slice(1);
     const packages = manifestFor("--tag", tag, "--linux-packages").assets.filter((a) => a.kind === "linux-package");
-    expect(packages.map((a) => a.name).sort()).toEqual([
-      `kesha-voice-kit-${version}-1.x86_64.rpm`,
-      `kesha-voice-kit_${version}-1_amd64.deb`,
-    ]);
+    expect(packages.map((a) => a.name).sort()).toEqual([`kesha-voice-kit-${version}-1.x86_64.rpm`, `kesha-voice-kit_${version}-1_amd64.deb`]);
     expect(packages.every((a) => a.checksummed)).toBe(true);
   });
 

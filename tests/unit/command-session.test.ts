@@ -68,12 +68,7 @@ function fakeSession(): {
 describe("runCommandSession", () => {
   test("emits command.start with the command name and caller fields", async () => {
     const f = fakeSession();
-    await runCommandSession(
-      "transcribe",
-      { itemCount: 2, outputFormat: "json" },
-      async () => ({ status: "success", itemCount: 2 }),
-      f.factories,
-    );
+    await runCommandSession("transcribe", { itemCount: 2, outputFormat: "json" }, async () => ({ status: "success", itemCount: 2 }), f.factories);
 
     expect(f.statsCommands).toEqual(["transcribe"]);
     expect(f.events[0]).toEqual({
@@ -84,12 +79,7 @@ describe("runCommandSession", () => {
 
   test("emits command.finish with status plus the outcome's finish fields", async () => {
     const f = fakeSession();
-    await runCommandSession(
-      "say",
-      {},
-      async () => ({ status: "success", itemCount: 1, finishFields: { durationMs: 42, hasOut: true } }),
-      f.factories,
-    );
+    await runCommandSession("say", {}, async () => ({ status: "success", itemCount: 1, finishFields: { durationMs: 42, hasOut: true } }), f.factories);
 
     expect(f.events[1]).toEqual({
       event: "command.finish",
@@ -107,12 +97,7 @@ describe("runCommandSession", () => {
 
   test("returns the body's outcome to the caller", async () => {
     const f = fakeSession();
-    const outcome = await runCommandSession(
-      "say",
-      {},
-      async () => ({ status: "failed", itemCount: 1, exitCode: 5 }),
-      f.factories,
-    );
+    const outcome = await runCommandSession("say", {}, async () => ({ status: "failed", itemCount: 1, exitCode: 5 }), f.factories);
 
     expect(outcome.exitCode).toBe(5);
     expect(outcome.status).toBe("failed");
@@ -166,12 +151,7 @@ describe("runCommandSession", () => {
   test("a failing diagnostic flush does not swallow a failed outcome's exit code (Greptile P1 on #607)", async () => {
     const f = fakeSession();
 
-    const outcome = await runCommandSession(
-      "say",
-      {},
-      async () => ({ status: "failed", itemCount: 1, exitCode: 4 }),
-      withFailingFlush(f.factories),
-    );
+    const outcome = await runCommandSession("say", {}, async () => ({ status: "failed", itemCount: 1, exitCode: 4 }), withFailingFlush(f.factories));
 
     expect(outcome.exitCode).toBe(4);
   });
@@ -179,9 +159,7 @@ describe("runCommandSession", () => {
   test("a cleanup failure on the success path still surfaces", async () => {
     const f = fakeSession();
 
-    await expect(
-      runCommandSession("say", {}, async () => ({ status: "success", itemCount: 1 }), withFailingFlush(f.factories)),
-    ).rejects.toThrow("disk full");
+    await expect(runCommandSession("say", {}, async () => ({ status: "success", itemCount: 1 }), withFailingFlush(f.factories))).rejects.toThrow("disk full");
   });
 
   test("a throwing body still closes the session as failed, then rethrows", async () => {
@@ -236,9 +214,7 @@ describe("runCommandSession", () => {
         {},
         async () => {
           await readEvents(
-            new Response(
-              '{"kind":"debug","t_ms":7,"event":"asr.backend_loaded","message":"asr::backend_loaded dt=12ms","fields":{"dt_ms":12}}\n',
-            ).body!,
+            new Response('{"kind":"debug","t_ms":7,"event":"asr.backend_loaded","message":"asr::backend_loaded dt=12ms","fields":{"dt_ms":12}}\n').body!,
           );
           return { status: "success", itemCount: 0 };
         },

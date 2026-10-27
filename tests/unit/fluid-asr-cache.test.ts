@@ -2,13 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  FLUID_ASR_REQUIRED,
-  fluidAsrCachePath,
-  fluidAsrCacheReady,
-  isCoremlBackend,
-  legacyFluidAsrCachePath,
-} from "../../src/fluid-asr-cache";
+import { FLUID_ASR_REQUIRED, fluidAsrCachePath, fluidAsrCacheReady, isCoremlBackend, legacyFluidAsrCachePath } from "../../src/fluid-asr-cache";
 import { defaultBackendForPlatform, unavailableBackendError } from "../../src/cli/install";
 import { isInsideDir } from "../../src/cache-layout";
 import { rustModelsSource } from "../helpers/rust-models-source";
@@ -32,19 +26,11 @@ describe("the FluidAudio ASR bundle", () => {
   // on disk. Reporting that one would call a healthy install broken.
   test("points at the directory FluidAudio loads from, not the -coreml sibling", () => {
     const path = legacyFluidAsrCachePath("/tmp/home");
-    expect(path).toBe(
-      join("/tmp/home", "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3"),
-    );
+    expect(path).toBe(join("/tmp/home", "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3"));
     expect(path.endsWith("-coreml")).toBe(false);
   });
 
-  const COMPLETE = [
-    "Preprocessor.mlmodelc",
-    "Encoder.mlmodelc",
-    "Decoder.mlmodelc",
-    "JointDecisionv3.mlmodelc",
-    "parakeet_vocab.json",
-  ];
+  const COMPLETE = ["Preprocessor.mlmodelc", "Encoder.mlmodelc", "Decoder.mlmodelc", "JointDecisionv3.mlmodelc", "parakeet_vocab.json"];
 
   // `.mlmodelc` are compiled-model directories holding `coremldata.bin`, not flat files.
   function seed(homeDir: string, entries: string[]): string {
@@ -212,8 +198,6 @@ describe("Rust/TS FluidAudio contract agreement", () => {
   // Both sides derive the relocated bundle from the cache root; a rename on one side alone
   // would point doctor at a directory the engine never writes (#688).
   test("relocated bundle path matches", () => {
-    expect(fluidAsrCachePath("/tmp/home", "/tmp/cache")).toBe(
-      join("/tmp/cache", rustStr("FLUIDAUDIO_ROOT_DIR"), rustStr("FLUID_ASR_REPO_DIR")),
-    );
+    expect(fluidAsrCachePath("/tmp/home", "/tmp/cache")).toBe(join("/tmp/cache", rustStr("FLUIDAUDIO_ROOT_DIR"), rustStr("FLUID_ASR_REPO_DIR")));
   });
 });

@@ -192,9 +192,11 @@ function spawnMutate(args: string[], env: Record<string, string> = {}): { pid: n
     stderr: "pipe",
     env: { ...process.env, ...env },
   });
-  const result = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]).then(
-    ([stdout, stderr, exitCode]) => ({ exitCode, stderr, stdout }),
-  );
+  const result = Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]).then(([stdout, stderr, exitCode]) => ({
+    exitCode,
+    stderr,
+    stdout,
+  }));
   return { pid: trackPid(proc.pid), result };
 }
 
@@ -212,9 +214,7 @@ describe("bun scripts/mutate.ts — the green baseline (#1155)", () => {
     const fail = s.script("fail.ts", `${RECORD}process.exit(1);\n`);
     const run = await runMutate([s.target, NEEDLE, "", process.execPath, fail, s.target, s.log]);
     expect(run.exitCode).toBe(3);
-    expect(run.stderr).toContain(
-      "NOT A VALID RUN: the test command failed before any mutation (exit 1) — fix the command, cwd or build first",
-    );
+    expect(run.stderr).toContain("NOT A VALID RUN: the test command failed before any mutation (exit 1) — fix the command, cwd or build first");
     expect(run.stderr).not.toContain("PINNED");
     expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
     expect(seen(s.log)).toEqual([ORIGINAL]);
@@ -279,40 +279,23 @@ await child.exited;
 `;
 
 describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
-  posixTest(
-    "a mutated run that hangs is killed with its whole tree, restored, and NOT A VALID RUN, exit 3",
-    async () => {
-      const s = scenario();
-      const hang = s.script("hang.ts", HANG_WHEN_MUTATED);
-      const sleep = s.script("sleep.ts", SLEEP);
-      const pidFile = join(s.dir, "grandchild.pid");
-      const started = Date.now();
-      const run = runMutate([
-        "--timeout",
-        "2",
-        s.target,
-        NEEDLE,
-        "",
-        process.execPath,
-        hang,
-        s.target,
-        s.log,
-        sleep,
-        pidFile,
-      ]);
-      const grandchild = await waitForPidFile(pidFile);
-      expect(pidIsAlive(grandchild)).toBe(true);
-      const result = await run;
-      expect(Date.now() - started).toBeLessThan(8_000);
-      expect(result.exitCode).toBe(3);
-      expect(result.stderr).toContain(
-        "NOT A VALID RUN: the test command ran longer than 2 s — a hang is not a caught mutation",
-      );
-      expect(result.stderr).not.toContain("PINNED");
-      expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
-      expect(await waitForPidExit(grandchild)).toBe(true);
-    },
-  );
+  posixTest("a mutated run that hangs is killed with its whole tree, restored, and NOT A VALID RUN, exit 3", async () => {
+    const s = scenario();
+    const hang = s.script("hang.ts", HANG_WHEN_MUTATED);
+    const sleep = s.script("sleep.ts", SLEEP);
+    const pidFile = join(s.dir, "grandchild.pid");
+    const started = Date.now();
+    const run = runMutate(["--timeout", "2", s.target, NEEDLE, "", process.execPath, hang, s.target, s.log, sleep, pidFile]);
+    const grandchild = await waitForPidFile(pidFile);
+    expect(pidIsAlive(grandchild)).toBe(true);
+    const result = await run;
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(result.exitCode).toBe(3);
+    expect(result.stderr).toContain("NOT A VALID RUN: the test command ran longer than 2 s — a hang is not a caught mutation");
+    expect(result.stderr).not.toContain("PINNED");
+    expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
+    expect(await waitForPidExit(grandchild)).toBe(true);
+  });
 
   posixTest("a grandchild that keeps forking cannot outrun the kill: every process it recorded is gone", async () => {
     const s = scenario();
@@ -321,21 +304,7 @@ describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
     const sleep = s.script("sleep.ts", SLEEP);
     const pids = join(s.dir, "sleepers.pids");
     const spawnerPid = join(s.dir, "spawner.pid");
-    const mutate = spawnMutate([
-      "--timeout",
-      "2",
-      s.target,
-      NEEDLE,
-      "",
-      process.execPath,
-      tester,
-      s.target,
-      s.log,
-      loop,
-      sleep,
-      pids,
-      spawnerPid,
-    ]);
+    const mutate = spawnMutate(["--timeout", "2", s.target, NEEDLE, "", process.execPath, tester, s.target, s.log, loop, sleep, pids, spawnerPid]);
     const recorded: number[] = [];
     try {
       const spawner = await waitForPidFile(spawnerPid);
@@ -371,9 +340,7 @@ describe("bun scripts/mutate.ts — the timeout (#1211)", () => {
     const grandchild = await waitForPidFile(pidFile);
     const result = await run;
     expect(result.exitCode).toBe(3);
-    expect(result.stderr).toContain(
-      "NOT A VALID RUN: the test command ran longer than 1 s — a hang is not a caught mutation",
-    );
+    expect(result.stderr).toContain("NOT A VALID RUN: the test command ran longer than 1 s — a hang is not a caught mutation");
     expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);
     expect(await waitForPidExit(grandchild)).toBe(true);
   });
@@ -412,9 +379,7 @@ describe("bun scripts/mutate.ts — the occurrence guard (#1211)", () => {
     const check = s.script("check.ts", FAILS_WHEN_MUTATED);
     const run = await runMutate(["--occurrences", "3", s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(2);
-    expect(run.stderr).toContain(
-      `refusing: '${NEEDLE}' occurs 2 times in ${s.target} (lines 1, 3), not the 3 that --occurrences names`,
-    );
+    expect(run.stderr).toContain(`refusing: '${NEEDLE}' occurs 2 times in ${s.target} (lines 1, 3), not the 3 that --occurrences names`);
     expect(readFileSync(s.target, "utf8")).toBe(TWICE);
     expect(seen(s.log)).toEqual([]);
   });
@@ -529,18 +494,7 @@ describe("bun scripts/mutate.ts — argument shapes", () => {
   test("an explicit -- ends the options and the positionals follow", async () => {
     const s = scenario();
     const check = s.script("check.ts", FAILS_WHEN_MUTATED);
-    const run = await runMutate([
-      "--timeout",
-      "30",
-      "--",
-      s.target,
-      NEEDLE,
-      "",
-      process.execPath,
-      check,
-      s.target,
-      s.log,
-    ]);
+    const run = await runMutate(["--timeout", "30", "--", s.target, NEEDLE, "", process.execPath, check, s.target, s.log]);
     expect(run.exitCode).toBe(0);
     expect(run.stderr).toContain("PINNED: the mutation was caught");
     expect(readFileSync(s.target, "utf8")).toBe(ORIGINAL);

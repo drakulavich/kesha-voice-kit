@@ -275,13 +275,9 @@ export async function streamResponseToFile(res: Response, destPath: string, labe
         try {
           next = await reader.read();
         } catch (err) {
-          throw new KeshaError(
-            "E_MODEL_DOWNLOAD",
-            `Download of ${label} broke off after ${bytes} bytes: ${errorMessage(err)}`,
-            {
-              hint: "check your network connection and try again.",
-            },
-          );
+          throw new KeshaError("E_MODEL_DOWNLOAD", `Download of ${label} broke off after ${bytes} bytes: ${errorMessage(err)}`, {
+            hint: "check your network connection and try again.",
+          });
         }
         if (next.done) break;
         await applyBackpressure(writer, writer.write(next.value));

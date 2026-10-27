@@ -26,8 +26,7 @@ export function buildEnginePin(version: string, sha256Sums: string, assets: Asse
   if (missing.length > 0) throw new Error(`SHA256SUMS of Engine v${version} does not list ${missing.join(", ")}`);
   const sizes = new Map(assets.map((a) => [a.name, a.size]));
   const unsized = PINNED_ASSETS.filter((name) => !(Number.isSafeInteger(sizes.get(name)) && sizes.get(name)! > 0));
-  if (unsized.length > 0)
-    throw new Error(`the asset list of Engine v${version} gives no size for ${unsized.join(", ")}`);
+  if (unsized.length > 0) throw new Error(`the asset list of Engine v${version} gives no size for ${unsized.join(", ")}`);
   return {
     version,
     sha256: Object.fromEntries(PINNED_ASSETS.map((name) => [name, sums.get(name)!])),
@@ -68,17 +67,13 @@ if (import.meta.main) {
       const assets = JSON.parse(readFileSync(join(dir, "assets.json"), "utf8"));
       const pin = buildEnginePin(version, readFileSync(join(dir, "SHA256SUMS"), "utf8"), assets);
       writeFileSync("package.json", withEnginePin(readFileSync("package.json", "utf8"), pin));
-      console.error(
-        `package.json#kesha.engine pins Engine v${pin.version} (${PINNED_ASSETS.length} assets); not committed.`,
-      );
+      console.error(`package.json#kesha.engine pins Engine v${pin.version} (${PINNED_ASSETS.length} assets); not committed.`);
     } else if (command === "asset-sizes" && args.length === 1) {
       process.stdout.write(`${JSON.stringify(assetSizes(args[0]!))}\n`);
     } else if (command === "newest-stable" && args.length === 0) {
       process.stdout.write(`${newestStableRelease(JSON.parse(await Bun.stdin.text()))}\n`);
     } else {
-      console.error(
-        "usage: engine-pin.ts inject <dir> <engine-version> | asset-sizes <dir> | newest-stable < releases.json",
-      );
+      console.error("usage: engine-pin.ts inject <dir> <engine-version> | asset-sizes <dir> | newest-stable < releases.json");
       process.exit(2);
     }
   } catch (err) {

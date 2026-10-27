@@ -1,15 +1,7 @@
 import { describe, it, expect, spyOn } from "bun:test";
 import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  listVoiceIds,
-  buildSayArgs,
-  engineCrashMessage,
-  MAX_TEXT_CHARS,
-  say,
-  validateSayText,
-  type SayOptions,
-} from "../../src/synth";
+import { listVoiceIds, buildSayArgs, engineCrashMessage, MAX_TEXT_CHARS, say, validateSayText, type SayOptions } from "../../src/synth";
 import { getDescribe } from "../../src/engine";
 import { validateArgv } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
@@ -69,9 +61,7 @@ describe("buildSayArgs", () => {
   });
 
   it("passes --voice when given", () => {
-    expect(buildSayArgs({ text: "Hi", voice: "en-am_michael" })).toEqual(
-      expect.arrayContaining(["--voice", "en-am_michael"]),
-    );
+    expect(buildSayArgs({ text: "Hi", voice: "en-am_michael" })).toEqual(expect.arrayContaining(["--voice", "en-am_michael"]));
   });
 
   it("passes --lang when given", () => {
@@ -202,9 +192,7 @@ describe("say on protocol 4", () => {
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_INTERNAL");
       expect(err!.exitCode).toBe(4);
-      expect(errorMessage(err)).toMatch(
-        /^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "loading voice pack\.\.\."/,
-      );
+      expect(errorMessage(err)).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "loading voice pack\.\.\."/);
     } finally {
       restore();
     }
@@ -222,9 +210,7 @@ describe("say on protocol 4", () => {
       );
       expect(err!.code).toBe("E_INTERNAL");
       const rendered = errorMessage(err);
-      expect(rendered).toMatch(
-        /^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "thread 'main' panicked/,
-      );
+      expect(rendered).toMatch(/^error \[E_INTERNAL\]: kesha-engine say wrote a line that is not a protocol event: "thread 'main' panicked/);
       expect(rendered).toContain("kesha-engine was killed by SIGABRT and produced no audio");
     } finally {
       restore();
@@ -255,9 +241,7 @@ describe("say on protocol 4", () => {
   });
 
   posixIt("an error event fails the run even though the engine exits 0 with audio bytes", async () => {
-    const engine = sayEngine(
-      `  printf '%s\\n' '{"kind":"error","code":"E_VOICE_UNKNOWN","message":"no such voice: xx"}' >&2\n  printf 'RIFF'\n  exit 0`,
-    );
+    const engine = sayEngine(`  printf '%s\\n' '{"kind":"error","code":"E_VOICE_UNKNOWN","message":"no such voice: xx"}' >&2\n  printf 'RIFF'\n  exit 0`);
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     try {
@@ -276,9 +260,7 @@ describe("say on protocol 4", () => {
   });
 
   posixIt("returns the audio and is spawned with KESHA_PROTOCOL=4", async () => {
-    const engine = sayEngine(
-      `  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2\n  printf 'RIFF'\n  exit 0`,
-    );
+    const engine = sayEngine(`  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2\n  printf 'RIFF'\n  exit 0`);
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
     const written: string[] = [];

@@ -91,10 +91,7 @@ function failingEngine(exitCode: number, code: string, message: string): string 
 }
 
 /** Runs `kesha say` in-process and returns the status it exits with plus everything it wrote to stderr/stdout. */
-async function runSay(
-  args: Record<string, unknown>,
-  rawArgs: string[] = [],
-): Promise<{ exitCode: number; stderr: string; stdout: string }> {
+async function runSay(args: Record<string, unknown>, rawArgs: string[] = []): Promise<{ exitCode: number; stderr: string; stdout: string }> {
   const savedExit = process.exit;
   const savedWrite = process.stderr.write;
   const savedStdoutWrite = process.stdout.write;
@@ -167,20 +164,17 @@ function engineRecordedAs(version: string): void {
 }
 
 describe("kesha say refuses an engine older than the CLI supports (#1365)", () => {
-  skipOnWin32(
-    "an engine recorded as 1.25.0 is refused before detection or synthesis, naming both versions",
-    async () => {
-      engineRecordedAs("1.25.0");
-      const { exitCode, stderr, stdout } = await runSay({ text: "Привет, как дела", rate: "1.0" });
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
-      expect(stderr).toContain("v1.25.0");
-      expect(stderr).toContain("v1.26.0");
-      expect(stderr).toContain("kesha install");
-      expect(stderr).not.toContain("Text language detection failed");
-      expect(stdout).toBe("");
-    },
-  );
+  skipOnWin32("an engine recorded as 1.25.0 is refused before detection or synthesis, naming both versions", async () => {
+    engineRecordedAs("1.25.0");
+    const { exitCode, stderr, stdout } = await runSay({ text: "Привет, как дела", rate: "1.0" });
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(stderr).toContain("v1.25.0");
+    expect(stderr).toContain("v1.26.0");
+    expect(stderr).toContain("kesha install");
+    expect(stderr).not.toContain("Text language detection failed");
+    expect(stdout).toBe("");
+  });
 
   skipOnWin32("with an explicit voice, an engine recorded as 1.25.0 is still refused before synthesis", async () => {
     engineRecordedAs("1.25.0");
@@ -265,10 +259,7 @@ describe("kesha say --out with an extension kesha cannot encode (#1473 S2-4)", (
 /** A stub engine whose `say` echoes the text it was given as the audio. */
 function echoTextEngine(): void {
   const binPath = join(tempDir("kesha-say-echo-"), "kesha-engine");
-  writeFileSync(
-    binPath,
-    `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ncat\n`,
-  );
+  writeFileSync(binPath, `#!/bin/sh\nif [ "$1" = "describe" ]; then\n  printf '%s\\n' '${describeJson({ features: ["tts"] })}'\n  exit 0\nfi\ncat\n`);
   chmodSync(binPath, 0o755);
   cleanups.push(saveEngineEnv());
   process.env.KESHA_ENGINE_BIN = binPath;
@@ -411,18 +402,15 @@ describe("kesha say relays a bare KeshaError from the describe/validateArgv pref
     expect(stderr).not.toContain("unexpected invocation");
   });
 
-  skipOnWin32(
-    "an engine that fails `describe` reports E_ENGINE_PROTOCOL and exits 1, not the probe's own status",
-    async () => {
-      engineWithoutDescribe(2);
+  skipOnWin32("an engine that fails `describe` reports E_ENGINE_PROTOCOL and exits 1, not the probe's own status", async () => {
+    engineWithoutDescribe(2);
 
-      const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
+    const { exitCode, stderr } = await runSay({ text: "Hello", voice: "en-am_michael", rate: "1.0" });
 
-      expect(exitCode).toBe(1);
-      expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
-      expect(stderr).toContain("kesha install");
-    },
-  );
+    expect(exitCode).toBe(1);
+    expect(stderr).toContain("error [E_ENGINE_PROTOCOL]:");
+    expect(stderr).toContain("kesha install");
+  });
 
   skipOnWin32("a missing/unspawnable engine reports E_ENGINE_SPAWN and exits 1", async () => {
     missingEngine();

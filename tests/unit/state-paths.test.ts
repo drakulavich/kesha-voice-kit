@@ -85,16 +85,10 @@ describe("resolveStatePaths", () => {
     if (stats) env.KESHA_STATS_DB = "/srv/kesha/metrics.sqlite";
     const p = resolve("linux", env);
 
-    expect(p.cacheDir).toEqual(
-      cache ? { path: "/mnt/models", source: "KESHA_CACHE_DIR" } : { path: "/tmp/ci/cache", source: "KESHA_HOME" },
-    );
-    expect(p.logDir).toEqual(
-      logs ? { path: "/var/log/kesha", source: "KESHA_LOG_DIR" } : { path: "/tmp/ci/logs", source: "KESHA_HOME" },
-    );
+    expect(p.cacheDir).toEqual(cache ? { path: "/mnt/models", source: "KESHA_CACHE_DIR" } : { path: "/tmp/ci/cache", source: "KESHA_HOME" });
+    expect(p.logDir).toEqual(logs ? { path: "/var/log/kesha", source: "KESHA_LOG_DIR" } : { path: "/tmp/ci/logs", source: "KESHA_HOME" });
     expect(p.statsDbPath).toEqual(
-      stats
-        ? { path: "/srv/kesha/metrics.sqlite", source: "KESHA_STATS_DB" }
-        : { path: "/tmp/ci/stats.sqlite", source: "KESHA_HOME" },
+      stats ? { path: "/srv/kesha/metrics.sqlite", source: "KESHA_STATS_DB" } : { path: "/tmp/ci/stats.sqlite", source: "KESHA_HOME" },
     );
     expect(p.mcpAudioDir).toEqual({ path: "/tmp/ci/mcp-audio", source: "KESHA_HOME" });
   });

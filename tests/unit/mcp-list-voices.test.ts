@@ -51,9 +51,7 @@ async function withMissingEngine<T>(fn: () => Promise<T>): Promise<T> {
 describe("list_voices / list_languages guard when the engine is missing", () => {
   test("listVoices() throws an install-hint error, not a raw spawn exception", async () => {
     await withMissingEngine(async () => {
-      await expect(listVoices()).rejects.toThrow(
-        `No speech synthesis backend is installed: no kesha-engine at ${getEngineBinPath()}`,
-      );
+      await expect(listVoices()).rejects.toThrow(`No speech synthesis backend is installed: no kesha-engine at ${getEngineBinPath()}`);
     });
   });
 
@@ -121,9 +119,7 @@ function babblingVoicesEngine(): string {
 describe("list_voices() surfaces a non-event stderr line even on a clean exit", () => {
   skipOnWin32("rejects with E_INTERNAL quoting the offending line", async () => {
     await withEngineBin(babblingVoicesEngine(), async () => {
-      await expect(listVoices()).rejects.toThrow(
-        'kesha-engine say --list-voices wrote a line that is not a protocol event: "loading voice pack..."',
-      );
+      await expect(listVoices()).rejects.toThrow('kesha-engine say --list-voices wrote a line that is not a protocol event: "loading voice pack..."');
       try {
         await listVoices();
         throw new Error("expected listVoices() to reject");
@@ -145,9 +141,7 @@ describe("list_voices tool", () => {
       const res = await call("list_voices");
       expect(res.isError).toBeUndefined();
       // The hint verb follows stderr's TTY-ness (kesha init in a terminal), as the sibling case above allows.
-      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(
-        /^0 voices installed\. Run: kesha (install|init) --tts$/,
-      );
+      expect((res.content as Array<{ text: string }>)[0]?.text).toMatch(/^0 voices installed\. Run: kesha (install|init) --tts$/);
       expect((res.structuredContent as { voices: unknown[] }).voices).toEqual([]);
     });
   });
@@ -213,9 +207,7 @@ describe("list_voices() validates against describe before spawning", () => {
       );
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_ENGINE_PROTOCOL");
-      expect(errorMessage(err)).toContain(
-        "hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`",
-      );
+      expect(errorMessage(err)).toContain("hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`");
     });
   });
 

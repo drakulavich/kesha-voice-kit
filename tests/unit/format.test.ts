@@ -1,11 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  formatJsonOutput,
-  formatTextOutput,
-  formatTranscriptOutput,
-  formatVerboseDiagnostics,
-  humanBytes,
-} from "../../src/format";
+import { formatJsonOutput, formatTextOutput, formatTranscriptOutput, formatVerboseDiagnostics, humanBytes } from "../../src/format";
 import { hasErrorRecords } from "../../src/lib";
 import type { TranscribeJsonOutput, TranscribeResult } from "../../src/types";
 
@@ -83,9 +77,7 @@ describe("formatVerboseDiagnostics", () => {
         sttTimeMs: 120,
       }),
     ]);
-    expect(out).toBe(
-      "Audio language: en (confidence: 0.50)\n" + "Text language: en (confidence: 0.75)\n" + "STT time: 120ms\n",
-    );
+    expect(out).toBe("Audio language: en (confidence: 0.50)\n" + "Text language: en (confidence: 0.75)\n" + "STT time: 120ms\n");
   });
 
   test("falls back to the legacy lang field without confidence", () => {
@@ -94,10 +86,7 @@ describe("formatVerboseDiagnostics", () => {
   });
 
   test("multiple results get file headers", () => {
-    const out = formatVerboseDiagnostics([
-      result({ file: "a.ogg", text: "one", sttTimeMs: 1 }),
-      result({ file: "b.ogg", text: "two", sttTimeMs: 2 }),
-    ]);
+    const out = formatVerboseDiagnostics([result({ file: "a.ogg", text: "one", sttTimeMs: 1 }), result({ file: "b.ogg", text: "two", sttTimeMs: 2 })]);
     expect(out).toBe("=== a.ogg ===\nSTT time: 1ms\n\n=== b.ogg ===\nSTT time: 2ms\n");
   });
 
@@ -106,9 +95,7 @@ describe("formatVerboseDiagnostics", () => {
   });
 
   test("says when a tinyld guess was too weak to name lang (Exploratory S11-2)", () => {
-    const out = formatVerboseDiagnostics([
-      result({ lang: "", textLanguage: { code: "ber", confidence: 0.333, source: "tinyld" } }),
-    ]);
+    const out = formatVerboseDiagnostics([result({ lang: "", textLanguage: { code: "ber", confidence: 0.333, source: "tinyld" } })]);
     expect(out).toBe("Text language: ber (confidence: 0.33, below the 0.5 floor, ignored for lang)\n");
   });
 

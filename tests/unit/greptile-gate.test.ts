@@ -1,12 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  blockingFindings,
-  failureReport,
-  fetchReviewState,
-  runGate,
-  type GhApi,
-  type ReviewComment,
-} from "../../.github/scripts/greptile-gate";
+import { blockingFindings, failureReport, fetchReviewState, runGate, type GhApi, type ReviewComment } from "../../.github/scripts/greptile-gate";
 import recorded from "../fixtures/greptile/review-comments.json";
 
 const COMMENTS = recorded as ReviewComment[];
@@ -34,9 +27,7 @@ describe("blockingFindings", () => {
   });
 
   test("a P1 with a reply passes", () => {
-    expect(
-      ids(blockingFindings([byId(ANSWERED_P1), ...COMMENTS.filter((c) => c.in_reply_to_id === ANSWERED_P1)])),
-    ).toEqual([]);
+    expect(ids(blockingFindings([byId(ANSWERED_P1), ...COMMENTS.filter((c) => c.in_reply_to_id === ANSWERED_P1)]))).toEqual([]);
   });
 
   test("a resolved thread passes without a reply", () => {
@@ -69,9 +60,7 @@ describe("blockingFindings", () => {
   });
 
   test("Greptile answering its own finding does not count as a reply", () => {
-    expect(ids(blockingFindings([byId(UNANSWERED_P1), replyTo(UNANSWERED_P1, "greptile-apps[bot]")]))).toEqual([
-      UNANSWERED_P1,
-    ]);
+    expect(ids(blockingFindings([byId(UNANSWERED_P1), replyTo(UNANSWERED_P1, "greptile-apps[bot]")]))).toEqual([UNANSWERED_P1]);
   });
 
   test("a reply from a login that merely contains greptile answers the finding", () => {
@@ -79,9 +68,7 @@ describe("blockingFindings", () => {
   });
 
   test("a reply to another thread does not answer this one", () => {
-    expect(ids(blockingFindings([byId(UNANSWERED_P1), replyTo(UNANSWERED_P2, "drakulavich")]))).toEqual([
-      UNANSWERED_P1,
-    ]);
+    expect(ids(blockingFindings([byId(UNANSWERED_P1), replyTo(UNANSWERED_P2, "drakulavich")]))).toEqual([UNANSWERED_P1]);
   });
 
   test("a P1 badge in someone else's root comment is not a Greptile finding", () => {
@@ -114,9 +101,7 @@ describe("fetchReviewState", () => {
   const fakeGh: GhApi = async (args) => {
     if (args[0] !== "graphql") return [COMMENTS.slice(0, 4), COMMENTS.slice(4)];
     if (++graphqlCalls > 2) throw new Error("asked for a third GraphQL page of two");
-    return args.includes("after=page-2")
-      ? threadsPage([thread(UNANSWERED_P2, true)], null)
-      : threadsPage([thread(UNANSWERED_P1, false)], "page-2");
+    return args.includes("after=page-2") ? threadsPage([thread(UNANSWERED_P2, true)], null) : threadsPage([thread(UNANSWERED_P1, false)], "page-2");
   };
 
   test("reads every REST page and a resolved thread from the second GraphQL page", async () => {
@@ -140,9 +125,7 @@ describe("runGate (#1361)", () => {
     const gh: GhApi = async (args) => {
       if (args[0] === "graphql") return threadsPage([]);
       if (args[0] === `repos/drakulavich/kesha-voice-kit/statuses/${SHA}`) {
-        const fields = Object.fromEntries(
-          args.filter((a) => a.includes("=")).map((a) => a.split(/=(.*)/s).slice(0, 2)),
-        );
+        const fields = Object.fromEntries(args.filter((a) => a.includes("=")).map((a) => a.split(/=(.*)/s).slice(0, 2)));
         statuses.push(fields);
         return {};
       }

@@ -13,10 +13,7 @@ export const FAULT_MARKER = "failing-writes: injected";
  * Fails writes to `destPath`'s staging file only. ENOSPC and EIO land after the first chunk is on disk,
  * so the staging file really holds a partial download; the others fail at open.
  */
-export function failStagingWrites(
-  destPath: string,
-  code: keyof typeof ERRNO_TEXT,
-): { restore(): void; hits(): number } {
+export function failStagingWrites(destPath: string, code: keyof typeof ERRNO_TEXT): { restore(): void; hits(): number } {
   const realFile = Bun.file;
   const prefix = stagingPrefix(destPath);
   let hits = 0;

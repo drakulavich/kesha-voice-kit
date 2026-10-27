@@ -1,18 +1,7 @@
 import { join } from "node:path";
-import {
-  isEngineInstalled,
-  getEngineBinPath,
-  getDescribe,
-  ENGINE_PROBE_TIMEOUT_MS,
-  type EngineCapabilities,
-} from "./engine";
+import { isEngineInstalled, getEngineBinPath, getDescribe, ENGINE_PROBE_TIMEOUT_MS, type EngineCapabilities } from "./engine";
 import { KeshaError, replaceEngineHint } from "./engine/events";
-import {
-  CORRUPT_STATE,
-  engineFunctionalHealth,
-  NOT_FUNCTIONAL_STATE,
-  type EngineFunctionalHealth,
-} from "./engine-health";
+import { CORRUPT_STATE, engineFunctionalHealth, NOT_FUNCTIONAL_STATE, type EngineFunctionalHealth } from "./engine-health";
 import { cacheComponents, cacheTotalBytes } from "./cache-layout";
 import { humanBytes } from "./format";
 import { filesCached } from "./install-plan";
@@ -22,13 +11,7 @@ import { packageVersion } from "./package-info";
 import { keshaCacheDir } from "./paths";
 import { fluidAsrCachePath, fluidAsrCacheReady, isCoremlBackend } from "./fluid-asr-cache";
 import modelPlan from "../model-plan.json" with { type: "json" };
-import {
-  fluidExternalRoots,
-  fluidExternalTotalBytes,
-  staleSortformerBytes,
-  staleSortformerHint,
-  type FluidExternalRoot,
-} from "./fluid-roots";
+import { fluidExternalRoots, fluidExternalTotalBytes, staleSortformerBytes, staleSortformerHint, type FluidExternalRoot } from "./fluid-roots";
 import { resolveStatePaths, type StatePath } from "./state-paths";
 import { installedVoiceIds } from "./voice-inventory";
 import pc from "picocolors";
@@ -46,12 +29,7 @@ export function collectStatusPaths(): StatusPaths {
   return { cache: p.cacheDir, logs: p.logDir, stats: p.statsDbPath, mcpAudio: p.mcpAudioDir };
 }
 
-export function formatStatusLine(
-  label: string,
-  path: string | null,
-  installed: boolean,
-  missingLabel = "not installed",
-): string {
+export function formatStatusLine(label: string, path: string | null, installed: boolean, missingLabel = "not installed"): string {
   const status = installed ? pc.green("✓") : pc.red("✗");
   const value = installed ? path : missingLabel;
   return `  ${status} ${label}: ${value ?? ""}`;
@@ -174,8 +152,7 @@ export function renderStatus(report: StatusReport): void {
     log.info(formatStatusLine("Mirror", report.modelMirror, true));
   }
   for (const [label, entry] of Object.entries(report.paths)) {
-    if (entry.source !== "default")
-      log.info(formatStatusLine(pathLabel(label), `${entry.path} (${entry.source})`, true));
+    if (entry.source !== "default") log.info(formatStatusLine(pathLabel(label), `${entry.path} (${entry.source})`, true));
   }
   log.info("");
 
@@ -275,13 +252,9 @@ export async function assertReady(timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<
     ({ backend } = await getDescribe({ signal }));
   } catch (err) {
     if (!signal.aborted || !(err instanceof KeshaError) || err.code !== "E_INTERRUPTED") throw err;
-    throw new KeshaError(
-      "E_ENGINE_PROTOCOL",
-      `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s`,
-      {
-        hint: replaceEngineHint(),
-      },
-    );
+    throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s`, {
+      hint: replaceEngineHint(),
+    });
   }
   if (isCoremlBackend(backend)) {
     const asrPath = fluidAsrCachePath();

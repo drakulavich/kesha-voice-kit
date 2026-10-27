@@ -76,9 +76,7 @@ describe("runLogsAction", () => {
   });
 
   test("mode rejects an unknown value with a usage hint", () => {
-    expect(expectRejected({ action: "mode", value: "verbose" }).error).toBe(
-      "usage: kesha logs mode <off|on|retain-on-failure>",
-    );
+    expect(expectRejected({ action: "mode", value: "verbose" }).error).toBe("usage: kesha logs mode <off|on|retain-on-failure>");
   });
 
   test("path reports the active log path", () => {

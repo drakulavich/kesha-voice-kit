@@ -33,9 +33,7 @@ const DARWIN_ARM64_ONLY_TTS_LANGS = ["hi", "ja", "zh"];
  * caught by the engine that a full download had to install first (#770).
  */
 export function installableTtsLangs(platform = process.platform, arch = process.arch): string[] {
-  return isDarwinArm64(platform, arch)
-    ? [...TTS_LANGS_EVERYWHERE, ...DARWIN_ARM64_ONLY_TTS_LANGS]
-    : TTS_LANGS_EVERYWHERE;
+  return isDarwinArm64(platform, arch) ? [...TTS_LANGS_EVERYWHERE, ...DARWIN_ARM64_ONLY_TTS_LANGS] : TTS_LANGS_EVERYWHERE;
 }
 
 export interface TtsArgInput {
@@ -54,8 +52,7 @@ export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefi
   if (!input.tts) {
     if (input.positionals.length > 0) {
       throw new Error(
-        `Language codes (${input.positionals.join(", ")}) require the --tts flag, ` +
-          `e.g. \`kesha install --tts ${input.positionals.join(" ")}\`.`,
+        `Language codes (${input.positionals.join(", ")}) require the --tts flag, ` + `e.g. \`kesha install --tts ${input.positionals.join(" ")}\`.`,
       );
     }
     return [];
@@ -64,9 +61,7 @@ export function resolveTtsLangs(input: TtsArgInput, supported: string[] | undefi
   if (supported) {
     const bad = langs.filter((l) => !supported.includes(l));
     if (bad.length > 0) {
-      throw new Error(
-        `Unsupported TTS language(s): ${bad.join(", ")}. ` + `Supported on this platform: ${supported.join(", ")}.`,
-      );
+      throw new Error(`Unsupported TTS language(s): ${bad.join(", ")}. ` + `Supported on this platform: ${supported.join(", ")}.`);
     }
   }
   return langs;
@@ -81,9 +76,7 @@ export function resolveEngineVersionFlag(raw: unknown): string | undefined {
   if (raw === undefined || raw === null || raw === false) return undefined;
   const value = String(raw).trim();
   if (isSemver(value)) return value;
-  const hint = /^v\d/.test(value)
-    ? 'drop the leading "v" — that belongs to the release tag, not the version.'
-    : undefined;
+  const hint = /^v\d/.test(value) ? 'drop the leading "v" — that belongs to the release tag, not the version.' : undefined;
   throw new KeshaError(
     "E_INVALID_ARG",
     `--engine-version needs an exact SemVer 2.0 version like 1.24.8 or 1.24.8-alpha.1, got "${value}".`,
@@ -91,10 +84,7 @@ export function resolveEngineVersionFlag(raw: unknown): string | undefined {
   );
 }
 
-export function resolveNoCacheFlag(
-  args: Pick<InstallCommandArgs, "no-cache" | "noCache" | "no_cache">,
-  rawArgs: string[] = [],
-): boolean {
+export function resolveNoCacheFlag(args: Pick<InstallCommandArgs, "no-cache" | "noCache" | "no_cache">, rawArgs: string[] = []): boolean {
   return rawArgs.includes("--no-cache") || args["no-cache"] === true || args.noCache === true || args.no_cache === true;
 }
 
@@ -135,10 +125,7 @@ export function resolveBackendFlag(coreml: boolean, onnx: boolean): string | und
   return selection.backend;
 }
 
-export function defaultBackendForPlatform(
-  platform: string = process.platform,
-  arch: string = process.arch,
-): string | undefined {
+export function defaultBackendForPlatform(platform: string = process.platform, arch: string = process.arch): string | undefined {
   return engineTarget(platform, arch)?.backend;
 }
 
@@ -175,10 +162,7 @@ export function unavailableBackendError(backend: string | undefined): string | n
   const platformBackend = defaultBackendForPlatform();
   if (!backend || process.env.KESHA_ENGINE_BIN || !platformBackend) return null;
   if (backend === platformBackend) return null;
-  return (
-    `Requested backend "${backend}" is not available on this platform; ` +
-    `the release engine uses "${platformBackend}".`
-  );
+  return `Requested backend "${backend}" is not available on this platform; ` + `the release engine uses "${platformBackend}".`;
 }
 
 export interface PerformInstallOptions {
@@ -232,8 +216,7 @@ export async function performInstall(options: PerformInstallOptions) {
       throw backendError;
     }
     await installEngine({ noCache, backend, ttsLangs, vad, diarize, version: engineVersion });
-    if (!log.quietEnabled)
-      await maybeAskForStar(getEngineBinPath(), packageVersion, { info: log.progress, warn: log.warn });
+    if (!log.quietEnabled) await maybeAskForStar(getEngineBinPath(), packageVersion, { info: log.progress, warn: log.warn });
     finishInstallDiagnostic(diagnosticLog, startedAt, "success");
   } catch (err: unknown) {
     const signalExitCode = getPendingSignalExitCode();
@@ -276,8 +259,7 @@ export const installCommand = defineCommand({
     },
     tts: {
       type: "boolean",
-      description:
-        "Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan))",
+      description: "Also install TTS models (English only; add codes for more, e.g. --tts en ru (preview sizes: kesha install --plan))",
       default: false,
     },
     vad: {
@@ -292,8 +274,7 @@ export const installCommand = defineCommand({
     },
     "engine-version": {
       type: "string",
-      description:
-        "Install this exact engine release instead of the pinned one (expert; the next install returns to the pin)",
+      description: "Install this exact engine release instead of the pinned one (expert; the next install returns to the pin)",
     },
   },
   async run({ args, rawArgs }: { args: InstallCommandArgs; rawArgs: string[] }) {

@@ -55,10 +55,7 @@ describe("transcribe schema pact — the parser", () => {
   it("forwards every field the engine records", () => {
     const parsedPaths = new Set(fieldPaths(parsed));
     const dropped = [...recordedPaths].filter((path) => !parsedPaths.has(path) && !(path in EXCLUDED_FIELDS));
-    expect(
-      dropped,
-      `parseTranscriptionOutput drops ${dropped.join(", ")} — forward it, or name it in EXCLUDED_FIELDS with a reason`,
-    ).toEqual([]);
+    expect(dropped, `parseTranscriptionOutput drops ${dropped.join(", ")} — forward it, or name it in EXCLUDED_FIELDS with a reason`).toEqual([]);
   });
 
   it("copies the recorded values, not just the keys", () => {

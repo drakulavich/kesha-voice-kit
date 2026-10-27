@@ -78,15 +78,8 @@ describe("check-new-comments hook", () => {
 
   it("does not mistake Rust dereferences or doc-block continuations for comment lines", async () => {
     const work = await gitRepoWithRemote();
-    const file = await trackedFile(
-      work,
-      "src/a.rs",
-      "/** The contract.\n * One line. */\nfn f(a: &mut i32, b: &mut i32) {}\n",
-    );
-    await Bun.write(
-      file,
-      "/** The contract.\n * One line.\n * A second line of contract. */\nfn f(a: &mut i32, b: &mut i32) {\n    *a = 1;\n    *b = 2;\n}\n",
-    );
+    const file = await trackedFile(work, "src/a.rs", "/** The contract.\n * One line. */\nfn f(a: &mut i32, b: &mut i32) {}\n");
+    await Bun.write(file, "/** The contract.\n * One line.\n * A second line of contract. */\nfn f(a: &mut i32, b: &mut i32) {\n    *a = 1;\n    *b = 2;\n}\n");
     expect(await decision(work, file)).toBeNull();
   });
 
@@ -107,10 +100,7 @@ describe("check-new-comments hook", () => {
   it("does not open a block on a /* inside a glob, string or regex literal", async () => {
     const work = await gitRepoWithRemote();
     const file = await trackedFile(work, "src/a.ts", "export const a = 1;\n");
-    await Bun.write(
-      file,
-      'const files = new Bun.Glob("src/**/*.ts");\nconst marker = "/*";\nconst re = /\\/*x/;\nexport const a = 1;\nexport const b = 2;\n',
-    );
+    await Bun.write(file, 'const files = new Bun.Glob("src/**/*.ts");\nconst marker = "/*";\nconst re = /\\/*x/;\nexport const a = 1;\nexport const b = 2;\n');
     expect(await decision(work, file)).toBeNull();
   });
 

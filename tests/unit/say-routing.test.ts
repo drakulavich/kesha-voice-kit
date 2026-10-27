@@ -36,20 +36,15 @@ describe("resolveSayVoice native-script ja/hi routing", () => {
     "macos-com.apple.voice.super-compact.hi-IN.Lekha",
     "macos-com.apple.voice.super-compact.ja-JP.Kyoko",
   ];
-  const darwin = (listVoices: (signal?: AbortSignal) => Promise<string[]>) =>
-    ({ platform: "darwin", arch: "arm64", listVoices }) as const;
+  const darwin = (listVoices: (signal?: AbortSignal) => Promise<string[]>) => ({ platform: "darwin", arch: "arm64", listVoices }) as const;
   const installed = darwin(async () => INSTALLED);
 
   test("Japanese in kana and kanji speaks through the male ja-JP AVSpeech voice", async () => {
-    expect(await resolveSayVoice(undefined, "ja", "こんにちは世界", installed)).toBe(
-      "macos-com.apple.voice.compact.ja-JP.Otoya",
-    );
+    expect(await resolveSayVoice(undefined, "ja", "こんにちは世界", installed)).toBe("macos-com.apple.voice.compact.ja-JP.Otoya");
   });
 
   test("Devanagari Hindi speaks through Lekha, the only hi-IN voice macOS ships (documented exception)", async () => {
-    expect(await resolveSayVoice(undefined, "hi", "नमस्ते दुनिया", installed)).toBe(
-      "macos-com.apple.voice.super-compact.hi-IN.Lekha",
-    );
+    expect(await resolveSayVoice(undefined, "hi", "नमस्ते दुनिया", installed)).toBe("macos-com.apple.voice.super-compact.hi-IN.Lekha");
   });
 
   test("a cancelled request does not wait on the voice inventory before falling back", async () => {
@@ -74,9 +69,7 @@ describe("resolveSayVoice native-script ja/hi routing", () => {
   // No male ja-JP voice is installed on every Mac; the locale still speaks.
   test("falls back to the first installed voice for the locale when no male one is there", async () => {
     const withoutOtoya = darwin(async () => INSTALLED.filter((v) => !v.endsWith(".Otoya")));
-    expect(await resolveSayVoice(undefined, "ja", "こんにちは世界", withoutOtoya)).toBe(
-      "macos-com.apple.eloquence.ja-JP.Eddy",
-    );
+    expect(await resolveSayVoice(undefined, "ja", "こんにちは世界", withoutOtoya)).toBe("macos-com.apple.eloquence.ja-JP.Eddy");
   });
 
   // Keeping the Kokoro voice is what leaves the engine free to refuse with its own hint.

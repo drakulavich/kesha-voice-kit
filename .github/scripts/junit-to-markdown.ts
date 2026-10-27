@@ -87,12 +87,7 @@ export function toMarkdown(title: string, results: TestResult[], summaryOnly: bo
     return `| ${title} | ${icon} **${passed}** passed · ${failed} failed · ${skipped} skipped | ${total} | ${timeStr} |`;
   }
 
-  const lines: string[] = [
-    `### ${title}`,
-    "",
-    `**${passed} passed** · ${failed} failed · ${skipped} skipped · ${total} total`,
-    "",
-  ];
+  const lines: string[] = [`### ${title}`, "", `**${passed} passed** · ${failed} failed · ${skipped} skipped · ${total} total`, ""];
 
   if (!results.length) {
     lines.push("_No test results found._");
@@ -102,9 +97,7 @@ export function toMarkdown(title: string, results: TestResult[], summaryOnly: bo
   const failures = results.filter((r) => r.status === "failed");
   const skippedResults = results.filter((r) => r.status === "skipped");
   const baseShow = failed > 0 && total > 20 ? failures : results;
-  const show = (skippedResults.length > 0 ? baseShow.filter((r) => r.status !== "skipped") : baseShow).toSorted(
-    (a, b) => b.timeMs - a.timeMs,
-  );
+  const show = (skippedResults.length > 0 ? baseShow.filter((r) => r.status !== "skipped") : baseShow).toSorted((a, b) => b.timeMs - a.timeMs);
 
   if (show.length > 0) {
     lines.push("| Suite | Test | Status | Time |", "|-------|------|--------|------|");

@@ -325,13 +325,7 @@ describe("the log inventory is the log's own files, in rotation order", () => {
       writeFileSync(join(dir, `kesha.${i}.ndjson`), `rotation ${i}\n`);
     }
 
-    expect(getDiagnosticLogStatus().rotatedFiles).toEqual([
-      "kesha.1.ndjson",
-      "kesha.2.ndjson",
-      "kesha.3.ndjson",
-      "kesha.10.ndjson",
-      "kesha.11.ndjson",
-    ]);
+    expect(getDiagnosticLogStatus().rotatedFiles).toEqual(["kesha.1.ndjson", "kesha.2.ndjson", "kesha.3.ndjson", "kesha.10.ndjson", "kesha.11.ndjson"]);
   });
 
   test("neighbours in the log directory are not counted as history", () => {
@@ -404,9 +398,7 @@ describe("a buffered session only spends the disk it has to", () => {
 describe("a scheme-shaped value is refused whatever matches it", () => {
   for (const value of ["mailto:alice", "data:abc", "file:notes", "x:y", "custom+scheme:1", "a:"]) {
     test(`"${value}" is refused`, () => {
-      expect(() => buildDiagnosticLogLine("privacy.scheme", { endpoint: value })).toThrow(
-        "unsafe diagnostic string field",
-      );
+      expect(() => buildDiagnosticLogLine("privacy.scheme", { endpoint: value })).toThrow("unsafe diagnostic string field");
     });
   }
 

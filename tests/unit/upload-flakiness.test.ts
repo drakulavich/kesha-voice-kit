@@ -49,10 +49,7 @@ describe("normaliseReport", () => {
 
   test("leaves ubuntu and windows untouched", () => {
     const report = {
-      environments: [
-        { systemData: { osName: "ubuntu", osVersion: "24.04" } },
-        { systemData: { osName: "win", osVersion: "10.0.26100" } },
-      ],
+      environments: [{ systemData: { osName: "ubuntu", osVersion: "24.04" } }, { systemData: { osName: "win", osVersion: "10.0.26100" } }],
     };
     const { normalised, skipped } = normaliseReport(report, "linux");
     expect(normalised).toBe(0);

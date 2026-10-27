@@ -1,11 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  describeToCapabilities,
-  parseDescribe,
-  protocolMismatch,
-  validateArgv,
-  type DescribeDocument,
-} from "../../src/engine/describe";
+import { describeToCapabilities, parseDescribe, protocolMismatch, validateArgv, type DescribeDocument } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
 
 const DOC: DescribeDocument = {
@@ -66,9 +60,7 @@ describe("validateArgv", () => {
     expect(err.code).toBe("E_INVALID_ARG");
     expect(err.message).toContain("--diarize");
     expect(err.message).toContain("transcribe");
-    expect(err.hint).toBe(
-      "the installed kesha-engine is older than this CLI and lacks --diarize; run `kesha install` to fetch the engine this CLI expects",
-    );
+    expect(err.hint).toBe("the installed kesha-engine is older than this CLI and lacks --diarize; run `kesha install` to fetch the engine this CLI expects");
   });
 
   test("a flag whose gate the build lacks is E_INVALID_ARG naming the feature and the build", () => {
@@ -90,15 +82,11 @@ describe("validateArgv", () => {
 
   test("requires and conflicts are enforced by name", () => {
     const withDiarize = { ...DOC, features: [...DOC.features, "transcribe.diarize"] };
-    expect(failure(() => validateArgv(["transcribe", "a.wav", "--speakers"], withDiarize)).message).toContain(
-      "--speakers requires --json",
+    expect(failure(() => validateArgv(["transcribe", "a.wav", "--speakers"], withDiarize)).message).toContain("--speakers requires --json");
+    expect(failure(() => validateArgv(["transcribe", "a.wav", "--json", "--speakers", "--no-vad"], withDiarize)).message).toContain(
+      "--speakers cannot be combined with --no-vad",
     );
-    expect(
-      failure(() => validateArgv(["transcribe", "a.wav", "--json", "--speakers", "--no-vad"], withDiarize)).message,
-    ).toContain("--speakers cannot be combined with --no-vad");
-    expect(failure(() => validateArgv(["transcribe", "a.wav", "--vad", "--no-vad"], DOC)).message).toContain(
-      "--vad cannot be combined with --no-vad",
-    );
+    expect(failure(() => validateArgv(["transcribe", "a.wav", "--vad", "--no-vad"], DOC)).message).toContain("--vad cannot be combined with --no-vad");
     expect(failure(() => validateArgv(["record", "--auto-stop"], DOC)).code).toBe("E_INVALID_ARG");
   });
 
@@ -161,10 +149,7 @@ describe("parseDescribe", () => {
     ["no protocolVersion", { backend: "onnx", profile: "linux", features: [], commands: {} }],
     ["no profile", { protocolVersion: 4, backend: "onnx", features: [], commands: {} }],
     ["no commands", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [] }],
-    [
-      "a command without flags",
-      { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: { say: {} } },
-    ],
+    ["a command without flags", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: { say: {} } }],
     [
       "a flag without a gate key",
       {
@@ -176,10 +161,7 @@ describe("parseDescribe", () => {
       },
     ],
     ["a non-string feature", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [7], commands: {} }],
-    [
-      "a tts key that is not an object",
-      { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: {}, tts: "yes" },
-    ],
+    ["a tts key that is not an object", { protocolVersion: 4, backend: "onnx", profile: "linux", features: [], commands: {}, tts: "yes" }],
     [
       "a tts language with no engines",
       {

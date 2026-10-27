@@ -148,22 +148,14 @@ function bundleWriteFailure(outputPath: string, e: unknown): unknown {
   const errno = mkdirReason(dir, (e as NodeJS.ErrnoException).code ?? "");
   const blocker = fileInTheWay(dir);
   if (blocker) {
-    return new KeshaError(
-      "E_INVALID_ARG",
-      `Cannot write the support bundle to ${outputPath}: ${blocker} exists and is not a directory`,
-      {
-        hint: `remove or rename the file blocking ${blocker}, or pass --output a path under a directory.`,
-      },
-    );
+    return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: ${blocker} exists and is not a directory`, {
+      hint: `remove or rename the file blocking ${blocker}, or pass --output a path under a directory.`,
+    });
   }
   if (errno === "EISDIR") {
-    return new KeshaError(
-      "E_INVALID_ARG",
-      `Cannot write the support bundle to ${outputPath}: it is a directory (EISDIR)`,
-      {
-        hint: `pass --output a .tar.gz file path, for example ${join(outputPath, "kesha-support-bundle.tar.gz")}.`,
-      },
-    );
+    return new KeshaError("E_INVALID_ARG", `Cannot write the support bundle to ${outputPath}: it is a directory (EISDIR)`, {
+      hint: `pass --output a .tar.gz file path, for example ${join(outputPath, "kesha-support-bundle.tar.gz")}.`,
+    });
   }
   const why = PATH_ERRNOS[errno];
   if (why) {
@@ -173,13 +165,9 @@ function bundleWriteFailure(outputPath: string, e: unknown): unknown {
   }
   if (!errno) return e;
   if (errno === "ENOSPC") {
-    return new KeshaError(
-      "E_INTERNAL",
-      `Cannot write the support bundle to ${outputPath}: no space left on its disk (ENOSPC)`,
-      {
-        hint: `the disk is full: free space on the volume that holds ${dir}, or pass --output a path on another disk.`,
-      },
-    );
+    return new KeshaError("E_INTERNAL", `Cannot write the support bundle to ${outputPath}: no space left on its disk (ENOSPC)`, {
+      hint: `the disk is full: free space on the volume that holds ${dir}, or pass --output a path on another disk.`,
+    });
   }
   return new KeshaError("E_INTERNAL", `Cannot write the support bundle to ${outputPath}: ${errorMessage(e)}`, {
     hint: `resolve that filesystem error on ${dir}, or pass --output a path elsewhere.`,
@@ -199,9 +187,7 @@ export async function createSupportBundle(options: SupportBundleOptions = {}): P
   const root = basename(outputPath).replace(/\.tar\.gz$/, "");
   const diagnosticLogTail = options.includeLogs ? readDiagnosticLogTail() : null;
   const diagnosticLogTailData = diagnosticLogTail ? encodeUtf8(diagnosticLogTail.contents) : null;
-  const diagnosticLogEntries = diagnosticLogTail
-    ? ["diagnostic-logs/README.txt", "diagnostic-logs/kesha.ndjson", "diagnostic-logs/status.json"]
-    : [];
+  const diagnosticLogEntries = diagnosticLogTail ? ["diagnostic-logs/README.txt", "diagnostic-logs/kesha.ndjson", "diagnostic-logs/status.json"] : [];
 
   const manifest = {
     generatedAt: report.generatedAt,

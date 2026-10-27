@@ -15,21 +15,9 @@ const GREPTILE_LOGIN = "greptile-apps[bot]";
 
 const isGreptile = (comment: ReviewComment) => comment.user?.login === GREPTILE_LOGIN;
 
-export function blockingFindings(
-  comments: ReviewComment[],
-  resolvedRootIds: ReadonlySet<number> = new Set(),
-): ReviewComment[] {
-  const answered = new Set(
-    comments.filter((c) => c.in_reply_to_id != null && !isGreptile(c)).map((c) => c.in_reply_to_id),
-  );
-  return comments.filter(
-    (c) =>
-      c.in_reply_to_id == null &&
-      isGreptile(c) &&
-      priorityOf(c) !== "P3" &&
-      !answered.has(c.id) &&
-      !resolvedRootIds.has(c.id),
-  );
+export function blockingFindings(comments: ReviewComment[], resolvedRootIds: ReadonlySet<number> = new Set()): ReviewComment[] {
+  const answered = new Set(comments.filter((c) => c.in_reply_to_id != null && !isGreptile(c)).map((c) => c.in_reply_to_id));
+  return comments.filter((c) => c.in_reply_to_id == null && isGreptile(c) && priorityOf(c) !== "P3" && !answered.has(c.id) && !resolvedRootIds.has(c.id));
 }
 
 export function failureReport(findings: ReviewComment[]): string {
@@ -106,26 +94,14 @@ async function resolvedRootIds(gh: GhApi, repo: string, pr: string): Promise<Set
   return resolved;
 }
 
-export async function fetchReviewState(
-  gh: GhApi,
-  repo: string,
-  pr: string,
-): Promise<{ comments: ReviewComment[]; resolved: Set<number> }> {
+export async function fetchReviewState(gh: GhApi, repo: string, pr: string): Promise<{ comments: ReviewComment[]; resolved: Set<number> }> {
   const [comments, resolved] = await Promise.all([reviewComments(gh, repo, pr), resolvedRootIds(gh, repo, pr)]);
   return { comments, resolved };
 }
 
 export async function runGate(gh: GhApi, repo: string, pr: string, sha: string): Promise<number> {
   const setStatus = (state: string, description: string) =>
-    gh([
-      `repos/${repo}/statuses/${sha}`,
-      "-f",
-      `state=${state}`,
-      "-f",
-      "context=unanswered-findings",
-      "-f",
-      `description=${description}`,
-    ]);
+    gh([`repos/${repo}/statuses/${sha}`, "-f", `state=${state}`, "-f", "context=unanswered-findings", "-f", `description=${description}`]);
   await setStatus("pending", "Checking Greptile findings");
   const { comments, resolved } = await fetchReviewState(gh, repo, pr);
   const findings = blockingFindings(comments, resolved);

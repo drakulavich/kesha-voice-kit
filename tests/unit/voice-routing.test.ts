@@ -4,8 +4,7 @@ import { join } from "node:path";
 import { DEFAULT_VOICE_ID, pickVoiceForLang } from "../../src/voice-routing";
 import { rustModelsSource } from "../helpers/rust-models-source";
 
-const rustSource = (...parts: string[]) =>
-  readFileSync(join(import.meta.dir, "..", "..", "rust", "src", ...parts), "utf8").replace(/\r\n/g, "\n");
+const rustSource = (...parts: string[]) => readFileSync(join(import.meta.dir, "..", "..", "rust", "src", ...parts), "utf8").replace(/\r\n/g, "\n");
 
 const MODELS_RS = rustModelsSource().replace(/\r\n/g, "\n");
 
@@ -13,8 +12,7 @@ const MODELS_RS = rustModelsSource().replace(/\r\n/g, "\n");
 function advertisedTtsLangs(): { systemKokoro: string[]; onnx: string[] } {
   const body = MODELS_RS.match(/pub fn tts_languages\(\)[^{]*\{\n([\s\S]*?)\n\}/)?.[1];
   const arms = body ? [...body.matchAll(/#\[cfg\((not\()?[\s\S]*?vec!\[([^\]]*)\]/g)] : [];
-  const langsOf = (negated: boolean) =>
-    [...(arms.find((m) => Boolean(m[1]) === negated)?.[2] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
+  const langsOf = (negated: boolean) => [...(arms.find((m) => Boolean(m[1]) === negated)?.[2] ?? "").matchAll(/"([^"]+)"/g)].map((m) => m[1]!);
   const systemKokoro = langsOf(false);
   const onnx = langsOf(true);
   if (systemKokoro.length === 0 || onnx.length === 0) {
@@ -158,9 +156,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
   });
 
   it("routes every language the darwin-arm64 build advertises in its describe document", () => {
-    const unrouted = advertisedTtsLangs().systemKokoro.filter(
-      (lang) => pickVoiceForLang(lang, 0.95, "darwin", "arm64") === undefined,
-    );
+    const unrouted = advertisedTtsLangs().systemKokoro.filter((lang) => pickVoiceForLang(lang, 0.95, "darwin", "arm64") === undefined);
     expect(unrouted).toEqual([]);
   });
 
@@ -170,9 +166,7 @@ describe("pickVoiceForLang (auto-routing)", () => {
       ["win32", "x64"],
       ["darwin", "x64"],
     ] as const) {
-      const unrouted = advertisedTtsLangs().onnx.filter(
-        (lang) => pickVoiceForLang(lang, 0.95, platform, arch) === undefined,
-      );
+      const unrouted = advertisedTtsLangs().onnx.filter((lang) => pickVoiceForLang(lang, 0.95, platform, arch) === undefined);
       expect(unrouted).toEqual([]);
     }
   });

@@ -181,10 +181,7 @@ function normalizeOutput(value: string, opts: CliScenarioOptions): string {
 }
 
 function stripAnsi(value: string): string {
-  return value.replace(
-    /[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g,
-    "",
-  );
+  return value.replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~]))/g, "");
 }
 
 function diffEnv(overrides: Record<string, string>): CliScenarioEnvDiff {
@@ -204,10 +201,7 @@ function diffEnv(overrides: Record<string, string>): CliScenarioEnvDiff {
   };
 }
 
-function captureArtifacts(
-  artifacts: Array<string | CliScenarioArtifactRequest>,
-  maxArtifactBytes: number,
-): CliScenarioArtifact[] {
+function captureArtifacts(artifacts: Array<string | CliScenarioArtifactRequest>, maxArtifactBytes: number): CliScenarioArtifact[] {
   return artifacts.map((entry) => {
     const request = typeof entry === "string" ? { path: entry } : entry;
     const artifact: CliScenarioArtifact = {

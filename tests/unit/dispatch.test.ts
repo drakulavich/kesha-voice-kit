@@ -5,20 +5,7 @@ import { classifyFirstArg, hoistLeadingFlags, unknownCommandMessages } from "../
 // classifyFirstArg
 // ---------------------------------------------------------------------------
 
-const KNOWN = [
-  "doctor",
-  "init",
-  "install",
-  "logs",
-  "status",
-  "record",
-  "say",
-  "stats",
-  "support-bundle",
-  "completions",
-  "manpage",
-  "mcp",
-];
+const KNOWN = ["doctor", "init", "install", "logs", "status", "record", "say", "stats", "support-bundle", "completions", "manpage", "mcp"];
 
 describe("classifyFirstArg — subcommand", () => {
   test("exact subcommand name → 'subcommand'", () => {
@@ -89,13 +76,7 @@ describe("unknownCommandMessages", () => {
 
 describe("hoistLeadingFlags", () => {
   test("flags typed before a subcommand name move behind it", () => {
-    expect(hoistLeadingFlags(["--json", "--debug", "record", "--out", "j.wav"], KNOWN)).toEqual([
-      "record",
-      "--json",
-      "--debug",
-      "--out",
-      "j.wav",
-    ]);
+    expect(hoistLeadingFlags(["--json", "--debug", "record", "--out", "j.wav"], KNOWN)).toEqual(["record", "--json", "--debug", "--out", "j.wav"]);
   });
 
   test("a leading flag followed by a non-subcommand token is left alone", () => {

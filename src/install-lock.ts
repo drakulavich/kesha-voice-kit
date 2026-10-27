@@ -1,14 +1,5 @@
 import { randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  renameSync,
-  rmdirSync,
-  rmSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmdirSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { KeshaError } from "./engine/events";
@@ -46,10 +37,7 @@ interface LockOwner {
  * a name to unlink; `unreadable` is one the read itself refused (EACCES, EIO) — nothing to judge,
  * so it counts as held rather than as a corrupt owner to clear.
  */
-type LockHolder =
-  | { kind: "live"; token: string; owner: LockOwner }
-  | { kind: "corrupt"; token: string }
-  | { kind: "unreadable"; token: string };
+type LockHolder = { kind: "live"; token: string; owner: LockOwner } | { kind: "corrupt"; token: string } | { kind: "unreadable"; token: string };
 
 /**
  * The owner is named by its file rather than identified by a field inside one: unlinking that
@@ -151,10 +139,7 @@ function releaseIfOwned(lockDir: string, token: string): void {
     rmdirSync(lockDir);
   } catch {
     if (readOwner(lockDir)) return;
-    log.warn(
-      `Could not remove the install lock at ${lockDir}, so the next \`kesha install\` will wait ` +
-        "for it; delete it if no install is running.",
-    );
+    log.warn(`Could not remove the install lock at ${lockDir}, so the next \`kesha install\` will wait ` + "for it; delete it if no install is running.");
   }
 }
 

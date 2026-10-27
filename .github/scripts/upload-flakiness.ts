@@ -41,10 +41,7 @@ export function truncateToMajorMinor(version: string): string {
   return `${parts[0]}.${parts[1]}`;
 }
 
-export function normaliseReport(
-  report: Report,
-  platform: string = process.platform,
-): { normalised: number; skipped: number } {
+export function normaliseReport(report: Report, platform: string = process.platform): { normalised: number; skipped: number } {
   const environments = report.environments ?? [];
   if (environments.length === 0) {
     throw new Error("report contains no environments — refusing to upload a report we cannot verify");
@@ -89,8 +86,7 @@ export function normaliseReport(
   // Otherwise the assert above passes vacuously should the converter rename osName.
   if (platform === "darwin" && normalised === 0) {
     throw new Error(
-      `running on darwin but no environment was labelled "macos" — ` +
-        `the converter's osName may have changed, which would silently defeat normalisation`,
+      `running on darwin but no environment was labelled "macos" — ` + `the converter's osName may have changed, which would silently defeat normalisation`,
     );
   }
 
@@ -110,10 +106,7 @@ async function main(): Promise<void> {
   const project = projectArg ?? process.env.FLAKINESS_PROJECT;
 
   if (!junitPath || !category || !project) {
-    throw new Error(
-      "usage: upload-flakiness.ts <junit-path> <category> [project]\n" +
-        "  project falls back to $FLAKINESS_PROJECT when omitted",
-    );
+    throw new Error("usage: upload-flakiness.ts <junit-path> <category> [project]\n" + "  project falls back to $FLAKINESS_PROJECT when omitted");
   }
 
   if (!existsSync(junitPath)) {
@@ -123,18 +116,7 @@ async function main(): Promise<void> {
 
   const outDir = mkdtempSync(join(tmpdir(), "flakiness-"));
   try {
-    await run([
-      "bunx",
-      CONVERTER,
-      junitPath,
-      "--category",
-      category,
-      "--flakiness-project",
-      project,
-      "--disable-upload",
-      "--output-dir",
-      outDir,
-    ]);
+    await run(["bunx", CONVERTER, junitPath, "--category", category, "--flakiness-project", project, "--disable-upload", "--output-dir", outDir]);
 
     const reportPath = join(outDir, "report.json");
     if (!existsSync(reportPath)) {

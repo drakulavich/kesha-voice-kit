@@ -52,10 +52,7 @@ function stripBooleanFlag(rawArgs: string[], names: string[]): { value: boolean;
  * — GitHub Actions, GitLab, CircleCI, … export `CI=true`). `--no-color=false`
  * and `CI=false`/`CI=0` explicitly opt back in.
  */
-export function resolveColorMode(
-  rawArgs: string[],
-  env: { CI?: string } = process.env as { CI?: string },
-): { disableColor: boolean; rawArgs: string[] } {
+export function resolveColorMode(rawArgs: string[], env: { CI?: string } = process.env as { CI?: string }): { disableColor: boolean; rawArgs: string[] } {
   const { value, rawArgs: cleaned } = stripBooleanFlag(rawArgs, ["--no-color"]);
   const ci = env.CI !== undefined && !isFalsey(env.CI);
   return { disableColor: value || ci, rawArgs: cleaned };
@@ -73,10 +70,7 @@ export function resolveQuietMode(rawArgs: string[]): { quiet: boolean; rawArgs: 
 }
 
 /** Resolves every pre-citty global flag into one value, with the tokens stripped from rawArgs. */
-export function resolveCliContext(
-  rawArgs: string[],
-  env: { CI?: string } = process.env as { CI?: string },
-): ResolvedCliContext {
+export function resolveCliContext(rawArgs: string[], env: { CI?: string } = process.env as { CI?: string }): ResolvedCliContext {
   const color = resolveColorMode(rawArgs, env);
   const quiet = resolveQuietMode(color.rawArgs);
   return { quiet: quiet.quiet, disableColor: color.disableColor, rawArgs: quiet.rawArgs };

@@ -4,15 +4,7 @@ import { homedir, tmpdir } from "node:os";
 import { existsSync, mkdirSync, chmodSync, accessSync, constants, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { getDescribe, getEngineBinPath } from "./engine";
 import { engineFunctionalHealth, probeExecutable, readExecutableVersion } from "./engine-health";
-import {
-  engineTarget,
-  engineTargetEntries,
-  isDarwinArm64,
-  parseSha256Sums,
-  SIDECARS,
-  type SidecarSpec,
-  targetKey,
-} from "./engine-targets";
+import { engineTarget, engineTargetEntries, isDarwinArm64, parseSha256Sums, SIDECARS, type SidecarSpec, targetKey } from "./engine-targets";
 import { validateArgv } from "./engine/describe";
 import { engineFailure, KeshaError, offProtocolLine, SUPPORT_BUNDLE_HINT } from "./engine/events";
 import { engineExitCause, runEngineProcess } from "./engine/spawn";
@@ -85,23 +77,16 @@ async function fetchSha256Sums(version: string, pins: AssetPins | undefined): Pr
  * The pinned Engine's assets against the pins, never the network; any other release, and every release
  * in a source checkout (which carries no pin), against that release's own SHA256SUMS.
  */
-export function releaseChecksums(
-  version: string,
-  pins: AssetPins | undefined,
-): (assetName: string) => Promise<ExpectedSha256> {
+export function releaseChecksums(version: string, pins: AssetPins | undefined): (assetName: string) => Promise<ExpectedSha256> {
   let sums: Promise<Map<string, string>> | undefined;
   return async (assetName) => {
     if (version === pins?.version) {
       const pinned = pins.sha256[assetName];
       if (!pinned) {
-        throw new KeshaError(
-          "E_INTERNAL",
-          `No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete`,
-          {
-            exitCode: 1,
-            hint: `report it at https://github.com/${GITHUB_REPO}/issues`,
-          },
-        );
+        throw new KeshaError("E_INTERNAL", `No pinned SHA-256 for ${assetName} of engine v${version}; this CLI build is incomplete`, {
+          exitCode: 1,
+          hint: `report it at https://github.com/${GITHUB_REPO}/issues`,
+        });
       }
       return { sha256: pinned, source: "its pinned SHA-256" };
     }
@@ -110,8 +95,7 @@ export function releaseChecksums(
     if (!sha256) {
       throw new KeshaError(
         "E_MODEL_DOWNLOAD",
-        `Cannot verify ${assetName}: the SHA256SUMS of release v${version} does not list it, ` +
-          "so it cannot be checked before it is installed.",
+        `Cannot verify ${assetName}: the SHA256SUMS of release v${version} does not list it, ` + "so it cannot be checked before it is installed.",
         { hint: unverifiableFix(version, pins) },
       );
     }
@@ -132,12 +116,7 @@ async function sha256OfFile(path: string): Promise<string> {
 }
 
 /** Deletes a download that does not hash to `expected` and returns the refusal; null when it matches. */
-async function rejectMismatchedDownload(
-  path: string,
-  what: string,
-  version: string,
-  expected: ExpectedSha256,
-): Promise<string | null> {
+async function rejectMismatchedDownload(path: string, what: string, version: string, expected: ExpectedSha256): Promise<string | null> {
   const actual = await sha256OfFile(path);
   if (actual === expected.sha256) return null;
   rmSync(path, { force: true });
@@ -173,13 +152,7 @@ async function trustVerifiedDownload(path: string, displayName: string, pinnedSh
  * deleted so the verified download replaces it, or refused when its directory is read-only.
  * `--engine-version` caches are not re-hashed.
  */
-async function cachedAssetMatchesPin(
-  path: string,
-  assetName: string,
-  what: string,
-  version: string,
-  canRepair: boolean,
-): Promise<boolean> {
+async function cachedAssetMatchesPin(path: string, assetName: string, what: string, version: string, canRepair: boolean): Promise<boolean> {
   // KESHA_ENGINE_BIN names the user's own build, which no release pin describes.
   if (version !== engineChecksums.pins?.version || process.env.KESHA_ENGINE_BIN || !existsSync(path)) return true;
   const expected = await engineChecksums.forRelease(version)(assetName);
@@ -190,9 +163,7 @@ async function cachedAssetMatchesPin(
     throw canRepair ? e : unreadableInReadOnlyDir(path, e);
   }
   if (actual === expected.sha256 || readSignedSha(path) === `${expected.sha256} ${actual}`) return true;
-  const mismatch =
-    `Installed ${what} ${assetName} at ${path} does not match ${expected.source} ` +
-    `(expected sha256 ${expected.sha256}, got ${actual})`;
+  const mismatch = `Installed ${what} ${assetName} at ${path} does not match ${expected.source} ` + `(expected sha256 ${expected.sha256}, got ${actual})`;
   if (!canRepair) {
     const dir = dirname(path);
     throw new KeshaError("E_CACHE_CORRUPT", `${mismatch}; ${dir} is read-only, so it cannot be replaced.`, {
@@ -226,11 +197,9 @@ export function assertPlatformCanInstall(
   arch: string = process.arch,
 ): void {
   if (request.diarize && !isDarwinArm64(platform, arch)) {
-    throw new KeshaError(
-      "E_UNSUPPORTED_PLATFORM",
-      `--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is ${platform} ${arch}`,
-      { hint: "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)" },
-    );
+    throw new KeshaError("E_UNSUPPORTED_PLATFORM", `--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is ${platform} ${arch}`, {
+      hint: "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)",
+    });
   }
 }
 
@@ -271,8 +240,7 @@ function trustStep(argv: string[], label: string, displayName: string, alreadyDo
   try {
     const proc = Bun.spawnSync(argv, { stdout: "pipe", stderr: "pipe" });
     const stderr = new TextDecoder().decode(proc.stderr).trim();
-    const ok =
-      proc.exitCode === 0 || (proc.exitCode === 1 && alreadyDoneExit1 !== undefined && alreadyDoneExit1.test(stderr));
+    const ok = proc.exitCode === 0 || (proc.exitCode === 1 && alreadyDoneExit1 !== undefined && alreadyDoneExit1.test(stderr));
     if (!ok) log.debug(`${label} on ${displayName} exited ${proc.exitCode}: ${stderr}`);
     return ok;
   } catch (e) {
@@ -314,12 +282,7 @@ function darwinTrustBinary(path: string, displayName: string): void {
  * sidecar) and network errors log a warning and return — the corresponding
  * feature simply won't be available. The user keeps everything else.
  */
-async function downloadSidecar(
-  spec: SidecarSpec,
-  binPath: string,
-  version: string,
-  checksums: (assetName: string) => Promise<ExpectedSha256>,
-): Promise<void> {
+async function downloadSidecar(spec: SidecarSpec, binPath: string, version: string, checksums: (assetName: string) => Promise<ExpectedSha256>): Promise<void> {
   if (!isDarwinArm64()) return;
 
   const sidecarPath = join(dirname(binPath), spec.fileBasename);
@@ -350,12 +313,7 @@ async function downloadSidecar(
   // Catch stream/chmod failures so a sidecar error can't poison the engine install.
   try {
     await streamResponseToFile(res, sidecarPath, spec.displayName);
-    const refusal = await rejectMismatchedDownload(
-      sidecarPath,
-      `${spec.displayName} ${spec.assetName}`,
-      version,
-      expected,
-    );
+    const refusal = await rejectMismatchedDownload(sidecarPath, `${spec.displayName} ${spec.assetName}`, version, expected);
     if (refusal) {
       log.warn(`${refusal}\n  Fix: ${MISMATCH_HINT}\n  ${spec.displayName} not installed; ${spec.unavailableHint}.`);
       return;
@@ -379,10 +337,7 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
   const outPath = join(tmpdir(), `kesha-kokoro-warmup-${process.pid}.wav`);
   let args: string[];
   try {
-    const validated = validateArgv(
-      ["say", "--voice", DEFAULT_VOICE_ID, "--out", outPath, "Kesha warmup."],
-      await getDescribe(),
-    );
+    const validated = validateArgv(["say", "--voice", DEFAULT_VOICE_ID, "--out", outPath, "Kesha warmup."], await getDescribe());
     for (const warning of validated.warnings) log.warn(warning);
     args = validated.argv;
   } catch (e) {
@@ -426,12 +381,7 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
 }
 
 /** Build the `kesha-engine install` argv from options. Exported for testing. */
-export function buildEngineInstallArgs(opts: {
-  noCache: boolean;
-  ttsLangs?: string[];
-  vad?: boolean;
-  diarize?: boolean;
-}): string[] {
+export function buildEngineInstallArgs(opts: { noCache: boolean; ttsLangs?: string[]; vad?: boolean; diarize?: boolean }): string[] {
   return [
     "install",
     ...(opts.noCache ? ["--no-cache"] : []),
@@ -466,17 +416,10 @@ async function sidecarNeedsDownload(spec: SidecarSpec, engineDir: string): Promi
  * Cache-valid path: the binary at binPath already matches the requested version.
  * Re-trusts it and re-fetches any sidecar the cached install is missing or cannot run.
  */
-async function refreshCachedEngine(
-  binPath: string,
-  canWriteEngineDir: boolean,
-  noCache: boolean,
-  version: string,
-): Promise<void> {
+async function refreshCachedEngine(binPath: string, canWriteEngineDir: boolean, noCache: boolean, version: string): Promise<void> {
   const engineDir = dirname(binPath);
   if (noCache && !canWriteEngineDir) {
-    log.warn(
-      `Engine binary at v${version} is on a read-only filesystem; --no-cache skipped for engine (still forwarded to model installs).`,
-    );
+    log.warn(`Engine binary at v${version} is on a read-only filesystem; --no-cache skipped for engine (still forwarded to model installs).`);
   } else {
     log.progress(`Engine binary already installed (v${version}).`);
   }
@@ -495,12 +438,9 @@ async function refreshCachedEngine(
         // sidecar is SIGKILLed on spawn, and re-downloading it would not lift the block.
         let pinned = false;
         try {
-          pinned =
-            existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version, true));
+          pinned = existsSync(path) && (await cachedAssetMatchesPin(path, spec.assetName, spec.displayName, version, true));
         } catch (e) {
-          log.warn(
-            `Could not read ${spec.displayName} at ${path} (${errorMessage(e)}); removing it and downloading it again.`,
-          );
+          log.warn(`Could not read ${spec.displayName} at ${path} (${errorMessage(e)}); removing it and downloading it again.`);
           rmSync(path, { force: true });
         }
         if (pinned) darwinTrustBinary(path, spec.displayName);
@@ -543,11 +483,9 @@ export async function waitUntilSpawnable(binPath: string, deadlineMs = 60_000): 
     lastError = health.status === "unusable" ? health.detail : "the binary is gone";
     // Only a lock is worth waiting out — a missing or corrupt binary never becomes spawnable.
     if (!isTransientSpawnLock(lastError)) {
-      throw new KeshaError(
-        "E_ENGINE_SPAWN",
-        `Downloaded the engine to ${binPath} but it could not be started: ${lastError}`,
-        { hint: `delete ${dirname(binPath)} and re-run \`kesha install\`.` },
-      );
+      throw new KeshaError("E_ENGINE_SPAWN", `Downloaded the engine to ${binPath} but it could not be started: ${lastError}`, {
+        hint: `delete ${dirname(binPath)} and re-run \`kesha install\`.`,
+      });
     }
     if (Date.now() + delay > deadline) break;
     if (!warned) {
@@ -560,12 +498,9 @@ export async function waitUntilSpawnable(binPath: string, deadlineMs = 60_000): 
 
   throw new KeshaError(
     "E_ENGINE_SPAWN",
-    `Downloaded the engine to ${binPath} but it is still locked after ` +
-      `${Math.round(deadlineMs / 1000)}s: ${lastError}`,
+    `Downloaded the engine to ${binPath} but it is still locked after ` + `${Math.round(deadlineMs / 1000)}s: ${lastError}`,
     {
-      hint:
-        "a security scanner is likely holding the file. Re-run `kesha install`, " +
-        `or exclude ${dirname(binPath)} from real-time scanning.`,
+      hint: "a security scanner is likely holding the file. Re-run `kesha install`, " + `or exclude ${dirname(binPath)} from real-time scanning.`,
     },
   );
 }
@@ -579,9 +514,7 @@ async function engineWorks(binPath: string): Promise<boolean> {
   const health = await engineFunctionalHealth();
   if (health.status === "ok") return true;
   if (health.status === "mute") {
-    log.warn(
-      `Installed engine at ${binPath} runs but ${health.detail}; it is corrupt or truncated — re-downloading it.`,
-    );
+    log.warn(`Installed engine at ${binPath} runs but ${health.detail}; it is corrupt or truncated — re-downloading it.`);
     return false;
   }
   if (health.status === "protocol") {
@@ -589,10 +522,7 @@ async function engineWorks(binPath: string): Promise<boolean> {
     return false;
   }
   const detail = health.status === "unusable" ? health.detail : "binary disappeared";
-  log.warn(
-    `Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` +
-      "another architecture — re-downloading it.",
-  );
+  log.warn(`Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` + "another architecture — re-downloading it.");
   return false;
 }
 
@@ -636,13 +566,9 @@ async function fetchEngineBinary(binPath: string, installedVersion: string | nul
   if (!res.ok) {
     muteSidecarRejections();
     // Names the tag: nothing falls back to the pin, so the caller must see which release 404ed.
-    throw new KeshaError(
-      "E_MODEL_DOWNLOAD",
-      `Failed to download engine binary from release v${version} (HTTP ${res.status})`,
-      {
-        hint: `check https://github.com/${GITHUB_REPO}/releases for available versions.`,
-      },
-    );
+    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to download engine binary from release v${version} (HTTP ${res.status})`, {
+      hint: `check https://github.com/${GITHUB_REPO}/releases for available versions.`,
+    });
   }
 
   try {
@@ -693,9 +619,7 @@ function checkEngineWritable(engineDir: string): boolean {
  * would otherwise fail a plain `kesha install` on a describe call that argv has nothing
  * for `validateArgv` to check anyway.
  */
-async function validateInstallRequest(
-  opts: { noCache: boolean; backend?: string } & InstallOptions,
-): Promise<string[]> {
+async function validateInstallRequest(opts: { noCache: boolean; backend?: string } & InstallOptions): Promise<string[]> {
   const wanted = buildEngineInstallArgs({
     noCache: opts.noCache,
     ttsLangs: opts.ttsLangs,
@@ -719,12 +643,7 @@ async function validateInstallRequest(
     for (const warning of warnings) log.warn(warning);
     return argv;
   } catch (err) {
-    if (
-      opts.diarize &&
-      err instanceof KeshaError &&
-      err.code === "E_INVALID_ARG" &&
-      err.message.includes("--diarize")
-    ) {
+    if (opts.diarize && err instanceof KeshaError && err.code === "E_INVALID_ARG" && err.message.includes("--diarize")) {
       throw new KeshaError(
         "E_INVALID_ARG",
         "The installed engine was built without the system_diarize feature, so --diarize is unavailable " +
@@ -773,15 +692,11 @@ async function runEngineModelInstall(binPath: string, installArgs: string[]): Pr
   }
   if (events.error || events.invalid.length > 0) throw engineFailure("install", events, exitCode);
   if (exitCode !== 0) {
-    throw new KeshaError(
-      "E_INTERNAL",
-      `Failed to install models: ${engineExitCause("install", exitCode, run.signalCode)}`,
-      {
-        exitCode: 1,
-        stderr: events.stderr.trim(),
-        hint: SUPPORT_BUNDLE_HINT,
-      },
-    );
+    throw new KeshaError("E_INTERNAL", `Failed to install models: ${engineExitCause("install", exitCode, run.signalCode)}`, {
+      exitCode: 1,
+      stderr: events.stderr.trim(),
+      hint: SUPPORT_BUNDLE_HINT,
+    });
   }
 }
 
@@ -870,9 +785,7 @@ function unreadableInReadOnlyDir(path: string, e: unknown): unknown {
     "E_INVALID_ARG",
     `Cannot verify ${path} against its pinned SHA-256: ${why} (${errno}), and ${dir} is read-only, so it cannot be replaced.`,
     {
-      hint:
-        `make ${path} readable and ${dir} writable, then re-run \`kesha install\`. Or ` +
-        engineDirFix(engineDirSetting()?.name, false, dir),
+      hint: `make ${path} readable and ${dir} writable, then re-run \`kesha install\`. Or ` + engineDirFix(engineDirSetting()?.name, false, dir),
     },
   );
 }
@@ -914,8 +827,7 @@ function ensureEngineDirCreatable(binPath: string): void {
     if (!why) {
       throw new KeshaError(
         "E_INTERNAL",
-        `${what}.\n  Fix: resolve that filesystem error and ` +
-          "re-run `kesha install`; if it persists, file a bug with `kesha support-bundle`.",
+        `${what}.\n  Fix: resolve that filesystem error and ` + "re-run `kesha install`; if it persists, file a bug with `kesha support-bundle`.",
       );
     }
     const fix = engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir);
@@ -936,13 +848,9 @@ function engineWriteFailure(binPath: string, e: unknown): KeshaError | null {
   }
   if (!errno) return null;
   if (errno === "ENOSPC") {
-    return new KeshaError(
-      "E_INTERNAL",
-      `Cannot write the engine binary into ${into}: no space left on its disk (ENOSPC)`,
-      {
-        hint: `the disk is full: free space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
-      },
-    );
+    return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${into}: no space left on its disk (ENOSPC)`, {
+      hint: `the disk is full: free space on the volume that holds ${engineDir}, then re-run \`kesha install\`.`,
+    });
   }
   return new KeshaError("E_INTERNAL", `Cannot write the engine binary into ${into}: ${errorMessage(e)}`, {
     hint: `resolve that filesystem error on ${engineDir} and re-run \`kesha install\`; if it persists, file a bug with \`kesha support-bundle\`.`,
@@ -965,11 +873,7 @@ export interface EngineInstallRequest extends InstallOptions {
  *
  * `platform` and `arch` are a seam for the unit tests, which stage CoreML-shaped engines on every CI runner; production callers take the process.
  */
-export async function installEngine(
-  request: EngineInstallRequest = {},
-  platform: string = process.platform,
-  arch: string = process.arch,
-): Promise<string> {
+export async function installEngine(request: EngineInstallRequest = {}, platform: string = process.platform, arch: string = process.arch): Promise<string> {
   assertPlatformCanInstall(request, platform, arch);
   const binPath = getEngineBinPath();
   assertNotRealCacheUnderTest(binPath);
@@ -988,10 +892,7 @@ async function installLockedEngine(binPath: string, request: EngineInstallReques
   const engineDir = dirname(binPath);
 
   if (version !== engineVersion) {
-    log.warn(
-      `Installing engine v${version} instead of the pinned v${engineVersion}; ` +
-        "a later `kesha install` without --engine-version restores the pin.",
-    );
+    log.warn(`Installing engine v${version} instead of the pinned v${engineVersion}; ` + "a later `kesha install` without --engine-version restores the pin.");
   }
 
   // Read-only engine dir = Nix-store install; skip download/sidecar writes to avoid EROFS errors.

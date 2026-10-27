@@ -87,23 +87,14 @@ describe("engine-install version marker (#151)", () => {
 
 describe("buildEngineInstallArgs (#517)", () => {
   test("tts languages become positional args after --tts", () => {
-    expect(buildEngineInstallArgs({ noCache: false, ttsLangs: ["en", "ru"] })).toEqual([
-      "install",
-      "--tts",
-      "en",
-      "ru",
-    ]);
+    expect(buildEngineInstallArgs({ noCache: false, ttsLangs: ["en", "ru"] })).toEqual(["install", "--tts", "en", "ru"]);
   });
   test("no tts langs omits --tts", () => {
     expect(buildEngineInstallArgs({ noCache: true, ttsLangs: [] })).toEqual(["install", "--no-cache"]);
   });
   test("--diarize pulls in --vad, which speaker labels depend on (#768)", () => {
     expect(buildEngineInstallArgs({ noCache: false, diarize: true })).toEqual(["install", "--vad", "--diarize"]);
-    expect(buildEngineInstallArgs({ noCache: false, vad: true, diarize: true })).toEqual([
-      "install",
-      "--vad",
-      "--diarize",
-    ]);
+    expect(buildEngineInstallArgs({ noCache: false, vad: true, diarize: true })).toEqual(["install", "--vad", "--diarize"]);
     expect(buildEngineInstallArgs({ noCache: false, vad: true })).toEqual(["install", "--vad"]);
   });
 });
@@ -131,22 +122,11 @@ describe("engine-install retired sidecar cleanup (#438)", () => {
 
       const removed = cleanupRetiredSidecars(engineDir).sort();
 
-      expect(removed).toEqual([
-        "kesha-diarize",
-        "kesha-diarize-darwin-arm64",
-        "kesha-kokoro",
-        "kesha-kokoro-darwin-arm64",
-      ]);
+      expect(removed).toEqual(["kesha-diarize", "kesha-diarize-darwin-arm64", "kesha-kokoro", "kesha-kokoro-darwin-arm64"]);
       for (const filename of removed) {
         expect(existsSync(join(engineDir, filename))).toBe(false);
       }
-      for (const filename of [
-        "say-avspeech",
-        "say-avspeech-darwin-arm64",
-        "kesha-textlang",
-        "kesha-textlang-darwin-arm64",
-        "kesha-engine",
-      ]) {
+      for (const filename of ["say-avspeech", "say-avspeech-darwin-arm64", "kesha-textlang", "kesha-textlang-darwin-arm64", "kesha-engine"]) {
         expect(existsSync(join(engineDir, filename))).toBe(true);
       }
     } finally {
@@ -179,12 +159,8 @@ describe("assertPlatformCanInstall — the pre-check before the lock and any dow
   test("--diarize on any host but darwin-arm64 is E_UNSUPPORTED_PLATFORM", () => {
     const err = rejection(() => assertPlatformCanInstall({ diarize: true }, "linux", "x64"));
     expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
-    expect(err.message).toBe(
-      "--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64",
-    );
-    expect(err.hint).toBe(
-      "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)",
-    );
+    expect(err.message).toBe("--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64");
+    expect(err.hint).toBe("speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)");
   });
 
   test("the same request on darwin-arm64, and a plain request anywhere, pass", () => {
@@ -221,9 +197,7 @@ describe("getEngineBinaryName platform mapping (#216)", () => {
       expect(err).toBeInstanceOf(KeshaError);
       expect((err as KeshaError).code).toBe("E_UNSUPPORTED_PLATFORM");
       expect((err as KeshaError).message).toBe(`no published kesha-engine for ${platform} ${arch}`);
-      expect((err as KeshaError).hint).toBe(
-        "supported: darwin-arm64, linux-x64, win32-x64 (docs/product-positioning.md#platform-matrix)",
-      );
+      expect((err as KeshaError).hint).toBe("supported: darwin-arm64, linux-x64, win32-x64 (docs/product-positioning.md#platform-matrix)");
     }
   });
 });
@@ -330,9 +304,7 @@ describe("waitUntilSpawnable (#216)", () => {
         caught = err;
       }
       const rendered = errorMessage(caught);
-      expect(
-        rendered.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`"),
-      ).toHaveLength(2);
+      expect(rendered.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`")).toHaveLength(2);
       expect(rendered.split("error [")).toHaveLength(2);
       expect(rendered.split("\n")).toHaveLength(2);
     } finally {
@@ -344,36 +316,30 @@ describe("waitUntilSpawnable (#216)", () => {
 
   // A lock cannot be taken on demand, so the path carries the lock's errno: a non-executable file
   // fails to spawn with a message quoting that path, which the classifier reads as transient.
-  spawnFixtureTest(
-    "an engine still locked at the deadline is E_ENGINE_SPAWN, exit 1, with the fix as its hint",
-    async () => {
-      const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-locked-"));
+  spawnFixtureTest("an engine still locked at the deadline is E_ENGINE_SPAWN, exit 1, with the fix as its hint", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "kesha-spawnable-locked-"));
+    try {
+      mkdirSync(join(dir, "EBUSY"));
+      const binPath = join(dir, "EBUSY", "engine");
+      writeFileSync(binPath, "not executable");
+      chmodSync(binPath, 0o644);
+      let caught: unknown;
       try {
-        mkdirSync(join(dir, "EBUSY"));
-        const binPath = join(dir, "EBUSY", "engine");
-        writeFileSync(binPath, "not executable");
-        chmodSync(binPath, 0o644);
-        let caught: unknown;
-        try {
-          await waitUntilSpawnable(binPath, 150);
-        } catch (err) {
-          caught = err;
-        }
-        const rendered = errorMessage(caught);
-        expect(rendered).toStartWith(
-          `error [E_ENGINE_SPAWN]: Downloaded the engine to ${binPath} but it is still locked after 0s: `,
-        );
-        expect(rendered).toEndWith(
-          `\n  hint: a security scanner is likely holding the file. Re-run \`kesha install\`, ` +
-            `or exclude ${join(dir, "EBUSY")} from real-time scanning.`,
-        );
-        expect(rendered.split("\n")).toHaveLength(2);
-        expect(exitCodeFor(caught)).toBe(1);
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
+        await waitUntilSpawnable(binPath, 150);
+      } catch (err) {
+        caught = err;
       }
-    },
-  );
+      const rendered = errorMessage(caught);
+      expect(rendered).toStartWith(`error [E_ENGINE_SPAWN]: Downloaded the engine to ${binPath} but it is still locked after 0s: `);
+      expect(rendered).toEndWith(
+        `\n  hint: a security scanner is likely holding the file. Re-run \`kesha install\`, ` + `or exclude ${join(dir, "EBUSY")} from real-time scanning.`,
+      );
+      expect(rendered.split("\n")).toHaveLength(2);
+      expect(exitCodeFor(caught)).toBe(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("the install spawns speak protocol 4 (#1163, #1181)", () => {
@@ -537,25 +503,22 @@ exit 0
    * knows. Its record counterpart is pinned at `src/engine.ts`; this one lost its pin when the
    * prose-writing stub in `cli-contracts` became a protocol violation instead (review of #1185).
    */
-  posixTest(
-    "a model install that exits non-zero saying nothing is E_INTERNAL with the exit status, a next step and exit 1 (#1512)",
-    async () => {
-      const dir = stageInstallableEngine("kesha-install-silent-");
-      writeEngineWithInstallBody(dir, "  :", 3);
+  posixTest("a model install that exits non-zero saying nothing is E_INTERNAL with the exit status, a next step and exit 1 (#1512)", async () => {
+    const dir = stageInstallableEngine("kesha-install-silent-");
+    writeEngineWithInstallBody(dir, "  :", 3);
 
-      let caught: unknown;
-      try {
-        await installEngine({});
-      } catch (err) {
-        caught = err;
-      }
-      expect(errorMessage(caught)).toBe(
-        "error [E_INTERNAL]: Failed to install models: kesha-engine install exited with code 3\n" +
-          "  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
-      );
-      expect(exitCodeFor(caught)).toBe(1);
-    },
-  );
+    let caught: unknown;
+    try {
+      await installEngine({});
+    } catch (err) {
+      caught = err;
+    }
+    expect(errorMessage(caught)).toBe(
+      "error [E_INTERNAL]: Failed to install models: kesha-engine install exited with code 3\n" +
+        "  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+    );
+    expect(exitCodeFor(caught)).toBe(1);
+  });
 
   posixTest("a model install killed by a signal names it (#1512)", async () => {
     const dir = stageInstallableEngine("kesha-install-signal-");
@@ -567,9 +530,7 @@ exit 0
     } catch (err) {
       caught = err;
     }
-    expect(errorMessage(caught)).toStartWith(
-      "error [E_INTERNAL]: Failed to install models: kesha-engine install was killed by SIGSEGV\n  hint: ",
-    );
+    expect(errorMessage(caught)).toStartWith("error [E_INTERNAL]: Failed to install models: kesha-engine install was killed by SIGSEGV\n  hint: ");
     expect(exitCodeFor(caught)).toBe(1);
   });
 

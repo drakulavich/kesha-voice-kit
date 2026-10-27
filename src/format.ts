@@ -24,9 +24,7 @@ export function formatVerboseDiagnostics(results: TranscribeResult[]): string {
       const route = routeLanguage({ audioLanguage: r.audioLanguage, textLanguage: r.textLanguage });
       if (r.audioLanguage) {
         const note = route.belowFloor.audio ? `, ${BELOW_FLOOR_NOTE}` : "";
-        lines.push(
-          `Audio language: ${r.audioLanguage.code} (confidence: ${r.audioLanguage.confidence.toFixed(2)}${note})`,
-        );
+        lines.push(`Audio language: ${r.audioLanguage.code} (confidence: ${r.audioLanguage.confidence.toFixed(2)}${note})`);
       }
       const textLang = r.textLanguage ?? (r.lang ? { code: r.lang, confidence: 0 } : null);
       if (textLang) {
@@ -51,9 +49,7 @@ export function formatTranscriptOutput(results: TranscribeResult[]): string {
         lines.push(`=== ${r.file} ===`);
       }
       lines.push(r.text);
-      const detected = unsupportedAudioLanguageWarning(r.audioLanguage, r.textLanguage)
-        ? r.audioLanguage
-        : (r.textLanguage ?? r.audioLanguage);
+      const detected = unsupportedAudioLanguageWarning(r.audioLanguage, r.textLanguage) ? r.audioLanguage : (r.textLanguage ?? r.audioLanguage);
       const lang = detected?.code || r.lang;
       const confidence = detected?.confidence;
       if (lang) lines.push(`[lang: ${lang}${confidence != null ? `, confidence: ${confidence.toFixed(2)}` : ""}]`);

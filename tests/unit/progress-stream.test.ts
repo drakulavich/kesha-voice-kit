@@ -1,14 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  chmodSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  utimesSync,
-  writeFileSync,
-} from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { applyBackpressure, streamResponseToFile } from "../../src/progress";
@@ -49,11 +40,7 @@ describe("streamResponseToFile flushes before resolving", () => {
       const source = new Uint8Array(8 * 1024 * 1024);
       for (let i = 0; i < source.length; i++) source[i] = i % 251;
 
-      const written = await streamResponseToFile(
-        new Response(source, { headers: { "content-length": String(source.length) } }),
-        dest,
-        "payload",
-      );
+      const written = await streamResponseToFile(new Response(source, { headers: { "content-length": String(source.length) } }), dest, "payload");
 
       expect(written).toBe(source.length);
       const back = new Uint8Array(await Bun.file(dest).arrayBuffer());
@@ -83,9 +70,7 @@ describe("streamResponseToFile publishes atomically (#770)", () => {
       const dest = join(dir, "kesha-engine");
       writeFileSync(dest, "previous engine");
 
-      await expect(
-        streamResponseToFile(failingResponse("truncated", "connection reset"), dest, "payload"),
-      ).rejects.toThrow(/connection reset/);
+      await expect(streamResponseToFile(failingResponse("truncated", "connection reset"), dest, "payload")).rejects.toThrow(/connection reset/);
 
       expect(readFileSync(dest, "utf8")).toBe("previous engine");
       expect(readdirSync(dir)).toEqual(["kesha-engine"]);
@@ -99,9 +84,7 @@ describe("streamResponseToFile publishes atomically (#770)", () => {
     try {
       const dest = join(dir, "kesha-engine");
 
-      await expect(
-        streamResponseToFile(failingResponse("truncated", "connection reset"), dest, "payload"),
-      ).rejects.toThrow(/connection reset/);
+      await expect(streamResponseToFile(failingResponse("truncated", "connection reset"), dest, "payload")).rejects.toThrow(/connection reset/);
 
       expect(readdirSync(dir)).toEqual([]);
     } finally {
@@ -186,10 +169,7 @@ describe("streamResponseToFile publishes atomically (#770)", () => {
       const first = "a".repeat(128);
       const second = "b".repeat(128);
 
-      await Promise.all([
-        streamResponseToFile(slowResponse(first), dest, "first"),
-        streamResponseToFile(slowResponse(second), dest, "second"),
-      ]);
+      await Promise.all([streamResponseToFile(slowResponse(first), dest, "first"), streamResponseToFile(slowResponse(second), dest, "second")]);
 
       expect([first, second]).toContain(readFileSync(dest, "utf8"));
       expect(readdirSync(dir)).toEqual(["kesha-engine"]);

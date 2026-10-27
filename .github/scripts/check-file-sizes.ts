@@ -39,18 +39,12 @@ export function lfsFilterLines(attributes: string): number[] {
 }
 
 export function oversized(entries: TrackedFile[], limitBytes: number): TrackedFile[] {
-  return entries
-    .filter((entry) => entry.bytes >= limitBytes)
-    .sort((a, b) => b.bytes - a.bytes || a.path.localeCompare(b.path));
+  return entries.filter((entry) => entry.bytes >= limitBytes).sort((a, b) => b.bytes - a.bytes || a.path.localeCompare(b.path));
 }
 
 async function runBytes(cwd: string, argv: string[], stdin: string): Promise<Buffer> {
   const proc = Bun.spawn(argv, { cwd, stdin: Buffer.from(stdin), stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).arrayBuffer(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const [stdout, stderr, exitCode] = await Promise.all([new Response(proc.stdout).arrayBuffer(), new Response(proc.stderr).text(), proc.exited]);
   if (exitCode !== 0) throw new Error(`${argv.join(" ")} failed (exit ${exitCode}) in ${cwd}: ${stderr.trim()}`);
   return Buffer.from(stdout);
 }
@@ -119,9 +113,7 @@ export async function lfsFindings(cwd: string, tracked: TrackedBlob[]): Promise<
   );
   return candidates.flatMap((file) => {
     const content = contents.get(file.oid) ?? Buffer.alloc(0);
-    const found = isAttributes(file)
-      ? lfsFilterLines(content.toString("utf8")).map((line) => `  ${file.path}:${line} sets filter=lfs`)
-      : [];
+    const found = isAttributes(file) ? lfsFilterLines(content.toString("utf8")).map((line) => `  ${file.path}:${line} sets filter=lfs`) : [];
     if (isLfsPointer(content)) found.push(`  ${file.path} is a Git LFS pointer`);
     return found;
   });
@@ -133,16 +125,12 @@ if (import.meta.main) {
   if (lfs.length > 0) {
     console.error("check:file-sizes: Git LFS is gone from this repository (#1240); these would bring it back:");
     for (const line of lfs) console.error(line);
-    console.error(
-      "commit the real bytes if they stay under 1 MiB, otherwise ship them as a release asset with a SHA-256 pin",
-    );
+    console.error("commit the real bytes if they stay under 1 MiB, otherwise ship them as a release asset with a SHA-256 pin");
   }
   const tracked = all.filter(({ path }) => !EXEMPT_PATHS.includes(path));
   const large = oversized(tracked, LIMIT_BYTES);
   if (large.length > 0) {
-    console.error(
-      `check:file-sizes: ${large.length} tracked file${large.length === 1 ? "" : "s"} at or above 1 MiB (${LIMIT_BYTES} bytes):`,
-    );
+    console.error(`check:file-sizes: ${large.length} tracked file${large.length === 1 ? "" : "s"} at or above 1 MiB (${LIMIT_BYTES} bytes):`);
     for (const { path, bytes } of large) {
       console.error(`  ${path}  ${bytes} bytes (${(bytes / LIMIT_BYTES).toFixed(2)} MiB)`);
     }

@@ -43,20 +43,8 @@ describe("init onboarding", () => {
   });
 
   test("preselected feature flags map to install flags", () => {
-    const selection = resolveInitSelection(
-      initArgs({ "no-cache": true, tts: true, vad: true, diarize: true }),
-      "coreml",
-    );
-    expect(initInstallArgs(selection)).toEqual([
-      "kesha",
-      "install",
-      "--no-cache",
-      "--coreml",
-      "--tts",
-      "en",
-      "--vad",
-      "--diarize",
-    ]);
+    const selection = resolveInitSelection(initArgs({ "no-cache": true, tts: true, vad: true, diarize: true }), "coreml");
+    expect(initInstallArgs(selection)).toEqual(["kesha", "install", "--no-cache", "--coreml", "--tts", "en", "--vad", "--diarize"]);
   });
 
   test("multiple tts languages emit positional codes after --tts", () => {
@@ -166,15 +154,7 @@ describe("init onboarding", () => {
       vad: true,
       diarize: false,
     });
-    expect(initInstallArgs(omitUnsupportedDiarize(selection, false))).toEqual([
-      "kesha",
-      "install",
-      "--no-cache",
-      "--onnx",
-      "--tts",
-      "en",
-      "--vad",
-    ]);
+    expect(initInstallArgs(omitUnsupportedDiarize(selection, false))).toEqual(["kesha", "install", "--no-cache", "--onnx", "--tts", "en", "--vad"]);
   });
 
   test("diarization availability is darwin-arm64 only", () => {
@@ -212,11 +192,7 @@ describe("init cancelled at a prompt (Exploratory S4-F1)", () => {
     });
     proc.stdin.write("\x03");
     proc.stdin.flush();
-    const [exitCode, stdout, stderr] = await Promise.all([
-      proc.exited,
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-    ]);
+    const [exitCode, stdout, stderr] = await Promise.all([proc.exited, new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
     return { exitCode, output: stdout + stderr };
   }
 

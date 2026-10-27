@@ -5,8 +5,7 @@ const streams = [process.stdin, process.stdout, process.stderr] as const;
 const original = streams.map((s) => s.isTTY);
 
 function setTTY(stdin: boolean, stdout: boolean, stderr: boolean): void {
-  for (const [i, value] of [stdin, stdout, stderr].entries())
-    Object.defineProperty(streams[i], "isTTY", { value, configurable: true });
+  for (const [i, value] of [stdin, stdout, stderr].entries()) Object.defineProperty(streams[i], "isTTY", { value, configurable: true });
 }
 
 afterEach(() => {

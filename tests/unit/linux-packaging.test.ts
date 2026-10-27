@@ -23,10 +23,7 @@ describe("linux packaging pipeline", () => {
   });
 
   // One composite so the CI lane and the release lane cannot build the pair differently.
-  test.each([".github/workflows/ci.yml", ".github/workflows/release.yml"])(
-    "%s builds through the shared composite",
-    (workflow) => {
-      expect(readRepoFile(workflow)).toContain("./.github/actions/linux-packages");
-    },
-  );
+  test.each([".github/workflows/ci.yml", ".github/workflows/release.yml"])("%s builds through the shared composite", (workflow) => {
+    expect(readRepoFile(workflow)).toContain("./.github/actions/linux-packages");
+  });
 });

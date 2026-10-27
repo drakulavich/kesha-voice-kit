@@ -256,24 +256,11 @@ describe("kesha say (CLI)", () => {
     const dir = tempDir("kesha-abbrev-engine-");
     const enginePath = await createAbbrevWarningEngine(dir);
     const outPath = `${dir}/reply.wav`;
-    const proc = spawn(
-      [
-        "bun",
-        CLI_PATH,
-        "say",
-        "--voice",
-        "en-am_michael",
-        "--no-expand-abbrev",
-        "--out",
-        outPath,
-        "The FBI is investigating.",
-      ],
-      {
-        env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
-        stdout: "pipe",
-        stderr: "pipe",
-      },
-    );
+    const proc = spawn(["bun", CLI_PATH, "say", "--voice", "en-am_michael", "--no-expand-abbrev", "--out", outPath, "The FBI is investigating."], {
+      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
 
     expect(await proc.exited).toBe(0);
     const stderr = await new Response(proc.stderr).text();
@@ -308,16 +295,7 @@ describe("kesha say (CLI)", () => {
   });
 
   it("speaks every unquoted word, flags between and after the text (#1379)", async () => {
-    const spoken = await spokenText((dir) => [
-      "hello",
-      "--voice",
-      "ru-vosk-m02",
-      "world",
-      "--rate",
-      "1.0",
-      "--out",
-      `${dir}/r.wav`,
-    ]);
+    const spoken = await spokenText((dir) => ["hello", "--voice", "ru-vosk-m02", "world", "--rate", "1.0", "--out", `${dir}/r.wav`]);
     expect(spoken).toBe("hello world");
   });
 
@@ -327,13 +305,7 @@ describe("kesha say (CLI)", () => {
   });
 
   it("drops emoji before synthesis and keeps © ® ™ (#1388)", async () => {
-    const spoken = await spokenText((dir) => [
-      "--voice",
-      "ru-vosk-m02",
-      "--out",
-      `${dir}/r.wav`,
-      "Придёшь? 😊 👍🏽 🇷🇺 👨‍👩‍👧 ❤️ © Acme™ ® 1️⃣",
-    ]);
+    const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "Придёшь? 😊 👍🏽 🇷🇺 👨‍👩‍👧 ❤️ © Acme™ ® 1️⃣"]);
     expect(spoken).toBe("Придёшь?      © Acme™ ® ");
   });
 
@@ -352,9 +324,7 @@ describe("kesha say (CLI)", () => {
     });
 
     expect(await proc.exited).toBe(2);
-    expect(await new Response(proc.stderr).text()).toContain(
-      "error [E_TEXT_EMPTY]: text has nothing to speak: emoji are not read aloud",
-    );
+    expect(await new Response(proc.stderr).text()).toContain("error [E_TEXT_EMPTY]: text has nothing to speak: emoji are not read aloud");
     expect(existsSync(`${dir}/spoken.txt`)).toBe(false);
   });
 
@@ -371,14 +341,7 @@ describe("kesha say (CLI)", () => {
   });
 
   it("drops emoji inside SSML CDATA, where the CDATA is the speech", async () => {
-    const spoken = await spokenText((dir) => [
-      "--voice",
-      "en-am_michael",
-      "--ssml",
-      "--out",
-      `${dir}/r.wav`,
-      "<speak><![CDATA[Hello 😊]]></speak>",
-    ]);
+    const spoken = await spokenText((dir) => ["--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[Hello 😊]]></speak>"]);
     expect(spoken).toBe("<speak><![CDATA[Hello ]]></speak>");
   });
 
@@ -395,14 +358,7 @@ describe("kesha say (CLI)", () => {
   });
 
   it("leaves a character reference inside CDATA alone: it is literal text there", async () => {
-    const spoken = await spokenText((dir) => [
-      "--voice",
-      "en-am_michael",
-      "--ssml",
-      "--out",
-      `${dir}/r.wav`,
-      "<speak><![CDATA[a > b &#x1F60A;]]></speak>",
-    ]);
+    const spoken = await spokenText((dir) => ["--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[a > b &#x1F60A;]]></speak>"]);
     expect(spoken).toBe("<speak><![CDATA[a > b &#x1F60A;]]></speak>");
   });
 

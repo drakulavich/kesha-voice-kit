@@ -28,15 +28,11 @@ describe("npm release metadata gate", () => {
   });
 
   test("an empty answer — what a malformed field list makes npm print — names the package, never passes", () => {
-    expect(() => assertNpmReleaseMetadata("", PACKAGE, "1.30.0", 0)).toThrow(
-      /@drakulavich\/kesha-voice-kit@1\.30\.0.*no JSON/,
-    );
+    expect(() => assertNpmReleaseMetadata("", PACKAGE, "1.30.0", 0)).toThrow(/@drakulavich\/kesha-voice-kit@1\.30\.0.*no JSON/);
   });
 
   test("a version other than the one asked for is refused by name", () => {
-    expect(() => assertNpmReleaseMetadata(published({ version: "1.29.1" }), PACKAGE, "1.30.0", 0)).toThrow(
-      /version 1\.29\.1, expected 1\.30\.0/,
-    );
+    expect(() => assertNpmReleaseMetadata(published({ version: "1.29.1" }), PACKAGE, "1.30.0", 0)).toThrow(/version 1\.29\.1, expected 1\.30\.0/);
   });
 
   test("a publish without provenance is refused, naming what is missing", () => {
@@ -75,9 +71,7 @@ describe("waiting for a fresh publish to reach the registry (#1356)", () => {
     const unattested = { stdout: published({ dist: { integrity: "sha512-abc" } }), exitCode: 0 };
     const answers = [unattested, { stdout: published(), exitCode: 0 }];
     const view = await viewWhenPublished(() => answers.shift() ?? unattested, PACKAGE, "1.30.0", 5, 0);
-    expect(assertNpmReleaseMetadata(view.stdout, PACKAGE, "1.30.0", view.exitCode).provenance).toBe(
-      "https://slsa.dev/provenance/v1",
-    );
+    expect(assertNpmReleaseMetadata(view.stdout, PACKAGE, "1.30.0", view.exitCode).provenance).toBe("https://slsa.dev/provenance/v1");
   });
 
   test("a version that never appears still fails the gate", async () => {

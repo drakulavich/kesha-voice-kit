@@ -11,12 +11,7 @@ interface NpmView {
   dist?: { integrity?: unknown; attestations?: { provenance?: { predicateType?: unknown } } };
 }
 
-export function assertNpmReleaseMetadata(
-  raw: string,
-  pkg: string,
-  version: string,
-  exitCode: number,
-): { version: string; provenance: string } {
+export function assertNpmReleaseMetadata(raw: string, pkg: string, version: string, exitCode: number): { version: string; provenance: string } {
   const spec = `${pkg}@${version}`;
   if (exitCode !== 0) throw new Error(`${spec}: npm view exited ${exitCode}; the registry answer above is not trusted`);
   let doc: NpmView;
@@ -41,13 +36,7 @@ export function assertNpmReleaseMetadata(
 
 export type ViewResult = { stdout: string; exitCode: number };
 
-export async function viewWhenPublished(
-  view: () => ViewResult,
-  pkg: string,
-  version: string,
-  attempts: number,
-  waitMs: number,
-): Promise<ViewResult> {
+export async function viewWhenPublished(view: () => ViewResult, pkg: string, version: string, attempts: number, waitMs: number): Promise<ViewResult> {
   const passes = (r: ViewResult) => {
     try {
       assertNpmReleaseMetadata(r.stdout, pkg, version, r.exitCode);

@@ -41,18 +41,15 @@ const SEAMS: Array<{
 }> = [
   {
     dependency: "a functional installed engine (engineGate)",
-    detect: (imports) =>
-      imports.some((i) => i.specifier.endsWith("helpers/model-gate") && /\bengineGate\b/.test(i.bindings)),
+    detect: (imports) => imports.some((i) => i.specifier.endsWith("helpers/model-gate") && /\bengineGate\b/.test(i.bindings)),
   },
   {
     dependency: "the weights a lane promised (modelsRequired)",
-    detect: (imports) =>
-      imports.some((i) => i.specifier.endsWith("helpers/model-gate") && /\bmodelsRequired\b/.test(i.bindings)),
+    detect: (imports) => imports.some((i) => i.specifier.endsWith("helpers/model-gate") && /\bmodelsRequired\b/.test(i.bindings)),
   },
   {
     dependency: "the installed engine binary (getEngineBinPath)",
-    detect: (imports) =>
-      imports.some((i) => i.specifier.endsWith("src/engine") && /\bgetEngineBinPath\b/.test(i.bindings)),
+    detect: (imports) => imports.some((i) => i.specifier.endsWith("src/engine") && /\bgetEngineBinPath\b/.test(i.bindings)),
   },
   {
     dependency: `a source-built engine (${BUILT_ENGINE_PATH})`,

@@ -5,10 +5,7 @@ import { readRepoFile } from "../helpers/repo";
 const FORMULA = readRepoFile("packaging/homebrew/Formula/kesha-voice-kit.rb");
 
 function fetchReturning(version: string) {
-  return async (url: string) =>
-    url.endsWith("package.json")
-      ? new Response(JSON.stringify({ version }))
-      : new Response(Buffer.from("fake tarball"));
+  return async (url: string) => (url.endsWith("package.json") ? new Response(JSON.stringify({ version })) : new Response(Buffer.from("fake tarball")));
 }
 
 describe("buildUpdatedFormula", () => {
@@ -63,17 +60,14 @@ describe("buildUpdatedFormula", () => {
   });
 
   test("rejects when the tagged package.json has no version, rather than falling back to the tag", async () => {
-    const fetchImpl = async (url: string) =>
-      url.endsWith("package.json") ? new Response(JSON.stringify({})) : new Response(Buffer.from("fake tarball"));
+    const fetchImpl = async (url: string) => (url.endsWith("package.json") ? new Response(JSON.stringify({})) : new Response(Buffer.from("fake tarball")));
 
     await expect(buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl })).rejects.toThrow(/version/i);
   });
 
   test("rejects when the package.json fetch itself fails", async () => {
     const fetchImpl = async (url: string) =>
-      url.endsWith("package.json")
-        ? new Response("not found", { status: 404 })
-        : new Response(Buffer.from("fake tarball"));
+      url.endsWith("package.json") ? new Response("not found", { status: 404 }) : new Response(Buffer.from("fake tarball"));
 
     await expect(buildUpdatedFormula({ tag: "v1.24.12", formula: FORMULA, fetchImpl })).rejects.toThrow(/HTTP 404/);
   });

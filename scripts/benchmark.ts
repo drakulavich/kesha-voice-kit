@@ -48,9 +48,7 @@ function getSystemInfo(): BenchmarkReport["platform"] {
   let ram = "Unknown";
 
   if (os === "Darwin") {
-    chip =
-      Bun.spawnSync(["sysctl", "-n", "machdep.cpu.brand_string"], { stdout: "pipe" }).stdout.toString().trim() ||
-      "Unknown";
+    chip = Bun.spawnSync(["sysctl", "-n", "machdep.cpu.brand_string"], { stdout: "pipe" }).stdout.toString().trim() || "Unknown";
     const profiler = Bun.spawnSync(["system_profiler", "SPHardwareDataType"], { stdout: "pipe" }).stdout.toString();
     ram = profiler.match(/Memory:\s+(.+)/)?.[1] ?? "Unknown";
   } else if (os === "Linux") {
@@ -256,9 +254,7 @@ function renderGroup(group: GroupResult, hasCoreml: boolean): string[] {
     const r = group.results[i];
     const transcript = r.kesha.text.slice(0, 60) + (r.kesha.text.length > 60 ? "..." : "");
     const coremlCol = hasCoreml && r.keshaCoreml ? ` ${r.keshaCoreml.time}s |` : "";
-    lines.push(
-      `| ${i + 1} | ${r.file} | ${r.openaiWhisper.time}s | ${r.fasterWhisper.time}s | ${r.kesha.time}s |${coremlCol} ${transcript} |`,
-    );
+    lines.push(`| ${i + 1} | ${r.file} | ${r.openaiWhisper.time}s | ${r.fasterWhisper.time}s | ${r.kesha.time}s |${coremlCol} ${transcript} |`);
   }
 
   const t = group.totals;
@@ -270,9 +266,7 @@ function renderGroup(group: GroupResult, hasCoreml: boolean): string[] {
   const bestLabel = hasCoreml && t.keshaCoreml != null ? "Kesha CoreML" : "Kesha ONNX";
   const speedVsWhisper = bestTime > 0 ? round1(t.openaiWhisper / bestTime) : 0;
   const speedVsFaster = bestTime > 0 ? round1(t.fasterWhisper / bestTime) : 0;
-  lines.push(
-    `**Speedup:** ${bestLabel} is ~${speedVsWhisper}x faster than openai-whisper, ~${speedVsFaster}x faster than faster-whisper`,
-  );
+  lines.push(`**Speedup:** ${bestLabel} is ~${speedVsWhisper}x faster than openai-whisper, ~${speedVsFaster}x faster than faster-whisper`);
 
   return lines;
 }

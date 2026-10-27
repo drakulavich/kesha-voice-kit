@@ -28,8 +28,7 @@ try {
   serverJson = JSON.parse(readFileSync("server.json", "utf8"));
 } catch (err) {
   console.error(
-    `server.json: unreadable (${err instanceof Error ? err.message : String(err)}). ` +
-      `It is the MCP registry manifest and must stay in the repo root.`,
+    `server.json: unreadable (${err instanceof Error ? err.message : String(err)}). ` + `It is the MCP registry manifest and must stay in the repo root.`,
   );
   process.exit(1);
 }
@@ -70,10 +69,7 @@ for (const [label] of committedPins) {
 
 const serverVersions: Array<[string, string]> = [
   ["server.json#version", serverJson.version ?? ""],
-  ...(serverJson.packages ?? []).map((pkg: { version?: string }, i: number): [string, string] => [
-    `server.json#packages[${i}].version`,
-    pkg.version ?? "",
-  ]),
+  ...(serverJson.packages ?? []).map((pkg: { version?: string }, i: number): [string, string] => [`server.json#packages[${i}].version`, pkg.version ?? ""]),
 ];
 
 for (const [label, raw] of serverVersions) {

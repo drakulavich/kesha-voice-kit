@@ -22,8 +22,7 @@ import { tempDir } from "../helpers/temp-dir";
  */
 const SPIKE_MODEL = process.env.KOKORO_MODEL ?? "/tmp/kokoro-spike/model.onnx";
 const SPIKE_VOICE = process.env.KOKORO_VOICE ?? "/tmp/kokoro-spike/am_michael.bin";
-const BUILT_ENGINE =
-  process.env.KESHA_ENGINE_BIN ?? `${new URL("../..", import.meta.url).pathname}rust/target/release/kesha-engine`;
+const BUILT_ENGINE = process.env.KESHA_ENGINE_BIN ?? `${new URL("../..", import.meta.url).pathname}rust/target/release/kesha-engine`;
 
 const AVAILABLE = existsSync(SPIKE_MODEL) && existsSync(SPIKE_VOICE) && existsSync(BUILT_ENGINE);
 

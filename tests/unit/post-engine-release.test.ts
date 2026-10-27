@@ -1,11 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildPostEngineReleaseFollowup } from "../../.github/scripts/post-engine-release";
-import {
-  decideExisting,
-  decideFollowup,
-  ownsTag,
-  refuseConcurrentFollowup,
-} from "../../.github/scripts/post-release-guard";
+import { decideExisting, decideFollowup, ownsTag, refuseConcurrentFollowup } from "../../.github/scripts/post-release-guard";
 import { parseRepoYaml, readRepoFile, REPO_ROOT } from "../helpers/repo";
 
 /** A step's own `run:` text plus the body of any `.github/scripts/*.sh` it hands off to. */
@@ -75,9 +70,7 @@ describe("buildPostEngineReleaseFollowup", () => {
     });
     expect(result.cargoSource).toBe(cargoSource.replace('version = "1.24.11"', 'version = "1.25.0"'));
     // Only the Engine's own lock entry moves; a dependency that happens to share the version stays.
-    expect(result.lockSource).toBe(
-      lockSource.replace('"kesha-engine"\nversion = "1.24.11"', '"kesha-engine"\nversion = "1.25.0"'),
-    );
+    expect(result.lockSource).toBe(lockSource.replace('"kesha-engine"\nversion = "1.24.11"', '"kesha-engine"\nversion = "1.25.0"'));
   });
 
   test("refuses an incomplete release", () => {
@@ -171,15 +164,7 @@ describe("the post-release job", () => {
 
   test("only a stable tag is owned by the follow-up", () => {
     for (const tag of ["v1.24.11", "v1.29.0", "v10.0.100", "v0.0.0"]) expect(ownsTag(tag)).toBe(true);
-    for (const tag of [
-      "v1.29.0-cli",
-      "v1.24.11-alpha.1",
-      "v1.24.11-beta.1",
-      "1.24.11",
-      "v1.24",
-      "v01.2.3",
-      "v1.2.3 ",
-    ]) {
+    for (const tag of ["v1.29.0-cli", "v1.24.11-alpha.1", "v1.24.11-beta.1", "1.24.11", "v1.24", "v01.2.3", "v1.2.3 "]) {
       expect(ownsTag(tag)).toBe(false);
     }
   });
@@ -189,9 +174,7 @@ describe("the post-release job", () => {
     expect(refuseConcurrentFollowup({ branch, openHeads: [], remoteHeads: [] })).toBeNull();
     expect(refuseConcurrentFollowup({ branch, openHeads: [branch], remoteHeads: [`refs/heads/${branch}`] })).toBeNull();
     // Unrelated work must not block a release follow-up.
-    expect(
-      refuseConcurrentFollowup({ branch, openHeads: ["fix/issue-1", "docs/issue-2"], remoteHeads: [] }),
-    ).toBeNull();
+    expect(refuseConcurrentFollowup({ branch, openHeads: ["fix/issue-1", "docs/issue-2"], remoteHeads: [] })).toBeNull();
     // A branch exists before its pull request does, so either list alone must refuse.
     const viaPr = refuseConcurrentFollowup({
       branch,
@@ -226,9 +209,7 @@ describe("the post-release job", () => {
     expect(job.concurrency["cancel-in-progress"]).toBe(false);
     const guard = job.steps.find((step: { id?: string }) => step.id === "shape").run;
     expect(guard).toContain("post-release-guard.ts");
-    const mutating = job.steps.filter(
-      (step: { id?: string; run?: string }) => step.id !== "shape" && step.id !== "existing" && step.run !== undefined,
-    );
+    const mutating = job.steps.filter((step: { id?: string; run?: string }) => step.id !== "shape" && step.id !== "existing" && step.run !== undefined);
     expect(mutating.length).toBeGreaterThan(0);
     // A skipped step has no output, and "" != 'true' would otherwise let these run anyway.
     for (const step of mutating) expect(step.if).toContain("steps.shape.outputs.skip != 'true'");
@@ -253,13 +234,7 @@ describe("an existing pull request on the follow-up branch", () => {
 
   test("one that misses either half of the predicate is refused as unrelated", () => {
     const unrelated = { refuse: `An unrelated PR already uses ${branch}; refusing to touch it.` };
-    expect(
-      decideExisting(
-        [{ ...ours, title: "chore(release): record v1.24.1 assets and lead main to v1.24.2" }],
-        tag,
-        branch,
-      ),
-    ).toEqual(unrelated);
+    expect(decideExisting([{ ...ours, title: "chore(release): record v1.24.1 assets and lead main to v1.24.2" }], tag, branch)).toEqual(unrelated);
     expect(decideExisting([{ ...ours, body: "Published engine tag: `v1.24.1`" }], tag, branch)).toEqual(unrelated);
     expect(decideExisting([{ ...ours, title: `fix: ${ours.title}` }], tag, branch)).toEqual(unrelated);
   });
@@ -277,11 +252,7 @@ describe("an existing pull request on the follow-up branch", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
+    const [stdout, stderr, exitCode] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
     return { stdout, stderr, exitCode };
   }
 

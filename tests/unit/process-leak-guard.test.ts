@@ -1,14 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  pidIsAlive,
-  reapLeakedProcesses,
-  stubbornShell,
-  trackPid,
-  waitForPidExit,
-  waitForPidFile,
-} from "../helpers/process";
+import { pidIsAlive, reapLeakedProcesses, stubbornShell, trackPid, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { readRepoFile, repoPath } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
 
@@ -134,9 +127,7 @@ describe("process leak guard", () => {
 
         const leaked = await reapLeakedProcesses({ sweepDescendants: true });
 
-        expect(leaked.filter((entry) => entry.startsWith(`pid ${parent.pid}:`))).toEqual([
-          `pid ${parent.pid}: sleep 30`,
-        ]);
+        expect(leaked.filter((entry) => entry.startsWith(`pid ${parent.pid}:`))).toEqual([`pid ${parent.pid}: sleep 30`]);
         expect(leaked.filter((entry) => entry.startsWith(`pid ${zombie}:`))).toEqual([]);
       } finally {
         parent.kill("SIGKILL");

@@ -18,13 +18,7 @@ import {
 } from "../../src/lib";
 // @ts-expect-error -- removed in 2.0.0; `transcribe` returns the structured result (docs/api.md#migrating-to-200)
 import type { TranscriptionOutput } from "../../src/lib";
-import {
-  describeJson,
-  isolateEngineCache,
-  saveEngineEnv,
-  writeFakeEngine,
-  writeTranscribingEngine,
-} from "../helpers/fake-engine";
+import { describeJson, isolateEngineCache, saveEngineEnv, writeFakeEngine, writeTranscribingEngine } from "../helpers/fake-engine";
 import { transcribeWithSegments, validateTranscribeRequest } from "../../src/transcribe";
 import { SIDECARS } from "../../src/engine-install";
 import { isDarwinArm64 } from "../../src/engine-targets";
@@ -123,9 +117,7 @@ describe("transcribe.ts internals", () => {
 
   fakeEngineIt("refuses itn alongside timestamps when the engine lacks it", async () => {
     await withEngine(fakeEngine(["transcribe.segments"]), async () => {
-      await expect(transcribeWithSegments("audio.wav", { timestamps: true, itn: true })).rejects.toThrow(
-        "--itn needs transcribe.itn",
-      );
+      await expect(transcribeWithSegments("audio.wav", { timestamps: true, itn: true })).rejects.toThrow("--itn needs transcribe.itn");
     });
   });
 
@@ -146,11 +138,7 @@ describe("transcribe() abort", () => {
     const pidFile = join(dir, "engine.pid");
     const audio = join(dir, "audio.wav");
     writeFileSync(audio, "");
-    const enginePath = writeTranscribingEngine(
-      "kesha-lib-abort-engine-",
-      [],
-      `  printf '%s' "$$" > '${pidFile}'\n  sleep 30`,
-    );
+    const enginePath = writeTranscribingEngine("kesha-lib-abort-engine-", [], `  printf '%s' "$$" > '${pidFile}'\n  sleep 30`);
     await withEngine(enginePath, async () => {
       const controller = new AbortController();
       const run = transcribe(audio, { signal: controller.signal });
@@ -487,13 +475,10 @@ exit 0
     expect(requested).toEqual([]);
   });
 
-  (isDarwinArm64() || !platformBackend ? it.skip : it)(
-    "reports diarize before an unavailable backend, in the CLI's order",
-    async () => {
-      stageAbsentEngine();
-      const other: InstallOptions["backend"] = platformBackend === "coreml" ? "onnx" : "coreml";
-      const err = await rejectionOf(install({ diarize: true, backend: other }));
-      expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
-    },
-  );
+  (isDarwinArm64() || !platformBackend ? it.skip : it)("reports diarize before an unavailable backend, in the CLI's order", async () => {
+    stageAbsentEngine();
+    const other: InstallOptions["backend"] = platformBackend === "coreml" ? "onnx" : "coreml";
+    const err = await rejectionOf(install({ diarize: true, backend: other }));
+    expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
+  });
 });

@@ -70,11 +70,7 @@ export function buildSayArgs(o: SayOptions): string[] {
 }
 
 /** Explains a signal death, which leaves no error event. */
-export function engineCrashMessage(
-  exitCode: number,
-  signalCode: string | null,
-  platform: string = process.platform,
-): string | null {
+export function engineCrashMessage(exitCode: number, signalCode: string | null, platform: string = process.platform): string | null {
   const signal = engineSignal(exitCode, signalCode, platform);
   if (!signal) return null;
   const base = `kesha-engine was killed by ${signal} and produced no audio`;
@@ -122,11 +118,7 @@ function decodeCharRefs(ssml: string): string {
         ? part
         : part.replace(NUMERIC_REF, (ref, hex?: string, dec?: string) => {
             const cp = hex !== undefined ? parseInt(hex, 16) : Number(dec);
-            const plain =
-              cp >= 0x20 &&
-              cp <= 0x10ffff &&
-              !(cp >= 0xd800 && cp <= 0xdfff) &&
-              !`<>&'"`.includes(String.fromCodePoint(cp));
+            const plain = cp >= 0x20 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff) && !`<>&'"`.includes(String.fromCodePoint(cp));
             return plain ? String.fromCodePoint(cp) : ref;
           }),
     )
@@ -185,10 +177,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   if (!isEngineInstalled()) {
     throw engineMissingError("speech synthesis", "--tts");
   }
-  const { argv: args, warnings } = validateArgv(
-    buildSayArgs({ ...opts, text: undefined }),
-    await getDescribe({ signal: opts.signal }),
-  );
+  const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe({ signal: opts.signal }));
   for (const warning of warnings) log.warn(warning);
   const before = outStamp(opts.out);
   const { exitCode, signalCode, aborted, stdout, events } = await runEngineProcess(getEngineBinPath(), args, {
@@ -216,9 +205,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
     throw new KeshaError(interrupted.code, interrupted.message, { exitCode: exitCodeFor(interrupted), stderr: "" });
   }
   // The crash explanation rides in `stderr`, rendered after the coded line.
-  const detail = [stderrText.trim(), engineCrashMessage(exitCode, signalCode)]
-    .filter((part): part is string => Boolean(part))
-    .join("\n");
+  const detail = [stderrText.trim(), engineCrashMessage(exitCode, signalCode)].filter((part): part is string => Boolean(part)).join("\n");
   const failure = engineFailure("say", events, exitCode, detail);
   throw new KeshaError(failure.code, failure.message, {
     exitCode: failure.exitCode || 4,
@@ -250,8 +237,7 @@ export async function listVoiceIds(sinks: EventSinks = {}, signal?: AbortSignal)
   if (aborted) throw engineAbortError();
   const interrupted = interruptedRun(exitCode);
   if (interrupted) throw interrupted;
-  if (exitCode !== 0 || events.invalid.length > 0 || events.error)
-    throw engineFailure("say --list-voices", events, exitCode);
+  if (exitCode !== 0 || events.invalid.length > 0 || events.error) throw engineFailure("say --list-voices", events, exitCode);
   if (events.stderr.length > 0) process.stderr.write(events.stderr);
   return out
     .split("\n")

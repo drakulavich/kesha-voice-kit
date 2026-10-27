@@ -24,9 +24,7 @@ process.on("exit", () => reapTempDirs());
 
 function report(scope: string, leaked: string[]): void {
   if (leaked.length === 0) return;
-  throw new Error(
-    `${scope} left ${leaked.length} process(es) running; the leak guard reaped them:\n  ${leaked.join("\n  ")}`,
-  );
+  throw new Error(`${scope} left ${leaked.length} process(es) running; the leak guard reaped them:\n  ${leaked.join("\n  ")}`);
 }
 
 afterEach(async () => report("this test", await reapLeakedProcesses()));

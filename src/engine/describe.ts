@@ -41,8 +41,7 @@ const UPGRADE_CLI = "bun add -g @drakulavich/kesha-voice-kit@latest";
 
 /** Remedies validateArgv attaches when a flag's gate is missing; keyed `<command> --<flag>`. */
 const GATE_HINTS: Record<string, string> = {
-  "transcribe --speakers":
-    "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)",
+  "transcribe --speakers": "speaker diarization is darwin-arm64 only (https://github.com/drakulavich/kesha-voice-kit/issues/199)",
   "transcribe --itn": `the installed engine predates the written-form pass; run \`${UPGRADE_CLI}\`, then \`kesha install\``,
   "record --live":
     "live transcription needs the CoreML engine on Apple Silicon; elsewhere record to a file, then transcribe it: `kesha record --out note.wav` and `kesha note.wav`",

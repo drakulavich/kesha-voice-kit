@@ -115,9 +115,7 @@ describe("parseManifestUrls", () => {
   // map would let the later declaration (`ANE_ZH_FILES`) silently shadow the earlier one
   // (`ANE_EN_FILES`) for every colliding key; `parseManifestEntries` must keep both.
   test("keeps colliding rel_paths as separate entries rather than letting one shadow the other", () => {
-    const albertCoremldata = realManifestEntries().filter(
-      (entry) => entry.relPath === "KokoroAlbert.mlmodelc/analytics/coremldata.bin",
-    );
+    const albertCoremldata = realManifestEntries().filter((entry) => entry.relPath === "KokoroAlbert.mlmodelc/analytics/coremldata.bin");
     expect(albertCoremldata).toHaveLength(2);
     expect(albertCoremldata.map((entry) => entry.url)).toEqual([
       expect.stringContaining("/ANE/KokoroAlbert.mlmodelc/analytics/coremldata.bin"),
@@ -217,10 +215,7 @@ describe("liveSize", () => {
     // answers 93939 with identity and no Content-Length at all without it.
     const gzipUnlessIdentity: FetchLike = async (_input, init) =>
       new Response(null, {
-        headers:
-          new Headers(init?.headers).get("accept-encoding") === "identity"
-            ? { "content-length": "93939" }
-            : { "content-encoding": "gzip" },
+        headers: new Headers(init?.headers).get("accept-encoding") === "identity" ? { "content-length": "93939" } : { "content-encoding": "gzip" },
       });
 
     expect(await liveSize(url, { fetchImpl: gzipUnlessIdentity, backoffMs: 0 })).toBe(93939);
@@ -301,9 +296,7 @@ describe("group-scoped manifest lookup", () => {
   test("every recorded plan entry resolves to exactly one URL", () => {
     const source = realManifestSource();
     const wholeSource = realManifestUrls();
-    const unresolved = flattenPlan(modelPlan).filter(
-      (entry) => (manifestUrlsForGroup(source, entry.group) ?? wholeSource).get(entry.relPath) === undefined,
-    );
+    const unresolved = flattenPlan(modelPlan).filter((entry) => (manifestUrlsForGroup(source, entry.group) ?? wholeSource).get(entry.relPath) === undefined);
     expect(unresolved).toEqual([]);
   });
 });

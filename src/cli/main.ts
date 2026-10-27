@@ -80,8 +80,7 @@ export function detectLanguage(text: string): string {
  * Mutex check happens AFTER format validation so unknown `--format` surfaces
  * with its own clearer error first.
  */
-export type ResolvedOutputFormat =
-  { ok: true; format: "json" | "toon" | "transcript" | "text" } | { ok: false; error: string };
+export type ResolvedOutputFormat = { ok: true; format: "json" | "toon" | "transcript" | "text" } | { ok: false; error: string };
 
 const SUPPORTED_FORMATS = ["transcript", "json", "toon"] as const;
 
@@ -129,12 +128,7 @@ export function checkLanguageMismatch(expected: string | undefined, detected: st
   return `warning: expected language "${expected}" but detected "${detected}"`;
 }
 
-export function shouldReportTranscribeProgress(input: {
-  stderrIsTty: boolean;
-  stdoutIsTty: boolean;
-  debugEnabled: boolean;
-  quiet?: boolean;
-}): boolean {
+export function shouldReportTranscribeProgress(input: { stderrIsTty: boolean; stdoutIsTty: boolean; debugEnabled: boolean; quiet?: boolean }): boolean {
   if (input.quiet) return false;
   if (input.debugEnabled) return false;
   return input.stderrIsTty || !input.stdoutIsTty;
@@ -150,10 +144,7 @@ export function estimateTranscriptDurationSeconds(segments: TranscriptionSegment
   return duration > 0 ? duration : null;
 }
 
-export function shouldRunAudioLanguageDetection(input: {
-  wantsLangId: boolean;
-  transcriptDurationSeconds: number | null;
-}): boolean {
+export function shouldRunAudioLanguageDetection(input: { wantsLangId: boolean; transcriptDurationSeconds: number | null }): boolean {
   if (!input.wantsLangId) return false;
   if (input.transcriptDurationSeconds === null) return true;
   return input.transcriptDurationSeconds <= AUDIO_LANG_ID_LONG_AUDIO_THRESHOLD_SECONDS;
@@ -177,11 +168,7 @@ export function normalizeMainCommandArgs<T extends MainVadArgs>(args: T, rawArgs
 export type TranscribeArgsValidation = ({ ok: true } & ValidatedTranscribeArgs) | { ok: false; error: string };
 
 /** Validates cross-flag consistency that citty can't express. */
-export function validateTranscribeArgs(
-  args: MainCommandArgs,
-  rawArgs: string[],
-  fmt: ResolvedOutputFormat & { ok: true },
-): TranscribeArgsValidation {
+export function validateTranscribeArgs(args: MainCommandArgs, rawArgs: string[], fmt: ResolvedOutputFormat & { ok: true }): TranscribeArgsValidation {
   const normalizedArgs = normalizeMainCommandArgs(args, rawArgs);
   const { vad, noVad } = normalizedArgs;
 
@@ -321,11 +308,7 @@ function failureExitCode(err: unknown): number {
   return usage ? exitCodeFor(err) : 1;
 }
 
-async function processFile(
-  file: string,
-  options: ProcessFileOptions,
-  recorders: CommandSession,
-): Promise<ProcessFileSuccess | ProcessFileFailure> {
+async function processFile(file: string, options: ProcessFileOptions, recorders: CommandSession): Promise<ProcessFileSuccess | ProcessFileFailure> {
   const { vadMode, timestamps, speakers, itn, wantsLangId, expectedLang, reportProgress } = options;
   const { stats, diagnosticLog } = recorders;
 
@@ -495,14 +478,12 @@ function writeOutput(
 export const MAIN_VAD_ARGS = {
   vad: {
     type: "boolean",
-    description:
-      "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
+    description: "Force Silero VAD preprocessing (kesha install --vad first). Without this, VAD auto-engages on audio ≥ 120s.",
     default: false,
   },
   "no-vad": {
     type: "boolean",
-    description:
-      "Skip VAD and transcribe the whole file in one pass; audio measured at 24 minutes or more is refused. Incompatible with --speakers",
+    description: "Skip VAD and transcribe the whole file in one pass; audio measured at 24 minutes or more is refused. Incompatible with --speakers",
     default: false,
   },
 } as const;
@@ -599,8 +580,7 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
       },
       "include-errors": {
         type: "boolean",
-        description:
-          "With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr",
+        description: "With --json or --toon, output { results, errors } so scripts can read per-file failures without parsing stderr",
         default: false,
       },
       verbose: {

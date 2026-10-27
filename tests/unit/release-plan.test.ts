@@ -85,9 +85,7 @@ describe("planRelease", () => {
         refName: "main",
         dispatch: { channel: "alpha", enginePrerelease },
       });
-    expect(
-      planRelease({ classification: dispatched(), pkgVersion: "1.32.0", tags: TAGS, releases: [] }).engineVersion,
-    ).toBe("1.32.0-alpha.3");
+    expect(planRelease({ classification: dispatched(), pkgVersion: "1.32.0", tags: TAGS, releases: [] }).engineVersion).toBe("1.32.0-alpha.3");
     expect(
       planRelease({
         classification: dispatched("v1.32.0-beta.1"),
@@ -111,9 +109,7 @@ describe("planRelease", () => {
 });
 
 describe("the alpha tag step", () => {
-  const step = parseRepoYaml(".github/workflows/release.yml").jobs["reserve-tag"].steps.find(
-    (s: { run?: string }) => s.run === ".github/scripts/alpha-tag.sh",
-  );
+  const step = parseRepoYaml(".github/workflows/release.yml").jobs["reserve-tag"].steps.find((s: { run?: string }) => s.run === ".github/scripts/alpha-tag.sh");
 
   // Behaviour lives in tests/integration/alpha-tag.test.ts, which runs the script for real.
   test("release.yml passes the planned previous tag through env", () => {

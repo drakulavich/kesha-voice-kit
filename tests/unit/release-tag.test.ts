@@ -29,10 +29,8 @@ function fakeRunner(failPush = false): { runner: CommandRunner; calls: string[][
     if (command === "git config user.name") return success("Release Maintainer\n");
     if (command === "git config user.email") return success("release@example.com\n");
     if (command.startsWith("git tag -a")) return success();
-    if (command === `git push origin refs/tags/${tag}`)
-      return failPush ? { code: 1, stdout: "", stderr: "timeout" } : success();
-    if (command === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -")
-      return success(JSON.stringify({ sha: tagObject }));
+    if (command === `git push origin refs/tags/${tag}`) return failPush ? { code: 1, stdout: "", stderr: "timeout" } : success();
+    if (command === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -") return success(JSON.stringify({ sha: tagObject }));
     if (command.startsWith("gh api --method POST repos/drakulavich/kesha-voice-kit/git/refs ")) return success();
     if (command === `gh api repos/drakulavich/kesha-voice-kit/git/tags/${tagObject}`) {
       return success(
@@ -64,9 +62,7 @@ describe("release tag helper", () => {
 
     await createStableTag({ tag, notesPath: "notes.md", mode: "push" }, notes, runner);
 
-    expect(calls.some((call) => call.join(" ") === `git tag -a ${tag} ${target} --cleanup=verbatim -F notes.md`)).toBe(
-      true,
-    );
+    expect(calls.some((call) => call.join(" ") === `git tag -a ${tag} ${target} --cleanup=verbatim -F notes.md`)).toBe(true);
     expect(calls.some((call) => call.join(" ") === `git push origin refs/tags/${tag}`)).toBe(true);
     expect(calls.some((call) => call.includes("repos/drakulavich/kesha-voice-kit/git/tags"))).toBe(false);
   });
@@ -77,17 +73,9 @@ describe("release tag helper", () => {
 
     await createStableTag({ tag, notesPath: "notes.md", mode: "api" }, notes, runner);
 
+    expect(calls.some((call) => call.join(" ") === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -")).toBe(true);
     expect(
-      calls.some(
-        (call) => call.join(" ") === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -",
-      ),
-    ).toBe(true);
-    expect(
-      calls.some(
-        (call) =>
-          call.join(" ") ===
-          `gh api --method POST repos/drakulavich/kesha-voice-kit/git/refs -f ref=refs/tags/${tag} -f sha=${tagObject}`,
-      ),
+      calls.some((call) => call.join(" ") === `gh api --method POST repos/drakulavich/kesha-voice-kit/git/refs -f ref=refs/tags/${tag} -f sha=${tagObject}`),
     ).toBe(true);
     expect(calls.some((call) => call.join(" ").startsWith("gh workflow run"))).toBe(false);
     expect(calls.some((call) => call.join(" ").includes("run list") && call.includes("release.yml"))).toBe(true);
@@ -96,14 +84,8 @@ describe("release tag helper", () => {
   test("does not switch to the API path after an uncertain push failure", async () => {
     const { runner, calls } = fakeRunner(true);
 
-    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, notes, runner)).rejects.toThrow(
-      "remote state is uncertain",
-    );
-    expect(
-      calls.some(
-        (call) => call.join(" ") === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -",
-      ),
-    ).toBe(false);
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, notes, runner)).rejects.toThrow("remote state is uncertain");
+    expect(calls.some((call) => call.join(" ") === "gh api --method POST repos/drakulavich/kesha-voice-kit/git/tags --input -")).toBe(false);
   });
 
   // #218: the annotation becomes the release body, and v1.4.4-cli's told users to `npm update -g`.
@@ -111,9 +93,7 @@ describe("release tag helper", () => {
     const { runner, calls } = fakeRunner();
     const npmNotes = "## Upgrade\n\nnpm update -g @drakulavich/kesha-voice-kit\n";
 
-    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, npmNotes, runner)).rejects.toThrow(
-      "bun add -g",
-    );
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, npmNotes, runner)).rejects.toThrow("bun add -g");
     expect(calls).toEqual([]);
   });
 
@@ -124,15 +104,9 @@ describe("release tag helper", () => {
     const unticked = `## Dogfood\n\n${ticked}\n- [ ] English reply\n`;
     const partial = `## Dogfood\n\n${ticked.split("\n")[0]}\n`;
 
-    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, missing, runner)).rejects.toThrow(
-      "docs/dogfood.md",
-    );
-    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, unticked, runner)).rejects.toThrow(
-      "- [ ] English reply",
-    );
-    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, partial, runner)).rejects.toThrow(
-      `tick 1 of the ${dogfoodItems.length} items`,
-    );
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, missing, runner)).rejects.toThrow("docs/dogfood.md");
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, unticked, runner)).rejects.toThrow("- [ ] English reply");
+    await expect(createStableTag({ tag, notesPath: "notes.md", mode: "push" }, partial, runner)).rejects.toThrow(`tick 1 of the ${dogfoodItems.length} items`);
     expect(calls).toEqual([]);
   });
 });

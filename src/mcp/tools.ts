@@ -31,13 +31,9 @@ export function registerTools(server: McpServer): void {
         bytes = readFileSync(filePath);
       } catch {
         // The SDK sends only `message` and `code`; McpError would prepend "MCP error -32002:" to the message.
-        const coded = new KeshaError(
-          "E_INPUT_NOT_FOUND",
-          `synthesized-audio: file not found or already swept: ${name}`,
-          {
-            hint: "synthesized files are deleted after 24 hours; call synthesize_speech again.",
-          },
-        );
+        const coded = new KeshaError("E_INPUT_NOT_FOUND", `synthesized-audio: file not found or already swept: ${name}`, {
+          hint: "synthesized files are deleted after 24 hours; call synthesize_speech again.",
+        });
         throw Object.assign(new Error(errorMessage(coded)), { code: -32002 });
       }
       return { contents: [{ uri: uri.href, mimeType: mimeForExt(name), blob: bytes.toString("base64") }] };
@@ -70,9 +66,7 @@ export function registerTools(server: McpServer): void {
       if (extra.signal?.aborted) {
         return {
           isError: true,
-          content: [
-            { type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) },
-          ],
+          content: [{ type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) }],
         };
       }
       if (rate !== undefined && !(rate >= 0.5 && rate <= 2.0)) {
@@ -97,8 +91,7 @@ export function registerTools(server: McpServer): void {
       }
       try {
         // An MCP caller has no stderr to read: the voice it is told is its only record (#942).
-        const resolvedVoice =
-          (await resolveSayVoice(voice || undefined, undefined, text, { signal: extra.signal })) ?? DEFAULT_VOICE_ID;
+        const resolvedVoice = (await resolveSayVoice(voice || undefined, undefined, text, { signal: extra.signal })) ?? DEFAULT_VOICE_ID;
         await say({ text, voice: resolvedVoice, rate, format: fmt, out: outPath, signal: extra.signal });
         chmodSync(outPath, 0o600);
         const bytes = statSync(outPath).size;
@@ -154,9 +147,7 @@ export function registerTools(server: McpServer): void {
       if (extra.signal?.aborted) {
         return {
           isError: true,
-          content: [
-            { type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) },
-          ],
+          content: [{ type: "text" as const, text: errorMessage(new KeshaError("E_INTERRUPTED", "request cancelled")) }],
         };
       }
       if (!existsSync(path)) {
@@ -171,10 +162,7 @@ export function registerTools(server: McpServer): void {
         const truncated = truncatedWavWarning(path);
         const out = await transcribeWithSegments(path, { signal: extra.signal, timestamps });
         return {
-          content: [
-            { type: "text" as const, text: out.text },
-            ...(truncated ? [{ type: "text" as const, text: truncated }] : []),
-          ],
+          content: [{ type: "text" as const, text: out.text }, ...(truncated ? [{ type: "text" as const, text: truncated }] : [])],
           structuredContent: { text: out.text, segments: timestamps ? out.segments : [] },
         };
       } catch (err) {
@@ -187,8 +175,7 @@ export function registerTools(server: McpServer): void {
     "list_voices",
     {
       title: "List voices",
-      description:
-        "List the TTS voices kesha knows, with their engine and language. Some need `kesha install --tts <lang>` before they synthesize.",
+      description: "List the TTS voices kesha knows, with their engine and language. Some need `kesha install --tts <lang>` before they synthesize.",
       inputSchema: {},
       outputSchema: {
         voices: z.array(

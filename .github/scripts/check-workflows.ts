@@ -64,9 +64,7 @@ export function requirePinnedRustToolchain(path: string, document: unknown, pin:
       if (typeof step?.uses !== "string" || !step.uses.startsWith("dtolnay/rust-toolchain@")) continue;
 
       if (step.with?.toolchain !== pin.channel) {
-        errors.push(
-          `${path}: \`${job}\` must install Rust ${pin.channel}, not \`${String(step.with?.toolchain ?? "")}\``,
-        );
+        errors.push(`${path}: \`${job}\` must install Rust ${pin.channel}, not \`${String(step.with?.toolchain ?? "")}\``);
       }
 
       const components = String(step.with?.components ?? "")
@@ -121,16 +119,13 @@ const condition = (step: Step) => String(step.if ?? "");
 
 /** Indices of the steps whose `run` matches, skipping any switched off with `if: false`. */
 function runsMatching(steps: Step[], pattern: RegExp): number[] {
-  return steps.flatMap((step, at) =>
-    typeof step?.run === "string" && pattern.test(step.run) && condition(step).trim() !== "false" ? [at] : [],
-  );
+  return steps.flatMap((step, at) => (typeof step?.run === "string" && pattern.test(step.run) && condition(step).trim() !== "false" ? [at] : []));
 }
 
 /** The workflow that publishes the Engine release, and the job in it that publishes. */
 const ENGINE_RELEASE_JOB: Record<string, string> = { "release.yml": "github-release" };
 
-const engineReleaseWorkflow = (path: string): string | undefined =>
-  Object.keys(ENGINE_RELEASE_JOB).find((name) => path.split(/[\\/]/).pop() === name);
+const engineReleaseWorkflow = (path: string): string | undefined => Object.keys(ENGINE_RELEASE_JOB).find((name) => path.split(/[\\/]/).pop() === name);
 
 /**
  * Fails when release.yml's build job would upload an artifact it never synthesised with.
@@ -144,9 +139,7 @@ export function requirePreUploadSynthesisSmoke(path: string, document: unknown):
 
   // Anchored at line start so a commented-out or echoed mention doesn't satisfy the guard.
   const smoke = runsMatching(steps, /^\s*bun\s+\S*smoke-synthesis\.ts\b/m)[0];
-  const upload = steps.findIndex(
-    (step) => typeof step?.uses === "string" && step.uses.startsWith("actions/upload-artifact"),
-  );
+  const upload = steps.findIndex((step) => typeof step?.uses === "string" && step.uses.startsWith("actions/upload-artifact"));
 
   if (smoke === undefined) {
     return [`${path}: the build job must run smoke-synthesis.ts before uploading the artifact (#671)`];
@@ -181,15 +174,11 @@ export function requireDarwinSmokeCoversBothEngines(path: string, document: unkn
 
   const errors: string[] = [];
   if (!kokoro) {
-    errors.push(
-      `${path}: \`${job}\` must synthesise through Kokoro — a smoke-synthesis.ts run on a non-\`macos-*\` voice (#678)`,
-    );
+    errors.push(`${path}: \`${job}\` must synthesise through Kokoro — a smoke-synthesis.ts run on a non-\`macos-*\` voice (#678)`);
   }
   const avspeechStep = avspeech === undefined ? undefined : steps[avspeech];
   if (avspeechStep === undefined) {
-    errors.push(
-      `${path}: \`${job}\` must synthesise through the AVSpeech sidecar — a smoke-synthesis.ts run with \`--voice macos-*\` (#678)`,
-    );
+    errors.push(`${path}: \`${job}\` must synthesise through the AVSpeech sidecar — a smoke-synthesis.ts run with \`--voice macos-*\` (#678)`);
     return errors;
   }
   if (/--text\b/.test(String(avspeechStep.run))) {
@@ -198,9 +187,7 @@ export function requireDarwinSmokeCoversBothEngines(path: string, document: unkn
     );
   }
   if (!/!\s*cancelled\(\)/.test(condition(avspeechStep))) {
-    errors.push(
-      `${path}: \`${job}\`'s AVSpeech arm needs \`if: \${{ !cancelled() }}\`, or a red Kokoro arm hides whether the sidecar works (#678)`,
-    );
+    errors.push(`${path}: \`${job}\`'s AVSpeech arm needs \`if: \${{ !cancelled() }}\`, or a red Kokoro arm hides whether the sidecar works (#678)`);
   }
   return errors;
 }
@@ -214,9 +201,7 @@ export function requireOfflineBeforeOnlineSpeech(path: string, document: unknown
     const offline = runsMatching(steps, /^\s*bash\s+\S*offline\.sh\b/m)[0];
     if (offline === undefined) return [`${path}: \`${job}\` must run say or transcribe through offline.sh (#1277)`];
     if (steps[offline]?.if !== undefined)
-      return [
-        `${path}: \`${job}\`'s offline.sh step has its own \`if:\`, so it can skip while the lane runs; drop it (#1277)`,
-      ];
+      return [`${path}: \`${job}\`'s offline.sh step has its own \`if:\`, so it can skip while the lane runs; drop it (#1277)`];
     const online = runsMatching(steps, /smoke-synthesis\.ts|test:integration|^\s*kesha\s+(?!status\b)/m)[0];
     return online !== undefined && online < offline
       ? [
@@ -235,13 +220,11 @@ export function requireSynthesisSourcesInOfflineFilter(path: string, document: u
   return tts.entries
     .filter((entry) => entry.startsWith("src/") && !realEngine.entries.includes(entry))
     .map(
-      (entry) =>
-        `${path}: \`${entry}\` triggers tts_e2e but not real_engine_e2e, so a change to it skips the offline say in published-engine-smoke (#1277)`,
+      (entry) => `${path}: \`${entry}\` triggers tts_e2e but not real_engine_e2e, so a change to it skips the offline say in published-engine-smoke (#1277)`,
     );
 }
 
-const usesAction = (steps: Step[], action: string) =>
-  steps.some((step) => typeof step?.uses === "string" && step.uses === action);
+const usesAction = (steps: Step[], action: string) => steps.some((step) => typeof step?.uses === "string" && step.uses === action);
 
 /** `needs:` is a string when it names one job, a list when it names several. */
 function dependsOn(document: unknown, job: string, dependency: string): boolean {
@@ -255,17 +238,14 @@ const RELEASE_PROFILES = ["portable", "darwin"];
 export function requireReleaseRowsNameOneProfile(path: string, document: unknown): string[] {
   if (!engineReleaseWorkflow(path)) return [];
 
-  const include = (document as { jobs?: { build?: { strategy?: { matrix?: { include?: unknown } } } } })?.jobs?.build
-    ?.strategy?.matrix?.include;
+  const include = (document as { jobs?: { build?: { strategy?: { matrix?: { include?: unknown } } } } })?.jobs?.build?.strategy?.matrix?.include;
   if (!Array.isArray(include)) return [`${path}: expected a \`build\` job with a \`strategy.matrix.include\` list`];
 
   return include.flatMap((row, at) => {
     const { binary, features } = (row ?? {}) as { binary?: unknown; features?: unknown };
     if (typeof features === "string" && RELEASE_PROFILES.includes(features)) return [];
     const name = typeof binary === "string" ? binary : `row ${at}`;
-    return [
-      `${path}: release row ${name} builds \`${String(features)}\`; it must name exactly one profile, \`portable\` or \`darwin\``,
-    ];
+    return [`${path}: release row ${name} builds \`${String(features)}\`; it must name exactly one profile, \`portable\` or \`darwin\``];
   });
 }
 
@@ -280,11 +260,9 @@ export function requireReleaseRowsNameOneProfile(path: string, document: unknown
 export function requirePactVerificationCoversEveryTarget(path: string, document: unknown): string[] {
   if (!path.endsWith("nightly.yml")) return [];
 
-  const include = (document as { jobs?: Record<string, { strategy?: { matrix?: { include?: unknown } } }> })?.jobs?.[
-    "capability-pact"
-  ]?.strategy?.matrix?.include;
-  if (!Array.isArray(include))
-    return [`${path}: expected a \`capability-pact\` job with a \`strategy.matrix.include\` list`];
+  const include = (document as { jobs?: Record<string, { strategy?: { matrix?: { include?: unknown } } }> })?.jobs?.["capability-pact"]?.strategy?.matrix
+    ?.include;
+  if (!Array.isArray(include)) return [`${path}: expected a \`capability-pact\` job with a \`strategy.matrix.include\` list`];
 
   const covered = new Set(include.map((row) => String((row as { target?: unknown })?.target)));
   return engineTargetEntries()
@@ -377,23 +355,14 @@ export function requireBashOnWindowsRunSteps(path: string, document: unknown): s
  */
 const PIPEFAIL_SHELLS = new Set(["bash", "pwsh", "powershell", "python"]);
 
-function pipefailErrorsForSteps(
-  path: string,
-  name: string,
-  steps: Step[],
-  defaultShell: unknown,
-  remedy: string,
-): string[] {
+function pipefailErrorsForSteps(path: string, name: string, steps: Step[], defaultShell: unknown, remedy: string): string[] {
   const errors: string[] = [];
   for (const [at, step] of steps.entries()) {
     if (typeof step?.run !== "string") continue;
     const shell = step.shell ?? defaultShell;
     if (typeof shell === "string" && PIPEFAIL_SHELLS.has(shell)) continue;
     const label = typeof step.name === "string" ? `\`${step.name}\`` : `${at + 1}`;
-    const found =
-      shell === undefined
-        ? "has no `shell:`, so it runs under the unspecified default `bash -e {0}`"
-        : `sets \`shell: ${String(shell)}\``;
+    const found = shell === undefined ? "has no `shell:`, so it runs under the unspecified default `bash -e {0}`" : `sets \`shell: ${String(shell)}\``;
     errors.push(
       `${path}: \`${name}\` step ${label} ${found} — no pipefail there, so a pipeline reports ` +
         `only its last stage and a failed command inside one passes silently. ${remedy} (#1084, #1089)`,
@@ -416,15 +385,7 @@ export function requirePipefailShell(path: string, document: unknown): string[] 
       if (!Array.isArray(job?.steps)) continue;
       const labels = runnerLabels(job);
       if (labels.length > 0 && labels.every((label) => /windows/i.test(label))) continue;
-      errors.push(
-        ...pipefailErrorsForSteps(
-          path,
-          name,
-          job.steps as Step[],
-          job.defaults?.run?.shell ?? workflowShell,
-          JOB_REMEDY,
-        ),
-      );
+      errors.push(...pipefailErrorsForSteps(path, name, job.steps as Step[], job.defaults?.run?.shell ?? workflowShell, JOB_REMEDY));
     }
     return errors;
   }
@@ -481,9 +442,7 @@ function runSteps(document: unknown): { owner: string; label: string; run: strin
   return groups.flatMap(([owner, steps]) =>
     Array.isArray(steps)
       ? (steps as Step[]).flatMap((step, at) =>
-          typeof step?.run === "string"
-            ? [{ owner, run: step.run, label: typeof step.name === "string" ? `\`${step.name}\`` : `${at + 1}` }]
-            : [],
+          typeof step?.run === "string" ? [{ owner, run: step.run, label: typeof step.name === "string" ? `\`${step.name}\`` : `${at + 1}` }] : [],
         )
       : [],
   );
@@ -639,9 +598,7 @@ export function requireJobTimeouts(path: string, document: unknown): string[] {
     if (!Array.isArray(job?.steps)) continue;
 
     if (job["timeout-minutes"] == null) {
-      errors.push(
-        `${path}: \`${name}\` has no \`timeout-minutes\`; an unattended stall burns GitHub's 360-minute default (#1105)`,
-      );
+      errors.push(`${path}: \`${name}\` has no \`timeout-minutes\`; an unattended stall burns GitHub's 360-minute default (#1105)`);
       continue;
     }
 
@@ -673,8 +630,7 @@ export function requireDepsBeforeBunTest(path: string, document: unknown): strin
   if (!jobs || typeof jobs !== "object") return [];
 
   const installs = (step: Step) =>
-    (typeof step?.run === "string" && /\bbun install\b/.test(step.run)) ||
-    (typeof step?.uses === "string" && step.uses.endsWith("/actions/setup-bun"));
+    (typeof step?.run === "string" && /\bbun install\b/.test(step.run)) || (typeof step?.uses === "string" && step.uses.endsWith("/actions/setup-bun"));
 
   const errors: string[] = [];
   for (const [name, job] of Object.entries(jobs)) {
@@ -693,8 +649,7 @@ export function requireDepsBeforeBunTest(path: string, document: unknown): strin
 
 const coveredBy = (patterns: string[], file: string) => {
   const posixFile = file.replaceAll("\\", "/");
-  const matches = (pattern: string) =>
-    pattern.endsWith("/**") ? posixFile.startsWith(pattern.slice(0, -2)) : pattern === posixFile;
+  const matches = (pattern: string) => (pattern.endsWith("/**") ? posixFile.startsWith(pattern.slice(0, -2)) : pattern === posixFile);
   // dorny/paths-filter drops what a `!` entry matches, so an exclusion is the absence of coverage, never coverage (#1141 review round 1).
   if (patterns.some((pattern) => pattern.startsWith("!") && matches(pattern.slice(1)))) return false;
   return patterns.some((pattern) => !pattern.startsWith("!") && matches(pattern));
@@ -705,8 +660,7 @@ export type NamedFilter = { entries: string[] } | { errors: string[] };
 /** The named list from a `changes` job's inline paths-filter, or the error the caller returns verbatim — every paths-filter rule reads one of these and each private copy of the parser was one more place to drift (#1141 review round 1, generalised over the filter name in #1145). */
 export function namedFilterOf(path: string, document: unknown, name: string): NamedFilter {
   const raw = jobSteps(document, "changes")?.find((step) => typeof step?.with?.filters === "string")?.with?.filters;
-  if (typeof raw !== "string")
-    return { errors: [`${path}: expected a \`changes\` job with inline paths-filter filters`] };
+  if (typeof raw !== "string") return { errors: [`${path}: expected a \`changes\` job with inline paths-filter filters`] };
 
   const entries = (parse(raw) as Record<string, string[]>)?.[name];
   if (!Array.isArray(entries)) return { errors: [`${path}: paths-filter is missing a \`${name}\` list`] };
@@ -723,10 +677,7 @@ export function requireTestedScriptsInCodeFilter(path: string, document: unknown
 
   return testedScripts
     .filter((file) => !coveredBy(code, file))
-    .map(
-      (file) =>
-        `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`,
-    );
+    .map((file) => `${path}: ${file} has a unit test but no matching path in the \`code\` filter, so edits to it skip that test`);
 }
 
 /**
@@ -800,18 +751,11 @@ export function requireRustSourcesInCodeFilter(path: string, document: unknown, 
 
   return rustSources
     .filter((file) => !coveredBy(code, file))
-    .map(
-      (file) =>
-        `${path}: ${file} is read by a TS suite but no path in the \`code\` filter matches it, so an edit to it skips unit-tests (#950, #1132)`,
-    );
+    .map((file) => `${path}: ${file} is read by a TS suite but no path in the \`code\` filter matches it, so an edit to it skips unit-tests (#950, #1132)`);
 }
 
 /** Fails when a rust/ cross-reference target falls out of ci.yml's `code` filter: renaming it then skips the suite that catches the now-stale pointer (#1141). */
-export function requireRustReferenceTargetsInCodeFilter(
-  path: string,
-  document: unknown,
-  referenceTargets: string[],
-): string[] {
+export function requireRustReferenceTargetsInCodeFilter(path: string, document: unknown, referenceTargets: string[]): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
   const filter = namedFilterOf(path, document, "code");
@@ -833,11 +777,7 @@ export function requireRustReferenceTargetsInCodeFilter(
 }
 
 /** Fails when a pinned-manifest source falls out of ci.yml's `code` filter: the install-plan join then never runs, and a filter matching nothing reports nothing (#950). */
-export function requireManifestSourcesInCodeFilter(
-  path: string,
-  document: unknown,
-  manifestSources: string[],
-): string[] {
+export function requireManifestSourcesInCodeFilter(path: string, document: unknown, manifestSources: string[]): string[] {
   if (!path.endsWith("ci.yml")) return [];
 
   const filter = namedFilterOf(path, document, "code");
@@ -859,11 +799,7 @@ export function requireManifestSourcesInCodeFilter(
 }
 
 /** Fails when a pinned-manifest source falls out of cache-seed.yml's push filter: the shared model caches then never re-seed after a pin change (#950). */
-export function requireManifestSourcesInSeedFilter(
-  path: string,
-  document: unknown,
-  manifestSources: string[],
-): string[] {
+export function requireManifestSourcesInSeedFilter(path: string, document: unknown, manifestSources: string[]): string[] {
   if (!path.endsWith("cache-seed.yml")) return [];
 
   const paths = (document as { on?: { push?: { paths?: unknown } } })?.on?.push?.paths;
@@ -893,9 +829,7 @@ export function requireFlakeNixInWorkflowsFilter(path: string, document: unknown
 
   return filter.entries.includes(FLAKE_NIX)
     ? []
-    : [
-        `${path}: \`workflows\` filter must include \`${FLAKE_NIX}\`, or checkFlakeNix's guard never runs in CI (#1088)`,
-      ];
+    : [`${path}: \`workflows\` filter must include \`${FLAKE_NIX}\`, or checkFlakeNix's guard never runs in CI (#1088)`];
 }
 
 /** Fails when ci.yml's `coreml` filter stops covering rust/build.rs: `coreml-regression` is the only lane that links and runs the coreml feature, and CLAUDE.md's build triple makes the build script's `/usr/lib/swift` rpath emit part of that link surface (#1145). */
@@ -952,9 +886,7 @@ export function forbidReusableWorkflows(path: string, document: unknown): string
     : [];
   for (const [name, job] of Object.entries(doc?.jobs ?? {})) {
     if (typeof job?.uses === "string" && job.uses.startsWith("./.github/workflows/")) {
-      errors.push(
-        `${path}: \`${name}\` calls ${job.uses}; share steps through a composite action under .github/actions/ instead`,
-      );
+      errors.push(`${path}: \`${name}\` calls ${job.uses}; share steps through a composite action under .github/actions/ instead`);
     }
   }
   return errors;
@@ -1010,9 +942,7 @@ export function requireConcurrencyOnPullRequestWorkflows(path: string, document:
 
   const concurrency = doc?.concurrency;
   if (concurrency === undefined || concurrency === null) {
-    return [
-      `${path}: runs on pull requests but declares no top-level \`concurrency\`; every superseded push runs the whole workflow to completion (#1105)`,
-    ];
+    return [`${path}: runs on pull requests but declares no top-level \`concurrency\`; every superseded push runs the whole workflow to completion (#1105)`];
   }
 
   const group = typeof concurrency === "string" ? concurrency : (concurrency as { group?: unknown })?.group;
@@ -1057,19 +987,13 @@ export function requireReleaseQueue(path: string, document: unknown): string[] {
     { group?: unknown; queue?: unknown; "cancel-in-progress"?: unknown } | undefined;
   const errors: string[] = [];
   if (concurrency?.group !== RELEASE_GROUP) {
-    errors.push(
-      `${path}: \`concurrency.group\` must be exactly \`${RELEASE_GROUP}\`, one publish lane and one lane per rehearsing PR`,
-    );
+    errors.push(`${path}: \`concurrency.group\` must be exactly \`${RELEASE_GROUP}\`, one publish lane and one lane per rehearsing PR`);
   }
   if (concurrency?.queue !== "max") {
-    errors.push(
-      `${path}: \`concurrency.queue\` must be \`max\`; without it a pending publish is evicted when another joins`,
-    );
+    errors.push(`${path}: \`concurrency.queue\` must be \`max\`; without it a pending publish is evicted when another joins`);
   }
   if (concurrency?.["cancel-in-progress"] !== undefined) {
-    errors.push(
-      `${path}: \`concurrency.cancel-in-progress\` must be absent; a cancelled publish leaves an immutable release short an asset`,
-    );
+    errors.push(`${path}: \`concurrency.cancel-in-progress\` must be absent; a cancelled publish leaves an immutable release short an asset`);
   }
   return errors;
 }
@@ -1099,15 +1023,10 @@ export function requireReleaseJobOrder(path: string, document: unknown): string[
   }
   for (const gate of RELEASE_GATES) {
     if (!cond("assemble").includes(`needs.${gate}.result == 'success'`)) {
-      errors.push(
-        `${path}: \`assemble\`'s \`if:\` overrides success(), so it must require \`needs.${gate}.result == 'success'\``,
-      );
+      errors.push(`${path}: \`assemble\`'s \`if:\` overrides success(), so it must require \`needs.${gate}.result == 'success'\``);
     }
   }
-  if (
-    !dependsOn(document, "github-release", "assemble") ||
-    !cond("github-release").includes("needs.assemble.result == 'success'")
-  ) {
+  if (!dependsOn(document, "github-release", "assemble") || !cond("github-release").includes("needs.assemble.result == 'success'")) {
     errors.push(`${path}: \`github-release\` must \`needs: assemble\` and require its success`);
   }
   if (
@@ -1119,10 +1038,7 @@ export function requireReleaseJobOrder(path: string, document: unknown): string[
       `${path}: \`npm-publish\` must \`needs: github-release\` and require it and \`npm\` to succeed, or a CLI can resolve an Engine that is not published`,
     );
   }
-  if (
-    !dependsOn(document, "npm-publish", "reserve-tag") ||
-    !cond("reserve-tag").includes("needs.plan.outputs.publish == 'true'")
-  ) {
+  if (!dependsOn(document, "npm-publish", "reserve-tag") || !cond("reserve-tag").includes("needs.plan.outputs.publish == 'true'")) {
     errors.push(
       `${path}: \`npm-publish\` must \`needs: reserve-tag\`, which runs only for a planned publish: an alpha version no tag records is reused by the next derivation`,
     );
@@ -1148,9 +1064,7 @@ export function requireReleaseJobOrder(path: string, document: unknown): string[
   }
   const packaging = jobSteps(document, "packages");
   if (!packaging || !usesAction(packaging, "./.github/actions/linux-packages")) {
-    errors.push(
-      `${path}: \`packages\` must build through ./.github/actions/linux-packages, the composite the CI lane shares (#728)`,
-    );
+    errors.push(`${path}: \`packages\` must build through ./.github/actions/linux-packages, the composite the CI lane shares (#728)`);
   }
   return errors;
 }
@@ -1185,8 +1099,7 @@ export function requireReleaseVerifiesTagIsCurrent(path: string, document: unkno
   if (!steps) return [`${path}: expected a \`${releaseJob}\` job with steps`];
 
   // Checks the contract (tag ref resolved, compared to GITHUB_SHA), not the resolving command — pinning `git rev-parse` rejected the `git ls-remote ...^{}` fix for its own tag-object-vs-commit bug (#1115 review).
-  const isGuard = (step: Step) =>
-    typeof step?.run === "string" && /refs\/tags/.test(step.run) && /GITHUB_SHA/.test(step.run) && !isDisabled(step);
+  const isGuard = (step: Step) => typeof step?.run === "string" && /refs\/tags/.test(step.run) && /GITHUB_SHA/.test(step.run) && !isDisabled(step);
 
   const publish = steps.findIndex(createsRelease);
   if (publish === -1) {
@@ -1245,16 +1158,11 @@ export function requireEveryJobInCiAggregator(path: string, document: unknown): 
   const jobs = (document as { jobs?: Record<string, { needs?: unknown }> } | undefined)?.jobs;
   if (!jobs || typeof jobs !== "object" || !("ci" in jobs)) return [];
   const aggregators = ["ci", "rust-tests"];
-  const needs = new Set(
-    aggregators.flatMap((a) => [jobs[a]?.needs].flat()).filter((need): need is string => typeof need === "string"),
-  );
+  const needs = new Set(aggregators.flatMap((a) => [jobs[a]?.needs].flat()).filter((need): need is string => typeof need === "string"));
 
   return Object.keys(jobs)
     .filter((job) => !aggregators.includes(job) && !needs.has(job))
-    .map(
-      (job) =>
-        `${path}: \`${job}\` is not in the \`ci\` aggregator's needs, so its failure never fails the required status`,
-    );
+    .map((job) => `${path}: \`${job}\` is not in the \`ci\` aggregator's needs, so its failure never fails the required status`);
 }
 
 export function checkFile(
@@ -1338,9 +1246,7 @@ export function checkShellScripts(dir: string): string[] {
       }
       const pipefail = initialOptions.some((line) => /^set\s+(?:-\w*\s+)*-\w*o\s+pipefail\b/.test(line));
       return [
-        ...(pipefail
-          ? []
-          : [`${path}: never sets \`-o pipefail\`, so a failed stage inside a pipeline passes silently (#1083)`]),
+        ...(pipefail ? [] : [`${path}: never sets \`-o pipefail\`, so a failed stage inside a pipeline passes silently (#1083)`]),
         ...forbidFindPipedToHead(path, contents),
       ];
     });

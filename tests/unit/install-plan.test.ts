@@ -1,15 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import {
-  cpSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  symlinkSync,
-  truncateSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { renderInstallPlan } from "../../src/install-plan";
@@ -201,8 +191,7 @@ describe("the plan's download economics", () => {
   }
 
   const langIdBytes = modelPlan.langId.reduce((sum, f) => sum + f.sizeBytes, 0);
-  const status = (plan: string, component: string) =>
-    new RegExp(`${component}: [^(]+\\([^,]+, (\\w+),`).exec(plan)?.[1];
+  const status = (plan: string, component: string) => new RegExp(`${component}: [^(]+\\([^,]+, (\\w+),`).exec(plan)?.[1];
   const total = (plan: string, label: string) => new RegExp(`${label}: (.+)`).exec(plan)?.[1];
 
   // Explicit --coreml/--onnx must beat the probe, or the plan quotes 2.43 GB nobody downloads (#684).
@@ -374,9 +363,7 @@ describe("install plan with --engine-version (#738)", () => {
         // A cold engine fetch re-downloads every sidecar, so present files are not cached work.
         writeFileSync(join(engineDir, "say-avspeech"), "sidecar");
         expect(await renderInstallPlan({})).toMatch(/Sidecar say-avspeech[^:]*: [^(]+\([^,]+, cached,/);
-        expect(await renderInstallPlan({ engineVersion: "9.9.9-alpha.1" })).toMatch(
-          /Sidecar say-avspeech[^:]*: [^(]+\([^,]+, needed,/,
-        );
+        expect(await renderInstallPlan({ engineVersion: "9.9.9-alpha.1" })).toMatch(/Sidecar say-avspeech[^:]*: [^(]+\([^,]+, needed,/);
       }
     } finally {
       rmSync(dir, { recursive: true, force: true });

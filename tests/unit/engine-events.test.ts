@@ -26,9 +26,7 @@ describe("parseEventLine", () => {
       ok: true,
       event: { kind: "warn", code: "W_VAD_NO_SPEECH", message: "no speech" },
     });
-    expect(
-      parseEventLine('{"kind":"error","code":"E_MODEL_MISSING","message":"no model","hint":"kesha install --tts"}'),
-    ).toEqual({
+    expect(parseEventLine('{"kind":"error","code":"E_MODEL_MISSING","message":"no model","hint":"kesha install --tts"}')).toEqual({
       ok: true,
       event: { kind: "error", code: "E_MODEL_MISSING", message: "no model", hint: "kesha install --tts" },
     });
@@ -79,21 +77,15 @@ describe("parseEventLine", () => {
 
 describe("rendering", () => {
   test("matches the protocol 3 lines byte for byte", () => {
-    expect(renderEvent({ kind: "progress", phase: "diarize", message: "loading the CoreML model" })).toBe(
-      "diarize: loading the CoreML model",
-    );
+    expect(renderEvent({ kind: "progress", phase: "diarize", message: "loading the CoreML model" })).toBe("diarize: loading the CoreML model");
     expect(renderEvent({ kind: "progress", message: "Downloading" })).toBe("Downloading");
     expect(renderEvent({ kind: "warn", code: "W_GENERIC", message: "warning: careful" })).toBe("warning: careful");
-    expect(renderEvent({ kind: "error", code: "E_BAD_AUDIO", message: "cannot decode" })).toBe(
-      "error [E_BAD_AUDIO]: cannot decode",
-    );
+    expect(renderEvent({ kind: "error", code: "E_BAD_AUDIO", message: "cannot decode" })).toBe("error [E_BAD_AUDIO]: cannot decode");
     expect(renderEvent({ kind: "debug", t_ms: 7, message: "x" })).toBe("[debug/engine +7ms] x");
   });
 
   test("a pct lands in parentheses after the message", () => {
-    expect(renderEvent({ kind: "progress", phase: "download", message: "GET model.onnx", pct: 12 })).toBe(
-      "download: GET model.onnx (12%)",
-    );
+    expect(renderEvent({ kind: "progress", phase: "download", message: "GET model.onnx", pct: 12 })).toBe("download: GET model.onnx (12%)");
     expect(renderEvent({ kind: "progress", message: "GET model.onnx", pct: 100 })).toBe("GET model.onnx (100%)");
   });
 
@@ -148,10 +140,7 @@ describe("readEvents", () => {
   test("a warning the sink takes delivery of leaves the transcript, so a failure report cannot repeat it", async () => {
     const warned: string[] = [];
     const out = await readEvents(
-      streamOf(
-        '{"kind":"warn","code":"W_VAD_NO_SPEECH","message":"no speech found"}\n' +
-          '{"kind":"error","code":"E_TRANSCRIBE_FAILED","message":"boom"}\n',
-      ),
+      streamOf('{"kind":"warn","code":"W_VAD_NO_SPEECH","message":"no speech found"}\n' + '{"kind":"error","code":"E_TRANSCRIBE_FAILED","message":"boom"}\n'),
       { onWarn: (line) => warned.push(line) },
     );
     expect(warned).toEqual(["no speech found"]);
@@ -182,9 +171,7 @@ describe("readEvents", () => {
   });
 
   test("the last error event wins, and a blank line after it survives into stderr", async () => {
-    const out = await readEvents(
-      streamOf('{"kind":"error","code":"E_A","message":"1"}\n{"kind":"error","code":"E_B","message":"2"}\n\n'),
-    );
+    const out = await readEvents(streamOf('{"kind":"error","code":"E_A","message":"1"}\n{"kind":"error","code":"E_B","message":"2"}\n\n'));
     expect(out.error?.code).toBe("E_B");
     expect(out.invalid).toEqual([]);
     expect(out.stderr).toBe("error [E_A]: 1\nerror [E_B]: 2\n\n");
@@ -218,14 +205,10 @@ describe("KeshaError.render() keeps the transcript without letting it hide the c
 
 describe("KeshaError.render() only trusts a transcript that renders this very error", () => {
   test("a legacy line with the same code but another message does not hide the diagnosis", () => {
-    const err = new KeshaError(
-      "E_INTERNAL",
-      'kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"',
-      {
-        exitCode: 1,
-        stderr: "error [E_INTERNAL]: kokoro session init failed",
-      },
-    );
+    const err = new KeshaError("E_INTERNAL", 'kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"', {
+      exitCode: 1,
+      stderr: "error [E_INTERNAL]: kokoro session init failed",
+    });
     expect(errorMessage(err)).toBe(
       'error [E_INTERNAL]: kesha-engine say wrote a line that is not a protocol event: "error [E_INTERNAL]: kokoro session init failed"\nerror [E_INTERNAL]: kokoro session init failed',
     );

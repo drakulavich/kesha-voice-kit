@@ -52,11 +52,7 @@ function truncatedWavSeconds(path: string): { declared: number; present: number 
     fd = openSync(path, "r");
     const size = fstatSync(fd).size;
     const buf = Buffer.alloc(20);
-    if (
-      readSync(fd, buf, 0, 12, 0) < 12 ||
-      buf.toString("ascii", 0, 4) !== "RIFF" ||
-      buf.toString("ascii", 8, 12) !== "WAVE"
-    ) {
+    if (readSync(fd, buf, 0, 12, 0) < 12 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") {
       return null;
     }
     let byteRate = 0;
@@ -131,20 +127,13 @@ export async function validateTranscribeRequest(opts: TranscribeOptions = {}): P
     throw engineMissingError("transcription");
   }
   validateArgv(
-    buildTranscribeArgs(
-      "<input>",
-      { vad: opts.vad, speakers: opts.speakers, itn: opts.itn },
-      Boolean(opts.timestamps || opts.speakers),
-    ),
+    buildTranscribeArgs("<input>", { vad: opts.vad, speakers: opts.speakers, itn: opts.itn }, Boolean(opts.timestamps || opts.speakers)),
     await getDescribe(),
   );
   if (opts.speakers) assertSpeakerModelsInstalled();
 }
 
-export async function transcribeWithSegments(
-  audioPath: string,
-  opts: TranscribeOptions = {},
-): Promise<TranscriptionOutput> {
+export async function transcribeWithSegments(audioPath: string, opts: TranscribeOptions = {}): Promise<TranscriptionOutput> {
   if (opts.timestamps || opts.speakers) {
     return transcribeEngineWithSegments(audioPath, {
       vad: opts.vad,

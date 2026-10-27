@@ -190,11 +190,7 @@ describe("concurrent kesha install (#997)", () => {
       // What a peer publishing its own engine by rename looks like from here: our marker still
       // names the version we installed, while the binary answering every later command is theirs.
       stubReleases(
-        [
-          `  printf '%s\\n' '#!/bin/sh' 'echo "kesha-engine ${VERSION_B}"' 'exit 0' > "$0.peer"`,
-          `  chmod +x "$0.peer"`,
-          `  mv "$0.peer" "$0"`,
-        ].join("\n"),
+        [`  printf '%s\\n' '#!/bin/sh' 'echo "kesha-engine ${VERSION_B}"' 'exit 0' > "$0.peer"`, `  chmod +x "$0.peer"`, `  mv "$0.peer" "$0"`].join("\n"),
       );
       const claims = captureSuccessClaims(binPath);
 
@@ -231,8 +227,7 @@ describe("concurrent kesha install (#997)", () => {
     "a failed install leaves the next one able to run",
     async () => {
       const binPath = stageEngineDir("kesha-install-release-");
-      globalThis.fetch = (async (_input: Request | URL | string): Promise<Response> =>
-        new Response("Not Found", { status: 404 })) as typeof fetch;
+      globalThis.fetch = (async (_input: Request | URL | string): Promise<Response> => new Response("Not Found", { status: 404 })) as typeof fetch;
 
       await expect(installEngine({ version: VERSION_A })).rejects.toThrow(/HTTP 404/);
 

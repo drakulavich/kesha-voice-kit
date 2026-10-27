@@ -12,18 +12,14 @@ export function assertSingleTranscript(raw: string, label: string, expected?: st
     throw new Error(`${label}: expected JSON on stdout, got ${raw.slice(0, 200)}`);
   }
   if (!Array.isArray(results) || results.length !== 1) {
-    throw new Error(
-      `${label}: expected exactly one transcription result, got ${JSON.stringify(results).slice(0, 200)}`,
-    );
+    throw new Error(`${label}: expected exactly one transcription result, got ${JSON.stringify(results).slice(0, 200)}`);
   }
   const text = results[0]?.text?.trim() ?? "";
   if (text.length < 5) {
     throw new Error(`${label}: expected non-empty transcription text, got ${JSON.stringify(text)}`);
   }
   if (expected !== undefined && !text.toLowerCase().includes(expected.toLowerCase())) {
-    throw new Error(
-      `${label}: expected the transcript to contain ${JSON.stringify(expected)}, got ${JSON.stringify(text)}`,
-    );
+    throw new Error(`${label}: expected the transcript to contain ${JSON.stringify(expected)}, got ${JSON.stringify(text)}`);
   }
   return text;
 }
