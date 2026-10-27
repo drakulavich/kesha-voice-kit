@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": [
+    "src/cli-entry.ts",
+    "scripts/benchmark.ts",
+    "scripts/smoke-test.ts",
+    ".claude/hooks/check-new-comments.ts",
+    ".github/scripts/raycast-no-live-fetch.cjs",
+    "tests/helpers/no-network.ts",
+    "tests/helpers/*.fixture.ts"
+  ],
+  "project": [
+    "src/**/*.{ts,mjs}",
+    "scripts/**/*.ts",
+    ".github/scripts/**/*.{ts,mjs,cjs}",
+    ".claude/hooks/**/*.ts",
+    "tests/**/*.ts"
+  ]
+}
