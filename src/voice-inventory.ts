@@ -27,7 +27,7 @@ export async function installedVoiceIds(): Promise<string[]> {
 }
 
 /** Voice ids derivable from the Kesha model cache alone; an engine-free lower bound on [`installedVoiceIds`]. */
-export function cachedVoiceIds(): string[] {
+function cachedVoiceIds(): string[] {
   const cache = keshaCacheDir();
   const voices: string[] = [];
   try {

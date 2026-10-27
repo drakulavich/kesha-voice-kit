@@ -63,7 +63,7 @@ export interface ShowStatusOptions {
   homeDir?: string;
 }
 
-export interface StatusDiskComponent {
+interface StatusDiskComponent {
   label: string;
   sizeBytes: number;
 }

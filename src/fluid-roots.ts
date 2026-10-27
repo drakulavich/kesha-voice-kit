@@ -20,7 +20,7 @@ export interface FluidSubsystem {
   inCache: boolean;
 }
 
-export interface FluidRootSubsystem {
+interface FluidRootSubsystem {
   label: string;
   path: string;
   sizeBytes: number;
@@ -61,7 +61,7 @@ export function kokoroG2pDir(homeDir = diagnosticHomeDir()): string {
  * `models/paths.rs::fluidaudio_kokoro_location`: any entry at all keeps a legacy tree in use,
  * everything else roots under the Kesha cache (#688).
  */
-export function kokoroBundleRoot(options: FluidRootsOptions = {}): string {
+function kokoroBundleRoot(options: FluidRootsOptions = {}): string {
   const legacy = legacyKokoroAneDir(options.homeDir ?? diagnosticHomeDir());
   return dirHasEntries(legacy) ? legacy : join(options.cacheRoot ?? keshaCacheDir(), "fluidaudio", "kokoro-82m-coreml");
 }

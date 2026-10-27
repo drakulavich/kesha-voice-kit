@@ -28,13 +28,13 @@ function stubGhOnPath(): string {
 
 const STUB_BIN_DIR = stubGhOnPath();
 
-export interface CliScenarioArtifactRequest {
+interface CliScenarioArtifactRequest {
   name?: string;
   path: string;
   text?: boolean;
 }
 
-export interface CliScenarioArtifact {
+interface CliScenarioArtifact {
   name: string;
   path: string;
   exists: boolean;
@@ -42,7 +42,7 @@ export interface CliScenarioArtifact {
   text?: string;
 }
 
-export interface CliScenarioEnvDiff {
+interface CliScenarioEnvDiff {
   added: string[];
   changed: string[];
   overrides: Record<string, string>;
@@ -165,7 +165,7 @@ export async function runCliScenario(args: string[], opts: CliScenarioOptions = 
   return result;
 }
 
-export class CliScenarioTimeoutError extends Error {
+class CliScenarioTimeoutError extends Error {
   constructor(
     readonly result: CliScenarioResult,
     timeoutMs: number,

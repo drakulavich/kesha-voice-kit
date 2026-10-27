@@ -9,7 +9,7 @@
 import { spawnSync } from "node:child_process";
 
 /** Undefined rather than a throw when git exits non-zero: every caller has a fallback. */
-export function git(args) {
+function git(args) {
   const result = spawnSync("git", args, { encoding: "utf8" });
   if (result.error) throw result.error;
   return result.status === 0 ? result.stdout : undefined;

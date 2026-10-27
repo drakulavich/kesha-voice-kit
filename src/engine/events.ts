@@ -1,12 +1,12 @@
 import { log } from "../log";
 
-export interface ProgressEvent {
+interface ProgressEvent {
   kind: "progress";
   phase?: string;
   message: string;
   pct?: number;
 }
-export interface WarnEvent {
+interface WarnEvent {
   kind: "warn";
   code: string;
   message: string;
