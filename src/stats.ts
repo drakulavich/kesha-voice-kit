@@ -18,7 +18,7 @@ const APP_VERSION = readPackageVersion();
 
 export type StatsCommandName = "transcribe" | "say";
 export type StatsExportFormat = "json" | "csv";
-export type StatsStageStatus = "success" | "failed";
+type StatsStageStatus = "success" | "failed";
 export type StatsRunStatus = "success" | "failed";
 
 export interface StatsArtifactInput {
@@ -341,7 +341,7 @@ export interface StatsWeekSummary {
   slowestRuns: StatsSlowRun[];
 }
 
-export interface StatsStageSummary {
+interface StatsStageSummary {
   stage: string;
   count: number;
   failed: number;
@@ -351,18 +351,18 @@ export interface StatsStageSummary {
   p99Ms: number;
 }
 
-export interface StatsCountBucket {
+interface StatsCountBucket {
   label: string;
   count: number;
 }
 
-export interface StatsSlowRunStage {
+interface StatsSlowRunStage {
   stage: string;
   durationMs: number;
   status: StatsStageStatus;
 }
 
-export interface StatsSlowRun {
+interface StatsSlowRun {
   command: string;
   status: StatsRunStatus;
   durationMs: number | null;
@@ -452,7 +452,7 @@ export function getWeekSummary(now = new Date()): StatsWeekSummary {
   });
 }
 
-export interface StatsRunExportRow {
+interface StatsRunExportRow {
   id: number;
   command: string;
   startedAt: string;
@@ -462,7 +462,7 @@ export interface StatsRunExportRow {
   itemCount: number;
 }
 
-export interface StatsArtifactExportRow {
+interface StatsArtifactExportRow {
   id: number;
   runId: number;
   kind: string;
@@ -473,7 +473,7 @@ export interface StatsArtifactExportRow {
   channels: number | null;
 }
 
-export interface StatsStageTimingExportRow {
+interface StatsStageTimingExportRow {
   id: number;
   runId: number;
   stage: string;
@@ -482,7 +482,7 @@ export interface StatsStageTimingExportRow {
   status: StatsStageStatus;
 }
 
-export interface StatsExportData {
+interface StatsExportData {
   schemaVersion: number;
   exportedAt: string;
   retentionDays: number | null;

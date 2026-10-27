@@ -119,7 +119,7 @@ export function resolveOutputFormat(input: { json?: boolean; toon?: boolean; for
 }
 
 /** Case-folded primary subtag: `en-US`, `EN` and `en_us` all reduce to `en`; a three-letter `eng` stays `eng`. */
-export function primaryLanguageSubtag(code: string): string {
+function primaryLanguageSubtag(code: string): string {
   return code.trim().toLowerCase().split(/[-_]/, 1)[0] ?? "";
 }
 

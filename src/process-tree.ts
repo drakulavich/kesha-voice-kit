@@ -97,7 +97,7 @@ export function interruptedRun(exitCode: number): KeshaError | null {
   return exitCode === 0 ? null : pendingInterruption();
 }
 
-export function terminateProcessTree(proc: KillableProcess, signal: ManagedSignal = "SIGTERM"): void {
+function terminateProcessTree(proc: KillableProcess, signal: ManagedSignal = "SIGTERM"): void {
   if (!Number.isFinite(proc.pid) || proc.pid <= 0) {
     safeKillDirect(proc, signal);
     return;

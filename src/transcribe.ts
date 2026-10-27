@@ -14,8 +14,6 @@ import { KeshaError } from "./engine/events";
 import { closeSync, existsSync, fstatSync, openSync, readSync, statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 
-export type { VadMode };
-
 /** True when `path` exists and is a directory; the CLI and the Core API both refuse one before any engine spawn. */
 export function isDirectoryPath(path: string): boolean {
   try {

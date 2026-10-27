@@ -68,7 +68,7 @@ interface OptionalComponent extends PathSummary {
 }
 
 /** What the synthesis path can actually speak with, which no other section of the report states (T2-7). */
-export interface DoctorTts {
+interface DoctorTts {
   voices: string[];
   languagesStaged: string[];
   languagesMissing: string[];

@@ -12,7 +12,7 @@ const MODULE_DIR = join(REPO_ROOT, "rust", "src", "models");
  * one pass over the whole joined source before expanding any call site, so order doesn't matter
  * there (#950).
  */
-export function rustModelsSourcePaths(): string[] {
+function rustModelsSourcePaths(): string[] {
   if (existsSync(MODULE_DIR)) {
     const files = readdirSync(MODULE_DIR, { recursive: true })
       .filter((entry): entry is string => typeof entry === "string" && entry.endsWith(".rs"))

@@ -5,7 +5,7 @@ import type { LangDetectResult, TranscriptionSegment } from "./engine";
  * `detect-text-lang` (macOS `NLLanguageRecognizer`) or the CLI-side `tinyld`
  * fallback used where the Engine call is unavailable (#941).
  */
-export type TextLangSource = "engine" | "tinyld";
+type TextLangSource = "engine" | "tinyld";
 
 /**
  * A text-language detection tagged with its detector. The two sources score on
@@ -51,4 +51,4 @@ export function hasErrorRecords(
   return !Array.isArray(output);
 }
 
-export type { LangDetectResult, TranscriptionSegment };
+export type { TranscriptionSegment };

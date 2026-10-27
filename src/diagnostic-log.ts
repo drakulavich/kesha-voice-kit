@@ -34,12 +34,12 @@ const UNSAFE_STRING_VALUE =
   /(?:[\\/]|[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:aac|aiff?|caf|flac|m4a|m4v|mov|mp3|mp4|ogg|opus|wav|webm|wma)\b|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b)/i;
 const RESERVED_FIELD_NAMES = new Set(["ts", "level", "event", "app_version", "pid"]);
 
-export type DiagnosticLogValue = string | number | boolean | null;
+type DiagnosticLogValue = string | number | boolean | null;
 export type DiagnosticLogFields = Record<string, DiagnosticLogValue>;
 export type DiagnosticLogMode = "off" | "on" | "retain-on-failure";
 export type DiagnosticSessionStatus = "success" | "failed";
 
-export interface DiagnosticLogConfig {
+interface DiagnosticLogConfig {
   mode: DiagnosticLogMode;
   maxBytes: number;
   retain: number;
