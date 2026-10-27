@@ -377,8 +377,8 @@ describe("validateSayText", () => {
   });
 
   it("counts code points, not UTF-16 units, against the ceiling", () => {
-    // 2500 astral emoji are 5000 UTF-16 units but only 2500 characters.
-    expect(() => validateSayText("😀".repeat(MAX_TEXT_CHARS / 2))).not.toThrow();
+    // 2500 astral letters are 5000 UTF-16 units but only 2500 characters.
+    expect(() => validateSayText("𝔸".repeat(MAX_TEXT_CHARS / 2))).not.toThrow();
     const over = refusal("я".repeat(MAX_TEXT_CHARS + 1));
     expect(over.code).toBe("E_TEXT_TOO_LONG");
     expect(over.exitCode).toBe(5);

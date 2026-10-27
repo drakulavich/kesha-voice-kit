@@ -1335,6 +1335,27 @@ describe("kesha status --check", () => {
     }
   });
 
+  posixEngineTest("an engine KESHA_ENGINE_BIN points at that answers describe with garbage names the variable in its hint (#1581)", async () => {
+    const restoreEnv = saveEngineEnv();
+    const dir = mkdtempSync(join(tmpdir(), "kesha-status-check-garbage-"));
+    try {
+      const binPath = join(dir, "kesha-engine");
+      writeFileSync(binPath, "#!/bin/sh\necho garbage\n");
+      chmodSync(binPath, 0o755);
+      process.env.KESHA_ENGINE_BIN = binPath;
+      const err = await assertReady().then(() => null, (e: unknown) => e);
+      expect(err).toBeInstanceOf(KeshaError);
+      const { code, hint } = err as KeshaError;
+      expect({ code, hint }).toEqual({
+        code: "E_ENGINE_PROTOCOL",
+        hint: "KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`",
+      });
+    } finally {
+      restoreEnv();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   posixEngineTest("an engine without the ASR model exits 1 naming the model directory", async () => {
     const home = mkdtempSync(join(tmpdir(), "kesha-status-check-noasr-"));
     try {

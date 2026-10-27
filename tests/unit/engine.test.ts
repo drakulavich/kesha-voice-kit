@@ -364,7 +364,7 @@ describe("engine", () => {
       expect(err.code).toBe("E_ENGINE_PROTOCOL");
       expect(err.hint).toContain("kesha install");
       expect(errorMessage(err)).toMatch(/^error \[E_ENGINE_PROTOCOL\]:/);
-      expect(errorMessage(err)).toContain("hint: run `kesha install`");
+      expect(errorMessage(err)).toContain("hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`");
       expect(await getEngineCapabilities()).toBeNull();
     });
   });

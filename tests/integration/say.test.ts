@@ -330,10 +330,26 @@ describe("kesha say (CLI)", () => {
     expect(spoken).toBe("© Acme™ ®");
   });
 
-  it("passes emoji-only text through, so the engine refuses it as before", async () => {
-    const spoken = await spokenText((dir) => ["--voice", "en-am_michael", "--out", `${dir}/r.wav`, "🎉"]);
-    expect(spoken).toBe("🎉");
+  it("refuses emoji-only text as empty text before the engine runs (#1581)", async () => {
+    const dir = tempDir("kesha-recording-engine-");
+    const enginePath = await createRecordingEngine(dir);
+    const proc = spawn(["bun", CLI_PATH, "say", "--voice", "en-am_michael", "--out", `${dir}/r.wav`, "🎉"], {
+      env: { ...process.env, KESHA_CACHE_DIR: dir, KESHA_ENGINE_BIN: enginePath, HOME: dir },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    expect(await proc.exited).toBe(2);
+    expect(await new Response(proc.stderr).text()).toContain("error [E_TEXT_EMPTY]: text has nothing to speak: emoji are not read aloud");
+    expect(existsSync(`${dir}/spoken.txt`)).toBe(false);
   });
+
+  for (const ssml of ["<speak>🎉</speak>", '<speak><break time="1s"/></speak>', "<speak><![CDATA[<a>]]></speak>"]) {
+    it(`passes ${ssml} through to the engine: SSML speech is the engine's call`, async () => {
+      const spoken = await spokenText((dir) => ["--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, ssml]);
+      expect(spoken).toBe(ssml);
+    });
+  }
 
   it("reads angle brackets in plain text as text, not tags", async () => {
     const spoken = await spokenText((dir) => ["--voice", "ru-vosk-m02", "--out", `${dir}/r.wav`, "< 3 > 😊"]);
@@ -360,13 +376,6 @@ describe("kesha say (CLI)", () => {
       "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak><![CDATA[a > b &#x1F60A;]]></speak>",
     ]);
     expect(spoken).toBe("<speak><![CDATA[a > b &#x1F60A;]]></speak>");
-  });
-
-  it("passes emoji-only SSML through: tags are not speech", async () => {
-    const spoken = await spokenText((dir) => [
-      "--voice", "en-am_michael", "--ssml", "--out", `${dir}/r.wav`, "<speak>🎉</speak>",
-    ]);
-    expect(spoken).toBe("<speak>🎉</speak>");
   });
 
   it("--out - writes the audio to stdout and creates no file named - (#1473 S2-6)", async () => {

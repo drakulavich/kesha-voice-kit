@@ -6,7 +6,7 @@ import {
   ENGINE_PROBE_TIMEOUT_MS,
   type EngineCapabilities,
 } from "./engine";
-import { KeshaError } from "./engine/events";
+import { KeshaError, replaceEngineHint } from "./engine/events";
 import {
   CORRUPT_STATE,
   engineFunctionalHealth,
@@ -283,7 +283,7 @@ export async function assertReady(timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<
   } catch (err) {
     if (!signal.aborted || !(err instanceof KeshaError) || err.code !== "E_INTERRUPTED") throw err;
     throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\` within ${timeoutMs / 1000}s`, {
-      hint: "run `kesha install` to fetch a working engine, or point KESHA_ENGINE_BIN at one",
+      hint: replaceEngineHint(),
     });
   }
   if (isCoremlBackend(backend)) {

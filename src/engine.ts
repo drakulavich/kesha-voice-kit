@@ -9,7 +9,7 @@ import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, interruptedRun } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
 import { engineExitCause, engineSignal, runEngineProcess, spawnHint } from "./engine/spawn";
-import { engineFailure, KeshaError, quoteInvalidLine, renderError, SUPPORT_BUNDLE_HINT, type ErrorEvent } from "./engine/events";
+import { engineFailure, KeshaError, quoteInvalidLine, renderError, replaceEngineHint, SUPPORT_BUNDLE_HINT, type ErrorEvent } from "./engine/events";
 import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
 import {
   describeToCapabilities,
@@ -145,7 +145,7 @@ function assertEngineSupported(binPath: string): void {
   throw new KeshaError(
     "E_ENGINE_PROTOCOL",
     `kesha-engine at ${binPath} is v${installed}; this CLI needs v${MIN_ENGINE_VERSION} or newer`,
-    { hint: "run `kesha install` to fetch the engine this CLI expects", versionMismatch: true },
+    { hint: replaceEngineHint(), versionMismatch: true },
   );
 }
 
@@ -182,7 +182,7 @@ export async function getDescribe(opts: RunEngineOptions = {}): Promise<Describe
   if (run.error) throw engineFailure("describe", run, run.exitCode);
   if (!doc) {
     throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} did not answer \`describe\``, {
-      hint: "run `kesha install` to fetch the engine this CLI expects",
+      hint: replaceEngineHint(),
     });
   }
   const mismatch = protocolMismatch(doc, binPath);

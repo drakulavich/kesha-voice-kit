@@ -36,7 +36,7 @@ import { runCommandSession, type CommandSession } from "./command-session";
 import type { CliContext } from "./context";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { detectTextLanguageFallback, routeLanguage, unsupportedAudioLanguageWarning } from "../language-routing";
-import { renderInvalidArg } from "./options";
+import { langFlagError, renderInvalidArg } from "./options";
 
 // Hand-curated ordering and per-command argument hints; every key in SUBCOMMANDS (dispatch.ts)
 // must appear here, guarded at the observable layer by the bare-invocation case in
@@ -224,6 +224,8 @@ export function validateTranscribeArgs(
   if (args["include-errors"] && fmt.format !== "json" && fmt.format !== "toon") {
     return { ok: false, error: "--include-errors requires --json, --toon, or --format {json,toon}." };
   }
+  const langError = langFlagError(args.lang);
+  if (langError) return { ok: false, error: langError };
 
   const vadMode: ValidatedTranscribeArgs["vadMode"] = vad ? "on" : noVad ? "off" : "auto";
   return { ok: true, vadMode, outputFormat: fmt.format };

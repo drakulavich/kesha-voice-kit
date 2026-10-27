@@ -195,7 +195,7 @@ describe("list_voices() validates against describe before spawning", () => {
       const err = await listVoices().then(() => null, (e: unknown) => e as KeshaError);
       expect(err).toBeInstanceOf(KeshaError);
       expect(err!.code).toBe("E_ENGINE_PROTOCOL");
-      expect(errorMessage(err)).toContain("hint: run `kesha install`");
+      expect(errorMessage(err)).toContain("hint: KESHA_ENGINE_BIN points at it; point it at a working engine, or unset it and run `kesha install`");
     });
   });
 

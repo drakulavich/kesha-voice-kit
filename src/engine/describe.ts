@@ -1,4 +1,4 @@
-import { KeshaError } from "./events";
+import { KeshaError, replaceEngineHint } from "./events";
 
 export const PROTOCOL_VERSION = 4;
 
@@ -146,7 +146,7 @@ export function protocolMismatch(doc: DescribeDocument, binPath: string): KeshaE
     `kesha-engine at ${binPath} speaks protocol ${doc.protocolVersion}; this CLI speaks protocol ${PROTOCOL_VERSION}`,
     {
       hint: stale
-        ? "run `kesha install` to fetch the engine this CLI expects"
+        ? replaceEngineHint()
         : `the engine is newer than this CLI; run \`${UPGRADE_CLI}\``,
       versionMismatch: true,
     },

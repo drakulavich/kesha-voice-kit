@@ -756,6 +756,16 @@ describe("validateTranscribeArgs guards", () => {
     return result;
   }
 
+  test("--lang must name a language (#1581)", () => {
+    expect(expectRejected({ lang: "xx" }, ["--lang", "xx"], okFmt())).toBe(
+      '--lang "xx" is not a language code; pass one such as en, ru or pt-BR.',
+    );
+    expect(expectRejected({ lang: "" }, ["--lang", ""], okFmt())).toBe(
+      '--lang "" is not a language code; pass one such as en, ru or pt-BR.',
+    );
+    for (const lang of ["en", "EN", "en-US", "en_US", "yue"]) expectAccepted({ lang }, ["--lang", lang], okFmt());
+  });
+
   test("--timestamps without machine-readable output is rejected", () => {
     expect(expectRejected({ timestamps: true }, ["--timestamps"], okFmt())).toContain(
       "--timestamps requires --json",
