@@ -442,7 +442,7 @@ export function buildEngineInstallArgs(opts: {
   ];
 }
 
-export interface InstallOptions {
+interface InstallOptions {
   /** TTS languages to install (empty/undefined = no TTS). */
   ttsLangs?: string[];
   /** Also install Silero VAD model for long-audio preprocessing. */

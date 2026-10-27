@@ -92,7 +92,7 @@ export function renderInvalidArg(message: string): string {
   return renderError({ code: "E_INVALID_ARG", message });
 }
 
-export function renderUnknownOption(option: UnknownOption): string {
+function renderUnknownOption(option: UnknownOption): string {
   const tail = option.suggestion === null ? "" : ` (did you mean ${option.suggestion}?)`;
   return renderInvalidArg(`unknown option ${option.name}${tail}`);
 }

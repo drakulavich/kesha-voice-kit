@@ -8,7 +8,7 @@
  * this one is deliberately blind to a suite that reaches the engine by some other route.
  */
 
-export interface ImportStatement {
+interface ImportStatement {
   bindings: string;
   specifier: string;
 }
@@ -28,7 +28,7 @@ function normalize(source: string): string {
 
 const IMPORT = /^import\s+(?:type\s+)?([\s\S]*?)\s+from\s+"([^"]+)";/gm;
 
-export function importStatements(source: string): ImportStatement[] {
+function importStatements(source: string): ImportStatement[] {
   return [...normalize(source).matchAll(IMPORT)].map((m) => ({
     bindings: m[1]!,
     specifier: m[2]!,

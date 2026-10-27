@@ -16,7 +16,7 @@ import { engineAbortError, interruptedRun } from "./process-tree";
  */
 export type SayFormat = "wav" | "ogg-opus" | "flac";
 export const SUPPORTED_SAMPLE_RATES = [8000, 12000, 16000, 24000, 48000] as const;
-export type SupportedSampleRate = (typeof SUPPORTED_SAMPLE_RATES)[number];
+type SupportedSampleRate = (typeof SUPPORTED_SAMPLE_RATES)[number];
 export const MAX_TEXT_CHARS = 5000;
 export const TEXT_TOO_LONG_HINT = `split the text into requests of at most ${MAX_TEXT_CHARS} characters`;
 
@@ -101,7 +101,7 @@ const EMOJI = /\p{RGI_Emoji}|[\p{Extended_Pictographic}--[©®™]]/gv;
  * Emoji are decoration in a reply; a voice would read out their Unicode names (#1388).
  * Emoji-only SSML, tags aside, goes through unchanged, so the engine still refuses it as E_SCRIPT_UNSUPPORTED.
  */
-export function dropEmoji(text: string, ssml = false): string {
+function dropEmoji(text: string, ssml = false): string {
   const spoken = (ssml ? decodeCharRefs(text) : text).replace(KEPT_SYMBOL, "$1").replace(EMOJI, "");
   const speech = ssml ? spoken.replace(CDATA, "$1").replace(/<[^>]*>/g, "") : spoken;
   return speech.trim().length > 0 ? spoken : text;

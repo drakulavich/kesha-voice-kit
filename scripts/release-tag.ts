@@ -14,7 +14,7 @@ import { npmGlobalCommands } from "../.github/scripts/check-recipes";
 const REPO = "drakulavich/kesha-voice-kit";
 const TAG = /^v\d+\.\d+\.\d+$/;
 
-export type Mode = "push" | "api";
+type Mode = "push" | "api";
 export type Options = { tag: string; notesPath: string; mode: Mode };
 export type CommandResult = { code: number; stdout: string; stderr: string };
 export type CommandRunner = (argv: string[], input?: string) => Promise<CommandResult>;

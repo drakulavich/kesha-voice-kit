@@ -67,7 +67,7 @@ export function resolveColorMode(
  * is global: it works for every command, not just the transcribe path, and a
  * subcommand that doesn't declare it never sees the flag.
  */
-export function resolveQuietMode(rawArgs: string[]): { quiet: boolean; rawArgs: string[] } {
+function resolveQuietMode(rawArgs: string[]): { quiet: boolean; rawArgs: string[] } {
   const { value, rawArgs: cleaned } = stripBooleanFlag(rawArgs, ["--quiet", "-q"]);
   return { quiet: value, rawArgs: cleaned };
 }

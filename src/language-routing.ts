@@ -48,7 +48,7 @@ export function unsupportedAudioLanguageWarning(
   return `warning: audio language "${audioLanguage.code}" is not one kesha can transcribe; the text is unreliable (supported: docs/languages.md)`;
 }
 
-export type LangRouteSource = "engine" | "tinyld" | "audio";
+type LangRouteSource = "engine" | "tinyld" | "audio";
 
 export interface LanguageRoute {
   lang: string;

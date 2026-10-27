@@ -26,10 +26,9 @@ import {
   validateArgv,
   type DescribeDocument,
   type EngineCapabilities,
-  type TtsLanguageCapability,
 } from "./engine/describe";
 
-export type { EngineCapabilities, TtsLanguageCapability };
+export type { EngineCapabilities };
 
 /**
  * Capability-flag string for speaker diarization. Engine advertises this only

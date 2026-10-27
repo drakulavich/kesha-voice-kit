@@ -2,7 +2,7 @@ import { KeshaError, replaceEngineHint } from "./events";
 
 export const PROTOCOL_VERSION = 4;
 
-export type Gate = null | string | string[];
+type Gate = null | string | string[];
 
 export interface FlagSchema {
   gate: Gate;
@@ -12,7 +12,7 @@ export interface FlagSchema {
   values?: string;
 }
 
-export interface CommandSchema {
+interface CommandSchema {
   flags: Record<string, FlagSchema>;
 }
 
