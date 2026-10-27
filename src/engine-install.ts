@@ -407,9 +407,7 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
     }
     if (exitCode !== 0 || events.invalid.length > 0 || events.error) {
       const err = engineFailure("say", events, exitCode);
-      log.warn(
-        `FluidAudio Kokoro warmup failed (${errorMessage(err)}); first ` + "`kesha say en-*` may still be slow.",
-      );
+      log.warn(`FluidAudio Kokoro warmup failed (${errorMessage(err)}); first \`kesha say en-*\` may still be slow.`);
       return;
     }
 
@@ -417,7 +415,7 @@ export async function warmDarwinKokoro(binPath: string, timeoutMs = 180_000): Pr
   } catch (e) {
     // A launch failure was never the warmup's to swallow, and an interrupt is the user's.
     if (e instanceof KeshaError && (e.code === "E_INTERRUPTED" || e.code === "E_ENGINE_SPAWN")) throw e;
-    log.warn(`FluidAudio Kokoro warmup failed (${errorMessage(e)}); ` + "first `kesha say en-*` may still be slow.");
+    log.warn(`FluidAudio Kokoro warmup failed (${errorMessage(e)}); first \`kesha say en-*\` may still be slow.`);
   } finally {
     try {
       rmSync(outPath, { force: true });
@@ -582,7 +580,7 @@ async function engineWorks(binPath: string): Promise<boolean> {
   if (health.status === "ok") return true;
   if (health.status === "mute") {
     log.warn(
-      `Installed engine at ${binPath} runs but ${health.detail}; it is corrupt or truncated ` + "— re-downloading it.",
+      `Installed engine at ${binPath} runs but ${health.detail}; it is corrupt or truncated — re-downloading it.`,
     );
     return false;
   }

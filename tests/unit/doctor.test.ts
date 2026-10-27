@@ -245,7 +245,7 @@ describe("collectDoctorReport", () => {
       rmSync(join(ane, KOKORO_ANE_EN_REQUIRED[0]!), { recursive: true, force: true });
       const partial = formatDoctorReport(await collectDoctorReport({ redact: false }));
       expect(partial).toContain(
-        `TTS (Kokoro ANE): incomplete - missing ${KOKORO_ANE_EN_REQUIRED[0]}; ` + "re-run `kesha install --tts`",
+        `TTS (Kokoro ANE): incomplete - missing ${KOKORO_ANE_EN_REQUIRED[0]}; re-run \`kesha install --tts\``,
       );
       expect(partial).toContain("TTS (Kokoro G2P): installed");
     } finally {
