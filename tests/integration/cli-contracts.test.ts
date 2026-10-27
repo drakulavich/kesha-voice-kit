@@ -1056,7 +1056,7 @@ describe("CLI contracts", () => {
       expectContract(run, {
         exitCode: 1,
         stderrContains: [
-          `error [E_INTERNAL]: kesha-engine record ${cause}\n` + "  hint: re-run with KESHA_DEBUG=1, then file a bug with the `kesha support-bundle` archive",
+          `error [E_INTERNAL]: kesha-engine record ${cause}\n  hint: re-run with KESHA_DEBUG=1, then file a bug with the \`kesha support-bundle\` archive`,
         ],
       });
     });

@@ -374,7 +374,7 @@ export function undocumentedRecipes(dump: JustDump): string[] {
     .filter(([, recipe]) => !recipe.private && !recipe.doc)
     .map(
       ([name]) =>
-        `justfile: recipe \`${name}\` has no doc comment, so \`just --list\` shows it with no ` + `explanation — add a \`# …\` line directly above it (#797)`,
+        `justfile: recipe \`${name}\` has no doc comment, so \`just --list\` shows it with no explanation — add a \`# …\` line directly above it (#797)`,
     );
 }
 

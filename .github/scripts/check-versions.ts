@@ -28,7 +28,7 @@ try {
   serverJson = JSON.parse(readFileSync("server.json", "utf8"));
 } catch (err) {
   console.error(
-    `server.json: unreadable (${err instanceof Error ? err.message : String(err)}). ` + `It is the MCP registry manifest and must stay in the repo root.`,
+    `server.json: unreadable (${err instanceof Error ? err.message : String(err)}). It is the MCP registry manifest and must stay in the repo root.`,
   );
   process.exit(1);
 }

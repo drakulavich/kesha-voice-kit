@@ -139,7 +139,7 @@ function releaseIfOwned(lockDir: string, token: string): void {
     rmdirSync(lockDir);
   } catch {
     if (readOwner(lockDir)) return;
-    log.warn(`Could not remove the install lock at ${lockDir}, so the next \`kesha install\` will wait ` + "for it; delete it if no install is running.");
+    log.warn(`Could not remove the install lock at ${lockDir}, so the next \`kesha install\` will wait for it; delete it if no install is running.`);
   }
 }
 

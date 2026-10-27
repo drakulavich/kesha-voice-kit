@@ -175,9 +175,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     async () => {
       const binPath = stageEngineDir();
       const [mismatched, matching] = SIDECARS;
-      stubRelease(
-        sumsLine(sha256(ENGINE)) + `${sha256("not the served sidecar")}  ./${mismatched!.assetName}\n` + `${sha256(ENGINE)}  ./${matching!.assetName}\n`,
-      );
+      stubRelease(`${sumsLine(sha256(ENGINE))}${sha256("not the served sidecar")}  ./${mismatched!.assetName}\n${sha256(ENGINE)}  ./${matching!.assetName}\n`);
 
       await installEngine({ version: OVERRIDE });
 

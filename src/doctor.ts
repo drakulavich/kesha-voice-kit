@@ -441,7 +441,7 @@ function formatVersionState(engine: DoctorReport["engine"]): string {
         "supported; `kesha install` without --engine-version restores the pin"
       );
     case "unsupported":
-      return `installed v${engine.versionMarker} is older than v${MIN_ENGINE_VERSION}, ` + "the oldest engine this CLI supports; run `kesha install`";
+      return `installed v${engine.versionMarker} is older than v${MIN_ENGINE_VERSION}, the oldest engine this CLI supports; run \`kesha install\``;
     case "unrecorded":
       return engine.installed ? "no recorded version beside the binary; `kesha install` records one" : "no engine installed";
     default:

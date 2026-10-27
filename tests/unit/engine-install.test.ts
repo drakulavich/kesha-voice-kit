@@ -332,7 +332,7 @@ describe("waitUntilSpawnable (#216)", () => {
       const rendered = errorMessage(caught);
       expect(rendered).toStartWith(`error [E_ENGINE_SPAWN]: Downloaded the engine to ${binPath} but it is still locked after 0s: `);
       expect(rendered).toEndWith(
-        `\n  hint: a security scanner is likely holding the file. Re-run \`kesha install\`, ` + `or exclude ${join(dir, "EBUSY")} from real-time scanning.`,
+        `\n  hint: a security scanner is likely holding the file. Re-run \`kesha install\`, or exclude ${join(dir, "EBUSY")} from real-time scanning.`,
       );
       expect(rendered.split("\n")).toHaveLength(2);
       expect(exitCodeFor(caught)).toBe(1);

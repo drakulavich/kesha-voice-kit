@@ -77,7 +77,7 @@ interface WaiterOptions {
 function spawnWaiter(binPath: string, dir: string, opts: WaiterOptions) {
   const script = join(dir, `waiter-${Math.random().toString(36).slice(2)}.ts`);
   const barrier = opts.barrier
-    ? `const spinUntil = Date.now() + 30_000;\n` + `while (!existsSync(${JSON.stringify(join(dir, "go"))})) if (Date.now() > spinUntil) process.exit(3);\n`
+    ? `const spinUntil = Date.now() + 30_000;\nwhile (!existsSync(${JSON.stringify(join(dir, "go"))})) if (Date.now() > spinUntil) process.exit(3);\n`
     : "";
   writeFileSync(
     script,

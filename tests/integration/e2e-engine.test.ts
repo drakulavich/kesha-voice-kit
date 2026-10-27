@@ -127,7 +127,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       // KESHA_ENGINE_BIN may point at a dev build without system_diarize; .github/scripts/smoke-engine-binary.sh gates presence for releases.
       const advertises = caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE);
       if (!advertises) {
-        console.warn(`engine at ${getEngineBinPath()} lacks ${TRANSCRIBE_DIARIZE_FEATURE}; ` + "likely a dev build without --features system_diarize");
+        console.warn(`engine at ${getEngineBinPath()} lacks ${TRANSCRIBE_DIARIZE_FEATURE}; likely a dev build without --features system_diarize`);
       }
     } else {
       expect(caps.features).not.toContain(TRANSCRIBE_DIARIZE_FEATURE);

@@ -95,7 +95,7 @@ export function releaseChecksums(version: string, pins: AssetPins | undefined): 
     if (!sha256) {
       throw new KeshaError(
         "E_MODEL_DOWNLOAD",
-        `Cannot verify ${assetName}: the SHA256SUMS of release v${version} does not list it, ` + "so it cannot be checked before it is installed.",
+        `Cannot verify ${assetName}: the SHA256SUMS of release v${version} does not list it, so it cannot be checked before it is installed.`,
         { hint: unverifiableFix(version, pins) },
       );
     }
@@ -500,7 +500,7 @@ export async function waitUntilSpawnable(binPath: string, deadlineMs = 60_000): 
     "E_ENGINE_SPAWN",
     `Downloaded the engine to ${binPath} but it is still locked after ` + `${Math.round(deadlineMs / 1000)}s: ${lastError}`,
     {
-      hint: "a security scanner is likely holding the file. Re-run `kesha install`, " + `or exclude ${dirname(binPath)} from real-time scanning.`,
+      hint: `a security scanner is likely holding the file. Re-run \`kesha install\`, or exclude ${dirname(binPath)} from real-time scanning.`,
     },
   );
 }
@@ -522,7 +522,7 @@ async function engineWorks(binPath: string): Promise<boolean> {
     return false;
   }
   const detail = health.status === "unusable" ? health.detail : "binary disappeared";
-  log.warn(`Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for ` + "another architecture — re-downloading it.");
+  log.warn(`Installed engine at ${binPath} does not run (${detail}); it is corrupt or built for another architecture — re-downloading it.`);
   return false;
 }
 
@@ -785,7 +785,7 @@ function unreadableInReadOnlyDir(path: string, e: unknown): unknown {
     "E_INVALID_ARG",
     `Cannot verify ${path} against its pinned SHA-256: ${why} (${errno}), and ${dir} is read-only, so it cannot be replaced.`,
     {
-      hint: `make ${path} readable and ${dir} writable, then re-run \`kesha install\`. Or ` + engineDirFix(engineDirSetting()?.name, false, dir),
+      hint: `make ${path} readable and ${dir} writable, then re-run \`kesha install\`. Or ${engineDirFix(engineDirSetting()?.name, false, dir)}`,
     },
   );
 }
@@ -827,7 +827,7 @@ function ensureEngineDirCreatable(binPath: string): void {
     if (!why) {
       throw new KeshaError(
         "E_INTERNAL",
-        `${what}.\n  Fix: resolve that filesystem error and ` + "re-run `kesha install`; if it persists, file a bug with `kesha support-bundle`.",
+        `${what}.\n  Fix: resolve that filesystem error and re-run \`kesha install\`; if it persists, file a bug with \`kesha support-bundle\`.`,
       );
     }
     const fix = engineDirFix(setting?.name, errno === "ENOTDIR" || errno === "EEXIST", engineDir);
@@ -892,7 +892,7 @@ async function installLockedEngine(binPath: string, request: EngineInstallReques
   const engineDir = dirname(binPath);
 
   if (version !== engineVersion) {
-    log.warn(`Installing engine v${version} instead of the pinned v${engineVersion}; ` + "a later `kesha install` without --engine-version restores the pin.");
+    log.warn(`Installing engine v${version} instead of the pinned v${engineVersion}; a later \`kesha install\` without --engine-version restores the pin.`);
   }
 
   // Read-only engine dir = Nix-store install; skip download/sidecar writes to avoid EROFS errors.

@@ -117,7 +117,7 @@ async function downloadPinnedBinary(target: EngineTarget, engineVersion: string)
     stderr: "inherit",
   });
   if ((await proc.exited) !== 0) {
-    console.error(`FAIL: could not download ${target.assetName} from v${engineVersion}.\n` + "  Check GH_TOKEN, and that the release exists.");
+    console.error(`FAIL: could not download ${target.assetName} from v${engineVersion}.\n  Check GH_TOKEN, and that the release exists.`);
     process.exit(1);
   }
   const path = join(dir, target.assetName);
