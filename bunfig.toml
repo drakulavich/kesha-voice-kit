@@ -2,4 +2,4 @@
 preload = ["./tests/helpers/leak-guard.ts"]
 
 [fmt]
-printWidth = 120
+printWidth = 160
