@@ -94,12 +94,9 @@ describe("referencedRecipes", () => {
   });
 
   // A flag is not a recipe, and guessing at one would make `just --list` a phantom reference.
-  test.each(["`just --list`", "`just --dump --dump-format json`", "`just -f other/justfile test`"])(
-    "skips the flag form: %s",
-    (span) => {
-      expect(names(MD, span)).toEqual([]);
-    },
-  );
+  test.each(["`just --list`", "`just --dump --dump-format json`", "`just -f other/justfile test`"])("skips the flag form: %s", (span) => {
+    expect(names(MD, span)).toEqual([]);
+  });
 
   test("reads a workflow's inline run: step", () => {
     expect(names(YML, "        run: just verify-darwin-full")).toEqual(["verify-darwin-full"]);
@@ -151,25 +148,20 @@ describe("unknownReferences", () => {
 });
 
 describe("isSwept", () => {
-  test.each([
-    "CLAUDE.md",
-    "README.md",
-    "CONTRIBUTING.md",
-    "docs/architecture.md",
-    ".claude/skills/release/SKILL.md",
-    ".github/workflows/ci.yml",
-  ])("sweeps %s", (path) => {
-    expect(isSwept(path)).toBe(true);
-  });
+  test.each(["CLAUDE.md", "README.md", "CONTRIBUTING.md", "docs/architecture.md", ".claude/skills/release/SKILL.md", ".github/workflows/ci.yml"])(
+    "sweeps %s",
+    (path) => {
+      expect(isSwept(path)).toBe(true);
+    },
+  );
 
   // Historical records: they describe what was true when written, not what is true now.
-  test.each([
-    "docs/superpowers/specs/2026-05-30-lanes.md",
-    "docs/plans/completed/2026-05-11-nix.md",
-    "docs/mutation-evidence/issue-1105.md",
-  ])("excludes %s", (path) => {
-    expect(isSwept(path)).toBe(false);
-  });
+  test.each(["docs/superpowers/specs/2026-05-30-lanes.md", "docs/plans/completed/2026-05-11-nix.md", "docs/mutation-evidence/issue-1105.md"])(
+    "excludes %s",
+    (path) => {
+      expect(isSwept(path)).toBe(false);
+    },
+  );
 
   test.each(["src/engine.ts", "justfile", ".claude/settings.json", "docs/assets/demo.webp"])("ignores %s", (path) => {
     expect(isSwept(path)).toBe(false);
@@ -239,9 +231,7 @@ describe("unguardedPipelines", () => {
   });
 
   test("flags a pipeline that runs without pipefail", () => {
-    const errors = unguardedPipelines(
-      dump({ land: shebang(["#!/usr/bin/env bash", "set -eu", 'git log | head -3 && echo "ok"']) }),
-    );
+    const errors = unguardedPipelines(dump({ land: shebang(["#!/usr/bin/env bash", "set -eu", 'git log | head -3 && echo "ok"']) }));
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain("`land` runs a pipeline");
     expect(errors[0]).toContain("git log | head -3");

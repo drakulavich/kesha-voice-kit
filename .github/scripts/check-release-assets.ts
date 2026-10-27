@@ -11,20 +11,14 @@ import { parseSha256Sums } from "../../src/engine-targets";
 
 const SUMS = "SHA256SUMS";
 
-export function assetProblems(
-  manifest: { assets: Array<{ name: string }> },
-  files: string[],
-  sha256Sums: string,
-): string[] {
+export function assetProblems(manifest: { assets: Array<{ name: string }> }, files: string[], sha256Sums: string): string[] {
   const named = new Set(manifest.assets.map((asset) => asset.name));
   const present = new Set(files);
   const sums = parseSha256Sums(sha256Sums);
   return [
     ...[...named].filter((name) => !present.has(name)).map((name) => `${name} is in the manifest but was not built`),
     ...files.filter((name) => !named.has(name)).map((name) => `${name} would be published but is not in the manifest`),
-    ...files
-      .filter((name) => name !== SUMS && named.has(name) && !sums.has(name))
-      .map((name) => `${name} is not listed in ${SUMS}`),
+    ...files.filter((name) => name !== SUMS && named.has(name) && !sums.has(name)).map((name) => `${name} is not listed in ${SUMS}`),
   ];
 }
 

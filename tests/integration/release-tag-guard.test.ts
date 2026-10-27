@@ -13,20 +13,13 @@ function guardScript(): string {
     jobs?: { "github-release"?: { steps?: Step[] } };
   };
   const steps = document.jobs?.["github-release"]?.steps ?? [];
-  const guard = steps.find(
-    (step) => typeof step.run === "string" && step.run.includes("refs/tags") && step.run.includes("GITHUB_SHA"),
-  );
+  const guard = steps.find((step) => typeof step.run === "string" && step.run.includes("refs/tags") && step.run.includes("GITHUB_SHA"));
   if (!guard || typeof guard.run !== "string") throw new Error("github-release has no tag-currency guard step");
   return guard.run;
 }
 
 // Mirrors GHA's real `bash --noprofile --norc -eo pipefail {0}` — plain `bash -c` masks a failed `git ls-remote` as an empty `current` instead of aborting (#1115 review round 2).
-async function runGuard(
-  work: string,
-  tagName: string,
-  sha: string,
-  refType = "tag",
-): Promise<{ code: number; stdout: string }> {
+async function runGuard(work: string, tagName: string, sha: string, refType = "tag"): Promise<{ code: number; stdout: string }> {
   const proc = Bun.spawn(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", guardScript()], {
     cwd: work,
     env: { ...process.env, TAG_NAME: tagName, GITHUB_SHA: sha, REF_TYPE: refType },

@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  packedFiles,
-  parseNameStatus,
-  publishableChanges,
-  shippedPrefixes,
-} from "../../.github/scripts/alpha-publishable";
+import { packedFiles, parseNameStatus, publishableChanges, shippedPrefixes } from "../../.github/scripts/alpha-publishable";
 
 const PACKED = ["package.json", "bin/kesha.js", "src/engine.ts", "README.md"];
 const FILES = ["bin/", "src/", "package.json", "README.md", "!src/__tests__"];

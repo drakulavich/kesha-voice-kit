@@ -39,9 +39,7 @@ describe("resolveColorMode (#531)", () => {
 
 describe("--quiet gating (#526)", () => {
   test("shouldReportTranscribeProgress is false when quiet", () => {
-    expect(
-      shouldReportTranscribeProgress({ stderrIsTty: true, stdoutIsTty: false, debugEnabled: false, quiet: true }),
-    ).toBe(false);
+    expect(shouldReportTranscribeProgress({ stderrIsTty: true, stdoutIsTty: false, debugEnabled: false, quiet: true })).toBe(false);
     expect(shouldReportTranscribeProgress({ stderrIsTty: true, stdoutIsTty: false, debugEnabled: false })).toBe(true);
   });
 });

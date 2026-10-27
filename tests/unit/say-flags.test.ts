@@ -120,9 +120,7 @@ describe("resolveSayFlags: --bitrate and --sample-rate", () => {
   });
 
   test("rejects an unsupported sample rate", () => {
-    expect(err({ format: "ogg-opus", "sample-rate": "44100" })).toBe(
-      "--sample-rate must be one of 8000, 12000, 16000, 24000, 48000.",
-    );
+    expect(err({ format: "ogg-opus", "sample-rate": "44100" })).toBe("--sample-rate must be one of 8000, 12000, 16000, 24000, 48000.");
   });
 
   test("rejects opus-only flags on lossless formats", () => {
@@ -136,9 +134,7 @@ describe("resolveSayFlags: --bitrate and --sample-rate", () => {
     expect(ok({ out: "note.ogg", bitrate: "32000" }).bitrate).toBe(32000);
     expect(ok({ out: "note.opus", bitrate: "32000" }).bitrate).toBe(32000);
     expect(ok({ out: "note.OGA", bitrate: "32000" }).bitrate).toBe(32000);
-    expect(err({ out: "note.wav", bitrate: "32000" })).toBe(
-      "--bitrate and --sample-rate are only valid with --format ogg-opus",
-    );
+    expect(err({ out: "note.wav", bitrate: "32000" })).toBe("--bitrate and --sample-rate are only valid with --format ogg-opus");
   });
 });
 

@@ -47,9 +47,7 @@ export function publishableChanges(changed: ChangedPath[], packed: string[], fil
   const shipped = new Set(packed);
   const { allow, deny } = shippedPrefixes(files);
   return changed
-    .filter(({ status, path }) =>
-      status === "D" ? underPrefix(path, allow) && !underPrefix(path, deny) : shipped.has(path),
-    )
+    .filter(({ status, path }) => (status === "D" ? underPrefix(path, allow) && !underPrefix(path, deny) : shipped.has(path)))
     .map(({ path }) => path);
 }
 
@@ -72,8 +70,6 @@ if (import.meta.main) {
   const matched = publishableChanges(changed, packedFiles(pack.stdout.toString()), pkg.files ?? []);
   process.stdout.write(`publish=${matched.length > 0}\n`);
   console.error(
-    matched.length === 0
-      ? `Nothing that ships changed among ${changed.length} path(s) — skipping the alpha.`
-      : `Shipped paths changed: ${matched.join(", ")}`,
+    matched.length === 0 ? `Nothing that ships changed among ${changed.length} path(s) — skipping the alpha.` : `Shipped paths changed: ${matched.join(", ")}`,
   );
 }

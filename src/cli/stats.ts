@@ -30,12 +30,7 @@ const SUPPORTED_ACTIONS = "enable, disable, status, week, errors, export, reset,
 /** Runs one `kesha stats` action and reports what to print; all output happens in the caller. */
 export function runStatsAction(args: StatsCommandArgs): ActionResult {
   const action = args.action ?? "status";
-  if (
-    args.value !== undefined &&
-    action !== "export" &&
-    action !== "retention" &&
-    SUPPORTED_ACTIONS.split(", ").includes(action)
-  ) {
+  if (args.value !== undefined && action !== "export" && action !== "retention" && SUPPORTED_ACTIONS.split(", ").includes(action)) {
     return { ok: false, error: `unexpected argument '${args.value}' (kesha stats ${action} takes no value)` };
   }
   switch (action) {
@@ -94,10 +89,7 @@ export function runStatsAction(args: StatsCommandArgs): ActionResult {
       const result = vacuumStats();
       return {
         ok: true,
-        messages: info(
-          `Kesha Stats vacuumed: ${result.beforeBytes} -> ${result.afterBytes} bytes`,
-          `Database: ${result.dbPath}`,
-        ),
+        messages: info(`Kesha Stats vacuumed: ${result.beforeBytes} -> ${result.afterBytes} bytes`, `Database: ${result.dbPath}`),
       };
     }
     case "retention":

@@ -2,13 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir, tmpdir } from "node:os";
-import {
-  assertNotRealCacheUnderTest,
-  getEngineBinaryName,
-  installEngine,
-  SIDECARS,
-  warmDarwinKokoro,
-} from "../../src/engine-install";
+import { assertNotRealCacheUnderTest, getEngineBinaryName, installEngine, SIDECARS, warmDarwinKokoro } from "../../src/engine-install";
 import { log } from "../../src/log";
 import { stubbornShell, waitForPidExit, waitForPidFile } from "../helpers/process";
 import { isDarwinArm64 } from "../../src/engine-targets";
@@ -192,9 +186,7 @@ describe("an install only ever writes where it was pointed (#796)", () => {
   });
 
   posixTest("the guard leaves a redirected cache alone", () => {
-    expect(() =>
-      assertNotRealCacheUnderTest(join(process.env.KESHA_CACHE_DIR!, "engine", "bin", "kesha-engine")),
-    ).not.toThrow();
+    expect(() => assertNotRealCacheUnderTest(join(process.env.KESHA_CACHE_DIR!, "engine", "bin", "kesha-engine"))).not.toThrow();
   });
 
   // The half the binary-path check could not see: isolating only KESHA_ENGINE_BIN satisfied
@@ -328,9 +320,7 @@ describe("capabilities gate the flags forwarded to the engine (#772)", () => {
 
       const err = await failure(() => installEngine({ diarize: true }, "linux", "x64"));
       expect(err.code).toBe("E_UNSUPPORTED_PLATFORM");
-      expect(err.message).toBe(
-        "--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64",
-      );
+      expect(err.message).toBe("--diarize needs the CoreML engine, which ships for darwin-arm64 only; this host is linux x64");
 
       expect(urls).toHaveLength(0);
       expect(engineInvocations()).toHaveLength(0);

@@ -1,10 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  LANG_CONFIDENCE_FLOOR,
-  routeLanguage,
-  UNSUPPORTED_AUDIO_LANGUAGE_CONFIDENCE,
-  unsupportedAudioLanguageWarning,
-} from "../../src/language-routing";
+import { LANG_CONFIDENCE_FLOOR, routeLanguage, UNSUPPORTED_AUDIO_LANGUAGE_CONFIDENCE, unsupportedAudioLanguageWarning } from "../../src/language-routing";
 
 describe("routeLanguage (Exploratory S11-2)", () => {
   test("an Engine text result names lang whatever its score: its scale is not tinyld's", () => {
@@ -80,9 +75,7 @@ describe("audio language outside the ASR set (#1463)", () => {
   test("an ASR language in the audio gets no warning and text still names lang", () => {
     const audio = { code: "en", confidence: 0.99 };
     expect(unsupportedAudioLanguageWarning(audio, undefined)).toBeNull();
-    expect(
-      routeLanguage({ audioLanguage: audio, textLanguage: { code: "ru", confidence: 0.9, source: "engine" } }).lang,
-    ).toBe("ru");
+    expect(routeLanguage({ audioLanguage: audio, textLanguage: { code: "ru", confidence: 0.9, source: "engine" } }).lang).toBe("ru");
   });
 
   test("an unsure zh audio guess neither warns nor overrides the text", () => {

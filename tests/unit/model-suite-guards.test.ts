@@ -40,27 +40,26 @@ describe("integration suites that drive a real engine", () => {
     expect(detected).not.toContain("say.test.ts");
   });
 
-  test.each(
-    realEngineSuites
-      .filter((s) => UNGATED_BY_DESIGN[s.name] === undefined)
-      .map(({ name, source }) => [name, source] as const),
-  )("%s gates every case it declares", (name, source) => {
-    const findings = ungatedCases(source);
-    if (findings.length === 0) return;
+  test.each(realEngineSuites.filter((s) => UNGATED_BY_DESIGN[s.name] === undefined).map(({ name, source }) => [name, source] as const))(
+    "%s gates every case it declares",
+    (name, source) => {
+      const findings = ungatedCases(source);
+      if (findings.length === 0) return;
 
-    const listed = findings.map((f) => `  ${SUITE_DIR}/${name}:${f.line}  ${f.declaration}\n    ${f.reason}`);
-    const declared = gateIdentifiers(source);
-    throw new Error(
-      `${SUITE_DIR}/${name} needs ${engineDependencies(source).join(" and ")}, which the fast CI lane ` +
-        `does not have — but these cases run unconditionally:\n${listed.join("\n")}\n\n` +
-        `Gate the whole suite with \`describe.skipIf(!<gate>)\`, or each case with \`it.skipIf(!<gate>)\`, ` +
-        `where <gate> is a top-level const derived from engineGate()/modelsRequired() ` +
-        `(tests/helpers/model-gate.ts) or from the source-built engine plus KOKORO_MODEL/KOKORO_VOICE. ` +
-        `${declared.length > 0 ? `This suite already declares ${declared.join(", ")}.` : `This suite declares no such const yet.`} ` +
-        `The convention is written up in ${SUITE_DIR}/README.md; if the suite is meant to run ungated, ` +
-        `add it to UNGATED_BY_DESIGN in tests/unit/model-suite-guards.test.ts with the reason.`,
-    );
-  });
+      const listed = findings.map((f) => `  ${SUITE_DIR}/${name}:${f.line}  ${f.declaration}\n    ${f.reason}`);
+      const declared = gateIdentifiers(source);
+      throw new Error(
+        `${SUITE_DIR}/${name} needs ${engineDependencies(source).join(" and ")}, which the fast CI lane ` +
+          `does not have — but these cases run unconditionally:\n${listed.join("\n")}\n\n` +
+          `Gate the whole suite with \`describe.skipIf(!<gate>)\`, or each case with \`it.skipIf(!<gate>)\`, ` +
+          `where <gate> is a top-level const derived from engineGate()/modelsRequired() ` +
+          `(tests/helpers/model-gate.ts) or from the source-built engine plus KOKORO_MODEL/KOKORO_VOICE. ` +
+          `${declared.length > 0 ? `This suite already declares ${declared.join(", ")}.` : `This suite declares no such const yet.`} ` +
+          `The convention is written up in ${SUITE_DIR}/README.md; if the suite is meant to run ungated, ` +
+          `add it to UNGATED_BY_DESIGN in tests/unit/model-suite-guards.test.ts with the reason.`,
+      );
+    },
+  );
 
   test("carry no stale exemptions", () => {
     for (const [name, reason] of Object.entries(UNGATED_BY_DESIGN)) {
@@ -124,12 +123,7 @@ describe("ungatedCases", () => {
   });
 
   test("reports a case added beside a guarded one", () => {
-    const findings = ungatedCases(
-      PER_CASE_SUITE.replace(
-        '  it.skipIf(!AVAILABLE)("case", () => {});\n',
-        (kept) => `${kept}  it("added later", () => {});\n`,
-      ),
-    );
+    const findings = ungatedCases(PER_CASE_SUITE.replace('  it.skipIf(!AVAILABLE)("case", () => {});\n', (kept) => `${kept}  it("added later", () => {});\n`));
     expect(findings).toHaveLength(1);
     expect(findings[0]!.declaration).toContain("added later");
     expect(findings[0]!.reason).toContain("neither it nor an enclosing describe");
@@ -142,9 +136,7 @@ describe("ungatedCases", () => {
   });
 
   test("rejects a skipIf that gates on something other than the engine", () => {
-    const findings = ungatedCases(
-      PER_CASE_SUITE.replace("it.skipIf(!AVAILABLE)", 'it.skipIf(process.platform === "win32")'),
-    );
+    const findings = ungatedCases(PER_CASE_SUITE.replace("it.skipIf(!AVAILABLE)", 'it.skipIf(process.platform === "win32")'));
     expect(findings).toHaveLength(1);
     expect(findings[0]!.reason).toContain("no constant derived from a real-engine probe");
   });

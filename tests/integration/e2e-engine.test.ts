@@ -38,27 +38,20 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
     cwd: CWD,
   });
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const [stdout, stderr, exitCode] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
 
   return { stdout: stdout.trim(), stderr: stderr.trim(), exitCode };
 }
 
-test.skipIf(!engineInstalled)(
-  "a CLI run from this suite keeps its log and Stats DB in the harness home (#1582)",
-  async () => {
-    const { stdout, exitCode } = await runCli(["status", "--json"]);
-    expect(exitCode).toBe(0);
-    const { paths } = JSON.parse(stdout);
-    expect({ logs: paths.logs.path, stats: paths.stats.path }).toEqual({
-      logs: join(resolve(process.env.KESHA_HOME!), "logs"),
-      stats: join(resolve(process.env.KESHA_HOME!), "stats.sqlite"),
-    });
-  },
-);
+test.skipIf(!engineInstalled)("a CLI run from this suite keeps its log and Stats DB in the harness home (#1582)", async () => {
+  const { stdout, exitCode } = await runCli(["status", "--json"]);
+  expect(exitCode).toBe(0);
+  const { paths } = JSON.parse(stdout);
+  expect({ logs: paths.logs.path, stats: paths.stats.path }).toEqual({
+    logs: join(resolve(process.env.KESHA_HOME!), "logs"),
+    stats: join(resolve(process.env.KESHA_HOME!), "stats.sqlite"),
+  });
+});
 
 async function runEngine(
   args: string[],
@@ -93,11 +86,7 @@ async function runEngine(
           proc.kill();
         }, opts.timeoutMs);
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const [stdout, stderr, exitCode] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   if (timeout !== undefined) clearTimeout(timeout);
 
   return {
@@ -126,9 +115,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     expect(exitCode).toBe(0);
     const live = parseDescribe(JSON.parse(stdout));
     expect(live).not.toBeNull();
-    expect(
-      describeDocument({ backend: live!.backend, profile: live!.profile, features: live!.features, tts: live!.tts }),
-    ).toEqual(live!);
+    expect(describeDocument({ backend: live!.backend, profile: live!.profile, features: live!.features, tts: live!.tts })).toEqual(live!);
   });
 
   test("transcribe.diarize absent off darwin-arm64 (#199)", async () => {
@@ -140,10 +127,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
       // KESHA_ENGINE_BIN may point at a dev build without system_diarize; .github/scripts/smoke-engine-binary.sh gates presence for releases.
       const advertises = caps.features.includes(TRANSCRIBE_DIARIZE_FEATURE);
       if (!advertises) {
-        console.warn(
-          `engine at ${getEngineBinPath()} lacks ${TRANSCRIBE_DIARIZE_FEATURE}; ` +
-            "likely a dev build without --features system_diarize",
-        );
+        console.warn(`engine at ${getEngineBinPath()} lacks ${TRANSCRIBE_DIARIZE_FEATURE}; likely a dev build without --features system_diarize`);
       }
     } else {
       expect(caps.features).not.toContain(TRANSCRIBE_DIARIZE_FEATURE);
@@ -167,11 +151,7 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
    * lane that can catch it.
    */
   function isMissingPrerequisite(stderr: string): boolean {
-    return (
-      stderr.includes("diarization model not found") ||
-      stderr.includes("kesha-diarize sidecar not found") ||
-      stderr.includes("VAD model")
-    );
+    return stderr.includes("diarization model not found") || stderr.includes("kesha-diarize sidecar not found") || stderr.includes("VAD model");
   }
 
   test("--speakers round-trip stamps every segment (#199)", async () => {
@@ -221,18 +201,12 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
     const phases = stderr
       .split("\n")
       .map(parseEventLine)
-      .flatMap((parsed) =>
-        parsed.ok && parsed.event.kind === "progress" && parsed.event.phase === "diarize" ? [parsed.event.message] : [],
-      );
+      .flatMap((parsed) => (parsed.ok && parsed.event.kind === "progress" && parsed.event.phase === "diarize" ? [parsed.event.message] : []));
     const loadingPattern = /^loading the CoreML model on \w[\w-]*$/;
     const readyPattern = /^model ready in [\d.]+s; reading the audio$/;
     const donePattern = /^done in [\d.]+s \(\d+ spans\)$/;
     expect(phases).toEqual(
-      expect.arrayContaining([
-        expect.stringMatching(loadingPattern),
-        expect.stringMatching(readyPattern),
-        expect.stringMatching(donePattern),
-      ]),
+      expect.arrayContaining([expect.stringMatching(loadingPattern), expect.stringMatching(readyPattern), expect.stringMatching(donePattern)]),
     );
     const at = (pattern: RegExp) => phases.findIndex((message) => pattern.test(message));
     expect(at(readyPattern)).toBeGreaterThan(at(loadingPattern));

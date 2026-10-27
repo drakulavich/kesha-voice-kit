@@ -125,12 +125,7 @@ function pct(value: number): string {
 }
 
 function renderSummary(title: string, total: FileCoverage, checked: Array<FileCoverage & { min: number }>): string {
-  const rows = [
-    `## ${title}`,
-    "",
-    `Total line coverage: **${pct(total.linePct)}%** (${total.linesHit}/${total.linesFound})`,
-    "",
-  ];
+  const rows = [`## ${title}`, "", `Total line coverage: **${pct(total.linePct)}%** (${total.linesHit}/${total.linesFound})`, ""];
   // Only render the per-file table when floors are configured; with an empty
   // minFileLines map `checked` is empty, so skip the header to avoid an
   // orphaned table in the CI summary.

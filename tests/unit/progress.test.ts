@@ -182,9 +182,7 @@ describe("createPercentProgress", () => {
     });
 
     const combined = writes.join("");
-    expect(combined).toMatch(
-      /\rTranscribing file\.wav {2}\[░+\] \d+% {2}transcribe: transcribing segment 10 of 22\x1b\[K/,
-    );
+    expect(combined).toMatch(/\rTranscribing file\.wav {2}\[░+\] \d+% {2}transcribe: transcribing segment 10 of 22\x1b\[K/);
     expect(combined).toMatch(/transcribe: done\x1b\[K/);
     expect(combined).not.toContain("segment 10 of 22\n");
     expect(combined.split("\n")).toHaveLength(2);

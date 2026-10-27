@@ -68,11 +68,7 @@ async function check(
   write(untracked);
   await afterAdd(dir);
   const proc = Bun.spawn(["bun", SCRIPT], { cwd: dir, stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const [stdout, stderr, exitCode] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   return { exitCode, stdout, stderr };
 }
 
@@ -91,10 +87,7 @@ describe("check:file-sizes against a repository", () => {
   });
 
   test("a repository whose tracked files stay under the limit passes, whatever is untracked", async () => {
-    const { exitCode, stdout, stderr } = await check(
-      { "tests/fixtures/edge.wav": MIB - 1, "docs/logo.png": 600_000 },
-      { "scratch.bin": MIB * 2 },
-    );
+    const { exitCode, stdout, stderr } = await check({ "tests/fixtures/edge.wav": MIB - 1, "docs/logo.png": 600_000 }, { "scratch.bin": MIB * 2 });
 
     expect({ exitCode, stdout, stderr }).toEqual({ exitCode: 0, stdout: "", stderr: "" });
   });

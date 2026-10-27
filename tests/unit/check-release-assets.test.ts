@@ -11,9 +11,7 @@ const sums = `${"a".repeat(64)}  ./kesha-engine-linux-x64\n${"b".repeat(64)}  ./
 
 describe("assetProblems", () => {
   test("a directory holding every manifest asset, each checksummed, passes", () => {
-    expect(
-      assetProblems(manifest, ["SHA256SUMS", "kesha-engine-linux-x64", "kesha-release-manifest.json"], sums),
-    ).toEqual([]);
+    expect(assetProblems(manifest, ["SHA256SUMS", "kesha-engine-linux-x64", "kesha-release-manifest.json"], sums)).toEqual([]);
   });
 
   test("an asset the manifest names but the build never produced fails, by name", () => {
@@ -29,9 +27,9 @@ describe("assetProblems", () => {
 
   test("an asset missing from SHA256SUMS fails", () => {
     const partial = `${"a".repeat(64)}  ./kesha-engine-linux-x64\n`;
-    expect(
-      assetProblems(manifest, ["SHA256SUMS", "kesha-engine-linux-x64", "kesha-release-manifest.json"], partial),
-    ).toEqual(["kesha-release-manifest.json is not listed in SHA256SUMS"]);
+    expect(assetProblems(manifest, ["SHA256SUMS", "kesha-engine-linux-x64", "kesha-release-manifest.json"], partial)).toEqual([
+      "kesha-release-manifest.json is not listed in SHA256SUMS",
+    ]);
   });
 });
 

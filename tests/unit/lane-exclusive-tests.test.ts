@@ -58,9 +58,7 @@ describe("a lane-exclusive test cannot run nowhere", () => {
   test("every name the lane selects still exists", () => {
     const named = [...laneFilter().matchAll(/test\(([a-z0-9_]+)\)/g)].map((m) => m[1]!);
     expect(named.length).toBeGreaterThan(0);
-    const sources = ["rust/src/backend/fluidaudio.rs", "rust/tests/record_cli.rs", ...LANE_EXCLUSIVE]
-      .map((relative) => read(relative))
-      .join("\n");
+    const sources = ["rust/src/backend/fluidaudio.rs", "rust/tests/record_cli.rs", ...LANE_EXCLUSIVE].map((relative) => read(relative)).join("\n");
     // A rename that empties the lane must fail here rather than quietly select nothing.
     for (const name of named) expect(sources).toContain(`fn ${name}`);
   });
@@ -82,9 +80,7 @@ describe("the darwin-only unit tests have a lane", () => {
   });
 
   test("the step that runs the unit suite is not conditioned off a row", () => {
-    const steps = unitTests().steps.filter(
-      (s: { run?: string }) => typeof s.run === "string" && s.run.includes("test:unit"),
-    );
+    const steps = unitTests().steps.filter((s: { run?: string }) => typeof s.run === "string" && s.run.includes("test:unit"));
     expect(steps).toHaveLength(1);
     expect(steps[0].if).toBeUndefined();
   });

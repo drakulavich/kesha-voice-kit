@@ -30,12 +30,7 @@ export const KOKORO_ANE_EN_REQUIRED = [
 ];
 
 /** Top level of `models/manifest.rs::KOKORO_G2P_FILES` — the shared BART G2P and the Misaki lexicon. */
-export const KOKORO_G2P_REQUIRED = [
-  "G2PDecoder.mlmodelc",
-  "G2PEncoder.mlmodelc",
-  "g2p_vocab.json",
-  "us_lexicon_cache.json",
-];
+export const KOKORO_G2P_REQUIRED = ["G2PDecoder.mlmodelc", "G2PEncoder.mlmodelc", "g2p_vocab.json", "us_lexicon_cache.json"];
 
 /** One staged asset set, as doctor reports it and `install --plan` previews it. */
 export interface KokoroAneComponent {
@@ -144,10 +139,7 @@ export function kokoroTtsLanguages(options: KokoroAneOptions = {}): KokoroTtsLan
   if (!isDarwinArm64(options.platform, options.arch)) return { staged: [], missing: [] };
   const homeDir = options.homeDir ?? diagnosticHomeDir();
   const roots = { homeDir, cacheRoot: options.cacheRoot };
-  const staged = new Set([
-    ...stagedLanguagesIn(kokoroAneDir(roots)),
-    ...stagedLanguagesIn(join(kokoroAneZhDir(roots), "voices")),
-  ]);
+  const staged = new Set([...stagedLanguagesIn(kokoroAneDir(roots)), ...stagedLanguagesIn(join(kokoroAneZhDir(roots), "voices"))]);
   return {
     staged: [...staged].sort(),
     missing: KOKORO_LANGUAGES.filter((lang) => !staged.has(lang)),

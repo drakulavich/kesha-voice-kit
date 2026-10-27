@@ -268,9 +268,7 @@ describe("engineFunctionalHealth (#801)", () => {
     stageEngine("kesha-functional-describe-error-", DESCRIBE_ERROR_ENGINE);
     const health = await engineFunctionalHealth();
     expect(health.status).toBe("protocol");
-    expect(health.status === "protocol" && health.detail).toContain(
-      "error [E_MODEL_MISSING]: the TTS bundle is missing",
-    );
+    expect(health.status === "protocol" && health.detail).toContain("error [E_MODEL_MISSING]: the TTS bundle is missing");
   });
 });
 
@@ -371,9 +369,7 @@ describe("--tts codes are validated before the engine download (#770)", () => {
   // Without a static list, `kesha install --tts ja` on linux downloaded a full engine and
   // only then heard "unsupported" from it.
   test("an unsupported code fails without an engine to ask", () => {
-    expect(() => resolveTtsLangs({ tts: true, positionals: ["ja"] }, installableTtsLangs("linux", "x64"))).toThrow(
-      /ja/,
-    );
+    expect(() => resolveTtsLangs({ tts: true, positionals: ["ja"] }, installableTtsLangs("linux", "x64"))).toThrow(/ja/);
     expect(resolveTtsLangs({ tts: true, positionals: ["ru"] }, installableTtsLangs("linux", "x64"))).toEqual(["ru"]);
   });
 });

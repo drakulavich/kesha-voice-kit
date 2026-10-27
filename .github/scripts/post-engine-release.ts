@@ -116,8 +116,7 @@ function replaceServerVersions(source: string, currentVersion: string, version: 
     throw new Error(`server.json#version (${current}) does not match package.json#version (${currentVersion})`);
   }
   const packages = server.packages;
-  if (!Array.isArray(packages) || packages.length === 0)
-    throw new Error("server.json#packages must be a non-empty array");
+  if (!Array.isArray(packages) || packages.length === 0) throw new Error("server.json#packages must be a non-empty array");
   for (const [index, entry] of packages.entries()) {
     const pkg = asRecord(entry, `server.json#packages[${index}]`);
     if (stringAt(pkg.version, `server.json#packages[${index}].version`) !== current) {
@@ -184,8 +183,7 @@ export function buildPostEngineReleaseFollowup(input: FollowupInput): Followup {
 function option(name: string): string {
   const index = process.argv.indexOf(name);
   const value = index === -1 ? undefined : process.argv[index + 1];
-  if (!value || value.startsWith("-"))
-    throw new Error(`usage: bun .github/scripts/post-engine-release.ts --tag vX.Y.Z`);
+  if (!value || value.startsWith("-")) throw new Error(`usage: bun .github/scripts/post-engine-release.ts --tag vX.Y.Z`);
   return value;
 }
 
@@ -201,10 +199,7 @@ async function main(): Promise<void> {
   const tag = option("--tag");
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error("GITHUB_TOKEN is required to read the published release");
-  const raw = asRecord(
-    await fetchJson(`https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`, token),
-    "release",
-  );
+  const raw = asRecord(await fetchJson(`https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`, token), "release");
   if (raw.published_at === null || typeof raw.published_at !== "string") {
     throw new Error(`release ${tag} is not published`);
   }

@@ -748,9 +748,7 @@ describe("renderWeekSummary", () => {
   });
 
   test("the realtime factor is input audio over STT time, and n/a without both", () => {
-    expect(renderWeekSummary(weekSummary({ inputDurationMs: 60_000, sttTimeMs: 20_000 }))).toContain(
-      "STT time: 20s (3.0x realtime)",
-    );
+    expect(renderWeekSummary(weekSummary({ inputDurationMs: 60_000, sttTimeMs: 20_000 }))).toContain("STT time: 20s (3.0x realtime)");
     expect(renderWeekSummary(weekSummary({ inputDurationMs: 60_000 }))).toContain("(n/a realtime)");
     expect(renderWeekSummary(weekSummary({ sttTimeMs: 20_000 }))).toContain("(n/a realtime)");
   });
@@ -1037,9 +1035,7 @@ describe("sanitizeStatsError", () => {
 
   test("removes paths, query strings, stack lines, and truncates long messages", () => {
     const long = "x".repeat(400);
-    const err = new Error(
-      `/Users/alice/audio/private.wav failed at https://example.com/a?token=secret {"text":"private transcript"}\n    at frame\n${long}`,
-    );
+    const err = new Error(`/Users/alice/audio/private.wav failed at https://example.com/a?token=secret {"text":"private transcript"}\n    at frame\n${long}`);
     const sanitized = sanitizeStatsError(err);
     expect(sanitized.errorClass).toBe("Error");
     expect(sanitized.message).not.toContain("/Users/alice");

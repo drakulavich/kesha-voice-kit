@@ -245,9 +245,7 @@ describe("installEngine --engine-version (#738)", () => {
       writeFileSync(`${binPath}.version`, "1.0.0\n");
       stubReleases([]);
 
-      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(
-        new RegExp(`release v${OVERRIDE.replace(/\./g, "\\.")}`),
-      );
+      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(new RegExp(`release v${OVERRIDE.replace(/\./g, "\\.")}`));
 
       expect(readFileSync(binPath, "utf8")).toBe("previous engine");
       expect(readInstalledEngineVersion(binPath)).toBe("1.0.0");

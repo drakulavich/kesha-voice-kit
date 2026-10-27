@@ -37,9 +37,7 @@ export const completionsCommand = defineCommand({
   async run({ args }: { args: CompletionsCommandArgs }) {
     const shell = args.shell;
     if (!shell || !isShell(shell)) {
-      log.error(
-        renderInvalidArg(shell ? `unknown shell '${shell}' (bash, zsh or fish)` : "missing shell (bash, zsh or fish)"),
-      );
+      log.error(renderInvalidArg(shell ? `unknown shell '${shell}' (bash, zsh or fish)` : "missing shell (bash, zsh or fish)"));
       process.stderr.write("usage: kesha completions <bash|zsh|fish>\n");
       process.exit(2);
     }

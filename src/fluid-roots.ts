@@ -111,8 +111,7 @@ export function fluidSubsystemDirs(options: FluidRootsOptions = {}): FluidSubsys
   const asrLegacy = legacyFluidAsrCachePath(homeDir);
   const sortformerLegacy = legacySortformerDir(homeDir);
 
-  const at = (legacy: string, legacyReady: boolean, ...repoSubpath: string[]): string =>
-    legacyReady ? legacy : join(modelsRoot, ...repoSubpath);
+  const at = (legacy: string, legacyReady: boolean, ...repoSubpath: string[]): string => (legacyReady ? legacy : join(modelsRoot, ...repoSubpath));
 
   return [
     {
@@ -202,7 +201,5 @@ export function staleSortformerBytes(options: FluidRootsOptions = {}): number {
   } catch {
     return 0;
   }
-  return names
-    .filter((name) => name.endsWith(".mlmodelc") && name !== current)
-    .reduce((n, name) => n + dirSizeBytes(join(dir, name)), 0);
+  return names.filter((name) => name.endsWith(".mlmodelc") && name !== current).reduce((n, name) => n + dirSizeBytes(join(dir, name)), 0);
 }

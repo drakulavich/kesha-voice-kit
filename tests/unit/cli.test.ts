@@ -263,9 +263,7 @@ describe("record command validation", () => {
 
   test("noRecordingBackendMessage is E_ENGINE_SPAWN naming the missing engine path and an install hint", () => {
     const message = noRecordingBackendMessage();
-    expect(message).toStartWith(
-      `error [E_ENGINE_SPAWN]: No recording backend is installed: no kesha-engine at ${getEngineBinPath()}\n  hint: `,
-    );
+    expect(message).toStartWith(`error [E_ENGINE_SPAWN]: No recording backend is installed: no kesha-engine at ${getEngineBinPath()}\n  hint: `);
     expect(message).toMatch(/kesha (install|init)/);
   });
 });
@@ -286,8 +284,7 @@ describe("directory input rejection (#directory-check)", () => {
 
 describe("CLI help golden contracts (#324 P1)", () => {
   test("main help matches the normalized golden output", async () => {
-    expect(normalizeUsage(await renderUsage(createMainCommand())))
-      .toBe(`Kesha Voice Kit listens and talks back: local speech for agents and scripts.
+    expect(normalizeUsage(await renderUsage(createMainCommand()))).toBe(`Kesha Voice Kit listens and talks back: local speech for agents and scripts.
 
 Examples:
   kesha audio.ogg          Transcribe an audio file.
@@ -477,11 +474,7 @@ describe("TOON output (#138)", () => {
 
   test("decodes to the same data as --json for every mix of optional fields (#1366)", () => {
     const audioLanguage = [{}, { audioLanguage: undefined }, { audioLanguage: { code: "ru", confidence: 0.99 } }];
-    const textLanguage = [
-      {},
-      { textLanguage: undefined },
-      { textLanguage: { code: "ru", confidence: 0.98, source: "engine" as const } },
-    ];
+    const textLanguage = [{}, { textLanguage: undefined }, { textLanguage: { code: "ru", confidence: 0.98, source: "engine" as const } }];
     const segments = [{}, { segments: [] }, { segments: [{ start: 0, end: 1.2, text: "Привет", speaker: 0 }] }];
     const rows: TranscribeResult[] = [];
     for (const a of audioLanguage) {
@@ -745,11 +738,7 @@ function okFmt(format: "json" | "toon" | "transcript" | "text" = "text"): Resolv
 }
 
 describe("validateTranscribeArgs guards", () => {
-  function validate(
-    argsOverrides: Partial<MainCommandArgs>,
-    rawArgs: string[],
-    fmt: ResolvedOutputFormat & { ok: true },
-  ) {
+  function validate(argsOverrides: Partial<MainCommandArgs>, rawArgs: string[], fmt: ResolvedOutputFormat & { ok: true }) {
     const parsedVadArgs = parseArgs<typeof MAIN_VAD_ARGS>(rawArgs, MAIN_VAD_ARGS);
     return validateTranscribeArgs(
       defaultMainArgs({
@@ -762,22 +751,14 @@ describe("validateTranscribeArgs guards", () => {
     );
   }
 
-  function expectRejected(
-    argsOverrides: Partial<MainCommandArgs>,
-    rawArgs: string[],
-    fmt: ResolvedOutputFormat & { ok: true },
-  ): string {
+  function expectRejected(argsOverrides: Partial<MainCommandArgs>, rawArgs: string[], fmt: ResolvedOutputFormat & { ok: true }): string {
     const result = validate(argsOverrides, rawArgs, fmt);
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error("expected validateTranscribeArgs to reject");
     return result.error;
   }
 
-  function expectAccepted(
-    argsOverrides: Partial<MainCommandArgs>,
-    rawArgs: string[],
-    fmt: ResolvedOutputFormat & { ok: true },
-  ) {
+  function expectAccepted(argsOverrides: Partial<MainCommandArgs>, rawArgs: string[], fmt: ResolvedOutputFormat & { ok: true }) {
     const result = validate(argsOverrides, rawArgs, fmt);
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error(`expected acceptance, got: ${result.error}`);
@@ -785,12 +766,8 @@ describe("validateTranscribeArgs guards", () => {
   }
 
   test("--lang must name a language (#1581)", () => {
-    expect(expectRejected({ lang: "xx" }, ["--lang", "xx"], okFmt())).toBe(
-      '--lang "xx" is not a language code; pass one such as en, ru or pt-BR.',
-    );
-    expect(expectRejected({ lang: "" }, ["--lang", ""], okFmt())).toBe(
-      '--lang "" is not a language code; pass one such as en, ru or pt-BR.',
-    );
+    expect(expectRejected({ lang: "xx" }, ["--lang", "xx"], okFmt())).toBe('--lang "xx" is not a language code; pass one such as en, ru or pt-BR.');
+    expect(expectRejected({ lang: "" }, ["--lang", ""], okFmt())).toBe('--lang "" is not a language code; pass one such as en, ru or pt-BR.');
     for (const lang of ["en", "EN", "en-US", "en_US", "yue"]) expectAccepted({ lang }, ["--lang", lang], okFmt());
   });
 
@@ -799,9 +776,7 @@ describe("validateTranscribeArgs guards", () => {
   });
 
   test("--timestamps with --json is accepted", () => {
-    expect(
-      expectAccepted({ timestamps: true, json: true }, ["--timestamps", "--json"], okFmt("json")).outputFormat,
-    ).toBe("json");
+    expect(expectAccepted({ timestamps: true, json: true }, ["--timestamps", "--json"], okFmt("json")).outputFormat).toBe("json");
   });
 
   test("--speakers without machine-readable output is rejected", () => {
@@ -809,29 +784,19 @@ describe("validateTranscribeArgs guards", () => {
   });
 
   test("--speakers with --toon is accepted", () => {
-    expect(expectAccepted({ speakers: true, toon: true }, ["--speakers", "--toon"], okFmt("toon")).outputFormat).toBe(
-      "toon",
-    );
+    expect(expectAccepted({ speakers: true, toon: true }, ["--speakers", "--toon"], okFmt("toon")).outputFormat).toBe("toon");
   });
 
   test("--include-errors without a machine-readable format is rejected", () => {
-    expect(expectRejected({ "include-errors": true }, ["--include-errors"], okFmt())).toContain(
-      "--include-errors requires --json",
-    );
+    expect(expectRejected({ "include-errors": true }, ["--include-errors"], okFmt())).toContain("--include-errors requires --json");
   });
 
   test("--include-errors with --json is accepted", () => {
-    expect(
-      expectAccepted({ "include-errors": true, json: true }, ["--include-errors", "--json"], okFmt("json"))
-        .outputFormat,
-    ).toBe("json");
+    expect(expectAccepted({ "include-errors": true, json: true }, ["--include-errors", "--json"], okFmt("json")).outputFormat).toBe("json");
   });
 
   test("--include-errors with --toon is accepted (#839)", () => {
-    expect(
-      expectAccepted({ "include-errors": true, toon: true }, ["--include-errors", "--toon"], okFmt("toon"))
-        .outputFormat,
-    ).toBe("toon");
+    expect(expectAccepted({ "include-errors": true, toon: true }, ["--include-errors", "--toon"], okFmt("toon")).outputFormat).toBe("toon");
   });
 
   test("--vad and --no-vad are mutually exclusive", () => {
@@ -847,15 +812,11 @@ describe("validateTranscribeArgs guards", () => {
   });
 
   test("--speakers with --no-vad is rejected (#768)", () => {
-    expect(expectRejected({ speakers: true, json: true }, ["--speakers", "--no-vad"], okFmt("json"))).toContain(
-      "--speakers cannot be combined with --no-vad",
-    );
+    expect(expectRejected({ speakers: true, json: true }, ["--speakers", "--no-vad"], okFmt("json"))).toContain("--speakers cannot be combined with --no-vad");
   });
 
   test("--speakers alone still routes through auto VAD", () => {
-    expect(expectAccepted({ speakers: true, json: true }, ["--speakers", "--json"], okFmt("json")).vadMode).toBe(
-      "auto",
-    );
+    expect(expectAccepted({ speakers: true, json: true }, ["--speakers", "--json"], okFmt("json")).vadMode).toBe("auto");
   });
 });
 

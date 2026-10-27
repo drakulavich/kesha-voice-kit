@@ -58,9 +58,7 @@ export function flattenPlan(plan: unknown): PlanEntry[] {
   for (const [group, value] of Object.entries(plan as Record<string, unknown>)) {
     if (Array.isArray(value)) entries.push(...value.map((file) => planFile(group, file)));
     else if (value && typeof value === "object" && "relPath" in value) entries.push(planFile(group, value));
-    else
-      for (const [lang, file] of Object.entries(value as Record<string, unknown>))
-        entries.push(planFile(`${group}.${lang}`, file));
+    else for (const [lang, file] of Object.entries(value as Record<string, unknown>)) entries.push(planFile(`${group}.${lang}`, file));
   }
   return entries;
 }
@@ -287,19 +285,14 @@ async function probeSize(
  * 250 ms/500 ms retry failed every time. A weekly job that files an issue over that would
  * train everyone to ignore it.
  */
-export async function liveSize(
-  url: string,
-  { fetchImpl = fetch, attempts = 4, backoffMs = 1000 }: LiveSizeOptions = {},
-): Promise<number | null> {
+export async function liveSize(url: string, { fetchImpl = fetch, attempts = 4, backoffMs = 1000 }: LiveSizeOptions = {}): Promise<number | null> {
   const options = { fetchImpl, attempts, backoffMs };
   const head = await probeSize(url, options, HEAD_PROBE, (res) => contentLength(res.headers));
   if (head !== null) return head;
   // raw.githubusercontent.com answers HEAD 200 with no Content-Length at all, which left the
   // plan's one non-HuggingFace entry permanently unmeasurable (#1054). Asking for a single
   // byte costs no download and reports the whole length in Content-Range.
-  return probeSize(url, options, RANGE_PROBE, (res) =>
-    res.status === 206 ? rangeTotal(res.headers) : contentLength(res.headers),
-  );
+  return probeSize(url, options, RANGE_PROBE, (res) => (res.status === 206 ? rangeTotal(res.headers) : contentLength(res.headers)));
 }
 
 export function compareEntry(entry: PlanEntry, live: number | null): Verdict {
@@ -345,9 +338,7 @@ if (import.meta.main) {
 
   const unresolved = entries.filter((entry) => urlFor(entry) === undefined);
   if (unresolved.length > 0) {
-    console.error(
-      `FAIL: ${unresolved.length} plan entr${unresolved.length === 1 ? "y has" : "ies have"} no URL in ${manifestPath}:`,
-    );
+    console.error(`FAIL: ${unresolved.length} plan entr${unresolved.length === 1 ? "y has" : "ies have"} no URL in ${manifestPath}:`);
     for (const entry of unresolved) console.error(`  - ${entry.relPath} (${entry.group})`);
     console.error(`\n  Either the manifest dropped the file, or this script stopped reading it.`);
     process.exit(1);

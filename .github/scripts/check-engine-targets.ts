@@ -40,9 +40,7 @@ try {
   process.exit(0);
 }
 
-const version = newestStableRelease(
-  releases.map((r) => ({ tagName: r.tag_name, isDraft: r.draft, isPrerelease: r.prerelease })),
-);
+const version = newestStableRelease(releases.map((r) => ({ tagName: r.tag_name, isDraft: r.draft, isPrerelease: r.prerelease })));
 const published = new Set(releases.find((r) => r.tag_name === `v${version}`)!.assets.map((a) => a.name));
 const missing = downloadedAssetNames().filter((name) => !published.has(name));
 

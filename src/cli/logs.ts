@@ -33,11 +33,7 @@ export function runLogsAction(args: LogsCommandArgs): ActionResult {
         ok: true,
         messages: [
           { level: "success", text: "Kesha diagnostic logs enabled" },
-          ...info(
-            `Mode: ${status.mode}`,
-            `Path: ${status.activePath}`,
-            `Rotation: ${humanBytes(status.maxBytes)}, keep ${status.retain}`,
-          ),
+          ...info(`Mode: ${status.mode}`, `Path: ${status.activePath}`, `Rotation: ${humanBytes(status.maxBytes)}, keep ${status.retain}`),
         ],
       };
     }

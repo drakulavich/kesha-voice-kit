@@ -74,13 +74,7 @@ function parseJson<T>(value: string, label: string): T {
   }
 }
 
-async function verifyRemoteTag(
-  runner: CommandRunner,
-  tag: string,
-  target: string,
-  notes: string,
-  identity: { name: string; email: string },
-): Promise<void> {
+async function verifyRemoteTag(runner: CommandRunner, tag: string, target: string, notes: string, identity: { name: string; email: string }): Promise<void> {
   const ref = parseJson<{ ref?: string; object?: { type?: string; sha?: string } }>(
     await shell(runner, "gh", "api", `repos/${REPO}/git/ref/tags/${tag}`),
     "tag reference",
@@ -94,12 +88,7 @@ async function verifyRemoteTag(
     object?: { type?: string; sha?: string };
     tagger?: { name?: string; email?: string };
   }>(await shell(runner, "gh", "api", `repos/${REPO}/git/tags/${ref.object.sha}`), "tag object");
-  if (
-    object.tag !== tag ||
-    object.message !== notes ||
-    object.object?.type !== "commit" ||
-    object.object.sha !== target
-  ) {
+  if (object.tag !== tag || object.message !== notes || object.object?.type !== "commit" || object.object.sha !== target) {
     fail(`remote annotated tag ${tag} does not match the requested target or notes`);
   }
   if (object.tagger?.name !== identity.name || object.tagger.email !== identity.email) {
@@ -129,19 +118,15 @@ async function waitForWorkflow(runner: CommandRunner, tag: string, target: strin
     if (runs.some((run) => run.headSha === target && run.event === "push")) return;
     await Bun.sleep(2_000);
   }
-  fail(
-    `no push-triggered release.yml run appeared for ${tag} at ${target}; release.yml refuses a stable dispatch, so check the Actions tab before re-tagging`,
-  );
+  fail(`no push-triggered release.yml run appeared for ${tag} at ${target}; release.yml refuses a stable dispatch, so check the Actions tab before re-tagging`);
 }
 
 function dogfoodRefusal(notes: string): string | null {
   const section = /^## Dogfood\n([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(notes)?.[1] ?? "";
   const open = section.split("\n").filter((line) => line.startsWith("- [ ]"));
   const ticked = section.split("\n").filter((line) => /^- \[[xX]\]/.test(line)).length;
-  const required =
-    readFileSync(new URL("../docs/dogfood.md", import.meta.url), "utf8").match(/^- \[ \]/gm)?.length ?? 0;
-  if (ticked < required)
-    return `release notes tick ${ticked} of the ${required} items in docs/dogfood.md; paste its checklist as ## Dogfood and tick each one`;
+  const required = readFileSync(new URL("../docs/dogfood.md", import.meta.url), "utf8").match(/^- \[ \]/gm)?.length ?? 0;
+  if (ticked < required) return `release notes tick ${ticked} of the ${required} items in docs/dogfood.md; paste its checklist as ## Dogfood and tick each one`;
   if (open.length > 0) return `release notes have unticked dogfood items:\n${open.join("\n")}`;
   return null;
 }
@@ -168,9 +153,7 @@ export async function createStableTag(options: Options, notes: string, runner: C
     await shell(runner, "git", "tag", "-a", options.tag, target, "--cleanup=verbatim", "-F", options.notesPath);
     const pushed = await runner(["git", "push", "origin", `refs/tags/${options.tag}`]);
     if (pushed.code !== 0) {
-      fail(
-        `standard tag push failed; remote state is uncertain, so API fallback was not attempted. Verify ${options.tag} remotely before retrying`,
-      );
+      fail(`standard tag push failed; remote state is uncertain, so API fallback was not attempted. Verify ${options.tag} remotely before retrying`);
     }
   } else {
     const tagObject = requireSuccess(
@@ -188,18 +171,7 @@ export async function createStableTag(options: Options, notes: string, runner: C
     );
     const tagSha = parseJson<{ sha?: string }>(tagObject, "created tag object").sha;
     if (!tagSha || !/^[0-9a-f]{40}$/i.test(tagSha)) fail("GitHub did not return an annotated tag object SHA");
-    await shell(
-      runner,
-      "gh",
-      "api",
-      "--method",
-      "POST",
-      `repos/${REPO}/git/refs`,
-      "-f",
-      `ref=refs/tags/${options.tag}`,
-      "-f",
-      `sha=${tagSha}`,
-    );
+    await shell(runner, "gh", "api", "--method", "POST", `repos/${REPO}/git/refs`, "-f", `ref=refs/tags/${options.tag}`, "-f", `sha=${tagSha}`);
   }
 
   await verifyRemoteTag(runner, options.tag, target, notes, identity);
@@ -213,11 +185,7 @@ async function run(argv: string[], input?: string): Promise<CommandResult> {
     proc.stdin.write(input);
     proc.stdin.end();
   }
-  const [stdout, stderr, code] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   return { code, stdout, stderr };
 }
 

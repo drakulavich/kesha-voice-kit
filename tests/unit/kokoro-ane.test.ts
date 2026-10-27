@@ -2,12 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
-import {
-  KOKORO_ANE_EN_REQUIRED,
-  KOKORO_G2P_REQUIRED,
-  kokoroAneComponents,
-  kokoroTtsLanguages,
-} from "../../src/kokoro-ane";
+import { KOKORO_ANE_EN_REQUIRED, KOKORO_G2P_REQUIRED, kokoroAneComponents, kokoroTtsLanguages } from "../../src/kokoro-ane";
 import { collectDoctorReport } from "../../src/doctor";
 import { renderInstallPlan } from "../../src/install-plan";
 import { rustModelsSource } from "../helpers/rust-models-source";
@@ -152,9 +147,7 @@ describe("Rust/TS Kokoro ANE manifest agreement", () => {
     const start = rust.indexOf(`const ${constName}: &[ModelFile] = &[`);
     expect(start).toBeGreaterThan(-1);
     const block = rust.slice(start, rust.indexOf("\n];", start));
-    const paths = [...block.matchAll(/"([A-Za-z0-9_][A-Za-z0-9_./-]*)"/g)]
-      .map((m) => m[1]!)
-      .filter((p) => !/^[0-9a-f]{64}$/.test(p));
+    const paths = [...block.matchAll(/"([A-Za-z0-9_][A-Za-z0-9_./-]*)"/g)].map((m) => m[1]!).filter((p) => !/^[0-9a-f]{64}$/.test(p));
     return [...new Set(paths.map((p) => p.split("/")[0]!))].sort();
   }
 

@@ -95,9 +95,7 @@ export function npmSweptFiles(root: string): string[] {
 
 const NPM_VERB = "(?:install|i|in|add|update|up|upgrade|remove|rm|r|uninstall|un|unlink)";
 const NPM_GLOBAL_FLAG = "(?:-g|--global(?:=true)?|--location=global)";
-const NPM_GLOBAL = new RegExp(
-  `\\bnpm\\s+(?:${NPM_VERB}\\b[^\\n;&|]*?\\s${NPM_GLOBAL_FLAG}(?![\\w-])|${NPM_GLOBAL_FLAG}\\s+${NPM_VERB}\\b)`,
-);
+const NPM_GLOBAL = new RegExp(`\\bnpm\\s+(?:${NPM_VERB}\\b[^\\n;&|]*?\\s${NPM_GLOBAL_FLAG}(?![\\w-])|${NPM_GLOBAL_FLAG}\\s+${NPM_VERB}\\b)`);
 
 /** A command continued with a trailing `\` is matched whole and reported at its first line. */
 export function npmGlobalCommands(path: string, contents: string): string[] {
@@ -194,10 +192,7 @@ export function knownRecipeNames(dump: JustDump): Set<string> {
 export function unknownReferences(path: string, contents: string, known: Set<string>): string[] {
   return referencedRecipes(path, contents)
     .filter(({ recipe }) => !known.has(recipe))
-    .map(
-      ({ line, recipe, text }) =>
-        `${path}:${line}: \`just ${recipe}\` names a recipe the justfile does not define (in \`${text}\`)`,
-    );
+    .map(({ line, recipe, text }) => `${path}:${line}: \`just ${recipe}\` names a recipe the justfile does not define (in \`${text}\`)`);
 }
 
 function interpolatedNames(body: unknown): string[] {
@@ -379,8 +374,7 @@ export function undocumentedRecipes(dump: JustDump): string[] {
     .filter(([, recipe]) => !recipe.private && !recipe.doc)
     .map(
       ([name]) =>
-        `justfile: recipe \`${name}\` has no doc comment, so \`just --list\` shows it with no ` +
-        `explanation — add a \`# …\` line directly above it (#797)`,
+        `justfile: recipe \`${name}\` has no doc comment, so \`just --list\` shows it with no explanation — add a \`# …\` line directly above it (#797)`,
     );
 }
 
@@ -418,12 +412,7 @@ function main(): void {
   const dump = loadDump();
   const known = knownRecipeNames(dump);
 
-  const errors = [
-    ...undocumentedRecipes(dump),
-    ...interpolatedParameters(dump),
-    ...unguardedPipelines(dump),
-    ...sweepErrors(process.cwd(), known),
-  ];
+  const errors = [...undocumentedRecipes(dump), ...interpolatedParameters(dump), ...unguardedPipelines(dump), ...sweepErrors(process.cwd(), known)];
   for (const error of errors) console.error(error);
 
   if (errors.length > 0) {

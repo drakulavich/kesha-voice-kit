@@ -3,21 +3,9 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writ
 import { dirname, join } from "node:path";
 import { tmpdir } from "node:os";
 import { gunzipSync } from "node:zlib";
-import {
-  collectDoctorReport,
-  engineVersionState,
-  formatDoctorReport,
-  redactDiagnosticValue,
-  type DoctorReport,
-} from "../../src/doctor";
+import { collectDoctorReport, engineVersionState, formatDoctorReport, redactDiagnosticValue, type DoctorReport } from "../../src/doctor";
 import { collectStatus } from "../../src/status";
-import {
-  describeDocument,
-  describeJson,
-  saveEngineEnv,
-  stageEngineHome,
-  writeVoiceListingEngine,
-} from "../helpers/fake-engine";
+import { describeDocument, describeJson, saveEngineEnv, stageEngineHome, writeVoiceListingEngine } from "../helpers/fake-engine";
 import { describeToCapabilities } from "../../src/engine/describe";
 import { createSupportBundle } from "../../src/support-bundle";
 import { engineVersion, packageName, packageVersion } from "../../src/package-info";
@@ -48,25 +36,17 @@ describe("redactDiagnosticValue", () => {
   test("redacts home directory paths", () => {
     expect(redactDiagnosticValue("KESHA_CACHE_DIR", "/tmp/home/.cache/kesha", "/tmp/home")).toBe("~/.cache/kesha");
     expect(redactDiagnosticValue("KESHA_CACHE_DIR", "/tmp/home", "/tmp/home")).toBe("~");
-    expect(redactDiagnosticValue("KESHA_CACHE_DIR", "C:\\Users\\Runner\\.cache\\kesha", "C:\\Users\\Runner")).toBe(
-      "~/.cache/kesha",
+    expect(redactDiagnosticValue("KESHA_CACHE_DIR", "C:\\Users\\Runner\\.cache\\kesha", "C:\\Users\\Runner")).toBe("~/.cache/kesha");
+    expect(redactDiagnosticValue("probeError", "spawn /tmp/home/.cache/kesha/engine/bin/kesha-engine ENOENT", "/tmp/home")).toBe(
+      "spawn ~/.cache/kesha/engine/bin/kesha-engine ENOENT",
     );
-    expect(
-      redactDiagnosticValue("probeError", "spawn /tmp/home/.cache/kesha/engine/bin/kesha-engine ENOENT", "/tmp/home"),
-    ).toBe("spawn ~/.cache/kesha/engine/bin/kesha-engine ENOENT");
   });
 
   test("strips credentials and query strings from URLs", () => {
-    expect(
-      redactDiagnosticValue("KESHA_MODEL_MIRROR", "https://user:pass@example.com/kesha?token=abc#frag", "/tmp/home"),
-    ).toBe("https://example.com/kesha");
-    expect(
-      redactDiagnosticValue(
-        "KESHA_MODEL_MIRROR",
-        "https://user:pass@example.com/tmp/home/mirror?token=abc",
-        "/tmp/home",
-      ),
-    ).toBe("https://example.com/~/mirror");
+    expect(redactDiagnosticValue("KESHA_MODEL_MIRROR", "https://user:pass@example.com/kesha?token=abc#frag", "/tmp/home")).toBe("https://example.com/kesha");
+    expect(redactDiagnosticValue("KESHA_MODEL_MIRROR", "https://user:pass@example.com/tmp/home/mirror?token=abc", "/tmp/home")).toBe(
+      "https://example.com/~/mirror",
+    );
   });
 
   test("leaves malformed URL-like values unchanged", () => {
@@ -128,10 +108,7 @@ describe("collectDoctorReport", () => {
       mkdirSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_15s.mlmodelc"), {
         recursive: true,
       });
-      writeFileSync(
-        join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_15s.mlmodelc", "coremldata.bin"),
-        "coreml",
-      );
+      writeFileSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_15s.mlmodelc", "coremldata.bin"), "coreml");
 
       const report = await collectDoctorReport({ redact: true });
       expect(report.redacted).toBe(true);
@@ -201,10 +178,7 @@ describe("collectDoctorReport", () => {
       mkdirSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_5s.mlmodelc"), {
         recursive: true,
       });
-      writeFileSync(
-        join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_5s.mlmodelc", "coremldata.bin"),
-        "coreml",
-      );
+      writeFileSync(join(dir, ".cache", "fluidaudio", "Models", "kokoro", "kokoro_21_5s.mlmodelc", "coremldata.bin"), "coreml");
 
       const report = await collectDoctorReport({ redact: false });
       const root = report.cache.externalRoots[0];
@@ -244,9 +218,7 @@ describe("collectDoctorReport", () => {
 
       rmSync(join(ane, KOKORO_ANE_EN_REQUIRED[0]!), { recursive: true, force: true });
       const partial = formatDoctorReport(await collectDoctorReport({ redact: false }));
-      expect(partial).toContain(
-        `TTS (Kokoro ANE): incomplete - missing ${KOKORO_ANE_EN_REQUIRED[0]}; re-run \`kesha install --tts\``,
-      );
+      expect(partial).toContain(`TTS (Kokoro ANE): incomplete - missing ${KOKORO_ANE_EN_REQUIRED[0]}; re-run \`kesha install --tts\``);
       expect(partial).toContain("TTS (Kokoro G2P): installed");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -486,9 +458,7 @@ describe("the human report states what each component is doing (#770)", () => {
     expect(drift).toContain("installed v8.8.8 differs from the pinned v1.0.0");
     expect(drift).toContain("kesha install");
 
-    expect(
-      formatDoctorReport(doctorReport({ engine: { ...engine, versionMarker: null, versionState: "unrecorded" } })),
-    ).toContain("Version marker: missing");
+    expect(formatDoctorReport(doctorReport({ engine: { ...engine, versionMarker: null, versionState: "unrecorded" } }))).toContain("Version marker: missing");
     expect(
       formatDoctorReport(
         doctorReport({
@@ -501,12 +471,8 @@ describe("the human report states what each component is doing (#770)", () => {
   test("capabilities carry the probe error when there are none to report", () => {
     const engine = doctorReport().engine;
     expect(formatDoctorReport(doctorReport())).toContain("Capabilities: onnx, protocol v3, tts, diarize");
-    expect(
-      formatDoctorReport(doctorReport({ engine: { ...engine, capabilities: null, probeError: "it exploded" } })),
-    ).toContain("Capabilities: it exploded");
-    expect(formatDoctorReport(doctorReport({ engine: { ...engine, capabilities: null, probeError: null } }))).toContain(
-      "Capabilities: not available",
-    );
+    expect(formatDoctorReport(doctorReport({ engine: { ...engine, capabilities: null, probeError: "it exploded" } }))).toContain("Capabilities: it exploded");
+    expect(formatDoctorReport(doctorReport({ engine: { ...engine, capabilities: null, probeError: null } }))).toContain("Capabilities: not available");
   });
 
   test("a cache row shows its size when present and `missing` when not", () => {
@@ -525,9 +491,7 @@ describe("the human report states what each component is doing (#770)", () => {
     expect(output).toContain("Engine: 4.1 KB");
     expect(output).toContain("TTS (Vosk): missing");
 
-    expect(formatDoctorReport(doctorReport({ cache: cacheReport({ exists: false, totalBytes: 0 }) }))).toContain(
-      "Cache: /cache (missing)",
-    );
+    expect(formatDoctorReport(doctorReport({ cache: cacheReport({ exists: false, totalBytes: 0 }) }))).toContain("Cache: /cache (missing)");
   });
 
   test("a FluidAudio root outside the cache is named with its path and the grand total", () => {
@@ -561,9 +525,7 @@ describe("the human report states what each component is doing (#770)", () => {
     const output = formatDoctorReport(doctorReport({ cache: cacheReport({ staleSortformerBytes: 5_300_000_000 }) }));
     expect(output).toContain("Stale Sortformer compilations: 5.3 GB; run `kesha install --diarize` to remove them");
 
-    expect(formatDoctorReport(doctorReport({ cache: cacheReport({ staleSortformerBytes: 0 }) }))).not.toContain(
-      "Stale Sortformer",
-    );
+    expect(formatDoctorReport(doctorReport({ cache: cacheReport({ staleSortformerBytes: 0 }) }))).not.toContain("Stale Sortformer");
   });
 
   test("stats report either their counters or the error that hid them", () => {
@@ -805,9 +767,7 @@ exit 2
       expect(byName("VAD (Silero)").note).toContain("kesha install --vad");
       expect(byName("TTS (Kokoro)")).toMatchObject({ exists: true, sizeBytes: 64 });
       expect(byName("TTS (Kokoro)").note).toBe(
-        isDarwinArm64()
-          ? "not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle"
-          : "enabled with `kesha install --tts`",
+        isDarwinArm64() ? "not used on darwin-arm64, where Kokoro runs from the TTS (Kokoro ANE) bundle" : "enabled with `kesha install --tts`",
       );
       expect(byName("TTS (Vosk RU)")).toMatchObject({ exists: false, sizeBytes: 0 });
       expect(byName("TTS (Vosk RU)").note).toBe("enabled with `kesha install --tts ru`");
@@ -1040,9 +1000,7 @@ describe("engine version drift (#738)", () => {
       expect(report.engine.versionState).toBe("unsupported");
 
       const output = formatDoctorReport(report);
-      expect(output).toContain(
-        "Version state: installed v1.25.0 is older than v1.26.0, the oldest engine this CLI supports; run `kesha install`",
-      );
+      expect(output).toContain("Version state: installed v1.25.0 is older than v1.26.0, the oldest engine this CLI supports; run `kesha install`");
       expect(output).not.toContain("differs from the pinned");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -1117,9 +1075,7 @@ describe("doctor separates corrupt components from missing ones", () => {
   }
 
   function sidecarStates(report: Awaited<ReturnType<typeof collectDoctorReport>>) {
-    return report.optionalComponents
-      .filter((c) => c.name.endsWith("sidecar"))
-      .map((c) => ({ name: c.name, exists: c.exists, runnable: c.runnable }));
+    return report.optionalComponents.filter((c) => c.name.endsWith("sidecar")).map((c) => ({ name: c.name, exists: c.exists, runnable: c.runnable }));
   }
 
   posixEngineTest("a truncated sidecar reports as corrupt, not installed", async () => {
@@ -1178,9 +1134,7 @@ describe("doctor separates corrupt components from missing ones", () => {
       expect(report.engine.probeError).toContain("does not run");
 
       const output = formatDoctorReport(report);
-      expect(output).toContain(
-        `Binary: ${report.engine.path} (installed but not executable (corrupt) - re-run \`kesha install\`)`,
-      );
+      expect(output).toContain(`Binary: ${report.engine.path} (installed but not executable (corrupt) - re-run \`kesha install\`)`);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -1208,9 +1162,7 @@ describe("doctor on an unspawnable KESHA_ENGINE_BIN", () => {
       process.env.KESHA_CACHE_DIR = join(dir, ".cache", "kesha");
       process.env.KESHA_STATS_DB = join(dir, "stats.sqlite");
       const probeError = (await collectDoctorReport()).engine.probeError ?? "";
-      expect(
-        probeError.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`"),
-      ).toHaveLength(2);
+      expect(probeError.split("KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`")).toHaveLength(2);
       expect(probeError).not.toContain("error [");
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -1323,13 +1275,7 @@ exit 2
     );
     const asr = join(fluidHome, "Library", "Application Support", "FluidAudio", "Models", "parakeet-tdt-0.6b-v3");
     mkdirSync(asr, { recursive: true });
-    for (const file of [
-      "Preprocessor.mlmodelc",
-      "Encoder.mlmodelc",
-      "Decoder.mlmodelc",
-      "JointDecisionv3.mlmodelc",
-      "parakeet_vocab.json",
-    ]) {
+    for (const file of ["Preprocessor.mlmodelc", "Encoder.mlmodelc", "Decoder.mlmodelc", "JointDecisionv3.mlmodelc", "parakeet_vocab.json"]) {
       writeFileSync(join(asr, file), "x".repeat(10));
     }
 

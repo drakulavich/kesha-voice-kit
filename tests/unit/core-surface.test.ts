@@ -35,10 +35,7 @@ function writeProbeProject(dir: string, typeNames: string[]): string {
   const fields = typeNames.map((name) => `  ${name}: ${name};`).join("\n");
   // A raw Windows path's backslashes read back as string escapes; forward slashes resolve on every platform.
   const modulePath = repoPath(coreEntryPath()).replaceAll("\\", "/");
-  writeFileSync(
-    join(dir, "probe.ts"),
-    `import type {\n  ${importList},\n} from "${modulePath}";\n\nexport type Probe = {\n${fields}\n};\n`,
-  );
+  writeFileSync(join(dir, "probe.ts"), `import type {\n  ${importList},\n} from "${modulePath}";\n\nexport type Probe = {\n${fields}\n};\n`);
   const tsconfigPath = join(dir, "tsconfig.json");
   writeFileSync(
     tsconfigPath,
@@ -83,11 +80,7 @@ describe("core surface", () => {
       stdout: "pipe",
       stderr: "pipe",
     });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
-    ]);
+    const [stdout, stderr, exitCode] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
 
     const missing = missingExportNames(`${stdout}${stderr}`);
     const message =

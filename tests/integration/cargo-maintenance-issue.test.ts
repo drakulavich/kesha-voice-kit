@@ -50,9 +50,7 @@ async function openIssue(cargoStub: string, env: Record<string, string> = {}) {
 // The workflow runs on ubuntu-latest only; the stubs are bash scripts on PATH.
 describe.skipIf(process.platform === "win32")("cargo-maintenance-issue.sh", () => {
   test("puts the outdated table in the issue and keeps cargo's progress chatter out", async () => {
-    const { exitCode, body } = await openIssue(
-      'echo "    Updating git repository" >&2; printf "Name  Project  Latest\\nrubato  2.0.0  5.0.0\\n"',
-    );
+    const { exitCode, body } = await openIssue('echo "    Updating git repository" >&2; printf "Name  Project  Latest\\nrubato  2.0.0  5.0.0\\n"');
 
     expect(exitCode).toBe(0);
     expect(body).toContain("rubato  2.0.0  5.0.0");

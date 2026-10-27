@@ -70,9 +70,7 @@ describe("fluidSubsystemDirs", () => {
       const byLabel = dirsByLabel(home, cacheRoot);
       expect(byLabel["ASR (Parakeet)"]).toBe(join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3"));
       expect(byLabel["TTS (Kokoro ANE)"]).toBe(join(cacheRoot, "fluidaudio", "kokoro-82m-coreml"));
-      expect(byLabel["Diarization (Sortformer)"]).toBe(
-        join(cacheRoot, "fluidaudio", "fluidaudio-rs", "SortformerCompiled"),
-      );
+      expect(byLabel["Diarization (Sortformer)"]).toBe(join(cacheRoot, "fluidaudio", "fluidaudio-rs", "SortformerCompiled"));
     });
   });
 
@@ -101,9 +99,7 @@ describe("fluidSubsystemDirs", () => {
   test("an interrupted legacy ASR fetch does not pin the bundle in place", () => {
     withHome((home, cacheRoot) => {
       for (const file of FLUID_ASR_REQUIRED.slice(1)) write(join(legacy.asr(home), file), 10);
-      expect(dirsByLabel(home, cacheRoot)["ASR (Parakeet)"]).toBe(
-        join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3"),
-      );
+      expect(dirsByLabel(home, cacheRoot)["ASR (Parakeet)"]).toBe(join(cacheRoot, "fluidaudio", "parakeet-tdt-0.6b-v3"));
     });
   });
 
@@ -198,9 +194,7 @@ describe("fluidExternalRoots", () => {
       const vad = join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad");
       write(join(vad, "model.mlmodelc"), 12);
 
-      const resolved = fluidSubsystemDirs({ homeDir: home, cacheRoot }).find(
-        (s) => s.label === "VAD (Silero, FluidAudio)",
-      );
+      const resolved = fluidSubsystemDirs({ homeDir: home, cacheRoot }).find((s) => s.label === "VAD (Silero, FluidAudio)");
       expect(resolved?.path).toBe(vad);
       expect(resolved?.inCache).toBe(false);
       expect(fluidExternalRoots({ homeDir: home, cacheRoot })[0]!.otherBytes).toBe(0);

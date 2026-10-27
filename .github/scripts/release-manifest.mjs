@@ -50,9 +50,7 @@ const DARWIN_SIDECARS = [
 ];
 
 function usage() {
-  console.error(
-    "usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N|-alpha.N]] [--linux-packages] [--out path] [--check]",
-  );
+  console.error("usage: node .github/scripts/release-manifest.mjs [--tag vX.Y.Z[-beta.N|-alpha.N]] [--linux-packages] [--out path] [--check]");
   process.exit(2);
 }
 
@@ -103,9 +101,7 @@ function buildManifest(tag, withLinuxPackages) {
   const assets = [
     ...ENGINE_ASSETS.map((p) => asset(p.engineAsset, "engine", [p.id], p.install)),
     ...DARWIN_SIDECARS.map((s) => asset(s.name, "sidecar", ["darwin-arm64"], s.install)),
-    ...(withLinuxPackages
-      ? Object.values(linuxPackageNames(engineVersion)).map((name) => asset(name, "linux-package", ["linux-x64"]))
-      : []),
+    ...(withLinuxPackages ? Object.values(linuxPackageNames(engineVersion)).map((name) => asset(name, "linux-package", ["linux-x64"])) : []),
     asset(sbomName, "sbom", []),
     asset(MANIFEST_NAME, "manifest", []),
     asset("SHA256SUMS", "checksum", [], undefined, false),
@@ -120,8 +116,7 @@ function buildManifest(tag, withLinuxPackages) {
     packaging: {
       runtime: "bun",
       userInstall: "bun add -g @drakulavich/kesha-voice-kit",
-      manifestPurpose:
-        "Release metadata for package-manager channels; it does not replace the Bun-first user install path.",
+      manifestPurpose: "Release metadata for package-manager channels; it does not replace the Bun-first user install path.",
     },
     verification: {
       checksumAsset: "SHA256SUMS",

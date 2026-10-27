@@ -17,32 +17,18 @@ describe("the Rust lanes in ci.yml", () => {
     const gate = ci.jobs["rust-tests"]!;
     expect(gate.name).toBe("🧪 Rust Tests");
     expect(gate.if).toBe("always()");
-    expect([...gate.needs!].sort()).toEqual([
-      "changes",
-      "coreml-regression",
-      "coverage",
-      "lint-ubuntu",
-      "rust-push-gate",
-      "test",
-    ]);
+    expect([...gate.needs!].sort()).toEqual(["changes", "coreml-regression", "coverage", "lint-ubuntu", "rust-push-gate", "test"]);
   });
 
   test("the PR lanes run on a pull request that touches Rust, never on the schedule", () => {
     for (const lane of ["lint-ubuntu", "test", "coverage"]) {
-      expect([lane, ci.jobs[lane]!.if]).toEqual([
-        lane,
-        "github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'",
-      ]);
+      expect([lane, ci.jobs[lane]!.if]).toEqual([lane, "github.event_name == 'pull_request' && needs.changes.outputs.rust == 'true'"]);
     }
-    expect(ci.jobs["coreml-regression"]!.if).toBe(
-      "github.event_name == 'pull_request' && needs.changes.outputs.coreml == 'true'",
-    );
+    expect(ci.jobs["coreml-regression"]!.if).toBe("github.event_name == 'pull_request' && needs.changes.outputs.coreml == 'true'");
   });
 
   test("the push gate runs on a push to main that touches what rust-test.yml's push filter named", () => {
-    expect(ci.jobs["rust-push-gate"]!.if).toBe(
-      "github.event_name == 'push' && needs.changes.outputs.rust_main == 'true'",
-    );
+    expect(ci.jobs["rust-push-gate"]!.if).toBe("github.event_name == 'push' && needs.changes.outputs.rust_main == 'true'");
   });
 
   // rust-test.yml's push trigger and `rust` filter, carried over whole (ci.yml replaces rust-test.yml).
@@ -50,13 +36,7 @@ describe("the Rust lanes in ci.yml", () => {
     const push = ["rust/**", "rust-toolchain.toml", ".github/actions/setup-rust/**", ".github/workflows/ci.yml"];
     expect(filter("rust_main")).toEqual(expect.arrayContaining(push));
     expect(filter("rust")).toEqual(
-      expect.arrayContaining([
-        ...push,
-        ".github/scripts/pin-msvc-linker.ps1",
-        ".github/scripts/check-coverage.ts",
-        "package.json",
-        "bun.lock",
-      ]),
+      expect.arrayContaining([...push, ".github/scripts/pin-msvc-linker.ps1", ".github/scripts/check-coverage.ts", "package.json", "bun.lock"]),
     );
   });
 });

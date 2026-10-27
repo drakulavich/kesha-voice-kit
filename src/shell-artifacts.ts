@@ -128,9 +128,7 @@ function optionWords(options: CliOption[]): string {
 function renderBash(model: ArtifactModel): string {
   const rootOptions = optionWords([...ROOT_BUILT_INS, ...model.root.options]);
   const commands = model.commands.map((command) => command.name).join(" ");
-  const cases = model.commands
-    .map((command) => `    ${command.name}) opts="${optionWords([...HELP_OPTIONS, ...command.options])}" ;;`)
-    .join("\n");
+  const cases = model.commands.map((command) => `    ${command.name}) opts="${optionWords([...HELP_OPTIONS, ...command.options])}" ;;`).join("\n");
 
   return `# bash completion for kesha.
 # Source this file or copy it into your bash-completion directory.
@@ -179,9 +177,7 @@ function renderZshOption(option: CliOption): string {
 }
 
 function renderZsh(model: ArtifactModel): string {
-  const commands = model.commands
-    .map((command) => `    '${command.name}:${zshEscape(command.description)}'`)
-    .join("\n");
+  const commands = model.commands.map((command) => `    '${command.name}:${zshEscape(command.description)}'`).join("\n");
   const rootOptions = [...ROOT_BUILT_INS, ...model.root.options].map(renderZshOption).join(" \\\n      ");
   const cases = model.commands
     .map((command) => {
@@ -237,9 +233,7 @@ function renderFish(model: ArtifactModel): string {
   const lines = ["# fish completion for kesha."];
 
   for (const command of model.commands) {
-    lines.push(
-      `complete -c kesha -n '__fish_use_subcommand' -a '${command.name}' -d '${fishEscape(command.description)}'`,
-    );
+    lines.push(`complete -c kesha -n '__fish_use_subcommand' -a '${command.name}' -d '${fishEscape(command.description)}'`);
   }
   for (const option of [...ROOT_BUILT_INS, ...model.root.options]) {
     lines.push(renderFishOption("kesha", " -n '__fish_use_subcommand'", option));
@@ -267,18 +261,12 @@ function manpageDate(): string {
 }
 
 function renderManpage(model: ArtifactModel): string {
-  const commandSections = model.commands
-    .map((command) => `.TP\n.B ${command.name}\n${roff(command.description)}`)
-    .join("\n");
-  const rootOptions = model.root.options
-    .map((option) => `.TP\n.B ${roff(option.name)}\n${roff(option.description)}`)
-    .join("\n");
+  const commandSections = model.commands.map((command) => `.TP\n.B ${command.name}\n${roff(command.description)}`).join("\n");
+  const rootOptions = model.root.options.map((option) => `.TP\n.B ${roff(option.name)}\n${roff(option.description)}`).join("\n");
   const subcommandOptions = model.commands
     .filter((command) => command.options.length > 0)
     .map((command) => {
-      const options = command.options
-        .map((option) => `.TP\n.B ${roff(option.name)}\n${roff(option.description)}`)
-        .join("\n");
+      const options = command.options.map((option) => `.TP\n.B ${roff(option.name)}\n${roff(option.description)}`).join("\n");
       return `.SS ${command.name}\n${options}`;
     })
     .join("\n");

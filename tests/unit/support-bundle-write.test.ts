@@ -80,8 +80,7 @@ describe("support-bundle --output a disk refuses (#1345)", () => {
     const output = join(process.env.HOME!, "bundle.tar.gz");
     const realStat = fs.statSync;
     const spy = spyOn(fs, "statSync").mockImplementation(((path: fs.PathLike, opts?: fs.StatSyncOptions) => {
-      if (String(path) === output)
-        throw Object.assign(new Error(`EIO: input/output error, stat '${output}'`), { code: "EIO" });
+      if (String(path) === output) throw Object.assign(new Error(`EIO: input/output error, stat '${output}'`), { code: "EIO" });
       return realStat(path, opts);
     }) as typeof fs.statSync);
     restoreWrite = () => spy.mockRestore();
@@ -92,25 +91,22 @@ describe("support-bundle --output a disk refuses (#1345)", () => {
     expect(bundle.sizeBytes).toBe(fs.readFileSync(output).byteLength);
   });
 
-  (process.platform === "win32" ? test.skip : test)(
-    "a dangling symlink in the way is named as the blocker",
-    async () => {
-      const link = join(process.env.HOME!, "link");
-      fs.symlinkSync(join(process.env.HOME!, "nowhere"), link);
-      const output = join(link, "bundle.tar.gz");
+  (process.platform === "win32" ? test.skip : test)("a dangling symlink in the way is named as the blocker", async () => {
+    const link = join(process.env.HOME!, "link");
+    fs.symlinkSync(join(process.env.HOME!, "nowhere"), link);
+    const output = join(link, "bundle.tar.gz");
 
-      const error = await createSupportBundle({ output }).then(
-        () => {
-          throw new Error("expected the bundle write to fail");
-        },
-        (e: unknown) => e,
-      );
+    const error = await createSupportBundle({ output }).then(
+      () => {
+        throw new Error("expected the bundle write to fail");
+      },
+      (e: unknown) => e,
+    );
 
-      expect(error).toBeInstanceOf(KeshaError);
-      expect((error as KeshaError).code).toBe("E_INVALID_ARG");
-      expect((error as KeshaError).hint).toContain(`remove or rename the file blocking ${link}`);
-    },
-  );
+    expect(error).toBeInstanceOf(KeshaError);
+    expect((error as KeshaError).code).toBe("E_INVALID_ARG");
+    expect((error as KeshaError).hint).toContain(`remove or rename the file blocking ${link}`);
+  });
 
   (process.platform === "win32" || process.getuid?.() === 0 ? test.skip : test)(
     "a symlink to a directory this user cannot reach reports the permission, not a blocker",

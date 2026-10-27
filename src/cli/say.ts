@@ -6,16 +6,7 @@ import { engineMissingError, isEngineInstalled } from "../engine";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { langFlagError, positionalArgs, renderInvalidArg } from "./options";
 import { log } from "../log";
-import {
-  MAX_TEXT_CHARS,
-  TEXT_TOO_LONG_HINT,
-  listVoiceIds,
-  say,
-  SUPPORTED_SAMPLE_RATES,
-  validateSayText,
-  type SayFormat,
-  type SayOptions,
-} from "../synth";
+import { MAX_TEXT_CHARS, TEXT_TOO_LONG_HINT, listVoiceIds, say, SUPPORTED_SAMPLE_RATES, validateSayText, type SayFormat, type SayOptions } from "../synth";
 import { artifactFromBytes, artifactFromFile, type StatsRecorder } from "../stats";
 import { resolveSayVoice } from "../voice-routing";
 import { diagnosticCharBucket, diagnosticSizeBucket } from "../diagnostic-events";
@@ -35,11 +26,7 @@ async function resolveText(inline: string | undefined): Promise<string> {
     if (total > MAX_STDIN_BYTES) break;
   }
   if (total > MAX_STDIN_BYTES) {
-    throw new KeshaError(
-      "E_TEXT_TOO_LONG",
-      `text exceeds ${MAX_TEXT_CHARS} chars (stdin passed ${MAX_STDIN_BYTES} bytes)`,
-      { hint: TEXT_TOO_LONG_HINT },
-    );
+    throw new KeshaError("E_TEXT_TOO_LONG", `text exceeds ${MAX_TEXT_CHARS} chars (stdin passed ${MAX_STDIN_BYTES} bytes)`, { hint: TEXT_TOO_LONG_HINT });
   }
   const merged = new Uint8Array(total);
   let offset = 0;
@@ -94,10 +81,7 @@ function parseBitrateFlag(value: unknown): Parsed<number> {
 function parseSampleRateFlag(value: unknown): Parsed<number> {
   const sampleRate = parseFiniteNumberFlag("--sample-rate", value);
   if (!sampleRate.ok || sampleRate.value === undefined) return sampleRate;
-  if (
-    !Number.isInteger(sampleRate.value) ||
-    !SUPPORTED_SAMPLE_RATES.includes(sampleRate.value as (typeof SUPPORTED_SAMPLE_RATES)[number])
-  ) {
+  if (!Number.isInteger(sampleRate.value) || !SUPPORTED_SAMPLE_RATES.includes(sampleRate.value as (typeof SUPPORTED_SAMPLE_RATES)[number])) {
     return {
       ok: false,
       error: `--sample-rate must be one of ${SUPPORTED_SAMPLE_RATES.join(", ")}.`,
@@ -238,11 +222,7 @@ type SayOpts = {
   noExpandAbbrev: boolean;
 };
 
-function recordOutputArtifact(
-  stats: StatsRecorder,
-  audio: Uint8Array,
-  opts: SayOpts,
-): { outputFormat: string; outputSizeBytes: number | null | undefined } {
+function recordOutputArtifact(stats: StatsRecorder, audio: Uint8Array, opts: SayOpts): { outputFormat: string; outputSizeBytes: number | null | undefined } {
   if (opts.out) {
     const outputArtifact = artifactFromFile(opts.out, "output_audio");
     if (outputArtifact) stats.recordArtifact(outputArtifact);
@@ -389,8 +369,7 @@ export const sayCommand = defineCommand({
     }
 
     const positionals = positionalArgs(rawArgs, sayCommand.args as ArgsDef);
-    const inlineText =
-      positionals.length > 0 ? positionals.join(" ") : typeof args.text === "string" ? args.text : undefined;
+    const inlineText = positionals.length > 0 ? positionals.join(" ") : typeof args.text === "string" ? args.text : undefined;
     const stdinIsTty = (process.stdin as { isTTY?: boolean }).isTTY;
     if (shouldRejectMissingSayText(inlineText, stdinIsTty)) {
       log.error(renderInvalidArg("kesha say requires text or piped stdin. Usage: kesha say <text>"));

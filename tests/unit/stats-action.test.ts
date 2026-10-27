@@ -71,9 +71,7 @@ describe("runStatsAction", () => {
   });
 
   test("export rejects an unknown format with a usage hint", () => {
-    expect(expectRejected({ action: "export", format: "xml" }).error).toBe(
-      "usage: kesha stats export --format json|csv",
-    );
+    expect(expectRejected({ action: "export", format: "xml" }).error).toBe("usage: kesha stats export --format json|csv");
   });
 
   test("export without a format is rejected rather than defaulted (Exploratory S5-F2)", () => {

@@ -44,8 +44,7 @@ const PAYLOADS: Record<string, () => string[]> = {
       .match(/cp -r ((?:[^\n]*\\\n)*[^\n]*)\$out\/lib\/kesha\//)![1]!
       .split(/[\s\\]+/)
       .filter(Boolean),
-  "package.json#files": () =>
-    (JSON.parse(readRepoFile("package.json")) as { files: string[] }).files.map((f) => f.replace(/\/$/, "")),
+  "package.json#files": () => (JSON.parse(readRepoFile("package.json")) as { files: string[] }).files.map((f) => f.replace(/\/$/, "")),
 };
 
 describe("every distribution payload stages the root assets the CLI imports", () => {
@@ -55,10 +54,7 @@ describe("every distribution payload stages the root assets the CLI imports", ()
     expect(assets).toEqual(expect.arrayContaining(["completions", "man", "model-plan.json", "package.json"]));
   });
 
-  test.each(Object.keys(PAYLOADS).flatMap((payload) => assets.map((asset) => [payload, asset])))(
-    "%s stages %s",
-    (payload, asset) => {
-      expect(PAYLOADS[payload]!()).toContain(asset);
-    },
-  );
+  test.each(Object.keys(PAYLOADS).flatMap((payload) => assets.map((asset) => [payload, asset])))("%s stages %s", (payload, asset) => {
+    expect(PAYLOADS[payload]!()).toContain(asset);
+  });
 });

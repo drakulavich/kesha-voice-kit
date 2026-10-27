@@ -17,10 +17,7 @@ describe("nightly.yml", () => {
     const owned = jobs.map(([name, job]) => {
       const mine = crons.filter((cron) => job.if?.includes(`github.event.schedule == '${cron}'`));
       expect([name, mine.length]).toEqual([name, 1]);
-      expect([name, job.if]).toEqual([
-        name,
-        `github.event.schedule == '${mine[0]}' || (github.event_name == 'workflow_dispatch' && inputs.job == '${name}')`,
-      ]);
+      expect([name, job.if]).toEqual([name, `github.event.schedule == '${mine[0]}' || (github.event_name == 'workflow_dispatch' && inputs.job == '${name}')`]);
       return mine[0];
     });
     expect([...owned].sort()).toEqual([...crons].sort());
@@ -34,9 +31,7 @@ describe("nightly.yml", () => {
   test("a matrix job's concurrency group is distinct for every row", () => {
     for (const [name, job] of jobs.filter(([, job]) => job.strategy?.matrix)) {
       const rows = (job.strategy!.matrix as { include: Record<string, string>[] }).include;
-      const groups = rows.map((row) =>
-        String(job.concurrency?.group).replace(/\$\{\{\s*matrix\.(\w+)\s*\}\}/g, (_, key: string) => row[key] ?? ""),
-      );
+      const groups = rows.map((row) => String(job.concurrency?.group).replace(/\$\{\{\s*matrix\.(\w+)\s*\}\}/g, (_, key: string) => row[key] ?? ""));
       expect([name, new Set(groups).size]).toEqual([name, rows.length]);
     }
   });

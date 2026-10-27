@@ -2,14 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import {
-  engineChecksums,
-  getEngineBinaryName,
-  getVersionMarkerPath,
-  installEngine,
-  readInstalledEngineVersion,
-  SIDECARS,
-} from "../../src/engine-install";
+import { engineChecksums, getEngineBinaryName, getVersionMarkerPath, installEngine, readInstalledEngineVersion, SIDECARS } from "../../src/engine-install";
 import { KeshaError } from "../../src/engine/events";
 import { log } from "../../src/log";
 import { getEngineBinPath } from "../../src/engine";
@@ -158,9 +151,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
       const wrong = sha256("a different binary");
       stubRelease(sumsLine(wrong));
 
-      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(
-        `expected sha256 ${wrong}, got ${sha256(ENGINE)}`,
-      );
+      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(`expected sha256 ${wrong}, got ${sha256(ENGINE)}`);
       expect(existsSync(binPath)).toBe(false);
     },
     30_000,
@@ -172,9 +163,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
       const binPath = stageEngineDir();
       const urls = stubRelease(null);
 
-      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(
-        `release v${OVERRIDE} publishes no SHA256SUMS`,
-      );
+      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(`release v${OVERRIDE} publishes no SHA256SUMS`);
       expect(urls.filter((u) => u.endsWith(`/${getEngineBinaryName()}`))).toEqual([]);
       expect(existsSync(binPath)).toBe(false);
     },
@@ -186,11 +175,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
     async () => {
       const binPath = stageEngineDir();
       const [mismatched, matching] = SIDECARS;
-      stubRelease(
-        sumsLine(sha256(ENGINE)) +
-          `${sha256("not the served sidecar")}  ./${mismatched!.assetName}\n` +
-          `${sha256(ENGINE)}  ./${matching!.assetName}\n`,
-      );
+      stubRelease(`${sumsLine(sha256(ENGINE))}${sha256("not the served sidecar")}  ./${mismatched!.assetName}\n${sha256(ENGINE)}  ./${matching!.assetName}\n`);
 
       await installEngine({ version: OVERRIDE });
 
@@ -244,9 +229,7 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
       const [stderr, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
 
       expect(exitCode).toBe(1);
-      expect(stderr).toContain(
-        `kesha-engine binary ${getEngineBinaryName()} from release v${PINNED} does not match its pinned SHA-256`,
-      );
+      expect(stderr).toContain(`kesha-engine binary ${getEngineBinaryName()} from release v${PINNED} does not match its pinned SHA-256`);
       expect(stderr).toContain("hint: re-run `kesha install`");
       expect(existsSync(binPath)).toBe(false);
     },
@@ -349,10 +332,7 @@ describe("a cached install of the pinned engine is held to the pin", () => {
     beforeEach(() => {
       // Stands in for `codesign --force --sign -`: rewrites the file once, then leaves it as is.
       fakeBin = tempDir("kesha-fake-codesign-");
-      writeFileSync(
-        join(fakeBin, "codesign"),
-        `#!/bin/sh\nf="$4"\ngrep -q '^# re-signed$' "$f" || printf '# re-signed\\n' >> "$f"\n`,
-      );
+      writeFileSync(join(fakeBin, "codesign"), `#!/bin/sh\nf="$4"\ngrep -q '^# re-signed$' "$f" || printf '# re-signed\\n' >> "$f"\n`);
       chmodSync(join(fakeBin, "codesign"), 0o755);
     });
 
@@ -403,9 +383,7 @@ describe("a cached install of the pinned engine is held to the pin", () => {
 
         const stderr = await keshaInstall();
 
-        expect(stderr).toContain(
-          `kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`,
-        );
+        expect(stderr).toContain(`kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`);
         expect(readFileSync(binPath, "utf8")).toBe(`${ENGINE}# re-signed\n`);
       },
       30_000,
@@ -481,9 +459,7 @@ describe("a cached install of the pinned engine in a read-only engine dir is sti
       const err = await rejectionOf(installEngine({ version: PINNED }));
 
       expect(err.code).toBe("E_CACHE_CORRUPT");
-      expect(err.message).toContain(
-        `kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`,
-      );
+      expect(err.message).toContain(`kesha-engine binary ${getEngineBinaryName()} at ${binPath} does not match its pinned SHA-256`);
       expect(err.message).toContain(`got ${sha256(ALTERED)}`);
       expect(err.hint).toContain(engineDir);
       expect(err.hint).toContain("writable");

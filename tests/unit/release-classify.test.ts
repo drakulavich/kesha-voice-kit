@@ -93,11 +93,9 @@ describe("classifyRelease — main pushes and dispatches", () => {
   });
 
   test("a dispatched beta without a beta-shaped version is refused", () => {
-    expect(() =>
-      classifyRelease(
-        input({ eventName: "workflow_dispatch", refType: "branch", dispatch: { channel: "beta", version: "2.0.0" } }),
-      ),
-    ).toThrow(/beta/);
+    expect(() => classifyRelease(input({ eventName: "workflow_dispatch", refType: "branch", dispatch: { channel: "beta", version: "2.0.0" } }))).toThrow(
+      /beta/,
+    );
   });
 
   test("a dispatched alpha builds the Engine unless it names an Engine prerelease", () => {
@@ -107,9 +105,10 @@ describe("classifyRelease — main pushes and dispatches", () => {
       channel: "alpha",
       buildEngine: true,
     });
-    expect(
-      classifyRelease(input({ ...base, dispatch: { channel: "alpha", enginePrerelease: "v2.0.0-beta.1" } })),
-    ).toMatchObject({ path: "alpha", buildEngine: false });
+    expect(classifyRelease(input({ ...base, dispatch: { channel: "alpha", enginePrerelease: "v2.0.0-beta.1" } }))).toMatchObject({
+      path: "alpha",
+      buildEngine: false,
+    });
   });
 
   test("an unshaped engine-prerelease is refused", () => {
@@ -125,9 +124,7 @@ describe("classifyRelease — main pushes and dispatches", () => {
   });
 
   test("a dispatch naming no known channel is refused", () => {
-    expect(() =>
-      classifyRelease(input({ eventName: "workflow_dispatch", refType: "branch", dispatch: { channel: "stable" } })),
-    ).toThrow(/tag/);
+    expect(() => classifyRelease(input({ eventName: "workflow_dispatch", refType: "branch", dispatch: { channel: "stable" } }))).toThrow(/tag/);
   });
 });
 

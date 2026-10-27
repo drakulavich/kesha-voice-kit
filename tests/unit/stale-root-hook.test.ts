@@ -33,8 +33,7 @@ describe("staleRootNotice", () => {
   test("tells a root on another branch to switch back to main when main is current", () => {
     const message = staleRootNotice({ branch: "feat/x", behind: 0, ahead: 0 }, ROOT)?.systemMessage;
     expect(message).toBe(
-      `The root checkout ${ROOT} is on feat/x rather than main, so its CLAUDE.md may not match main. ` +
-        `Switch it back: cd '${ROOT}' && git switch main`,
+      `The root checkout ${ROOT} is on feat/x rather than main, so its CLAUDE.md may not match main. ` + `Switch it back: cd '${ROOT}' && git switch main`,
     );
   });
 
@@ -47,9 +46,7 @@ describe("staleRootNotice", () => {
   });
 
   test("offers no fast-forward to a root off main whose main has diverged", () => {
-    expect(staleRootNotice({ branch: "feat/x", behind: 3, ahead: 1 }, ROOT)?.systemMessage).toEndWith(
-      `Switch it back: cd '${ROOT}' && git switch main`,
-    );
+    expect(staleRootNotice({ branch: "feat/x", behind: 3, ahead: 1 }, ROOT)?.systemMessage).toEndWith(`Switch it back: cd '${ROOT}' && git switch main`);
   });
 
   test("says nothing when main is only ahead of origin/main, since its CLAUDE.md is not stale", () => {
@@ -64,9 +61,7 @@ describe("staleRootNotice", () => {
   });
 
   test("calls a detached HEAD out as not being on main", () => {
-    expect(staleRootNotice({ branch: null, behind: 0, ahead: 0 }, ROOT)?.systemMessage).toContain(
-      "is on a detached HEAD rather than main",
-    );
+    expect(staleRootNotice({ branch: null, behind: 0, ahead: 0 }, ROOT)?.systemMessage).toContain("is on a detached HEAD rather than main");
   });
 
   test("reports a diverged main without suggesting a fast-forward that would fail", () => {

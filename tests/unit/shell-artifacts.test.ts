@@ -31,9 +31,7 @@ describe("shell artifacts (#344 P2)", () => {
   });
 
   test("the positional audio file still completes as a path once the scripts are installed (Exploratory S10-2)", async () => {
-    const byPath = Object.fromEntries(
-      (await generateShellArtifacts()).map((artifact) => [artifact.path, artifact.content]),
-    );
+    const byPath = Object.fromEntries((await generateShellArtifacts()).map((artifact) => [artifact.path, artifact.content]));
 
     // bash falls back to readline filename completion whenever the script offers no candidate.
     expect(byPath["completions/kesha.bash"]).toMatch(/^complete .*-o default .*kesha$/m);

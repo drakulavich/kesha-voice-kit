@@ -13,13 +13,7 @@ import { getStatsStatus, type StatsStatus } from "./stats";
 import { kokoroAneComponents, kokoroTtsLanguages } from "./kokoro-ane";
 import { isCoremlBackend } from "./fluid-asr-cache";
 import { isDarwinArm64 } from "./engine-targets";
-import {
-  fluidExternalRoots,
-  fluidExternalTotalBytes,
-  staleSortformerBytes,
-  staleSortformerHint,
-  type FluidExternalRoot,
-} from "./fluid-roots";
+import { fluidExternalRoots, fluidExternalTotalBytes, staleSortformerBytes, staleSortformerHint, type FluidExternalRoot } from "./fluid-roots";
 import { diagnosticHomeDir, dirSizeBytes } from "./diagnostic-paths";
 import { collectStatusPaths, type StatusPaths } from "./status";
 import { getDiagnosticLogStatus, resolveDiagnosticLogDir, type DiagnosticLogStatus } from "./diagnostic-log";
@@ -276,10 +270,7 @@ const SIDECAR_COMPONENTS = [
 ];
 
 /** Reporting a truncated sidecar as "installed" is a false clean — spawn it instead (#770). */
-async function sidecarComponent(
-  spec: (typeof SIDECAR_COMPONENTS)[number],
-  sidecarDir: string,
-): Promise<OptionalComponent> {
+async function sidecarComponent(spec: (typeof SIDECAR_COMPONENTS)[number], sidecarDir: string): Promise<OptionalComponent> {
   const summary = pathSummary(join(sidecarDir, spec.file));
   const base = { name: spec.name, note: spec.note, ...summary };
   if (!summary.exists) return base;
@@ -423,16 +414,8 @@ function collectPaths(redact: boolean): StatusPaths {
 }
 
 function formatPathsSection(paths: StatusPaths): string[] {
-  const row = (label: string, p: StatusPaths[keyof StatusPaths]) =>
-    `  ${label}: ${p.path}${p.source === "default" ? "" : ` (${p.source})`}`;
-  return [
-    "",
-    "Paths:",
-    row("Cache", paths.cache),
-    row("Logs", paths.logs),
-    row("Stats DB", paths.stats),
-    row("MCP audio", paths.mcpAudio),
-  ];
+  const row = (label: string, p: StatusPaths[keyof StatusPaths]) => `  ${label}: ${p.path}${p.source === "default" ? "" : ` (${p.source})`}`;
+  return ["", "Paths:", row("Cache", paths.cache), row("Logs", paths.logs), row("Stats DB", paths.stats), row("MCP audio", paths.mcpAudio)];
 }
 
 function formatComponentState(component: OptionalComponent): string {
@@ -458,14 +441,9 @@ function formatVersionState(engine: DoctorReport["engine"]): string {
         "supported; `kesha install` without --engine-version restores the pin"
       );
     case "unsupported":
-      return (
-        `installed v${engine.versionMarker} is older than v${MIN_ENGINE_VERSION}, ` +
-        "the oldest engine this CLI supports; run `kesha install`"
-      );
+      return `installed v${engine.versionMarker} is older than v${MIN_ENGINE_VERSION}, the oldest engine this CLI supports; run \`kesha install\``;
     case "unrecorded":
-      return engine.installed
-        ? "no recorded version beside the binary; `kesha install` records one"
-        : "no engine installed";
+      return engine.installed ? "no recorded version beside the binary; `kesha install` records one" : "no engine installed";
     default:
       return "matches the pin";
   }
@@ -479,9 +457,7 @@ function formatCapabilities(engine: DoctorReport["engine"]): string {
 
 function formatCacheSection(cache: DoctorReport["cache"]): string[] {
   const header = `Cache: ${cache.path} (${cache.exists ? humanBytes(cache.totalBytes) : "missing"})`;
-  const rows = cache.components.map(
-    (c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}${c.note ? ` - ${c.note}` : ""}`,
-  );
+  const rows = cache.components.map((c) => `  ${c.label}: ${c.exists ? humanBytes(c.sizeBytes) : "missing"}${c.note ? ` - ${c.note}` : ""}`);
   const stale = cache.staleSortformerBytes > 0 ? [staleSortformerHint(cache.staleSortformerBytes)] : [];
   return [header, ...rows, ...formatExternalRootsSection(cache), ...stale];
 }

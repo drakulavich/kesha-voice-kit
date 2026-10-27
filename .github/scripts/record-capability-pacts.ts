@@ -61,9 +61,7 @@ function targetByKey(key: string): EngineTarget | undefined {
 const serialize = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 
 function usage(message: string): never {
-  console.error(
-    `${message}\n\nusage: record-capability-pacts.ts (--binary <path> --version <engine version> | --from-release) [--target <key>] [--check]`,
-  );
+  console.error(`${message}\n\nusage: record-capability-pacts.ts (--binary <path> --version <engine version> | --from-release) [--target <key>] [--check]`);
   process.exit(2);
 }
 
@@ -114,15 +112,12 @@ function parseArgs(argv: string[]): {
  */
 async function downloadPinnedBinary(target: EngineTarget, engineVersion: string): Promise<string> {
   const dir = mkdtempSync(join(tmpdir(), "kesha-pact-"));
-  const proc = Bun.spawn(
-    ["gh", "release", "download", `v${engineVersion}`, "-R", REPO, "-p", target.assetName, "-D", dir],
-    { stdout: "inherit", stderr: "inherit" },
-  );
+  const proc = Bun.spawn(["gh", "release", "download", `v${engineVersion}`, "-R", REPO, "-p", target.assetName, "-D", dir], {
+    stdout: "inherit",
+    stderr: "inherit",
+  });
   if ((await proc.exited) !== 0) {
-    console.error(
-      `FAIL: could not download ${target.assetName} from v${engineVersion}.\n` +
-        "  Check GH_TOKEN, and that the release exists.",
-    );
+    console.error(`FAIL: could not download ${target.assetName} from v${engineVersion}.\n  Check GH_TOKEN, and that the release exists.`);
     process.exit(1);
   }
   const path = join(dir, target.assetName);
@@ -132,11 +127,7 @@ async function downloadPinnedBinary(target: EngineTarget, engineVersion: string)
 
 async function readDescribe(binary: string): Promise<unknown> {
   const proc = Bun.spawn([binary, "describe"], { stdout: "pipe", stderr: "pipe" });
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const [stdout, stderr, exitCode] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
   if (exitCode !== 0) {
     console.error(`${binary} describe exited ${exitCode}`);
     if (stderr.trim()) console.error(stderr.trim());

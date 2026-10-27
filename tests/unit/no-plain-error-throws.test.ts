@@ -14,10 +14,7 @@ const ALLOWED: Array<[string, string]> = [
   ["src/engine-install.ts", "fires only under NODE_ENV=test, to stop a test writing the real cache"],
   ["src/cli/install.ts", "both callers report it as E_INVALID_ARG"],
   ["src/cli/install.ts", "both callers report it as E_INVALID_ARG"],
-  [
-    "src/mcp/tools.ts",
-    "MCP SDK copies the numeric code into the JSON-RPC error; the message already carries the E_ code and hint",
-  ],
+  ["src/mcp/tools.ts", "MCP SDK copies the numeric code into the JSON-RPC error; the message already carries the E_ code and hint"],
 ];
 
 test("src builds a plain Error only where ALLOWED says why", async () => {
@@ -33,9 +30,6 @@ test("src builds a plain Error only where ALLOWED says why", async () => {
     if (count > allowed) extra.push(`${file}: ${count} (allowed ${allowed})`);
     if (count < allowed) stale.push(`${file}: ${count} (allowed ${allowed})`);
   }
-  expect(
-    extra,
-    `build a KeshaError with a code from docs/errors.md and a hint instead of new Error(:\n${extra.join("\n")}`,
-  ).toEqual([]);
+  expect(extra, `build a KeshaError with a code from docs/errors.md and a hint instead of new Error(:\n${extra.join("\n")}`).toEqual([]);
   expect(stale, `drop the stale ALLOWED entries:\n${stale.join("\n")}`).toEqual([]);
 });

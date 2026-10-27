@@ -115,14 +115,7 @@ export function filesCached(cacheRoot: string, files: PlanFile[]): boolean {
   });
 }
 
-function bundleComponent(input: {
-  root: string;
-  name: string;
-  source: string;
-  files: PlanFile[];
-  refresh: boolean;
-  note?: string;
-}): PlanComponent {
+function bundleComponent(input: { root: string; name: string; source: string; files: PlanFile[]; refresh: boolean; note?: string }): PlanComponent {
   return {
     name: input.name,
     source: input.source,
@@ -196,12 +189,7 @@ function buildEngineComponent(noCache: boolean, version: string, engineCached: b
   };
 }
 
-function buildSidecarComponents(
-  engineDir: string,
-  noCache: boolean,
-  version: string,
-  engineCached: boolean,
-): PlanComponent[] {
+function buildSidecarComponents(engineDir: string, noCache: boolean, version: string, engineCached: boolean): PlanComponent[] {
   if (!isDarwinArm64()) return [];
   return SIDECARS.map((sidecar) => ({
     name: `Sidecar ${sidecar.assetName}`,
@@ -351,11 +339,7 @@ function assembleComponents(input: {
     buildEngineComponent(noCache, input.version, engineCached),
     ...buildSidecarComponents(input.engineDir, noCache, input.version, engineCached),
     input.coreml ? fluidAsrComponent() : modelBundle("ASR Parakeet TDT v3", ASR_FILES, "required for speech-to-text"),
-    modelBundle(
-      "Audio language ID ECAPA",
-      LANG_ID_FILES,
-      "required for --json, --toon, --format transcript, --lang, and --verbose language metadata",
-    ),
+    modelBundle("Audio language ID ECAPA", LANG_ID_FILES, "required for --json, --toon, --format transcript, --lang, and --verbose language metadata"),
     ...input.ttsComponents,
   ];
   // #768: --diarize implies VAD — speaker labels attach to VAD-windowed segments.
@@ -364,9 +348,7 @@ function assembleComponents(input: {
       modelBundle(
         "VAD Silero v5",
         VAD_FILES,
-        options.vad
-          ? "long-audio preprocessing"
-          : "long-audio preprocessing; --diarize installs it to window audio into labelable segments",
+        options.vad ? "long-audio preprocessing" : "long-audio preprocessing; --diarize installs it to window audio into labelable segments",
       ),
     );
   }
@@ -375,9 +357,7 @@ function assembleComponents(input: {
       modelBundle(
         "Diarization Sortformer",
         DIARIZE_FILES,
-        isDarwinArm64()
-          ? "speaker labels for --speakers"
-          : "darwin-arm64 only; install will reject this flag on the current platform",
+        isDarwinArm64() ? "speaker labels for --speakers" : "darwin-arm64 only; install will reject this flag on the current platform",
       ),
     );
   }
@@ -404,10 +384,8 @@ function renderComponentLines(components: PlanComponent[]): string[] {
   const status = (c: PlanComponent) => (c.refresh ? "refresh" : c.cached ? "cached" : "needed");
   const lines: string[] = [];
   for (const c of components) {
-    const size =
-      c.sizeBytes === null ? "size unknown" : c.external ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
-    const detail =
-      c.sizeBytes === null ? "not pinned in this build" : c.external ? "approximate" : `${c.sizeBytes} bytes`;
+    const size = c.sizeBytes === null ? "size unknown" : c.external ? `~${humanBytes(c.sizeBytes)}` : humanBytes(c.sizeBytes);
+    const detail = c.sizeBytes === null ? "not pinned in this build" : c.external ? "approximate" : `${c.sizeBytes} bytes`;
     lines.push(`  - ${c.name}: ${size} (${detail}, ${status(c)}, ${c.source})`);
     if (c.note) lines.push(`    ${c.note}`);
   }
@@ -448,15 +426,11 @@ function renderBehaviorLines(ttsLangs: string[], wantsAnyKokoro: boolean): strin
     "Install behavior:",
     "  - No files are downloaded or changed by --plan.",
     "  - install verifies model SHA-256 hashes and reuses matching cached files unless --no-cache is set.",
-    isDarwinArm64()
-      ? "  - macOS install signs/unquarantines downloaded binaries for Gatekeeper."
-      : "  - No macOS Gatekeeper signing step on this platform.",
+    isDarwinArm64() ? "  - macOS install signs/unquarantines downloaded binaries for Gatekeeper." : "  - No macOS Gatekeeper signing step on this platform.",
     "  - install warms the ASR backend after downloads; CoreML warm-up typically takes 1-2 min, ONNX warm-up is about 500 ms.",
   ];
   if (ttsLangs.length > 0 && wantsAnyKokoro && isDarwinArm64()) {
-    lines.push(
-      "  - --tts stages FluidAudio's Kokoro ANE assets during install, then warms the CoreML chain; first synthesis compiles, it does not download.",
-    );
+    lines.push("  - --tts stages FluidAudio's Kokoro ANE assets during install, then warms the CoreML chain; first synthesis compiles, it does not download.");
   }
   return lines;
 }

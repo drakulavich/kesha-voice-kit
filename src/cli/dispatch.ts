@@ -41,10 +41,7 @@ function isPathLike(arg: string): boolean {
  * - `"unknown"`    — bare token that looks like a typo (not a flag, not path-like)
  * - `"main"`       — flags, path-like args, or no arg (→ transcribe / help)
  */
-export function classifyFirstArg(
-  firstArg: string | undefined,
-  subcommandKeys: string[],
-): "subcommand" | "unknown" | "main" {
+export function classifyFirstArg(firstArg: string | undefined, subcommandKeys: string[]): "subcommand" | "unknown" | "main" {
   if (!firstArg) return "main";
   if (subcommandKeys.includes(firstArg)) return "subcommand";
   // Flags and path-like tokens fall through to the main transcribe command.
@@ -111,10 +108,7 @@ function reportThrows<T extends ArgsDef>(command: CommandDef<T>): CommandDef<T> 
       try {
         return await run(context);
       } catch (err) {
-        const coded =
-          err instanceof KeshaError
-            ? err
-            : new KeshaError("E_INTERNAL", errorMessage(err), { hint: SUPPORT_BUNDLE_HINT });
+        const coded = err instanceof KeshaError ? err : new KeshaError("E_INTERNAL", errorMessage(err), { hint: SUPPORT_BUNDLE_HINT });
         log.error(coded.render());
         process.exit(exitCodeFor(coded));
       }

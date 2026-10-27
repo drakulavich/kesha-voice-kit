@@ -141,10 +141,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
       return {
         args: ["missing.wav"],
         code: "E_INPUT_NOT_FOUND",
-        stderrContains: [
-          "missing.wav: error [E_INPUT_NOT_FOUND]: File not found",
-          `hint: check the path, relative to the current directory ${REPO_ROOT}`,
-        ],
+        stderrContains: ["missing.wav: error [E_INPUT_NOT_FOUND]: File not found", `hint: check the path, relative to the current directory ${REPO_ROOT}`],
       };
     },
   },
@@ -222,11 +219,7 @@ const KNOWN_BAD_INPUTS: BadInput[] = [
         env: { KESHA_ENGINE_BIN: binPath },
         code: "E_INVALID_ARG",
         exitCode: 2,
-        stderrContains: [
-          "KESHA_ENGINE_BIN",
-          binPath,
-          "Fix: point KESHA_ENGINE_BIN at a path whose parent directories are directories, not files",
-        ],
+        stderrContains: ["KESHA_ENGINE_BIN", binPath, "Fix: point KESHA_ENGINE_BIN at a path whose parent directories are directories, not files"],
         stderrNotContains: ["EEXIST:"],
       };
     },

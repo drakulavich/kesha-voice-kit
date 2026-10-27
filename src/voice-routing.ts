@@ -126,29 +126,20 @@ function baseLangOf(code: string | undefined): string {
  * voice that can. Any failure keeps the Kokoro voice, so the engine still refuses with its
  * own hint rather than this silently changing what spoke.
  */
-async function nativeScriptOverride(
-  lang: string,
-  text: string,
-  options: ResolveSayVoiceOptions,
-): Promise<string | undefined> {
+async function nativeScriptOverride(lang: string, text: string, options: ResolveSayVoiceOptions): Promise<string | undefined> {
   const platform = options.platform ?? process.platform;
   if (platform !== "darwin") return undefined;
   const route = NATIVE_SCRIPT_ROUTES[lang];
   if (!route || !dominantScript(text, route.script)) return undefined;
   try {
-    const voices = options.listVoices
-      ? await options.listVoices(options.signal)
-      : await listVoiceIds({}, options.signal);
+    const voices = options.listVoices ? await options.listVoices(options.signal) : await listVoiceIds({}, options.signal);
     return avSpeechVoiceFor(voices, route);
   } catch {
     return undefined;
   }
 }
 
-async function detectLang(
-  text: string,
-  options: ResolveSayVoiceOptions,
-): Promise<{ code?: string; confidence: number }> {
+async function detectLang(text: string, options: ResolveSayVoiceOptions): Promise<{ code?: string; confidence: number }> {
   if (!text) return { confidence: 0 };
   const detected = options.detectLanguage
     ? await options.detectLanguage(text, options.signal)
@@ -175,8 +166,7 @@ export async function resolveSayVoice(
   options: ResolveSayVoiceOptions = {},
 ): Promise<string | undefined> {
   if (explicitVoice !== undefined) return explicitVoice;
-  const { code, confidence } =
-    langHint !== undefined ? { code: langHint, confidence: 1 } : await detectLang(text, options);
+  const { code, confidence } = langHint !== undefined ? { code: langHint, confidence: 1 } : await detectLang(text, options);
   const voice = pickVoiceForLang(code, confidence, options.platform, options.arch);
   if (confidence < 0.5 && mostlyCyrillicWords(text)) {
     return pickVoiceForLang("ru", 1, options.platform, options.arch);

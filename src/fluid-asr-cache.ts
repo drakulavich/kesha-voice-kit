@@ -7,8 +7,7 @@ import { keshaCacheDir } from "./paths";
 // Says nothing about location: since #688 the bundle may sit inside the Kesha cache or in
 // FluidAudio's own tree, and either way it is the backend that fetches it, not the pinned
 // downloader — which is what the note is actually warning about.
-export const FLUID_ASR_CACHE_NOTE =
-  "required for speech-to-text; fetched by the backend during warm-up, not by Kesha's pinned downloader";
+export const FLUID_ASR_CACHE_NOTE = "required for speech-to-text; fetched by the backend during warm-up, not by Kesha's pinned downloader";
 
 /**
  * Which ASR layout applies. The reported backend is authoritative; when the capabilities
@@ -45,13 +44,7 @@ export function fluidAsrCachePath(homeDir = diagnosticHomeDir(), cacheRoot = kes
  * accepting `EncoderInt4.mlmodelc` would pass preflight and then let FluidAudio fetch
  * the int8 encoder on first transcribe. Keep in step with `models/paths.rs::FLUID_ASR_REQUIRED`.
  */
-export const FLUID_ASR_REQUIRED = [
-  "Preprocessor.mlmodelc",
-  "Encoder.mlmodelc",
-  "Decoder.mlmodelc",
-  "JointDecisionv3.mlmodelc",
-  "parakeet_vocab.json",
-];
+export const FLUID_ASR_REQUIRED = ["Preprocessor.mlmodelc", "Encoder.mlmodelc", "Decoder.mlmodelc", "JointDecisionv3.mlmodelc", "parakeet_vocab.json"];
 
 /**
  * Complete enough to transcribe. Mirrors `models/paths.rs::fluidaudio_asr_ready` — a bare

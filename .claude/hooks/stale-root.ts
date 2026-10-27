@@ -63,11 +63,7 @@ async function git(cwd: string, args: string[], timeout: number): Promise<string
 }
 
 async function main(): Promise<void> {
-  const commonDir = await git(
-    process.env.CLAUDE_PROJECT_DIR ?? process.cwd(),
-    ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    2000,
-  );
+  const commonDir = await git(process.env.CLAUDE_PROJECT_DIR ?? process.cwd(), ["rev-parse", "--path-format=absolute", "--git-common-dir"], 2000);
   if (!commonDir || basename(commonDir) !== ".git") return;
   const root = dirname(commonDir);
   const branch = await git(root, ["symbolic-ref", "--quiet", "--short", "HEAD"], 2000);

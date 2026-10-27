@@ -5,13 +5,7 @@ import { log } from "../log";
 import { errorMessage } from "../error-utils";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { getEngineCapabilities } from "../engine";
-import {
-  installableTtsLangs,
-  performInstall,
-  resolveBackendFlag,
-  resolveNoCacheFlag,
-  unavailableBackendRefusal,
-} from "./install";
+import { installableTtsLangs, performInstall, resolveBackendFlag, resolveNoCacheFlag, unavailableBackendRefusal } from "./install";
 import type { SharedInstallArgs } from "./types";
 
 const TTS_LANG_LABELS: Record<string, string> = {
@@ -94,10 +88,7 @@ export function initInstallArgs(selection: InitSelection): string[] {
   return installCommandTokens(selection, selection.ttsLangs);
 }
 
-export function omitUnsupportedDiarize(
-  selection: InitSelection,
-  canDiarize = canInstallDiarizeOnPlatform(),
-): InitSelection {
+export function omitUnsupportedDiarize(selection: InitSelection, canDiarize = canInstallDiarizeOnPlatform()): InitSelection {
   return selection.diarize && !canDiarize ? { ...selection, diarize: false } : selection;
 }
 

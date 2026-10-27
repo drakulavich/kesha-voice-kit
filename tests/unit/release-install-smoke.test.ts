@@ -33,9 +33,7 @@ describe("release install smoke", () => {
 
     expect(job.needs).toContain("npm-publish");
     expect(job.if).toContain("needs.npm-publish.result == 'success'");
-    expect(job.env?.VERSION ?? job.steps.find((s: { run?: string }) => s.run?.includes(SCRIPT)).env.VERSION).toBe(
-      "${{ needs.plan.outputs.version }}",
-    );
+    expect(job.env?.VERSION ?? job.steps.find((s: { run?: string }) => s.run?.includes(SCRIPT)).env.VERSION).toBe("${{ needs.plan.outputs.version }}");
   });
 
   test("artifact mode refuses an empty artifact directory by path, before touching any model", () => {

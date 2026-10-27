@@ -24,9 +24,7 @@ function synthesizingEngine(lang: { code: string; confidence: number } | null): 
   const dir = tempDir("kesha-mcp-synth-");
   const binPath = join(dir, "kesha-engine");
   const argvPath = join(dir, "say-argv");
-  const detect = lang
-    ? `printf '%s\\n' '${JSON.stringify(lang)}'\n  exit 0`
-    : `printf '%s\\n' 'detect-text-lang: unsupported on this build' >&2\n  exit 2`;
+  const detect = lang ? `printf '%s\\n' '${JSON.stringify(lang)}'\n  exit 0` : `printf '%s\\n' 'detect-text-lang: unsupported on this build' >&2\n  exit 2`;
   writeFileSync(
     binPath,
     `#!/bin/sh

@@ -2,19 +2,7 @@ import { KeshaError } from "./engine/events";
 import { errorMessage } from "./error-utils";
 import { PATH_ERRNOS } from "./path-errnos";
 import { resolveStatePaths } from "./state-paths";
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readFileSync,
-  readSync,
-  readdirSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
@@ -27,8 +15,7 @@ const DEFAULT_TAIL_BYTES = 64 * 1024;
 const SAFE_FIELD_NAME = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 const SAFE_STRING_VALUE = /^[A-Za-z0-9_.@+-]{1,120}$/;
 const SAFE_EVENT = /^[a-z][a-z0-9]*(?:\.[a-z][a-z0-9]*)*$/;
-const DISALLOWED_FIELD_NAME =
-  /(?:path|file|filename|basename|message|text|transcript|stdout|stderr|env|token|secret|password|key|url|prompt|content|raw)/i;
+const DISALLOWED_FIELD_NAME = /(?:path|file|filename|basename|message|text|transcript|stdout|stderr|env|token|secret|password|key|url|prompt|content|raw)/i;
 // Only sees values SAFE_STRING_VALUE accepted, so a URI-scheme arm here could never fire (#900).
 const UNSAFE_STRING_VALUE =
   /(?:[\\/]|[A-Za-z0-9_-][A-Za-z0-9_.-]*\.(?:aac|aiff?|caf|flac|m4a|m4v|mov|mp3|mp4|ogg|opus|wav|webm|wma)\b|(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}\b)/i;
@@ -273,11 +260,7 @@ function appendDiagnosticLogLine(line: Uint8Array, status: DiagnosticLogStatus):
   writeFileSync(status.activePath, line, { flag: "a" });
 }
 
-export function buildDiagnosticLogLine(
-  event: string,
-  fields: DiagnosticLogFields = {},
-  options: DiagnosticLogOptions = {},
-): Uint8Array {
+export function buildDiagnosticLogLine(event: string, fields: DiagnosticLogFields = {}, options: DiagnosticLogOptions = {}): Uint8Array {
   validateEventName(event);
   const payload: Record<string, DiagnosticLogValue> = {
     ts: (options.now ?? new Date()).toISOString(),

@@ -9,15 +9,7 @@ import { defaultEngineBinPath, keshaCacheDir } from "./paths";
 import { engineAbortError, interruptedRun } from "./process-tree";
 import { resolveStatePaths } from "./state-paths";
 import { engineExitCause, engineSignal, runEngineProcess, spawnHint } from "./engine/spawn";
-import {
-  engineFailure,
-  KeshaError,
-  quoteInvalidLine,
-  renderError,
-  replaceEngineHint,
-  SUPPORT_BUNDLE_HINT,
-  type ErrorEvent,
-} from "./engine/events";
+import { engineFailure, KeshaError, quoteInvalidLine, renderError, replaceEngineHint, SUPPORT_BUNDLE_HINT, type ErrorEvent } from "./engine/events";
 import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
 import {
   describeToCapabilities,
@@ -92,11 +84,7 @@ export function engineMissingError(backend: string, ...installFlags: string[]): 
     : cacheSource === "default"
       ? `bun add -g @drakulavich/kesha-voice-kit, then ${installHint(...installFlags)}`
       : `${cacheSource} is set; run \`${installHint(...installFlags)}\` to install there, or unset it`;
-  return new KeshaError(
-    "E_ENGINE_SPAWN",
-    `No ${backend} backend is installed: no kesha-engine at ${getEngineBinPath()}`,
-    { hint },
-  );
+  return new KeshaError("E_ENGINE_SPAWN", `No ${backend} backend is installed: no kesha-engine at ${getEngineBinPath()}`, { hint });
 }
 
 export interface RunEngineOptions {
@@ -135,8 +123,7 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
   const { events } = run;
   const stderr = events.stderr.trim();
   // #275 D4: warnings reach the user on success; on failure they travel inside the KeshaError.
-  if (run.exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0)
-    process.stderr.write(`${stderr}\n`);
+  if (run.exitCode === 0 && events.invalid.length === 0 && events.error === null && stderr.length > 0) process.stderr.write(`${stderr}\n`);
   return {
     stdout: run.stdout.trim(),
     stderr,
@@ -160,11 +147,10 @@ function failed(run: EngineRun): boolean {
 function assertEngineSupported(binPath: string): void {
   const installed = readInstalledEngineVersion(binPath);
   if (installed === null || !predatesMinimumEngine(installed)) return;
-  throw new KeshaError(
-    "E_ENGINE_PROTOCOL",
-    `kesha-engine at ${binPath} is v${installed}; this CLI needs v${MIN_ENGINE_VERSION} or newer`,
-    { hint: replaceEngineHint(), versionMismatch: true },
-  );
+  throw new KeshaError("E_ENGINE_PROTOCOL", `kesha-engine at ${binPath} is v${installed}; this CLI needs v${MIN_ENGINE_VERSION} or newer`, {
+    hint: replaceEngineHint(),
+    versionMismatch: true,
+  });
 }
 
 let cachedDescribe: { identity: string; doc: DescribeDocument } | null = null;
@@ -288,20 +274,16 @@ function assertDiarizeModelInstalled(): void {
   const envPath = process.env.KESHA_DIARIZE_MODEL_PATH;
   if (envPath !== undefined) {
     if (existsSync(envPath)) return;
-    throw new KeshaError(
-      "E_MODEL_MISSING",
-      `speaker diarization requires a model path: KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`,
-      { hint: `point KESHA_DIARIZE_MODEL_PATH at the model, or unset it and run \`${installHint("--diarize")}\`` },
-    );
+    throw new KeshaError("E_MODEL_MISSING", `speaker diarization requires a model path: KESHA_DIARIZE_MODEL_PATH set but path does not exist: ${envPath}`, {
+      hint: `point KESHA_DIARIZE_MODEL_PATH at the model, or unset it and run \`${installHint("--diarize")}\``,
+    });
   }
 
   const modelPath = defaultDiarizeModelPath();
   if (hasDiarizeModelLayout(modelPath)) return;
-  throw new KeshaError(
-    "E_MODEL_MISSING",
-    `speaker diarization requires a model path: diarization model not found at ${modelPath}`,
-    { hint: `run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH)` },
-  );
+  throw new KeshaError("E_MODEL_MISSING", `speaker diarization requires a model path: diarization model not found at ${modelPath}`, {
+    hint: `run \`${installHint("--diarize")}\` (or set KESHA_DIARIZE_MODEL_PATH)`,
+  });
 }
 
 /** #768: `--speakers` forces VAD windowing, so the VAD model is a hard dependency. */
@@ -341,11 +323,7 @@ function hostIsVirtualMac(): boolean {
 }
 
 /** CoreML transcription is unreliable without an Apple Neural Engine, which no virtualised Mac has (#1419); synthesis says the same (#742). */
-export function withVirtualMacHint(
-  err: KeshaError,
-  platform: string = process.platform,
-  isVirtualMac: () => boolean = hostIsVirtualMac,
-): KeshaError {
+export function withVirtualMacHint(err: KeshaError, platform: string = process.platform, isVirtualMac: () => boolean = hostIsVirtualMac): KeshaError {
   if (platform !== "darwin" || !err.message.includes("Swift bridge error") || !isVirtualMac()) return err;
   return new KeshaError(err.code, err.message, {
     exitCode: err.exitCode,
@@ -413,10 +391,7 @@ export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
   return { text: parsed.text, segments };
 }
 
-export async function transcribeEngineWithSegments(
-  audioPath: string,
-  opts: TranscribeEngineOptions = {},
-): Promise<TranscriptionOutput> {
+export async function transcribeEngineWithSegments(audioPath: string, opts: TranscribeEngineOptions = {}): Promise<TranscriptionOutput> {
   const args = await validatedArgs(buildTranscribeArgs(audioPath, opts, true), { signal: opts.signal });
   if (opts.speakers) assertSpeakerModelsInstalled();
   const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
@@ -425,13 +400,9 @@ export async function transcribeEngineWithSegments(
     return parseTranscriptionOutput(run.stdout);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new KeshaError(
-      err instanceof KeshaError ? err.code : "E_INTERNAL",
-      `${message}: ${quoteInvalidLine(run.stdout)}`,
-      {
-        hint: SUPPORT_BUNDLE_HINT,
-      },
-    );
+    throw new KeshaError(err instanceof KeshaError ? err.code : "E_INTERNAL", `${message}: ${quoteInvalidLine(run.stdout)}`, {
+      hint: SUPPORT_BUNDLE_HINT,
+    });
   }
 }
 
@@ -479,11 +450,7 @@ export async function validateRecordRequest(target: RecordTarget, maxSeconds: nu
  * land inside it. When the reader leaves (EPIPE), `onReaderLeft` fires once and the relay keeps
  * draining without writing, so the engine never blocks on a full pipe while it is being stopped.
  */
-async function forwardStdout(
-  stream: ReadableStream<Uint8Array>,
-  status: { clear(): void },
-  onReaderLeft: () => void,
-): Promise<void> {
+async function forwardStdout(stream: ReadableStream<Uint8Array>, status: { clear(): void }, onReaderLeft: () => void): Promise<void> {
   const reader = stream.getReader();
   let readerLeft = false;
   // Bun reports a stdout EPIPE through the write callback, never as a throw (#1001); the global guard swallows the event.
@@ -572,29 +539,21 @@ export function parseLangResult(stdout: string): LangDetectResult | null {
   }
 }
 
-export async function detectAudioLanguageEngine(
-  audioPath: string,
-  opts: RunEngineOptions = {},
-): Promise<LangDetectResult | null> {
+export async function detectAudioLanguageEngine(audioPath: string, opts: RunEngineOptions = {}): Promise<LangDetectResult | null> {
   if (!isEngineInstalled()) return null;
   const run = await runEngine(["detect-lang", "--", audioPath], opts);
   // The tolerant form: a noisy onnxruntime warning must not blind a best-effort guess.
   if (reportedFailure(run)) {
     const crashed = !run.error && engineSignal(run.exitCode, run.signalCode) !== null;
     const cause = run.error ? renderError(run.error) : engineExitCause("detect-lang", run.exitCode, run.signalCode);
-    const fix = crashed
-      ? SUPPORT_BUNDLE_HINT
-      : "run `kesha install` to reinstall the engine and its language-ID model.";
+    const fix = crashed ? SUPPORT_BUNDLE_HINT : "run `kesha install` to reinstall the engine and its language-ID model.";
     log.warn(`Audio language detection failed: ${cause}\n  Fix: ${fix}`);
     return null;
   }
   return parseLangResult(run.stdout);
 }
 
-export async function detectTextLanguageEngine(
-  text: string,
-  opts: RunEngineOptions = {},
-): Promise<LangDetectResult | null> {
+export async function detectTextLanguageEngine(text: string, opts: RunEngineOptions = {}): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
   assertEngineSupported(getEngineBinPath());

@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { cpSync, mkdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import {
-  assetSizes,
-  buildEnginePin,
-  newestStableRelease,
-  PINNED_ASSETS,
-  withEnginePin,
-} from "../../.github/scripts/engine-pin";
+import { assetSizes, buildEnginePin, newestStableRelease, PINNED_ASSETS, withEnginePin } from "../../.github/scripts/engine-pin";
 import { engineTargetEntries, SIDECARS } from "../../src/engine-targets";
 import { resolveEngine } from "../../src/package-info";
 import { readRepoFile, REPO_ROOT } from "../helpers/repo";
@@ -15,18 +9,12 @@ import { tempDir } from "../helpers/temp-dir";
 
 const sha = (c: string) => c.repeat(64);
 const SUMS = `${PINNED_ASSETS.map((name, i) => `${sha("abcde"[i]!)}  ./${name}`).join("\n")}\n${sha("f")}  ./kesha-voice-kit_2.0.0-1_amd64.deb\n`;
-const ASSETS = [
-  ...PINNED_ASSETS.map((name, i) => ({ name, size: 1000 + i })),
-  { name: "kesha-voice-kit_2.0.0-1_amd64.deb", size: 7 },
-];
+const ASSETS = [...PINNED_ASSETS.map((name, i) => ({ name, size: 1000 + i })), { name: "kesha-voice-kit_2.0.0-1_amd64.deb", size: 7 }];
 
 describe("buildEnginePin", () => {
   // A download with no pin falls back to the release's own SHA256SUMS, which an attacker who can replace the asset can replace too.
   test("covers every Engine asset and Sidecar the installer downloads", () => {
-    const downloaded = [
-      ...engineTargetEntries().map(({ target }) => target.assetName),
-      ...SIDECARS.map((s) => s.assetName),
-    ];
+    const downloaded = [...engineTargetEntries().map(({ target }) => target.assetName), ...SIDECARS.map((s) => s.assetName)];
     expect([...PINNED_ASSETS].sort()).toEqual(downloaded.sort());
   });
 
@@ -86,13 +74,7 @@ describe("newestStableRelease", () => {
   });
 
   test("picks the highest published stable version, not the newest or the Latest-marked one", () => {
-    const releases = [
-      rel("v2.1.0-alpha.3", { isPrerelease: true }),
-      rel("v1.31.0-cli"),
-      rel("v2.0.10"),
-      rel("v2.0.9"),
-      rel("v2.2.0", { isDraft: true }),
-    ];
+    const releases = [rel("v2.1.0-alpha.3", { isPrerelease: true }), rel("v1.31.0-cli"), rel("v2.0.10"), rel("v2.0.9"), rel("v2.2.0", { isDraft: true })];
     expect(newestStableRelease(releases)).toBe("2.0.10");
   });
 
@@ -124,9 +106,7 @@ describe("resolveEngine", () => {
     expect(resolveEngine({ version: "2.0.0", kesha: { engine: { version: 2, sha256: "x" } } })).toEqual({
       version: "2.0.0",
     });
-    expect(
-      resolveEngine({ version: "2.0.0", kesha: { engine: { ...pin, size: { "kesha-engine-linux-x64": -1 } } } }),
-    ).toEqual({ version: "2.0.0" });
+    expect(resolveEngine({ version: "2.0.0", kesha: { engine: { ...pin, size: { "kesha-engine-linux-x64": -1 } } } })).toEqual({ version: "2.0.0" });
   });
 });
 

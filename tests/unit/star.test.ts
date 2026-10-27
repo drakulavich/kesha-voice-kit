@@ -1,12 +1,5 @@
 import { describe, test, expect, afterEach } from "bun:test";
-import {
-  shouldShowStarPrompt,
-  starSeenPath,
-  readStarSeen,
-  writeStarSeen,
-  hasStarMarker,
-  maybeAskForStar,
-} from "../../src/star";
+import { shouldShowStarPrompt, starSeenPath, readStarSeen, writeStarSeen, hasStarMarker, maybeAskForStar } from "../../src/star";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";

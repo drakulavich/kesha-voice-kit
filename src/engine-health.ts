@@ -50,10 +50,7 @@ export async function probeExecutable(binPath: string, args: string[] = []): Pro
  * The `.version` marker beside the binary is a claim any other writer can overwrite; the engine
  * is the only witness to which engine is actually on disk (#997).
  */
-export async function readExecutableVersion(
-  binPath: string,
-  timeoutMs = ENGINE_PROBE_TIMEOUT_MS,
-): Promise<string | null> {
+export async function readExecutableVersion(binPath: string, timeoutMs = ENGINE_PROBE_TIMEOUT_MS): Promise<string | null> {
   if (!existsSync(binPath)) return null;
 
   let stdout: string;

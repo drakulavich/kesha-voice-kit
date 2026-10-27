@@ -129,11 +129,9 @@ const countOf = (kind: string) => references.filter((reference) => reference.kin
 const isDangling = ({ file }: Reference) => !file || !existsExactly(file);
 
 /** A pointer into a file that is not on disk is the dangling report's finding, so this one stays silent on it. */
-const isMissingSymbol = ({ file, symbol }: Reference) =>
-  Boolean(symbol && file && existsExactly(file) && !declares(readRepoFile(file), symbol));
+const isMissingSymbol = ({ file, symbol }: Reference) => Boolean(symbol && file && existsExactly(file) && !declares(readRepoFile(file), symbol));
 
-const report = (refs: Reference[], flagged: (reference: Reference) => boolean) =>
-  refs.filter(flagged).map(({ origin, label }) => `${origin} → ${label}`);
+const report = (refs: Reference[], flagged: (reference: Reference) => boolean) => refs.filter(flagged).map(({ origin, label }) => `${origin} → ${label}`);
 
 // The real tree is clean, so both reports below can be neutralised with no assertion firing — these
 // synthetic references pin the predicates and the report itself instead (#1141 review round 1).

@@ -61,19 +61,14 @@ describe("withCargoVersion", () => {
   });
 
   test("takes the version from [package], not from a table that precedes it", () => {
-    const out = withCargoVersion(
-      '[workspace.package]\nversion = "0.0.1"\n\n[package]\nversion = "1.0.0"\n',
-      "1.24.8-alpha.1",
-    );
+    const out = withCargoVersion('[workspace.package]\nversion = "0.0.1"\n\n[package]\nversion = "1.0.0"\n', "1.24.8-alpha.1");
 
     expect(out).toContain('[workspace.package]\nversion = "0.0.1"');
     expect(out).toContain('[package]\nversion = "1.24.8-alpha.1"');
   });
 
   test("refuses a manifest with no [package] table", () => {
-    expect(() => withCargoVersion('[workspace]\nversion = "1.0.0"\n', "1.24.8-alpha.1")).toThrow(
-      /no \[package\] table/,
-    );
+    expect(() => withCargoVersion('[workspace]\nversion = "1.0.0"\n', "1.24.8-alpha.1")).toThrow(/no \[package\] table/);
   });
 
   test("refuses a [package] table with no version line", () => {
