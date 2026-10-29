@@ -44,7 +44,9 @@ pub use staging::{
 
 use anyhow::Result;
 
-use download::{cleanup_legacy, parallel_download};
+#[cfg(unix)]
+use download::cleanup_orphan_staging;
+use download::parallel_download;
 use manifest::*;
 
 pub fn install(no_cache: bool) -> Result<()> {
@@ -63,6 +65,7 @@ pub fn install(no_cache: bool) -> Result<()> {
     let manifest: Vec<&ModelFile> = LANG_ID_FILES.iter().collect();
     parallel_download(&cache, &manifest, no_cache)?;
 
-    cleanup_legacy(&cache);
+    #[cfg(unix)]
+    cleanup_orphan_staging(&cache);
     Ok(())
 }

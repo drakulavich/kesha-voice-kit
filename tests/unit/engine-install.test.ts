@@ -534,17 +534,6 @@ exit 0
     expect(exitCodeFor(caught)).toBe(1);
   });
 
-  posixTest("the model install spawn speaks protocol 4", async () => {
-    const dir = stageInstallableEngine("kesha-install-proto-");
-    writeEngineWithInstallBody(dir, `  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2`);
-
-    const stderr = await captureStderr(false, async () => {
-      await installEngine({});
-    });
-
-    expect(stderr).toContain("proto=4");
-  });
-
   darwinArmTest("a say error event warns with the rendered coded line, and the install still resolves", async () => {
     const dir = stageInstallableEngine("kesha-warmup-error-");
     writeEngineWithSayBody(

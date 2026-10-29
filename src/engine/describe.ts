@@ -1,6 +1,6 @@
 import { KeshaError, replaceEngineHint } from "./events";
 
-export const PROTOCOL_VERSION = 4;
+const PROTOCOL_VERSION = 4;
 
 type Gate = null | string | string[];
 

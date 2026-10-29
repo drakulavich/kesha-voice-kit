@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { tryParseSemver } from "./semver.mjs";
 import { errorMessage } from "./error-utils";
 
@@ -48,10 +48,6 @@ export function shouldShowStarPrompt(current: string, seen: string | null): bool
   if (c[0] > s[0]) return true;
   if (c[0] === s[0] && c[1] > s[1]) return true;
   return false;
-}
-
-export function hasStarMarker(binPath: string): boolean {
-  return existsSync(starSeenPath(binPath));
 }
 
 /**

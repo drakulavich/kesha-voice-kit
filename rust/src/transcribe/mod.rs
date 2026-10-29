@@ -27,7 +27,6 @@ pub const TRANSCRIBE_SEGMENTS_FEATURE: &str = "transcribe.segments";
 /// Capability flag surfaced via `describe` when the engine ships
 /// with FluidAudio diarization. Only true on darwin-arm64 release builds
 /// that include the `system_diarize` feature. Closes #199 angle D.
-#[cfg_attr(not(feature = "system_diarize"), allow(dead_code))]
 pub const TRANSCRIBE_DIARIZE_FEATURE: &str = "transcribe.diarize";
 
 /// Capability flag for the opt-in written-form (ITN) pass on transcript text.

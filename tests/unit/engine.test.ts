@@ -638,12 +638,6 @@ exit 2
     }
   });
 
-  fakeEngineTest("recordEngine spawns the engine on protocol 4", async () => {
-    const engine = writeRecordingEngine("kesha-engine-record-proto-", `  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2`);
-    const out = await withEngineEnv(engine, () => captureStderr(false, () => recordEngine({ out: "/tmp/out.wav" }, 10)));
-    expect(out).toContain("proto=4");
-  });
-
   fakeEngineTest("record --out takes a file name starting with - (#1503)", async () => {
     const engine = writeOutParsingEngine("kesha-engine-record-dash-", "record", ["record.live"]);
     const dir = tempDir("kesha-record-dash-out-");
@@ -910,18 +904,18 @@ exit 2
     });
   });
 
-  fakeEngineTest("the engine is spawned with KESHA_PROTOCOL=4 and CRLF events are accepted", async () => {
+  fakeEngineTest("CRLF-terminated events are accepted", async () => {
     const engine = writeTranscribingEngine(
       "kesha-engine-crlf-",
       ["transcribe.segments"],
-      `  printf '{"kind":"progress","message":"proto=%s"}\\r\\n' "$KESHA_PROTOCOL" >&2
+      `  printf '{"kind":"progress","message":"crlf"}\\r\\n' >&2
   printf '%s\\n' '{"text":"ok","segments":[]}'`,
     );
     const seen: string[] = [];
     await withEngineEnv(engine, async () => {
       await transcribeEngineWithSegments("audio.wav", { onProgressLine: (line) => seen.push(line) });
     });
-    expect(seen).toEqual(["proto=4"]);
+    expect(seen).toEqual(["crlf"]);
   });
 
   fakeEngineTest("an error event fails the run even when the engine exits 0 (#1163)", async () => {

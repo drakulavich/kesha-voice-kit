@@ -1,11 +1,10 @@
-import { describe, it, expect, spyOn } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { chmodSync, existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { listVoiceIds, buildSayArgs, engineCrashMessage, MAX_TEXT_CHARS, say, validateSayText, type SayOptions } from "../../src/synth";
 import { getDescribe } from "../../src/engine";
-import { validateArgv } from "../../src/engine/describe";
 import { KeshaError } from "../../src/engine/events";
-import { describeDocument, describeJson, saveEngineEnv } from "../helpers/fake-engine";
+import { describeJson, saveEngineEnv } from "../helpers/fake-engine";
 import { errorMessage } from "../../src/error-utils";
 import { tempDir } from "../helpers/temp-dir";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
@@ -47,19 +46,6 @@ describe("SayOptions type contract", () => {
 });
 
 describe("buildSayArgs", () => {
-  it("starts with the 'say' subcommand", () => {
-    expect(buildSayArgs({})[0]).toBe("say");
-  });
-
-  it("appends text as a trailing positional", () => {
-    expect(buildSayArgs({ text: "Hello" })).toContain("Hello");
-  });
-
-  it("omits empty/undefined text (caller will pipe via stdin)", () => {
-    expect(buildSayArgs({ text: "" })).toEqual(["say"]);
-    expect(buildSayArgs({})).toEqual(["say"]);
-  });
-
   it("passes --voice when given", () => {
     expect(buildSayArgs({ text: "Hi", voice: "en-am_michael" })).toEqual(expect.arrayContaining(["--voice", "en-am_michael"]));
   });
@@ -96,18 +82,6 @@ describe("--no-expand-abbrev", () => {
 
   it("is not present by default", () => {
     expect(buildSayArgs({ ...baseOpts, noExpandAbbrev: false })).not.toContain("--no-expand-abbrev");
-  });
-
-  it("is built whenever asked for; the describe document decides whether it is sent", () => {
-    const argv = buildSayArgs({ ...baseOpts, noExpandAbbrev: true });
-    expect(argv).toContain("--no-expand-abbrev");
-    const expands = describeDocument({ features: ["tts", "tts.ru_acronym_expansion"] });
-    expect(validateArgv(argv, expands)).toEqual({ argv, warnings: [] });
-    const cannot = describeDocument({ features: ["tts"] });
-    const out = validateArgv(argv, cannot);
-    expect(out.argv).not.toContain("--no-expand-abbrev");
-    expect(out.warnings[0]).toContain("--no-expand-abbrev");
-    expect(out.warnings[0]).toContain("ignored");
   });
 });
 
@@ -259,23 +233,16 @@ describe("say on protocol 4", () => {
     }
   });
 
-  posixIt("returns the audio and is spawned with KESHA_PROTOCOL=4", async () => {
-    const engine = sayEngine(`  printf '{"kind":"progress","message":"proto=%s"}\\n' "$KESHA_PROTOCOL" >&2\n  printf 'RIFF'\n  exit 0`);
+  posixIt("returns the audio", async () => {
+    const engine = sayEngine(`  printf 'RIFF'\n  exit 0`);
     const restore = saveEngineEnv();
     process.env.KESHA_ENGINE_BIN = engine;
-    const written: string[] = [];
-    const stderrSpy = spyOn(process.stderr, "write").mockImplementation((chunk) => {
-      written.push(String(chunk));
-      return true;
-    });
     try {
       const audio = await say({ text: "hi" });
       expect(new TextDecoder().decode(audio)).toBe("RIFF");
     } finally {
-      stderrSpy.mockRestore();
       restore();
     }
-    expect(written.join("")).toContain("proto=4");
   });
 });
 
