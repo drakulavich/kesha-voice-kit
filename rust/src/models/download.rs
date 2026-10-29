@@ -822,21 +822,6 @@ fn lower_hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
-pub(super) fn cleanup_legacy(cache: &Path) {
-    let old_onnx = cache.join("v3");
-    if old_onnx.exists() {
-        events::progress(None, "Cleaning up legacy ONNX models...");
-        let _ = fs::remove_dir_all(&old_onnx);
-    }
-    let old_swift = cache.join("coreml").join("bin").join("parakeet-coreml");
-    if old_swift.exists() {
-        events::progress(None, "Cleaning up legacy CoreML binary...");
-        let _ = fs::remove_file(&old_swift);
-    }
-    #[cfg(unix)]
-    cleanup_orphan_staging(cache);
-}
-
 /// Age threshold for orphaned download staging. A SIGKILLed download leaves
 /// its `<name>.part.<pid>` behind forever (#619); a live concurrent
 /// installer's staging keeps a fresh mtime while `io::copy` streams into it.
@@ -849,7 +834,7 @@ pub(super) fn cleanup_legacy(cache: &Path) {
 const STALE_STAGING_SECS: u64 = 24 * 60 * 60;
 
 #[cfg(unix)]
-fn cleanup_orphan_staging(dir: &Path) {
+pub(super) fn cleanup_orphan_staging(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
