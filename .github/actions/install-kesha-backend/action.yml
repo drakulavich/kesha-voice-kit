@@ -1,5 +1,5 @@
 name: Install Kesha Backend
-description: Restore backend cache, install ffmpeg when needed, and install the Kesha backend
+description: Restore backend cache and install the Kesha backend
 
 inputs:
   cache-path:
@@ -14,10 +14,6 @@ inputs:
     description: Cache restore key prefix
     required: false
     default: ""
-  ffmpeg-provider:
-    description: How to install ffmpeg (skip, apt, or brew)
-    required: false
-    default: skip
   install-args:
     description: Additional arguments for `kesha install`
     required: false
@@ -71,12 +67,6 @@ runs:
         dir="${ENGINE_DIR/#\~/$HOME}"
         rm -rf "$dir"
         test ! -e "$dir"
-
-    - name: 🎬 Install ffmpeg
-      shell: bash
-      env:
-        FFMPEG_PROVIDER: ${{ inputs.ffmpeg-provider }}
-      run: bash .github/scripts/install-ffmpeg.sh
 
     - name: 🔊 Install kesha backend
       shell: bash

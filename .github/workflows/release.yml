@@ -271,7 +271,6 @@ jobs:
           cache-path: .kesha-ci-cache
           cache-key: kesha-models-tts-v3
           cache-cross-os: "true"
-          ffmpeg-provider: skip
           install-args: --tts en
           cache-write: "false"
       # `install --tts en` already fetched the ASR models, so transcribing the synthesis back costs no download.
@@ -345,7 +344,6 @@ jobs:
             ~/.cache/fluidaudio
           cache-key: ${{ runner.os }}-kesha-models-tts-v1
           cache-restore-keys: ${{ runner.os }}-kesha-models-tts-
-          ffmpeg-provider: skip
           install-args: --tts en
           cache-write: "false"
       - name: 🗣️ Synthesis smoke — Kokoro
