@@ -11,14 +11,7 @@ import { resolveStatePaths } from "./state-paths";
 import { engineExitCause, engineSignal, runEngineProcess, spawnHint } from "./engine/spawn";
 import { engineFailure, KeshaError, quoteInvalidLine, renderError, replaceEngineHint, SUPPORT_BUNDLE_HINT, type ErrorEvent } from "./engine/events";
 import { MIN_ENGINE_VERSION, predatesMinimumEngine, readInstalledEngineVersion } from "./engine-version-marker";
-import {
-  describeToCapabilities,
-  parseDescribe,
-  protocolMismatch,
-  validateArgv,
-  type DescribeDocument,
-  type EngineCapabilities,
-} from "./engine/describe";
+import { describeToCapabilities, parseDescribe, protocolMismatch, validateArgv, type DescribeDocument, type EngineCapabilities } from "./engine/describe";
 
 export type { EngineCapabilities };
 
