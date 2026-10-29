@@ -65,7 +65,6 @@ export function buildSayArgs(o: SayOptions): string[] {
   if (o.bitrate !== undefined) args.push("--bitrate", String(o.bitrate));
   if (o.sampleRate !== undefined) args.push("--sample-rate", String(o.sampleRate));
   if (o.noExpandAbbrev) args.push("--no-expand-abbrev");
-  if (o.text !== undefined && o.text.length > 0) args.push(o.text);
   return args;
 }
 
@@ -177,7 +176,7 @@ export async function say(opts: SayOptions): Promise<Uint8Array> {
   if (!isEngineInstalled()) {
     throw engineMissingError("speech synthesis", "--tts");
   }
-  const { argv: args, warnings } = validateArgv(buildSayArgs({ ...opts, text: undefined }), await getDescribe({ signal: opts.signal }));
+  const { argv: args, warnings } = validateArgv(buildSayArgs(opts), await getDescribe({ signal: opts.signal }));
   for (const warning of warnings) log.warn(warning);
   const before = outStamp(opts.out);
   const { exitCode, signalCode, aborted, stdout, events } = await runEngineProcess(getEngineBinPath(), args, {

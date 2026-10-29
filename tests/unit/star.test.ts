@@ -1,6 +1,6 @@
 import { describe, test, expect, afterEach } from "bun:test";
-import { shouldShowStarPrompt, starSeenPath, readStarSeen, writeStarSeen, hasStarMarker, maybeAskForStar } from "../../src/star";
-import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { shouldShowStarPrompt, starSeenPath, readStarSeen, writeStarSeen, maybeAskForStar } from "../../src/star";
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -65,9 +65,9 @@ describe("star-seen marker file", () => {
 
   test("round-trip write/read", () => {
     const binPath = mkTmpBinPath();
-    expect(hasStarMarker(binPath)).toBe(false);
+    expect(existsSync(starSeenPath(binPath))).toBe(false);
     writeStarSeen(binPath, "1.2.0");
-    expect(hasStarMarker(binPath)).toBe(true);
+    expect(existsSync(starSeenPath(binPath))).toBe(true);
     expect(readStarSeen(binPath)).toBe("1.2.0");
     rmSync(starSeenPath(binPath));
   });
@@ -123,7 +123,7 @@ describe("maybeAskForStar — orchestration", () => {
     const binPath = mkTmpBinPath();
     const { log, lines } = captureLog();
     await maybeAskForStar(binPath, null, log, shimsNoGh);
-    expect(hasStarMarker(binPath)).toBe(false);
+    expect(existsSync(starSeenPath(binPath))).toBe(false);
     expect(lines).toEqual([]);
   });
 
@@ -140,7 +140,7 @@ describe("maybeAskForStar — orchestration", () => {
     const binPath = mkTmpBinPath();
     const { log, lines } = captureLog();
     await maybeAskForStar(binPath, "1.2.0", log, shimsNoGh);
-    expect(hasStarMarker(binPath)).toBe(true);
+    expect(existsSync(starSeenPath(binPath))).toBe(true);
     expect(lines.join("\n")).toContain("consider starring the repo");
   });
 
@@ -152,7 +152,7 @@ describe("maybeAskForStar — orchestration", () => {
     const binPath = mkTmpBinPath();
     const { log, lines } = captureLog();
     await maybeAskForStar(binPath, "1.2.0", log, shimsWithGh({ authExit: 1, apiExit: 0 }));
-    expect(hasStarMarker(binPath)).toBe(true);
+    expect(existsSync(starSeenPath(binPath))).toBe(true);
     expect(lines.join("\n")).toContain("consider starring the repo");
   });
 
@@ -162,7 +162,7 @@ describe("maybeAskForStar — orchestration", () => {
     const binPath = mkTmpBinPath();
     const { log, lines } = captureLog();
     await maybeAskForStar(binPath, "1.2.0", log, shimsWithGh({ authExit: null, apiExit: 0 }));
-    expect(hasStarMarker(binPath)).toBe(true);
+    expect(existsSync(starSeenPath(binPath))).toBe(true);
     expect(lines.join("\n")).toContain("consider starring the repo");
   });
 
@@ -170,7 +170,7 @@ describe("maybeAskForStar — orchestration", () => {
     const binPath = mkTmpBinPath();
     const { log, lines } = captureLog();
     await maybeAskForStar(binPath, "1.2.0", log, shimsWithGh({ authExit: 0, apiExit: null }));
-    expect(hasStarMarker(binPath)).toBe(true);
+    expect(existsSync(starSeenPath(binPath))).toBe(true);
     expect(lines.join("\n")).toContain("⭐ If you enjoy Kesha Voice Kit");
   });
 
@@ -178,7 +178,7 @@ describe("maybeAskForStar — orchestration", () => {
     const binPath = mkTmpBinPath();
     const { log, lines } = captureLog();
     await maybeAskForStar(binPath, "1.2.0", log, shimsWithGh({ authExit: 0, apiExit: 0 }));
-    expect(hasStarMarker(binPath)).toBe(true);
+    expect(existsSync(starSeenPath(binPath))).toBe(true);
     expect(lines).toEqual([]);
   });
 
@@ -186,7 +186,7 @@ describe("maybeAskForStar — orchestration", () => {
     const binPath = mkTmpBinPath();
     const { log, lines } = captureLog();
     await maybeAskForStar(binPath, "1.2.0", log, shimsWithGh({ authExit: 0, apiExit: 1 }));
-    expect(hasStarMarker(binPath)).toBe(true);
+    expect(existsSync(starSeenPath(binPath))).toBe(true);
     const out = lines.join("\n");
     expect(out).toContain("⭐ If you enjoy Kesha Voice Kit");
     expect(out).toContain("gh api -X PUT /user/starred");

@@ -2,17 +2,11 @@ import { errorMessage } from "../error-utils";
 import { log } from "../log";
 import { abortOnSignal, engineAbortError, pendingInterruption, registerProcessTree } from "../process-tree";
 import { resolveStatePaths } from "../state-paths";
-import { PROTOCOL_VERSION } from "./describe";
 import { KeshaError, readEvents, type EventSinks, type StderrOutcome } from "./events";
 
 type SpawnStdioEntry = "inherit" | "pipe" | "ignore";
 type SpawnStdio = [SpawnStdioEntry, SpawnStdioEntry, SpawnStdioEntry];
 type EngineProcess = ReturnType<typeof Bun.spawn>;
-
-/** The env for a spawn whose stderr is parsed as protocol 4 events. */
-function protocolEnv(): Record<string, string | undefined> {
-  return { ...process.env, KESHA_PROTOCOL: String(PROTOCOL_VERSION) };
-}
 
 export function spawnHint(): string {
   return process.env.KESHA_ENGINE_BIN ? "KESHA_ENGINE_BIN points at it; fix the path or unset it and run `kesha install`" : "run `kesha install`";
@@ -99,7 +93,7 @@ export async function runEngineProcess<T = undefined>(binPath: string, args: str
   const startedAt = performance.now();
   log.debug(`spawn ${binPath} ${args.join(" ")}`);
   const eventsOnStderr = opts.stdio[2] === "pipe";
-  const proc = spawnEngineProcess(binPath, args, opts.stdio, eventsOnStderr ? protocolEnv() : process.env);
+  const proc = spawnEngineProcess(binPath, args, opts.stdio, process.env);
   const tree = registerProcessTree(proc);
   const cancel = abortOnSignal(tree, opts.signal);
   try {
