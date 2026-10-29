@@ -195,7 +195,6 @@ jobs:
         if: steps.probe.outputs.cache-hit != 'true'
         uses: ./.github/actions/install-kesha-backend
         with:
-          ffmpeg-provider: skip
           install-args: --tts en
 
       # `kesha install` also lands a Linux engine binary here. No consumer reads it — three purge
@@ -260,7 +259,6 @@ jobs:
         if: steps.probe.outputs.cache-hit != 'true'
         uses: ./.github/actions/install-kesha-backend
         with:
-          ffmpeg-provider: skip
           install-args: --tts en
 
       # `install` exits 0 on a failed warm-up and the exact key is immutable, so a partial save would

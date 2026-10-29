@@ -1,32 +1,25 @@
 #!/usr/bin/env python3
 """
-Convert speechbrain/lang-id-voxlingua107-ecapa to ONNX and CoreML.
+Convert speechbrain/lang-id-voxlingua107-ecapa to ONNX.
 
 Usage (inside a throwaway venv, per .claude/rules/python.md):
     python3 -m venv /tmp/lang-id-venv
-    /tmp/lang-id-venv/bin/pip install torch speechbrain coremltools onnx onnxruntime onnxscript
+    /tmp/lang-id-venv/bin/pip install torch speechbrain onnx onnxruntime onnxscript
     /tmp/lang-id-venv/bin/python scripts/convert-lang-id-model.py [--output-dir DIR]
     rm -rf /tmp/lang-id-venv
 
 Produces:
     - lang-id-ecapa.onnx + .onnx.data  (ONNX, ~86MB total)
-    - lang-id-ecapa.mlpackage           (CoreML, ~40MB)
-    - lang-id-ecapa.mlpackage.tar.gz    (CoreML archive for distribution)
     - labels.json                        (107 ISO 639-1 codes)
 
 Notes:
     - ONNX model takes raw waveform [1, samples] at 16kHz, outputs language_probs [1, 107]
-    - CoreML model takes precomputed mel features [1, T, 60], outputs language_logits [1, 107]
-      (softmax must be applied by the consumer — coremltools can't convert the traced softmax op)
-    - The CoreML export uses torch.export + run_decompositions to avoid coremltools bugs
-      with jit.trace (the 'int' op conversion error in softmax)
 """
 
 import argparse
 import json
 import os
 import sys
-import tarfile
 
 import numpy as np
 import torch
@@ -129,72 +122,6 @@ def main():
 
     max_diff = np.abs(test_output.detach().numpy() - onnx_probs).max()
     print(f"  Max diff PyTorch vs ONNX: {max_diff:.6f}")
-
-    # --- CoreML Export ---
-    # Embedding-only: mel features -> embedding -> classifier -> logits (no softmax)
-    # coremltools has a bug with traced softmax's 'int' op, and can't handle STFT.
-    # So CoreML takes precomputed mel features and outputs raw logits.
-    # The Swift consumer applies softmax.
-    class LangIdEmbeddingWrapper(nn.Module):
-        def __init__(self, classifier):
-            super().__init__()
-            self.embedding_model = classifier.mods.embedding_model
-            self.classifier_mod = classifier.mods.classifier
-
-        def forward(self, feats):
-            embeddings = self.embedding_model(feats)
-            outputs = self.classifier_mod(embeddings)
-            return outputs.squeeze(1)  # raw logits [batch, num_langs]
-
-    embedding_wrapper = LangIdEmbeddingWrapper(classifier)
-    embedding_wrapper.train(False)
-
-    # Compute mel features to get the input shape
-    with torch.no_grad():
-        feats = classifier.mods.compute_features(dummy_wav)
-        feats = classifier.mods.mean_var_norm(feats, torch.ones(1))
-    print(f"\nMel features shape for CoreML: {feats.shape}")
-
-    coreml_path = os.path.join(args.output_dir, "lang-id-ecapa.mlpackage")
-    print(f"Exporting to CoreML: {coreml_path}")
-    try:
-        import coremltools as ct
-
-        # Use torch.export + decompositions (avoids jit.trace bugs in coremltools)
-        exported = torch.export.export(embedding_wrapper, (feats,), strict=False)
-        exported = exported.run_decompositions({})
-
-        mlmodel = ct.convert(
-            exported,
-            inputs=[ct.TensorType(name="features", shape=feats.shape, dtype=float)],
-            outputs=[ct.TensorType(name="language_logits")],
-            compute_units=ct.ComputeUnit.ALL,
-            minimum_deployment_target=ct.target.macOS14,
-        )
-        mlmodel.save(coreml_path)
-        print("  CoreML export complete")
-
-        # Verify on macOS
-        if sys.platform == "darwin":
-            print("  Verifying CoreML model...")
-            prediction = mlmodel.predict({"features": feats.numpy()})
-            logits = prediction["language_logits"]
-            from scipy.special import softmax
-            probs = softmax(logits, axis=-1)
-            coreml_top = np.argmax(probs)
-            print(f"  CoreML top: {labels[coreml_top]} ({probs.flat[coreml_top]:.4f})")
-    except Exception as e:
-        print(f"  CoreML export failed: {e}")
-        print("  You can still use the ONNX model.")
-
-    # Create tar.gz archive for distribution
-    if os.path.isdir(coreml_path):
-        tar_path = os.path.join(args.output_dir, "lang-id-ecapa.mlpackage.tar.gz")
-        print(f"\nCreating archive: {tar_path}")
-        with tarfile.open(tar_path, "w:gz") as tar:
-            tar.add(coreml_path, arcname="lang-id-ecapa.mlpackage")
-        tar_size = os.path.getsize(tar_path) / (1024 * 1024)
-        print(f"  Archive: {tar_size:.1f} MB")
 
     print("\nDone! Files produced:")
     for f in sorted(os.listdir(args.output_dir)):
