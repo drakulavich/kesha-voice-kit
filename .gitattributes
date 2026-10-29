@@ -1,10 +1,5 @@
-tests/fixtures/*.oga binary
 tests/fixtures/*.wav binary
-tests/fixtures/benchmark/*.mp3 binary
-tests/fixtures/benchmark/*.oga binary
 tests/fixtures/benchmark/*.ogg binary
-tests/fixtures/benchmark/*.wav binary
 tests/fixtures/benchmark-en/*.ogg binary
 docs/assets/*.svg binary
 docs/assets/*.png binary
-*.gif binary

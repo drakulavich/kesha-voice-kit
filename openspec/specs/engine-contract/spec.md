@@ -391,7 +391,7 @@ Before spawning the Engine the CLI SHALL validate the full argv against the `com
 - THEN `--format` is absent from the argv because the schema does not list it under `install`
 - AND the CLI does not need a hand-written list of install flags to know that
 
-> *Technical Note — `validateArgv(argv, doc)` in `src/engine/describe.ts` replaced the hand-written `preflight*` / `assert*Supported` family; every production argv builder (`buildTranscribeArgs`, `buildEngineInstallArgs`, `buildSayArgs`, `buildRecordArgs`) meets it before a spawn, and `tests/unit/capabilities-pact.test.ts` drives each one against the published binaries’ recorded gate tables. The CLAUDE.md rule "DO NOT BLINDLY FORWARD CLI FLAGS TO SUBCOMMANDS" stayed, rewritten to point at `gate_rows()` as the one place a gate is added.*
+> *Technical Note — `validateArgv(argv, doc)` in `src/engine/describe.ts` replaced the hand-written `preflight*` / `assert*Supported` family; every production argv builder (`buildTranscribeArgs`, `buildEngineInstallArgs`, `buildSayArgs`, `buildRecordArgs`) meets it before a spawn, and `tests/unit/capabilities-pact.test.ts` drives each one against the published binaries’ recorded gate tables.*
 
 ### Requirement: TS-native codes cover CLI-side failures
 
