@@ -40,7 +40,7 @@ This is a documented user-config default, not a plugin manifest patch.
 
 ## PUBLISHING THE OPENCLAW PLUGIN TO CLAWHUB
 
-The plugin is distributed on [ClawHub](https://clawhub.com) (the OpenClaw plugin registry), **independently of npm and the engine release**. ClawHub publishing is its own outward-facing step — it is *not* triggered by `kesha` npm publish, GitHub releases, or `build-engine.yml`.
+The plugin is distributed on [ClawHub](https://clawhub.com) (the OpenClaw plugin registry), **independently of npm and the engine release**. ClawHub publishing is its own outward-facing step — it is *not* triggered by `kesha` npm publish or GitHub releases.
 
 **`package.json#openclaw` must carry the publish metadata** — without it `clawhub package publish` fails with the opaque `Error: package.json required` even though the file exists. A ClawHub **code plugin** needs all three keys (mirror an `@openclaw/*` package such as `@openclaw/imessage`):
 

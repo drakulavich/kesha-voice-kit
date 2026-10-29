@@ -171,9 +171,7 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    + mtime) through `getDescribe` in `src/engine.ts`, and validates the argv of
    every flag-carrying spawn on the parsed path (`transcribe`, `say`, MCP
    `list_voices`) and of `record` against that document with `validateArgv`
-   (`src/engine/describe.ts`) before spawning — instead of blindly forwarding
-   flags, see the "DO NOT BLINDLY FORWARD CLI FLAGS" rule in
-   [CLAUDE.md](../CLAUDE.md). The parsed spawns read stderr as protocol-4
+   (`src/engine/describe.ts`) before spawning. The parsed spawns read stderr as protocol-4
    NDJSON events (`readEvents` in `src/engine/events.ts`), as do the Kokoro
    warmup and CLI `say --list-voices`. `recordEngine` and the model-install spawn
    pipe stderr too; the install keeps stdin and stdout inherited, while
