@@ -9,11 +9,5 @@
     "tests/helpers/no-network.ts",
     "tests/helpers/*.fixture.ts"
   ],
-  "project": [
-    "src/**/*.{ts,mjs}",
-    "scripts/**/*.ts",
-    ".github/scripts/**/*.{ts,mjs,cjs}",
-    ".claude/hooks/**/*.ts",
-    "tests/**/*.ts"
-  ]
+  "project": ["src/**/*.{ts,mjs}", "scripts/**/*.ts", ".github/scripts/**/*.{ts,mjs,cjs}", ".claude/hooks/**/*.ts", "tests/**/*.ts"]
 }
