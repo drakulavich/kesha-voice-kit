@@ -84,7 +84,8 @@ export function resolveEngineVersionFlag(raw: unknown): string | undefined {
 }
 
 export function resolveNoCacheFlag(args: Pick<InstallCommandArgs, "no-cache" | "noCache" | "no_cache">, rawArgs: string[] = []): boolean {
-  const typed = rawArgs.filter((arg) => arg === "--no-cache" || arg.startsWith("--no-cache=")).at(-1);
+  const end = rawArgs.indexOf("--");
+  const typed = (end === -1 ? rawArgs : rawArgs.slice(0, end)).filter((arg) => arg === "--no-cache" || arg.startsWith("--no-cache=")).at(-1);
   if (typed !== undefined) return typed === "--no-cache" || !isFalsey(typed.slice("--no-cache=".length));
   return args["no-cache"] === true || args.noCache === true || args.no_cache === true;
 }
