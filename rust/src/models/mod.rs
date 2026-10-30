@@ -39,7 +39,6 @@ pub use paths::{fluidaudio_asr_dir, fluidaudio_asr_location, fluidaudio_asr_read
 #[cfg(all(system_kokoro, target_arch = "aarch64"))]
 pub use staging::{
     incomplete_ane_bundle_names, missing_kokoro_assets, purge_incomplete_ane_bundles,
-    stage_ane_kokoro_voices, stage_fluidaudio_kokoro_assets,
 };
 
 use anyhow::Result;
