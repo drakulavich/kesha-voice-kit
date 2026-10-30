@@ -1274,6 +1274,18 @@ process.exit(99);
     });
   });
 
+  // citty reads --no-cache as the negation of "cache" and leaves "no-cache" false, so the flag reaches the install only through rawArgs.
+  test.each([
+    [[], "Run: kesha install"],
+    [["--no-cache"], "Run: kesha install --no-cache"],
+    [["--noCache"], "Run: kesha install --no-cache"],
+  ])("kesha install --plan %p names the install it describes", async (flag, runLine) => {
+    const dir = makeTempDir("kesha-cli-contract-nocache-");
+    const run = await runCli(["install", "--plan", ...flag], { env: isolatedEnv(dir) });
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout.split("\n").find((line) => line.startsWith("Run: "))).toBe(runLine);
+  });
+
   // T2-11: the refusal was right but uncoded and exited 1, where its sibling catch exits 2.
   test("kesha install --tts with an unsupported language is a coded usage error, exit 2", async () => {
     const dir = makeTempDir("kesha-cli-contract-ttslang-");
