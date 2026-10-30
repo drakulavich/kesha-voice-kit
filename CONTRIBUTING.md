@@ -230,8 +230,7 @@ interrupted, or a command that could not start). A timeout, `SIGINT` or
 `SIGTERM` restores the file itself; only a run killed outright leaves
 `<file>.mutate-orig` beside the mutated file, and the next run refuses
 until you restore it yourself with `mv <file>.mutate-orig <file>`. Record the
-rows in the PR the way `docs/mutation-evidence/` does when a review asks for
-proof.
+rows in the PR when a review asks for proof.
 
 The whole-file lanes (`mutants-ts` on Stryker, `mutants-rust` on
 cargo-mutants) were retired in #1212 and #1213: the TypeScript verdicts
