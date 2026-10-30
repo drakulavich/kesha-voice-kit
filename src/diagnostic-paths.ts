@@ -6,6 +6,15 @@ export function diagnosticHomeDir(): string {
   return process.env.HOME ?? homedir();
 }
 
+/** Size in bytes, 0 when the file is missing or unreadable. */
+export function fileSize(path: string): number {
+  try {
+    return statSync(path).size;
+  } catch {
+    return 0;
+  }
+}
+
 export function dirSizeBytes(path: string): number {
   let total = 0;
   try {

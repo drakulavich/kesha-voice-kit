@@ -92,7 +92,7 @@ exported before the process started SHALL keep color off: a later
 > *Technical Note — `src/cli/context.ts::resolveColorMode` evaluates
 > only the `--no-color` flag and `CI`; the `NO_COLOR` env var is honored by
 > picocolors at import time (`src/log.ts::colors`), not inside `resolveColorMode`.
-> The `src/cli/context.ts::FALSEY_VALUES` set is `{"", "0", "false",
+> The `src/log.ts::FALSEY_VALUES` set is `{"", "0", "false",
 > "no", "off"}`. `src/cli/context.ts::USER_FORCED_NO_COLOR` is captured once at
 > module import and is used by `src/cli/context.ts::applyColorEnv` to decide
 > whether re-enabling may clear `NO_COLOR` from `process.env`. The
@@ -123,8 +123,8 @@ The CLI SHALL read the empty string, `"0"`, `"false"`, `"no"` and `"off"` (case-
 - WHEN Maks runs `kesha status`
 - THEN all output is plain text with no ANSI escape codes
 
-> *Technical Note — `src/cli/context.ts::isFalsey` trims and lower-cases the value
-> before looking it up in `src/cli/context.ts::FALSEY_VALUES`; the flag parser and
+> *Technical Note — `src/log.ts::isFalsey` trims and lower-cases the value
+> before looking it up in `src/log.ts::FALSEY_VALUES`; the flag parser and
 > `resolveColorMode` (for `CI`) call it. picocolors decides `NO_COLOR` at import
 > with `!!env.NO_COLOR`, which is the no-color.org rule. `USER_FORCED_NO_COLOR`
 > still runs `NO_COLOR` through `isFalsey`, so a falsey user value such as `"0"`

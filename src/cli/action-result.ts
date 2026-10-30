@@ -5,6 +5,10 @@ export type ActionMessage = { level: "success" | "info" | "warn"; text: string }
 
 export type ActionResult = { ok: true; messages: ActionMessage[]; stdout?: string } | { ok: false; error: string; hint?: string };
 
+export function info(...texts: string[]): ActionMessage[] {
+  return texts.map((text) => ({ level: "info", text }));
+}
+
 /** Renders an action's messages, writing `stdout` verbatim; a rejected action exits 2. */
 export function emitActionResult(result: ActionResult): void {
   if (!result.ok) {

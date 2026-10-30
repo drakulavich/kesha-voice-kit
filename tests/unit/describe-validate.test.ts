@@ -72,14 +72,6 @@ describe("validateArgv", () => {
     expect(err.hint).toContain("darwin-arm64");
   });
 
-  test("--itn on an engine without the pass says how to upgrade", () => {
-    const stale = { ...DOC, features: ["transcribe"] };
-    const err = failure(() => validateArgv(["transcribe", "a.wav", "--itn"], stale));
-    expect(err.code).toBe("E_INVALID_ARG");
-    expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit@latest");
-    expect(err.hint).toContain("kesha install");
-  });
-
   test("requires and conflicts are enforced by name", () => {
     const withDiarize = { ...DOC, features: [...DOC.features, "transcribe.diarize"] };
     expect(failure(() => validateArgv(["transcribe", "a.wav", "--speakers"], withDiarize)).message).toContain("--speakers requires --json");

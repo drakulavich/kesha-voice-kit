@@ -1,8 +1,9 @@
 import { KeshaError } from "./engine/events";
+import { fileSize } from "./diagnostic-paths";
 import { errorMessage } from "./error-utils";
 import { PATH_ERRNOS } from "./path-errnos";
 import { resolveStatePaths } from "./state-paths";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { log } from "./log";
 import { packageVersion } from "./package-info";
@@ -183,14 +184,6 @@ function listRotatedLogFiles(dir: string): string[] {
 function rotationIndex(name: string): number {
   const match = /^kesha\.(\d+)\.ndjson$/.exec(name);
   return match ? Number(match[1]) : Number.MAX_SAFE_INTEGER;
-}
-
-function fileSize(path: string): number {
-  try {
-    return statSync(path).size;
-  } catch {
-    return 0;
-  }
 }
 
 export function resetDiagnosticLogs(): { deleted: number; bytes: number; dir: string } {

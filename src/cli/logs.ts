@@ -7,7 +7,7 @@ import {
   resolveDiagnosticLogPath,
   setDiagnosticLogMode,
 } from "../diagnostic-log";
-import { emitActionResult, type ActionMessage, type ActionResult } from "./action-result";
+import { emitActionResult, info, type ActionResult } from "./action-result";
 
 export interface LogsCommandArgs {
   action?: string;
@@ -92,10 +92,6 @@ function runModeAction(value: string | undefined): ActionResult {
     ok: true,
     messages: info(`Kesha diagnostic log mode set to ${status.mode}`, `Path: ${status.activePath}`),
   };
-}
-
-function info(...texts: string[]): ActionMessage[] {
-  return texts.map((text) => ({ level: "info", text }));
 }
 
 export const logsCommand = defineCommand({

@@ -9,7 +9,6 @@ import type { WordTiming } from "../../src/engine";
 
 // These predate protocol 4's describe schema; TS no longer keeps its own copy (Task 4, protocol-v4).
 const TRANSCRIBE_SEGMENTS_FEATURE = "transcribe.segments";
-const TRANSCRIBE_ITN_FEATURE = "transcribe.itn";
 const TRANSCRIBE_WORDS_FEATURE = "transcribe.words";
 
 const CWD = `${import.meta.dir}/../..`;
@@ -332,13 +331,6 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   }, 120_000);
 
   test("--itn keeps --json --timestamps output well-formed (#710)", async () => {
-    const capsRun = await runEngine(["describe"]);
-    const caps = JSON.parse(capsRun.stdout);
-    if (!caps.features.includes(TRANSCRIBE_ITN_FEATURE)) {
-      console.warn(`engine lacks ${TRANSCRIBE_ITN_FEATURE}; skipping itn e2e`);
-      return;
-    }
-
     const plain = await runEngine(["transcribe", FIXTURE_EN, "--json"]);
     const itn = await runEngine(["transcribe", FIXTURE_EN, "--json", "--itn"]);
     expect(plain.exitCode).toBe(0);
@@ -361,13 +353,6 @@ describe.skipIf(!engineInstalled)("e2e-engine", () => {
   }, 120_000);
 
   test("--itn leaves Russian transcripts unchanged (#710)", async () => {
-    const capsRun = await runEngine(["describe"]);
-    const caps = JSON.parse(capsRun.stdout);
-    if (!caps.features.includes(TRANSCRIBE_ITN_FEATURE)) {
-      console.warn(`engine lacks ${TRANSCRIBE_ITN_FEATURE}; skipping itn e2e`);
-      return;
-    }
-
     const plain = await runEngine(["transcribe", FIXTURE_RU]);
     const itn = await runEngine(["transcribe", FIXTURE_RU, "--itn"]);
     expect(plain.exitCode).toBe(0);

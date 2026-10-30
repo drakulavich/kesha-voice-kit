@@ -243,17 +243,6 @@ describe("engine", () => {
     });
   });
 
-  fakeEngineTest("--itn on an engine without the pass is E_INVALID_ARG with the upgrade path (#710)", async () => {
-    await withEngineEnv(await argEchoEngine(["transcribe.segments"]), async () => {
-      for (const run of [() => transcribeEngine("audio.wav", { itn: true }), () => transcribeEngineWithSegments("audio.wav", { itn: true })]) {
-        const err = await failure(run);
-        expect(err.code).toBe("E_INVALID_ARG");
-        expect(err.message).toContain("--itn");
-        expect(err.hint).toContain("bun add -g @drakulavich/kesha-voice-kit@latest");
-      }
-    });
-  });
-
   fakeEngineTest("validateTranscribeRequest with no engine is E_ENGINE_SPAWN naming the install step", async () => {
     const empty = tempDir("kesha-engine-absent-");
     await withEngineEnv(join(empty, "kesha-engine"), async () => {

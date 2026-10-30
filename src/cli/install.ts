@@ -19,7 +19,6 @@ export interface InstallCommandArgs extends SharedInstallArgs {
   _?: string[];
   /** `init` deliberately has no such flag: an override is an expert action, not a guided one. */
   "engine-version"?: string;
-  engineVersion?: string;
 }
 
 /** TTS languages every build installs. */
@@ -280,7 +279,7 @@ export const installCommand = defineCommand({
   async run({ args, rawArgs }: { args: InstallCommandArgs; rawArgs: string[] }) {
     let engineVersion: string | undefined;
     try {
-      engineVersion = resolveEngineVersionFlag(args["engine-version"] ?? args.engineVersion);
+      engineVersion = resolveEngineVersionFlag(args["engine-version"]);
     } catch (err) {
       log.error(errorMessage(err));
       process.exit(2);
