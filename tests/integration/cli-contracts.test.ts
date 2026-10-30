@@ -1276,12 +1276,18 @@ process.exit(99);
 
   // citty reads --no-cache as the negation of "cache" and leaves "no-cache" false, so the flag reaches the install only through rawArgs.
   test.each([
-    [[], "Run: kesha install"],
-    [["--no-cache"], "Run: kesha install --no-cache"],
-    [["--noCache"], "Run: kesha install --no-cache"],
-  ])("kesha install --plan %p names the install it describes", async (flag, runLine) => {
+    ["install", [], "Run: kesha install"],
+    ["install", ["--no-cache"], "Run: kesha install --no-cache"],
+    ["install", ["--noCache"], "Run: kesha install --no-cache"],
+    ["install", ["--no-cache=true"], "Run: kesha install --no-cache"],
+    ["install", ["--no-cache=1"], "Run: kesha install --no-cache"],
+    ["install", ["--no-cache=false"], "Run: kesha install"],
+    ["install", ["--no-cache", "--no-cache=off"], "Run: kesha install"],
+    ["init", ["--no-cache=true"], "Run: kesha install --no-cache"],
+    ["init", ["--no-cache=0"], "Run: kesha install"],
+  ])("kesha %s --plan %p names the install it describes", async (command, flag, runLine) => {
     const dir = makeTempDir("kesha-cli-contract-nocache-");
-    const run = await runCli(["install", "--plan", ...flag], { env: isolatedEnv(dir) });
+    const run = await runCli([command, "--plan", ...flag], { env: isolatedEnv(dir) });
     expect(run.exitCode).toBe(0);
     expect(run.stdout.split("\n").find((line) => line.startsWith("Run: "))).toBe(runLine);
   });

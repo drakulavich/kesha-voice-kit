@@ -7,7 +7,7 @@ import { exitCodeFor, KeshaError } from "../engine/events";
 import { renderInstallPlan } from "../install-plan";
 import { maybeAskForStar } from "../star";
 import { renderInvalidArg } from "./options";
-import { log } from "../log";
+import { isFalsey, log } from "../log";
 import { packageVersion } from "../package-info";
 import { isSemver } from "../semver.mjs";
 import { createDiagnosticLogSession, type DiagnosticLogSession } from "../diagnostic-log";
@@ -84,7 +84,10 @@ export function resolveEngineVersionFlag(raw: unknown): string | undefined {
 }
 
 export function resolveNoCacheFlag(args: Pick<InstallCommandArgs, "no-cache" | "noCache" | "no_cache">, rawArgs: string[] = []): boolean {
-  return rawArgs.includes("--no-cache") || args["no-cache"] === true || args.noCache === true || args.no_cache === true;
+  const end = rawArgs.indexOf("--");
+  const typed = (end === -1 ? rawArgs : rawArgs.slice(0, end)).filter((arg) => arg === "--no-cache" || arg.startsWith("--no-cache=")).at(-1);
+  if (typed !== undefined) return typed === "--no-cache" || !isFalsey(typed.slice("--no-cache=".length));
+  return args["no-cache"] === true || args.noCache === true || args.no_cache === true;
 }
 
 /**
