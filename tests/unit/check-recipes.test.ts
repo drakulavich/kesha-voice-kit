@@ -156,12 +156,9 @@ describe("isSwept", () => {
   );
 
   // Historical records: they describe what was true when written, not what is true now.
-  test.each(["docs/superpowers/specs/2026-05-30-lanes.md", "docs/plans/completed/2026-05-11-nix.md", "docs/mutation-evidence/issue-1105.md"])(
-    "excludes %s",
-    (path) => {
-      expect(isSwept(path)).toBe(false);
-    },
-  );
+  test.each(["docs/superpowers/specs/2026-05-30-lanes.md", "docs/plans/completed/2026-05-11-nix.md"])("excludes %s", (path) => {
+    expect(isSwept(path)).toBe(false);
+  });
 
   test.each(["src/engine.ts", "justfile", ".claude/settings.json", "docs/assets/demo.webp"])("ignores %s", (path) => {
     expect(isSwept(path)).toBe(false);

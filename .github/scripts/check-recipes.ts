@@ -51,7 +51,7 @@ export type JustDump = {
 const SWEPT_ROOT_FILES = ["README.md", "CONTRIBUTING.md", "CLAUDE.md"];
 const SWEPT_DIRS = ["docs/", ".claude/", ".github/workflows/"];
 // Historical records of what was true when written, which #797 leaves alone.
-const EXCLUDED_DIRS = ["docs/superpowers/", "docs/plans/", "docs/mutation-evidence/"];
+const EXCLUDED_DIRS = ["docs/superpowers/", "docs/plans/"];
 
 export function isSwept(path: string): boolean {
   if (!/\.(md|ya?ml)$/.test(path)) return false;
