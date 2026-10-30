@@ -31,12 +31,16 @@ export function isColorEnabled(): boolean {
  * verbatim in `rust/src/debug.rs` so `KESHA_DEBUG=False` flips both sides
  * the same direction.
  */
-const KESHA_DEBUG_OFF_VALUES = new Set(["", "0", "false", "no", "off"]);
+const FALSEY_VALUES = new Set(["", "0", "false", "no", "off"]);
+
+export function isFalsey(v: string): boolean {
+  return FALSEY_VALUES.has(v.trim().toLowerCase());
+}
 
 function envDebug(): boolean {
   const v = process.env.KESHA_DEBUG;
   if (v === undefined) return false;
-  return !KESHA_DEBUG_OFF_VALUES.has(v.trim().toLowerCase());
+  return !isFalsey(v);
 }
 
 /**

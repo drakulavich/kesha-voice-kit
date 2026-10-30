@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { KeshaError } from "./engine/events";
 import { errorMessage } from "./error-utils";
+import { fileSize } from "./diagnostic-paths";
 import { humanBytes } from "./format";
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -945,21 +946,27 @@ function csvCell(value: string | number | null): string {
 function getStatsRetentionDays(db: Database): number | null {
   const row = db.query("select value from settings where key = 'retention_days'").get() as { value: string } | null;
   if (!row) return defaultRetentionDays();
-  return parseRetentionSetting(row.value);
+  return retentionOrDefault(row.value);
 }
 
 function defaultRetentionDays(): number | null {
   const raw = process.env.KESHA_STATS_RETENTION_DAYS;
   if (!raw) return DEFAULT_RETENTION_DAYS;
-  return parseRetentionSetting(raw);
+  return retentionOrDefault(raw);
 }
 
-function parseRetentionSetting(raw: string): number | null {
-  const normalized = raw.trim().toLowerCase();
+function retentionOrDefault(raw: string): number | null {
+  const days = parseRetention(raw);
+  return days === undefined ? DEFAULT_RETENTION_DAYS : days;
+}
+
+/** `null` turns retention off; `undefined` is not a retention value. */
+export function parseRetention(value: string): number | null | undefined {
+  const normalized = value.trim().toLowerCase();
   if (normalized === "off" || normalized === "none" || normalized === "never") return null;
   const days = Number(normalized);
   if (Number.isInteger(days) && days >= 1 && days <= MAX_RETENTION_DAYS) return days;
-  return DEFAULT_RETENTION_DAYS;
+  return undefined;
 }
 
 function applyStatsRetention(db: Database): void {
@@ -983,14 +990,6 @@ function applyStatsRetention(db: Database): void {
 function runChanges(db: Database, sql: string): number {
   const result = db.query(sql).run() as { changes?: number };
   return Number(result.changes ?? 0);
-}
-
-function fileSize(path: string): number {
-  try {
-    return statSync(path).size;
-  } catch {
-    return 0;
-  }
 }
 
 function normalizeFormat(format?: string | null): string | null {

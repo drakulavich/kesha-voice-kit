@@ -1,4 +1,4 @@
-import { log, setColorEnabled } from "../log";
+import { isFalsey, log, setColorEnabled } from "../log";
 
 /** The global flags resolved before citty, so every command sees the same decision. */
 export interface CliContext {
@@ -9,13 +9,6 @@ export interface CliContext {
 export interface ResolvedCliContext extends CliContext {
   /** `rawArgs` with the global flag tokens removed, ready to hand to citty. */
   rawArgs: string[];
-}
-
-// Falsey grammar shared by --no-color, --quiet, and CI. Mirrors KESHA_DEBUG so
-// `CI=false`/`CI=0` and `--no-color=false` opt back in.
-const FALSEY_VALUES = new Set(["", "0", "false", "no", "off"]);
-function isFalsey(v: string): boolean {
-  return FALSEY_VALUES.has(v.trim().toLowerCase());
 }
 
 /** True when NO_COLOR came from the user's environment, so re-enabling colors must not clear it. */

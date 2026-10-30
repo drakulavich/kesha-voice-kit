@@ -7,6 +7,7 @@ import {
   getStatsStatus,
   getWeekSummary,
   MAX_RETENTION_DAYS,
+  parseRetention,
   renderErrors,
   renderWeekSummary,
   resetStats,
@@ -17,7 +18,7 @@ import {
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { errorMessage } from "../error-utils";
 import { log } from "../log";
-import { emitActionResult, type ActionMessage, type ActionResult } from "./action-result";
+import { emitActionResult, info, type ActionResult } from "./action-result";
 
 export interface StatsCommandArgs {
   action?: string;
@@ -120,10 +121,6 @@ function runRetentionAction(value: string | undefined): ActionResult {
   return { ok: true, messages: info(`Kesha Stats retention set to ${formatRetention(retention)}`) };
 }
 
-function info(...texts: string[]): ActionMessage[] {
-  return texts.map((text) => ({ level: "info", text }));
-}
-
 export const statsCommand = defineCommand({
   meta: {
     name: "stats",
@@ -165,14 +162,6 @@ function eatenNegativeNumber(rawArgs: string[]): string | undefined {
 
 function parseExportFormat(value: string | undefined): StatsExportFormat | null {
   return value === "json" || value === "csv" ? value : null;
-}
-
-function parseRetention(value: string): number | null | undefined {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "off" || normalized === "none" || normalized === "never") return null;
-  const days = Number(normalized);
-  if (Number.isInteger(days) && days >= 1 && days <= MAX_RETENTION_DAYS) return days;
-  return undefined;
 }
 
 function formatRetention(days: number | null): string {
