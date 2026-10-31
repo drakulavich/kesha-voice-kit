@@ -54,7 +54,7 @@ The product promise is not "one model for every audio problem." The promise is a
 | Raycast extension | Beta | Convenience UI over the CLI; macOS-only. |
 | OpenClaw plugin | Stable integration surface | Discovery is packaged; actual audio route remains explicit user config. |
 | Hermes Agent command provider | Stable CLI surface | Hermes owns the command-provider lifecycle; Kesha supplies the local STT/TTS commands. |
-| Nix flake | Beta | Reproducible alternate install path for selected systems; Bun/npm remains canonical. |
+| Nix flake | Beta | Builds the engine only; the CLI package does not build yet ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)), so install the CLI with Bun/npm. |
 
 ## Platform matrix
 
@@ -74,13 +74,10 @@ The product promise is not "one model for every audio problem." The promise is a
 
 `macOS x64` means Intel Macs. Kesha does not currently publish a `darwin-x64` engine binary, so Intel Macs are intentionally marked as not shipped rather than implied to use the ONNX fallback.
 
-`Windows x64` runs the same ONNX engine as Linux. The MSVC link failure behind
-[issue #216](https://github.com/drakulavich/kesha-voice-kit/issues/216) was fixed by
-vendoring the Vosk-TTS runtime under `rust/vendor/vosk-tts/`, and the CLI's install
-refusal — which outlived that fix by about twenty minor versions — is gone. CI now runs
-a cold `kesha install` on `windows-latest`, synthesises with both the Kokoro and Vosk
-engines, and transcribes the result back, so the platform's row reflects a tested path
-rather than a published binary nobody had run.
+`Windows x64` runs the same ONNX engine as Linux, with the Vosk-TTS runtime vendored
+under `rust/vendor/vosk-tts/` ([issue #216](https://github.com/drakulavich/kesha-voice-kit/issues/216)).
+CI runs a cold `kesha install --tts en` on `windows-latest`, synthesises an English
+sentence with Kokoro and transcribes the result back.
 
 Microphone capture is the one Linux/Windows gap that is not about Apple frameworks:
 `kesha record` is macOS-only, so pass an existing audio file instead.

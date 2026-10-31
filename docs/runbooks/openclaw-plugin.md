@@ -1,16 +1,14 @@
-# OpenClaw Plugin Runbook
+# OpenClaw plugin runbook
 
-> Extracted from CLAUDE.md (chore/slim-claudemd, 2026-05-31) to keep the always-loaded
-> instructions under Claude Code's 40k-char performance threshold. Read this when editing the
-> OpenClaw plugin or publishing it to ClawHub.
+Read this when editing the OpenClaw plugin or publishing it to ClawHub.
 
-## OPENCLAW PLUGIN
+## OpenClaw plugin
 
 The plugin lives in `openclaw.plugin.json` + `openclaw-plugin.cjs` (+ `package.json#openclaw.extensions`).
 
 **How audio transcription actually works in OpenClaw:** the `type: "cli"` path in `tools.media.audio.models` — NOT `registerMediaUnderstandingProvider`. OpenClaw only routes audio to a media-understanding provider once model auth resolves for it (`hasProviderAuthAvailable`, ultimately an API key); a local, keyless CLI cannot satisfy that on any sane config, so the provider is never selected to run. The actual transcription routes through OpenClaw's `type: "cli"` handler, which runs `kesha {{MediaPath}}` and captures bare transcript stdout.
 
-The plugin still registers a `MediaUnderstandingProvider` — **declaration-only, for discoverability** (`openclaw plugins inspect` shows `Shape: plain-capability`, driven by the provider id being present, not by any handler). It carries no `transcribeAudio` handler: the ~45-line spawn/temp-file/parse/timeout/cleanup body was retired in #933 because the documented config never reaches it. If a future OpenClaw release makes a keyless local provider selectable, re-add the handler then — don't restore dead code speculatively.
+The plugin still registers a `MediaUnderstandingProvider` — **declaration-only, for discoverability** (`openclaw plugins inspect` shows `Shape: plain-capability`, driven by the provider id being present, not by any handler). It carries no `transcribeAudio` handler, because the documented config never reaches one (#933). If a future OpenClaw release makes a keyless local provider selectable, re-add the handler then — don't restore dead code speculatively.
 
 Recommended user config:
 ```json5
@@ -32,15 +30,15 @@ Recommended user config:
 This is a documented user-config default, not a plugin manifest patch.
 
 **Scanner rules:**
-- OpenClaw's `dangerous-exec` scanner fires when a file contains BOTH a `spawn(`/`exec(`-style call AND the substring for the forbidden module name. **Comments count** — it's a naive regex, not AST-aware. Local `openclaw plugins install` no longer runs this block (as of OpenClaw `2026.7.1-2`); the regex now lives in ClawHub's registry scan and `openclaw security audit`, which is why the source-level prohibition still matters.
-- Since #933 the entry module holds no subprocess call at all, so the rule cannot fire — but the prohibition stands for future edits: never name the forbidden module name or a bare command-running call anywhere in `openclaw-plugin.cjs`, not even in comments. If you ever re-add a subprocess call, split the module specifier across `+` so the forbidden substring stays out of the source.
+- OpenClaw's `dangerous-exec` scanner fires when a file contains BOTH a `spawn(`/`exec(`-style call AND the substring for the forbidden module name. **Comments count** — it's a naive regex, not AST-aware. Since OpenClaw `2026.7.1-2`, local `openclaw plugins install` does not run this check; ClawHub's registry scan and `openclaw security audit` do, which is why the source-level prohibition still matters.
+- The entry module holds no subprocess call (#933), so the rule cannot fire today. The prohibition stands for future edits: never name the forbidden module name or a bare command-running call anywhere in `openclaw-plugin.cjs`, not even in comments. If you ever re-add a subprocess call, split the module specifier across `+` so the forbidden substring stays out of the source.
 - `--force` flag overwrites existing installs. `openclaw plugins uninstall` is interactive (no `--yes`).
 
 **Manifest:** required fields are `id` + `configSchema` (proper JSON Schema shape). `configPatch` is NOT a valid field — the loader silently discards it.
 
-## PUBLISHING THE OPENCLAW PLUGIN TO CLAWHUB
+## Publishing the OpenClaw plugin to ClawHub
 
-The plugin is distributed on [ClawHub](https://clawhub.com) (the OpenClaw plugin registry), **independently of npm and the engine release**. ClawHub publishing is its own outward-facing step — it is *not* triggered by `kesha` npm publish or GitHub releases.
+The plugin is distributed on [ClawHub](https://clawhub.com) (the OpenClaw plugin registry) as its own outward-facing step: neither the `kesha` npm publish nor a GitHub release triggers it.
 
 **`package.json#openclaw` must carry the publish metadata** — without it `clawhub package publish` fails with the opaque `Error: package.json required` even though the file exists. A ClawHub **code plugin** needs all three keys (mirror an `@openclaw/*` package such as `@openclaw/imessage`):
 

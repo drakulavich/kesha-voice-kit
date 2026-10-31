@@ -1,31 +1,30 @@
-# KESHA Use Cases
+# KESHA use cases
 
 Ready-to-use CLI commands and shell snippets for transcription, speech synthesis, language detection — all local, all offline.
 
 To get set up, see the [install guide](https://github.com/drakulavich/kesha-voice-kit#quick-start).
 
-## Table of Contents
+## Table of contents
 
-- [Tips for Best Results](#tips-for-best-results)
-- [Voice Message Transcription](#voice-message-transcription)
-- [Sending Voice Replies](#sending-voice-replies)
-- [Language Detection Pipeline](#language-detection-pipeline)
-- [Batch Meeting Transcription](#batch-meeting-transcription)
-- [macOS System Voices for Alerts](#macos-system-voices-for-alerts)
-- [Offline Privacy-First Workflows](#offline-privacy-first-workflows)
-- [AI Agent Integration](#ai-agent-integration)
-- [Content Creation & Voiceovers](#content-creation--voiceovers)
-- [Ready to Automate? Install as an OpenClaw Plugin](#ready-to-automate-install-as-an-openclaw-plugin)
+- [Tips for best results](#tips-for-best-results)
+- [Voice message transcription](#voice-message-transcription)
+- [Sending voice replies](#sending-voice-replies)
+- [Language detection pipeline](#language-detection-pipeline)
+- [Batch meeting transcription](#batch-meeting-transcription)
+- [macOS system voices for alerts](#macos-system-voices-for-alerts)
+- [Offline privacy-first workflows](#offline-privacy-first-workflows)
+- [AI agent integration](#ai-agent-integration)
+- [Content creation & voiceovers](#content-creation--voiceovers)
+- [Ready to automate? Install as an OpenClaw plugin](#ready-to-automate-install-as-an-openclaw-plugin)
 
-## Tips for Best Results
+## Tips for best results
 
-- **Keep voice messages short.** For transcripts under 3 minutes, KESHA uses a fast path with no silence detection overhead. Longer audio works — just expect a few extra seconds of VAD preprocessing.
+- **Keep voice messages short.** For audio under 2 minutes (120 s), KESHA uses a fast path with no silence detection overhead. Longer audio works — just expect a few extra seconds of VAD preprocessing.
 - **Use `--json` for automation.** Structured output with language detection, confidence scores, and optional timestamps is what scripts and agents need. Plain text is for humans.
 - **Match TTS voice language to text.** On macOS, `kesha say` routes supported languages from the text; on Linux/Windows pass `--lang <code>` or `--voice <id>`. For languages outside that set, use macOS system voices (`--voice macos-de-DE "Guten Tag"`).
 - **Combine with other tools.** Pipe KESHA transcripts into `jq`, `grep`, your CRM, or an AI agent for multi-step workflows.
-- **License awareness.** KESHA is MIT — ship it, embed it, automate it. No API keys, no per-minute billing, no cloud egress costs.
 
-## Voice Message Transcription
+## Voice message transcription
 
 Transcribe Telegram/WhatsApp/Signal voice notes to text — private, offline, no file leaves the machine.
 
@@ -54,10 +53,10 @@ One call for the whole folder is about twice as fast as one call per file, since
 
 💡 **Tips:**
 
-- All formats work: `.ogg`, `.opus`, `.mp3`, `.m4a`, `.wav`, `.flac`, `.webm` — decoded via symphonia, no ffmpeg required.
+- Supported formats: `.ogg`, `.opus`, `.mp3`, `.m4a`, `.aac`, `.wav`, `.flac`, `.aiff`, `.webm` — decoded via symphonia, no ffmpeg required.
 - For Telegram integration, configure OpenClaw's `tools.media.audio.models` to route voice messages through KESHA — transcript appears in-chat before the agent replies.
 
-## Sending Voice Replies
+## Sending voice replies
 
 Synthesize speech locally and send as a native voice note in any messenger.
 
@@ -101,7 +100,7 @@ kesha say --format ogg-opus --bitrate 48000 --sample-rate 48000 --out hq.ogg "Go
 - Default voice for English is Kokoro-82M (FluidAudio CoreML on Apple Silicon, ONNX elsewhere). Russian Vosk-TTS provides `ru-vosk-f01`, `ru-vosk-f02`, `ru-vosk-f03`, `ru-vosk-m01`, and `ru-vosk-m02`.
 - All TTS models run locally — zero latency from network calls, zero privacy risk from cloud uploads.
 
-## Language Detection Pipeline
+## Language detection pipeline
 
 Identify the language of an audio file *before* deciding what to do with it.
 
@@ -126,7 +125,8 @@ lang=$(kesha --json "$FILE" | jq -r '.[0].lang')
 case "$lang" in
   ru) echo "Russian — process with Vosk-TTS" ;;
   en) echo "English — process with Kokoro" ;;
-  de|fr|es) echo "EU language — use macOS system voice" ;;
+  es|fr|it|pt) echo "Romance language — process with Kokoro" ;;
+  de) echo "German — use a macOS system voice" ;;
   *) echo "Unsupported — fall back to hosted ASR" ;;
 esac
 ```
@@ -144,7 +144,7 @@ kesha --lang en voice.ogg
 - `textLanguage.source` names the detector: `"engine"` (macOS `NLLanguageRecognizer`) or `"tinyld"` (the CLI fallback used everywhere else). The two score on different scales, so branch on `source` before you compare a `confidence` against a threshold.
 - 25 European languages supported for STT. Use `--lang` to sanity-check expectations in CI/testing pipelines.
 
-## Batch Meeting Transcription
+## Batch meeting transcription
 
 Transcribe meeting recordings with speaker labels and timestamps.
 
@@ -185,10 +185,10 @@ done
 💡 **Tips:**
 
 - Speaker diarization is macOS arm64 only (preview feature). Cluster IDs are stable within a single file — speakers are labeled `0`, `1`, `2`, etc. No persistent voice profiles across files.
-- VAD (Voice Activity Detection) install: `kesha install --vad`. Automatically enabled for long audio; skip for short voice messages on the fast path.
+- VAD (Voice Activity Detection) install: `kesha install --vad`. Once installed, it turns on automatically for audio of 120 s or more; skip for short voice messages on the fast path.
 - Combine with `--timestamps` for chapter markers in podcasts or YouTube transcripts.
 
-## macOS System Voices for Alerts
+## macOS system voices for alerts
 
 Generate spoken alerts and notifications using ~180 macOS system voices — zero model downloads, zero install time.
 
@@ -196,13 +196,13 @@ Generate spoken alerts and notifications using ~180 macOS system voices — zero
 
 ```bash
 kesha say --list-voices | grep macos-
-# → macos-en-US:Samantha, macos-de-DE:Anna, macos-fr-FR:Thomas, ...
+# → macos-com.apple.voice.compact.en-US.Samantha, macos-com.apple.voice.compact.de-DE.Anna, ...
 ```
 
 **English alert with a specific voice:**
 
 ```bash
-kesha say --voice macos-en-US:Fiona --format ogg-opus --out alert.ogg "Build failed — check CI logs"
+kesha say --voice macos-com.apple.voice.compact.en-US.Samantha --format ogg-opus --out alert.ogg "Build failed — check CI logs"
 ```
 
 **Multi-language notification script:**
@@ -211,11 +211,11 @@ kesha say --voice macos-en-US:Fiona --format ogg-opus --out alert.ogg "Build fai
 alert() {
   lang="$1"; shift
   case "$lang" in
-    en) voice="macos-en-US:Samantha" ;;
-    de) voice="macos-de-DE:Anna" ;;
-    fr) voice="macos-fr-FR:Thomas" ;;
-    ru) voice="macos-ru-RU:Milena" ;;
-    *)  voice="macos-en-US:Samantha" ;;
+    en) voice="macos-en-US" ;;
+    de) voice="macos-de-DE" ;;
+    fr) voice="macos-fr-FR" ;;
+    ru) voice="macos-ru-RU" ;;
+    *)  voice="macos-en-US" ;;
   esac
   kesha say --voice "$voice" --format ogg-opus --out /tmp/alert.ogg "$*"
 }
@@ -225,11 +225,12 @@ alert fr "La compilation a échoué"
 
 💡 **Tips:**
 
-- macOS system voices require zero setup — no `kesha install --tts`, no model cache. Available on any modern macOS.
-- Quality is OS voice quality, not neural TTS. For neural-quality synthesis, use Kokoro (English) or Vosk-TTS (Russian) which are also offline.
+- macOS system voices need no `kesha install --tts` and no model download: plain `kesha install` places the AVSpeech sidecar they run through. darwin-arm64 only.
+- A voice id is `macos-` plus a full Apple identifier from `--list-voices` or a language code (`macos-de-DE`), which picks a voice for that language; see [macOS system voices](tts.md#macos-system-voices).
+- Quality is OS voice quality, not neural TTS. For neural-quality synthesis, use a Kokoro voice or Vosk-TTS (Russian), which are also offline.
 - Great for CI/CD notifications, timer alerts, or accessibility announcements in developer tooling.
 
-## Offline Privacy-First Workflows
+## Offline privacy-first workflows
 
 Process voice data without any cloud upload — important for regulated industries, personal messaging, HIPAA environments, and internal communications.
 
@@ -280,11 +281,13 @@ kesha --json test-samples/de_sample.ogg | jq -e '.[0].audioLanguage.code == "de"
 💡 **Tips:**
 
 - KESHA is MIT-licensed — embed it in enterprise products, medical devices, or offline kiosks without royalties.
-- Model files are plain `.ort` (ONNX) for STT and `.onnx`/`.bin` for TTS — no proprietary formats, no license servers, no phone-home.
+- STT models are ONNX files and TTS models are `.onnx` graphs with `.bin` voice packs; Apple Silicon runs CoreML bundles instead. No license servers, no phone-home.
 - The whole model set lives under `~/.cache/kesha` (override with `KESHA_CACHE_DIR`); copy that directory for USB transfers and air-gapped deployments — kesha never phones home. To keep logs and Stats out of the home directory as well, set `KESHA_HOME` instead: one directory for everything Kesha writes (see [diagnostic-logs.md](diagnostic-logs.md#where-kesha-keeps-its-files)).
-- On macOS, a legacy FluidAudio install (`~/Library/Application Support/FluidAudio`, `~/.cache/fluidaudio`) is still read even when `KESHA_CACHE_DIR` or `KESHA_HOME` points elsewhere, so copying the cache can miss the speech model. A complete legacy bundle is used where it is and `kesha install` does not fetch a second copy, so for a self-contained copy run the install with `HOME` pointing at an empty directory too, `HOME=/path/to/empty KESHA_HOME=/path/to/fresh kesha install`, and copy `/path/to/fresh`. Kokoro G2P for macOS speech synthesis still lands in `$HOME/.cache/fluidaudio/Models/kokoro`, outside `KESHA_HOME`, so copy that too if you need `kesha say`; see [architecture.md](architecture.md#where-fluidaudios-models-live).
+- On macOS, a legacy FluidAudio install (`~/Library/Application Support/FluidAudio`, `~/.cache/fluidaudio`) is still read even when `KESHA_CACHE_DIR` or `KESHA_HOME` points elsewhere, so copying the cache can miss the speech model. A complete legacy bundle is used where it is and `kesha install` does not fetch a second copy.
+- For a self-contained macOS copy, run the install with `HOME` pointing at an empty directory too, `HOME=/path/to/empty KESHA_HOME=/path/to/fresh kesha install`, and copy `/path/to/fresh`.
+- Kokoro G2P for macOS speech synthesis still lands in `$HOME/.cache/fluidaudio/Models/kokoro`, outside `KESHA_HOME`, so copy that too if you need `kesha say`; see [architecture.md](architecture.md#where-fluidaudios-models-live).
 
-## AI Agent Integration
+## AI agent integration
 
 Use KESHA as a local voice backend for AI agents — transcription, TTS replies, and language detection all through a single CLI.
 
@@ -335,20 +338,20 @@ openclaw config patch --stdin <<'CONFIG'
 CONFIG
 ```
 
-**Hermes Agent — command-provider mode:**
+**Hermes Agent — command-provider mode** (full config in [hermes.md](hermes.md)):
 
 ```bash
-# Configure in Hermes agent config:
-hermes stt set --provider local --command "kesha --json {{file}}"
-hermes tts set --provider local --command "kesha say --format ogg-opus --out {{out}} '{{text}}'"
+# Speech-to-text, with stt.provider: local_command in ~/.hermes/config.yaml:
+export HERMES_LOCAL_STT_COMMAND='sh -c '"'"'kesha "$1" > "$2/transcript.txt"'"'"' sh {input_path} {output_dir}'
+# Text-to-speech: a command provider in ~/.hermes/config.yaml runs
+#   kesha say --format ogg-opus --out {output_path} < {input_path}
 ```
 
-**Claude Code / any MCP client — voice processing skill:**
+**Claude Code / any MCP client — `kesha mcp`** (other clients in [mcp.md](mcp.md)):
 
 ```bash
-# Create ~/.claude/skills/transcribe.md:
-# "When asked to transcribe a file, run: kesha --json <file>"
-# "When asked to speak, run: kesha say --format ogg-opus --out reply.ogg '<text>'"
+claude mcp add kesha -- kesha mcp
+# Other MCP clients: { "mcpServers": { "kesha": { "command": "kesha", "args": ["mcp"] } } }
 ```
 
 💡 **Tips:**
@@ -357,26 +360,26 @@ hermes tts set --provider local --command "kesha say --format ogg-opus --out {{o
 - `echoTranscript: true` shows the transcript in-chat before the agent responds — useful for debugging and trust.
 - For JSON output with timestamps in agent mode, use: `kesha --json --timestamps {{MediaPath}}` with a higher timeout.
 
-## Content Creation & Voiceovers
+## Content creation & voiceovers
 
 Generate voiceovers, narration, and audio assets — all offline, all scriptable.
 
 **Podcast intro in English (neural quality):**
 
 ```bash
-kesha say --voice en-kokoro-af_heart --format ogg-opus --out intro.ogg "Welcome to the show. Today we're talking about local AI."
+kesha say --voice en-am_michael --format ogg-opus --out intro.ogg "Welcome to the show. Today we're talking about local AI."
 ```
 
 **Russian narration with emphasis:**
 
 ```bash
-kesha say --voice ru-vosk-m02 --format ogg-opus --out narration.ogg "<prosody rate='medium'>Добро пожаловать в мир локального <emphasis>син+теза</emphasis> речи</prosody>"
+kesha say --ssml --voice ru-vosk-m02 --format ogg-opus --out narration.ogg "<speak><prosody rate='medium'>Добро пожаловать в мир локального <emphasis>син+теза</emphasis> речи</prosody></speak>"
 ```
 
 **Slow down for accessibility:**
 
 ```bash
-kesha say --voice en-kokoro-af --rate 0.75 --format ogg-opus --out accessible.ogg "Here is the information, spoken slowly and clearly."
+kesha say --voice en-am_michael --rate 0.75 --format ogg-opus --out accessible.ogg "Here is the information, spoken slowly and clearly."
 ```
 
 **Generate a YouTube chapter voiceover from a script:**
@@ -388,20 +391,20 @@ cat chapters.txt
 # 5:15 Transcribing voice messages
 
 while IFS=' ' read -r time text; do
-  kesha say --voice en-kokoro-af_heart --format ogg-opus --out "chapter-${time}.ogg" "$text"
+  kesha say --voice en-am_michael --format ogg-opus --out "chapter-${time}.ogg" "$text"
 done < chapters.txt
 ```
 
 💡 **Tips:**
 
-- Kokoro-82M provides neural-quality English TTS with multiple voice options (`en-kokoro-af_heart`, `en-kokoro-af_bella`, etc.). Run `kesha say --list-voices` to hear them all.
-- Russian Vosk-TTS supports SSML emphasis: `<emphasis>сл+ово</emphasis>` shifts stress to the vowel marked `+`.
+- Kokoro-82M provides neural-quality English TTS with multiple voice options (`en-am_michael`, `en-af_bella`, etc.). Run `kesha say --list-voices` to list them all.
+- SSML needs `--ssml` and a `<speak>` root ([SSML](tts.md#ssml)). Russian Vosk-TTS supports SSML emphasis: `<emphasis>сл+ово</emphasis>` shifts stress to the vowel after `+`.
 - `<prosody rate="…">` controls speed: `x-slow`, `slow`, `medium`, `fast`, `x-fast`, or absolute `120%`. Composes multiplicatively with `--rate`.
 - All synthesis is local — batch-generate 100 voiceover clips without rate limits or API costs.
 
-## Ready to Automate? Install as an OpenClaw Plugin
+## Ready to automate? Install as an OpenClaw plugin
 
-If you've found workflows you use regularly, you can skip the copy/paste entirely. KESHA ships as a first-class OpenClaw plugin that makes voice processing a native part of your agent's toolchain.
+If you've found workflows you use regularly, you can skip the copy/paste entirely. KESHA ships as an OpenClaw plugin that makes voice processing a native part of your agent's toolchain.
 
 ```bash
 bun add -g @drakulavich/kesha-voice-kit

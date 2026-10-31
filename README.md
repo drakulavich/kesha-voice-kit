@@ -109,7 +109,7 @@ Kesha speaks back in [9 languages](docs/languages.md#text-to-speech). Kokoro run
 
 ```bash
 kesha install --tts                              # English voices; sizes differ per platform — preview: kesha install --plan
-kesha install --tts en ru                        # + Russian (+~890 MB, Vosk)
+kesha install --tts en ru                        # + Russian (+~937 MB, Vosk)
 kesha say "Hello, world" > hello.wav
 kesha say "Привет, мир" > privet.wav             # auto-routes by language (macOS)
 kesha say --lang ru "Привет, мир" > privet.wav   # explicit — the Linux/Windows path

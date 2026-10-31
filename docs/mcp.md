@@ -2,15 +2,17 @@
 
 `kesha mcp` runs a local Model Context Protocol server over stdio, exposing
 `transcribe_audio`, `synthesize_speech`, `list_voices`, and `list_languages` to
-any MCP client. Models are never auto-downloaded — tools fail with a
-`kesha install` / `kesha install --tts` hint when missing.
+any MCP client. Models are never auto-downloaded: when the engine or a model is
+missing, a tool fails with a `kesha install` / `kesha install --tts` hint. Run
+`kesha install` (ASR) or `kesha install --tts` (TTS) once, then retry.
 
 ## Prerequisites
 
 - Install [Bun](https://bun.sh) if you don't have it (the CLI's runtime)
 - Install the CLI: `bun add -g @drakulavich/kesha-voice-kit`
 - `kesha install` — downloads the ASR engine + models
-- `kesha install --tts` — downloads TTS models, needed for `synthesize_speech`
+- `kesha install --tts` — downloads the English TTS models, needed for `synthesize_speech`;
+  add language codes for more voices (`kesha install --tts en ru`)
 - `kesha status` — verify what's installed before wiring up a client
 
 Add to your client config:
@@ -91,6 +93,3 @@ with the absolute path from `which kesha` (PowerShell: `Get-Command kesha`):
 returns the transcript of the part present as the first text item and a second
 text item, `warning: <path> is truncated: its header declares 10.0 s of audio but the file holds 5.0 s; transcribing the part present`.
 `structuredContent` is unchanged.
-
-If a tool returns "models not installed", run `kesha install` (ASR) or
-`kesha install --tts` (TTS) once, then retry.

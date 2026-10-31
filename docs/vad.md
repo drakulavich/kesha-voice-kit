@@ -13,15 +13,15 @@ Auto-triggers at 120 s so voice messages (< 30 s of near-pure speech) stay on th
 
 A shorter file can still come back empty from one full pass when a few words sit around a long pause, for example "Wait", 15 seconds of silence, "done" ([#1466](https://github.com/drakulavich/kesha-voice-kit/issues/1466)). In Auto mode Kesha then transcribes the file again through VAD and returns that result. Without VAD installed it keeps the empty transcript and prints a hint to run `kesha install --vad`. `--no-vad` keeps the single-pass result.
 
-If VAD is not installed, very long Auto-mode audio uses fixed 10-minute ASR windows with 5 seconds of overlap and stitched absolute offsets. That fallback is safer than one full-file pass, but VAD boundaries are still better for meetings and silence-heavy recordings.
+If VAD is not installed, Auto-mode audio of 24 minutes or more uses fixed 10-minute ASR windows with 5 seconds of overlap and stitched absolute offsets. That fallback is safer than one full-file pass, but VAD boundaries are still better for meetings and silence-heavy recordings.
 
 Defaults: threshold 0.5, min-speech 250 ms, min-silence 100 ms, 30 ms edge padding. See issues [#128](https://github.com/drakulavich/kesha-voice-kit/issues/128) (base), [#187](https://github.com/drakulavich/kesha-voice-kit/issues/187) (auto-trigger), and [#404](https://github.com/drakulavich/kesha-voice-kit/issues/404) (long-audio contract).
 
-Silero's decoder LSTM rejects more than one frame per `Session::run` call (a wider window reshapes to 5-D and hard-errors), so batching the call itself is not possible without moving segment boundaries — [#712](https://github.com/drakulavich/kesha-voice-kit/issues/712)'s trade this repo already refused. [#990](https://github.com/drakulavich/kesha-voice-kit/issues/990) instead pinned `intra_threads(1)` on the VAD session: bit-identical output to the untuned default across the full benchmark corpus (92.6 s) plus a ~185 s synthetic composite, roughly 5-20% faster depending on build profile and measurement order (`just vad-bench` runs 5 reps alternating which arm goes first, since a single fixed-order run measures a biased number) — segment boundaries never moved. The exact-comparison assertions for that claim run on darwin/linux only, not Windows, given cross-platform f32 divergence risk.
+Silero's decoder LSTM rejects more than one frame per `Session::run` call (a wider window reshapes to 5-D and hard-errors), so the call cannot be batched without moving segment boundaries ([#712](https://github.com/drakulavich/kesha-voice-kit/issues/712)). The VAD session runs with `intra_threads(1)` instead ([#990](https://github.com/drakulavich/kesha-voice-kit/issues/990)). Its output is bit-identical to the default thread setting across the full benchmark corpus (92.6 s) plus a ~185 s synthetic composite, so segment boundaries do not move, and it is roughly 5-20% faster depending on build profile and measurement order. `just vad-bench` runs 5 reps alternating which arm goes first, since a single fixed-order run measures a biased number. The exact-comparison assertions run on darwin and linux only, because f32 results can diverge across platforms on Windows.
 
 ## Live end-of-utterance
 
-`record --live` stays manual by default. Opt in when dictating to stop after a spoken utterance and its trailing pause:
+`record --live` ([darwin-arm64 only](stt.md#live-dictation-darwin-arm64)) stays manual by default. Opt in when dictating to stop after a spoken utterance and its trailing pause:
 
 ```bash
 kesha install --vad

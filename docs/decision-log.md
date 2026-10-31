@@ -64,8 +64,9 @@ issue/PR that drove it). Newest concerns first within each section.
 
 ### Default voices must be male
 - **Decision:** every language's default voice is male (`en-am_michael`,
-  `ru-vosk-m02`, `Milena`→male auto-routing on darwin). Female voices remain
-  selectable via explicit `--voice`.
+  `ru-vosk-m02`), except three deliberate female routes: `fr-ff_siwis`, AVSpeech
+  Milena for `ru` on darwin, and Lekha for Devanagari `hi` on darwin. Female voices
+  remain selectable via explicit `--voice`.
 - **Rationale:** Kesha (Кеша) is a male name — this is the brand voice. New defaults
   are chosen by ear from the `m_*` set, not alphabetically.
 - **Status:** active (hard rule).
@@ -144,9 +145,10 @@ issue/PR that drove it). Newest concerns first within each section.
 
 ### Nix flake as an alternate reproducible build
 - **Decision:** a Nix flake builds the engine + wraps the Bun CLI (`aarch64-darwin`,
-  `x86_64-linux`); it is not a CI gate.
+  `x86_64-linux`); it is not a CI gate. The CLI wrapper cannot build until its Bun
+  dependency hash is populated ([#946]).
 - **Rationale:** offer a hermetic build path without making it the canonical one — npm
-  publish + the `make` flow remain authoritative.
+  publish + `release.yml` remain authoritative.
 - **Status:** active, secondary ([#242], [#264]).
 
 ## Continuous integration
@@ -169,7 +171,7 @@ issue/PR that drove it). Newest concerns first within each section.
   nor macOS is a subset of the other: one case runs on ubuntu and windows and not on macOS.
   `tests/unit/lane-exclusive-tests.test.ts` pins the leg so a future audit fails loudly
   instead of deleting the coverage silently.
-- **Re-derive the 14** from any `ci.yml` run that executed `unit-tests`. Each row uploads a
+- **Re-derive the 15** from any `ci.yml` run that executed `unit-tests`. Each row uploads a
   junit artifact, and bun's reporter records an `assertions` count on every `<testcase>` —
   comparing per-case counts catches both a `test.skip` and an in-body early return, where
   comparing test names alone would miss the second:
@@ -194,7 +196,8 @@ issue/PR that drove it). Newest concerns first within each section.
   Attributes are read by name rather than by position, and a file that yields no testcases
   throws instead of reporting zero — a silent `0` here would tell a future audit there are no
   darwin-specific assertions, which is the exact false conclusion this entry exists to prevent.
-  On run `33244355718` (`d738b0b`) it prints the 14 and their per-row counts. Row totals there
+  On run `33244355718` (`d738b0b`), before #1386 added the AVSpeech case, it printed the
+  14 cases of that time and their per-row counts. Row totals there
   were 3021 / 3052 / 2664 assertions and 9 / 0 / 186 skipped for ubuntu / macos / windows, over
   1399 cases each.
 - **Status:** active ([#1105]).
@@ -216,4 +219,5 @@ issue/PR that drove it). Newest concerns first within each section.
 [#291]: https://github.com/drakulavich/kesha-voice-kit/issues/291
 [#473]: https://github.com/drakulavich/kesha-voice-kit/issues/473
 [#509]: https://github.com/drakulavich/kesha-voice-kit/pull/509
+[#946]: https://github.com/drakulavich/kesha-voice-kit/issues/946
 [#1105]: https://github.com/drakulavich/kesha-voice-kit/issues/1105

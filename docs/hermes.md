@@ -1,4 +1,4 @@
-# Hermes Agent Integration
+# Hermes Agent integration
 
 Kesha Voice Kit can run as a local voice backend for
 [Hermes Agent](https://hermes-agent.nousresearch.com/) through Hermes' command
@@ -66,7 +66,8 @@ tts:
       max_text_length: 2000
 ```
 
-To force a specific Kesha voice, add `--voice`:
+To force a specific Kesha voice, add `--voice`. The Russian voice below needs
+`kesha install --tts en ru`; bare `--tts` installs English only.
 
 ```yaml
 tts:
