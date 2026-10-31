@@ -121,7 +121,7 @@ describe("an engine download failure carries a code and a hint", () => {
   }
 });
 
-// Windows keeps the 24 h rule: its last-write time stays stale while a handle is open (src/progress.ts).
+// sweepStagingFiles never runs on Windows: its last-write time stays stale while a handle is open (src/progress.ts).
 (process.platform === "win32" ? test.skip : test)(
   "installEngine removes a staging file idle for minutes once it holds the lock, and keeps one still being written (#1581)",
   async () => {

@@ -56,7 +56,7 @@ export function transcribe(audioPath: string, options: TranscribeOptions = {}): 
     if (truncated) log.warn(truncated);
     const startedAt = performance.now();
     const { text, segments } = await transcribeWithSegments(audioPath, options);
-    const engineText = await detectTextLanguageEngine(text, { signal: options.signal }, TINYLD_FALLBACK);
+    const engineText = await detectTextLanguageEngine(text, { signal: options.signal, onWarning: options.onWarning }, TINYLD_FALLBACK);
     const textLanguage = engineText?.code ? { ...engineText, source: "engine" as const } : detectTextLanguageFallback(text);
     const result: TranscribeResult = {
       file: audioPath,

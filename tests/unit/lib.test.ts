@@ -282,6 +282,18 @@ describe("transcribe() resolves to a TranscribeResult", () => {
     expect(run.stderr.toString()).not.toContain("default voice");
   });
 
+  (process.platform === "darwin" ? it : it.skip)("hands the text detector's fallback warning to onWarning (#1581)", async () => {
+    const audio = join(tempDir("kesha-lib-textlang-onwarning-audio-"), "note.wav");
+    writeFileSync(audio, "");
+    const warnings: string[] = [];
+    await withEngine(englishEngine(), async () => {
+      await transcribe(audio, { onWarning: (message) => warnings.push(message) });
+    });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("Falling back to the bundled tinyld guess.");
+  });
+
   fakeEngineIt("carries the segments when timestamps are requested", async () => {
     const audio = join(tempDir("kesha-lib-result-audio-"), "note.wav");
     writeFileSync(audio, "");
