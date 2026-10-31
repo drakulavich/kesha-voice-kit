@@ -402,7 +402,9 @@ jobs:
           brew trust oven-sh/bun
 
       - name: 🧪 Create local test tap
-        run: brew tap-new local/kesha
+        run: |
+          brew tap-new local/kesha
+          brew trust local/kesha
 
       - name: 🔍 Audit formula (as published)
         run: |
