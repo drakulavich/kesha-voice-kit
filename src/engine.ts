@@ -88,6 +88,8 @@ export interface RunEngineOptions {
    *  over (#1002). Progress the caller takes delivery of this way is dropped from the
    *  returned `stderr`, so it is never shown a second time in the failure report. */
   onProgressLine?: (line: string) => void;
+  /** Takes delivery of each warning in place of stderr, so the caller can both show it and keep it (#1581). */
+  onWarning?: (message: string) => void;
 }
 
 interface EngineRun {
@@ -104,7 +106,7 @@ async function runEngine(args: string[], opts: RunEngineOptions = {}): Promise<E
     stdio: [opts.stdin === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     stdin: opts.stdin,
     readStdout: (stream) => new Response(stream).text(),
-    sinks: { onProgress: opts.onProgressLine },
+    sinks: { onProgress: opts.onProgressLine, onWarn: opts.onWarning },
     signal: opts.signal,
   });
   if (run.aborted) {
@@ -226,7 +228,7 @@ export async function getEngineCapabilities(timeoutMs = ENGINE_PROBE_TIMEOUT_MS)
 
 async function validatedArgs(args: string[], opts: RunEngineOptions): Promise<string[]> {
   const { argv, warnings } = validateArgv(args, await getDescribe(opts));
-  for (const warning of warnings) log.warn(warning);
+  for (const warning of warnings) (opts.onWarning ?? log.warn)(warning);
   return argv;
 }
 
@@ -248,6 +250,8 @@ export interface TranscribeEngineOptions {
   itn?: boolean;
   /** See {@link RunEngineOptions.onProgressLine}. */
   onProgressLine?: (line: string) => void;
+  /** See {@link RunEngineOptions.onWarning}. */
+  onWarning?: (message: string) => void;
 }
 
 function defaultDiarizeModelPath(): string {
@@ -339,8 +343,8 @@ function transcribeFailure(command: string, run: EngineRun): KeshaError {
 }
 
 export async function transcribeEngine(audioPath: string, opts: TranscribeEngineOptions = {}): Promise<string> {
-  const args = await validatedArgs(buildTranscribeArgs(audioPath, opts), { signal: opts.signal });
-  const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
+  const args = await validatedArgs(buildTranscribeArgs(audioPath, opts), { signal: opts.signal, onWarning: opts.onWarning });
+  const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine, onWarning: opts.onWarning });
   if (failed(run)) throw withVirtualMacHint(transcribeFailure(args[0] ?? "", run));
   return run.stdout;
 }
@@ -385,9 +389,9 @@ export function parseTranscriptionOutput(stdout: string): TranscriptionOutput {
 }
 
 export async function transcribeEngineWithSegments(audioPath: string, opts: TranscribeEngineOptions = {}): Promise<TranscriptionOutput> {
-  const args = await validatedArgs(buildTranscribeArgs(audioPath, opts, true), { signal: opts.signal });
+  const args = await validatedArgs(buildTranscribeArgs(audioPath, opts, true), { signal: opts.signal, onWarning: opts.onWarning });
   if (opts.speakers) assertSpeakerModelsInstalled();
-  const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine });
+  const run = await runEngine(args, { signal: opts.signal, onProgressLine: opts.onProgressLine, onWarning: opts.onWarning });
   if (failed(run)) throw withVirtualMacHint(transcribeFailure(args[0] ?? "", run));
   try {
     return parseTranscriptionOutput(run.stdout);
@@ -540,20 +544,20 @@ export async function detectAudioLanguageEngine(audioPath: string, opts: RunEngi
     const crashed = !run.error && engineSignal(run.exitCode, run.signalCode) !== null;
     const cause = run.error ? renderError(run.error) : engineExitCause("detect-lang", run.exitCode, run.signalCode);
     const fix = crashed ? SUPPORT_BUNDLE_HINT : "run `kesha install` to reinstall the engine and its language-ID model.";
-    log.warn(`Audio language detection failed: ${cause}\n  Fix: ${fix}`);
+    (opts.onWarning ?? log.warn)(`Audio language detection failed: ${cause}\n  Fix: ${fix}`);
     return null;
   }
   return parseLangResult(run.stdout);
 }
 
-export async function detectTextLanguageEngine(text: string, opts: RunEngineOptions = {}): Promise<LangDetectResult | null> {
+export async function detectTextLanguageEngine(text: string, opts: RunEngineOptions = {}, fallback = "the default voice"): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
   assertEngineSupported(getEngineBinPath());
   const run = await runEngine(["detect-text-lang"], { ...opts, stdin: text });
   if (reportedFailure(run)) {
-    const warning = textLangFailureWarning(run.stderr);
-    if (warning) log.warn(warning);
+    const warning = textLangFailureWarning(run.stderr, process.platform, fallback);
+    if (warning) (opts.onWarning ?? log.warn)(warning);
     return null;
   }
   return parseLangResult(run.stdout);
@@ -565,10 +569,10 @@ export async function detectTextLanguageEngine(text: string, opts: RunEngineOpti
  * On darwin a failure means a broken `kesha-textlang` sidecar, and swallowing it routed
  * `kesha say` to the default voice with no hint that detection had stopped working (#770).
  */
-export function textLangFailureWarning(stderr: string, platform: string = process.platform): string | null {
+export function textLangFailureWarning(stderr: string, platform: string = process.platform, fallback = "the default voice"): string | null {
   if (platform !== "darwin") return null;
   return (
     `Text language detection failed${stderr ? `: ${stderr}` : ""}\n` +
-    "  Falling back to the default voice. Fix: run `kesha install` to reinstall the kesha-textlang sidecar."
+    `  Falling back to ${fallback}. Fix: run \`kesha install\` to reinstall the kesha-textlang sidecar.`
   );
 }

@@ -30,7 +30,7 @@ import { diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandSession } from "./command-session";
 import type { CliContext } from "./context";
 import { exitCodeFor, KeshaError } from "../engine/events";
-import { detectTextLanguageFallback, routeLanguage, unsupportedAudioLanguageWarning } from "../language-routing";
+import { detectTextLanguageFallback, routeLanguage, TINYLD_FALLBACK, unsupportedAudioLanguageWarning } from "../language-routing";
 import { langFlagError, renderInvalidArg } from "./options";
 
 // Hand-curated ordering and per-command argument hints; every key in SUBCOMMANDS (dispatch.ts)
@@ -215,7 +215,7 @@ async function detectLanguages(
   options: {
     wantsLangId: boolean;
     expectedLang?: string;
-    progress: FileProgress;
+    warn: (message: string) => void;
     stats: StatsRecorder;
     transcriptDurationSeconds: number | null;
   },
@@ -225,11 +225,11 @@ async function detectLanguages(
   lang: string;
   ranAudioLangId: boolean;
 }> {
-  const { wantsLangId, expectedLang, progress, stats, transcriptDurationSeconds } = options;
+  const { wantsLangId, expectedLang, warn, stats, transcriptDurationSeconds } = options;
 
   let audioResult: LangDetectResult | null = null;
   if (shouldRunAudioLanguageDetection({ wantsLangId, transcriptDurationSeconds })) {
-    audioResult = await stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file));
+    audioResult = await stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file, { onWarning: warn }));
   } else if (wantsLangId) {
     log.debug(
       `skip lang_id_audio for ${file}: transcript duration ${transcriptDurationSeconds?.toFixed(1)}s exceeds ` +
@@ -245,7 +245,7 @@ async function detectLanguages(
   if (audioLanguage && expectedLang && audioLanguage.confidence > 0.8) {
     const mismatch = checkLanguageMismatch(expectedLang, audioLanguage.code);
     if (mismatch) {
-      warnAboveProgress(progress, `${file}: ${mismatch} (from audio)`);
+      warn(`${file}: ${mismatch} (from audio)`);
     }
   }
 
@@ -253,7 +253,7 @@ async function detectLanguages(
   let textLanguage: TextLangDetectResult | undefined;
 
   if (wantsLangId) {
-    const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text));
+    const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text, { onWarning: warn }, TINYLD_FALLBACK));
     if (engineTextResult?.code) {
       textLanguage = { ...engineTextResult, source: "engine" };
     }
@@ -261,7 +261,7 @@ async function detectLanguages(
 
   const unsupportedWarning = unsupportedAudioLanguageWarning(audioLanguage, textLanguage ?? tinyldResult);
   if (unsupportedWarning) {
-    warnAboveProgress(progress, `${file}: ${unsupportedWarning}`);
+    warn(`${file}: ${unsupportedWarning}`);
   }
 
   const route = routeLanguage({ audioLanguage, textLanguage: textLanguage ?? tinyldResult });
@@ -270,7 +270,7 @@ async function detectLanguages(
   // A lang taken from audio was already judged by the audio check above; warning again would double it.
   const mismatchWarning = route.source === "audio" ? null : checkLanguageMismatch(expectedLang, lang);
   if (mismatchWarning) {
-    warnAboveProgress(progress, `${file}: ${mismatchWarning}`);
+    warn(`${file}: ${mismatchWarning}`);
   }
 
   return {
@@ -362,8 +362,12 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
     return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
   }
 
+  const warnings: string[] = [];
   const truncated = truncatedWavWarning(file);
-  if (truncated) log.warn(truncated);
+  if (truncated) {
+    warnings.push(truncated);
+    log.warn(truncated);
+  }
 
   const inputArtifact = artifactFromFile(file, "input_audio");
   if (inputArtifact) {
@@ -377,6 +381,10 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
 
   const startedAt = performance.now();
   let progress: ReturnType<typeof createPercentProgress> | null = null;
+  const warn = (message: string) => {
+    warnings.push(message);
+    warnAboveProgress(progress, message);
+  };
   // #1002: the bar sitting at 0% through a ~100 s diarization model load reads as a hang,
   // so the engine's progress has to land while it happens, not once the run is over.
   const showProgressLine = (line: string) => {
@@ -398,6 +406,7 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
         speakers,
         itn,
         onProgressLine: showProgressLine,
+        onWarning: warn,
       }),
     );
     const { text, segments } = transcript;
@@ -406,7 +415,7 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
     const { audioLanguage, textLanguage, lang, ranAudioLangId } = await detectLanguages(file, text, {
       wantsLangId,
       expectedLang,
-      progress,
+      warn,
       stats,
       transcriptDurationSeconds,
     });
@@ -423,6 +432,7 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
     if (timestamps || speakers) {
       result.segments = segments;
     }
+    if (warnings.length > 0) result.warnings = warnings;
 
     diagnosticLog.event("engine.exit", {
       command: "transcribe",

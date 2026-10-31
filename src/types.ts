@@ -24,6 +24,8 @@ export type TranscribeResult = {
   segments?: TranscriptionSegment[];
   /** Wall-clock time around the engine subprocess calls for this file, ms. See #139. */
   sttTimeMs?: number;
+  /** The warnings printed to stderr for this file, verbatim; absent when there were none (#1581). */
+  warnings?: string[];
 };
 
 export type TranscribeErrorRecord = {

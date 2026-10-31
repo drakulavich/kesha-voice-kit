@@ -231,7 +231,11 @@ function waitTimedOut(binPath: string, holder: LockOwner | null, waitedMs: numbe
  * running unserialised rather than failing an install that would otherwise work — the
  * post-install version check is what keeps the outcome honest either way.
  */
-export async function acquireInstallLock(binPath: string, maxWaitMs = configuredMaxWaitMs()): Promise<() => void> {
+export type InstallLockRelease = (() => void) & { held: boolean };
+
+const unserialised = (): InstallLockRelease => Object.assign(() => {}, { held: false });
+
+export async function acquireInstallLock(binPath: string, maxWaitMs = configuredMaxWaitMs()): Promise<InstallLockRelease> {
   const lockDir = `${binPath}.lock`;
   const owner: LockOwner = {
     token: randomUUID(),
@@ -247,13 +251,13 @@ export async function acquireInstallLock(binPath: string, maxWaitMs = configured
     mkdirSync(dirname(binPath), { recursive: true });
   } catch (e) {
     log.debug(`no install lock at ${lockDir} (${errorMessage(e)}); continuing unserialised.`);
-    return () => {};
+    return unserialised();
   }
 
   for (;;) {
     const outcome = publishLock(lockDir, owner);
-    if (outcome === "acquired") return () => releaseIfOwned(lockDir, owner.token);
-    if (outcome === "impossible") return () => {};
+    if (outcome === "acquired") return Object.assign(() => releaseIfOwned(lockDir, owner.token), { held: true });
+    if (outcome === "impossible") return unserialised();
 
     const holder = readOwner(lockDir);
     if (lockIsStale(holder) && clearLock(lockDir, holder?.token ?? null)) {

@@ -64,10 +64,55 @@ describe("a WAV shorter than its header says (#1473 S3-5)", () => {
   });
 });
 
+describe("--json carries the warnings stderr printed for each file (#1581)", () => {
+  scenarioTest("a truncated WAV's entry has the warning, a whole one has no warnings field", async () => {
+    const dir = tempDir("kesha-json-warnings-");
+    const enginePath = writeTranscribingEngine("kesha-json-warnings-engine-", ["transcribe"], "  printf '%s\\n' 'ok'", "en");
+    const half = join(dir, "half.wav");
+    const whole = join(dir, "whole.wav");
+    writeFileSync(half, pcmWav(32000, 16000));
+    writeFileSync(whole, pcmWav(32000, 32000));
+    const env = { HOME: dir, KESHA_HOME: join(dir, "state"), KESHA_CACHE_DIR: join(dir, "cache"), KESHA_ENGINE_BIN: enginePath };
+
+    const run = await runCliScenario(["--json", half, whole], { env });
+
+    expect(run.exitCode).toBe(0);
+    const [halfEntry, wholeEntry] = JSON.parse(run.stdout) as Array<{ file: string; warnings?: string[] }>;
+    expect(halfEntry!.file).toBe(half);
+    expect(halfEntry!.warnings).toEqual([
+      `warning: ${half} is truncated: its header declares 1.0 s of audio but the file holds 0.5 s; transcribing the part present`,
+    ]);
+    expect(wholeEntry!.file).toBe(whole);
+    expect(wholeEntry!.warnings).toBeUndefined();
+  });
+
+  scenarioTest("an engine warn event lands in warnings once and on stderr once", async () => {
+    const dir = tempDir("kesha-json-engine-warn-");
+    const hint = "hint: audio is 300s; `kesha install --vad` would improve long-audio accuracy";
+    const event = JSON.stringify({ kind: "warn", code: "W_VAD_NOT_INSTALLED", message: hint });
+    const enginePath = writeTranscribingEngine(
+      "kesha-json-engine-warn-engine-",
+      ["transcribe"],
+      `  printf '%s\\n' '${event}' >&2\n  printf '%s\\n' 'ok'`,
+      "en",
+    );
+    const long = join(dir, "long.wav");
+    writeFileSync(long, pcmWav(32000, 32000));
+    const env = { HOME: dir, KESHA_HOME: join(dir, "state"), KESHA_CACHE_DIR: join(dir, "cache"), KESHA_ENGINE_BIN: enginePath };
+
+    const run = await runCliScenario(["--json", long], { env });
+
+    expect(run.exitCode).toBe(0);
+    const [entry] = JSON.parse(run.stdout) as Array<{ warnings?: string[] }>;
+    expect(entry!.warnings).toEqual([hint]);
+    expect(run.stderr.split(hint).length - 1).toBe(1);
+  });
+});
+
 describe("a truncated WAV through the Core API and MCP (#1473 S3-5)", () => {
   scenarioTest("the Core API transcribes it and writes the warning to stderr", async () => {
     const dir = tempDir("kesha-truncated-wav-core-");
-    const enginePath = writeTranscribingEngine("kesha-truncated-wav-core-engine-", ["transcribe"], "  printf '%s\\n' 'ok'");
+    const enginePath = writeTranscribingEngine("kesha-truncated-wav-core-engine-", ["transcribe"], "  printf '%s\\n' 'ok'", "en");
     const half = join(dir, "half.wav");
     const whole = join(dir, "whole.wav");
     writeFileSync(half, pcmWav(32000, 16000));

@@ -206,11 +206,11 @@ export function stagingPrefix(destPath: string): string {
 }
 
 /** A Ctrl-C kills the process before any cleanup runs, so last run's staging file is swept by the next one (#770). */
-function sweepStagingFiles(destPath: string): void {
+export function sweepStagingFiles(destPath: string, maxAgeMs = STALE_STAGING_MS): void {
   if (process.platform === "win32") return;
   const dir = dirname(destPath);
   const prefix = basename(stagingPrefix(destPath));
-  const cutoffMs = Date.now() - STALE_STAGING_MS;
+  const cutoffMs = Date.now() - maxAgeMs;
 
   let names: string[];
   try {

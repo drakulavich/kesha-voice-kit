@@ -27,10 +27,11 @@ The exported types are `TranscribeResult`, `TranscribeOptions`, `TranscribeError
 `InstallOptions`, `EngineDescription` and `VadMode`; all of them are typed in
 [`src/lib.ts`](../src/lib.ts).
 
-`transcribe`'s `lang` and `textLanguage` come from the CLI-side `tinyld` detector
-(`textLanguage.source` is `"tinyld"`). The API does not run the engine's audio
-language ID or the macOS text detector, so `audioLanguage` is absent and, on macOS,
-`lang` can differ from what `kesha --json` reports for the same file.
+`transcribe`'s `lang` and `textLanguage` come from the same text detector as
+`kesha --json`: the engine's on macOS (`textLanguage.source` is `"engine"`), else
+the CLI-side `tinyld` (`"tinyld"`). The API does not run the engine's audio
+language ID, so `audioLanguage` is absent, and `lang` can differ from what
+`kesha --json` reports when the CLI falls back to the audio language.
 The API also gives no signal for speech in a language outside the
 [speech-to-text set](languages.md) (Chinese, Japanese and others), so its `lang` and
 `text` are unreliable for such audio; `kesha --json` warns and reports the audio language.

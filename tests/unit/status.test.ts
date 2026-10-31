@@ -885,8 +885,13 @@ exit 2
               path: join(fluidRoot, "Models", "parakeet-tdt-0.6b-v3"),
               sizeBytes: 50,
             },
+            {
+              label: "ASR, older Parakeet copy (not read)",
+              path: join(fluidRoot, "Models", "parakeet-tdt-0.6b-v3-coreml"),
+              sizeBytes: 20,
+            },
           ],
-          otherBytes: 20,
+          otherBytes: 0,
         },
       ]);
       expect(disk.externalTotalBytes).toBe(70);
