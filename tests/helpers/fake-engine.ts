@@ -172,7 +172,7 @@ export function writeFakeEngine(binDir: string, features: string[] | null = ["tt
   return binPath;
 }
 
-export function writeTranscribingEngine(prefix: string, features: string[], transcribeBody: string, textLang?: string): string {
+export function writeTranscribingEngine(prefix: string, features: string[], transcribeBody: string, detectedLang?: string): string {
   const dir = tempDir(prefix);
   const path = join(dir, "kesha-engine");
   writeFileSync(
@@ -187,11 +187,11 @@ ${transcribeBody}
   exit 0
 fi
 ${
-  textLang === undefined
+  detectedLang === undefined
     ? ""
-    : `if [ "$1" = "detect-text-lang" ]; then
+    : `if [ "$1" = "detect-lang" ] || [ "$1" = "detect-text-lang" ]; then
   cat > /dev/null
-  printf '%s\\n' '{"code":"${textLang}","confidence":0.9}'
+  printf '%s\\n' '{"code":"${detectedLang}","confidence":0.9}'
   exit 0
 fi
 `

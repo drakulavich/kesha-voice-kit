@@ -229,7 +229,7 @@ async function detectLanguages(
 
   let audioResult: LangDetectResult | null = null;
   if (shouldRunAudioLanguageDetection({ wantsLangId, transcriptDurationSeconds })) {
-    audioResult = await stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file));
+    audioResult = await stats.timeStage("lang_id_audio", () => detectAudioLanguageEngine(file, { onWarning: warn }));
   } else if (wantsLangId) {
     log.debug(
       `skip lang_id_audio for ${file}: transcript duration ${transcriptDurationSeconds?.toFixed(1)}s exceeds ` +
@@ -253,7 +253,7 @@ async function detectLanguages(
   let textLanguage: TextLangDetectResult | undefined;
 
   if (wantsLangId) {
-    const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text, {}, TINYLD_FALLBACK));
+    const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text, { onWarning: warn }, TINYLD_FALLBACK));
     if (engineTextResult?.code) {
       textLanguage = { ...engineTextResult, source: "engine" };
     }
@@ -381,6 +381,10 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
 
   const startedAt = performance.now();
   let progress: ReturnType<typeof createPercentProgress> | null = null;
+  const warn = (message: string) => {
+    warnings.push(message);
+    warnAboveProgress(progress, message);
+  };
   // #1002: the bar sitting at 0% through a ~100 s diarization model load reads as a hang,
   // so the engine's progress has to land while it happens, not once the run is over.
   const showProgressLine = (line: string) => {
@@ -402,6 +406,7 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
         speakers,
         itn,
         onProgressLine: showProgressLine,
+        onWarning: warn,
       }),
     );
     const { text, segments } = transcript;
@@ -410,10 +415,7 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
     const { audioLanguage, textLanguage, lang, ranAudioLangId } = await detectLanguages(file, text, {
       wantsLangId,
       expectedLang,
-      warn: (message) => {
-        warnings.push(message);
-        warnAboveProgress(progress, message);
-      },
+      warn,
       stats,
       transcriptDurationSeconds,
     });

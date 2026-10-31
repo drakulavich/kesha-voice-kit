@@ -102,6 +102,8 @@ export interface TranscribeOptions {
    * is over. The diarization model load alone can take ~100 s on a first run, and a
    * caller with no way to show that in flight looks like it has hung (#1002). */
   onProgressLine?: (line: string) => void;
+  /** Receives each warning the engine or the language detectors raise for this file, in place of stderr. */
+  onWarning?: (message: string) => void;
 }
 
 /** The refusals the CLI makes before it spawns anything, so an agent branching on the documented code sees it on every surface. */
@@ -139,6 +141,7 @@ export async function transcribeWithSegments(audioPath: string, opts: Transcribe
       speakers: opts.speakers,
       itn: opts.itn,
       onProgressLine: opts.onProgressLine,
+      onWarning: opts.onWarning,
     });
   }
 
@@ -147,6 +150,7 @@ export async function transcribeWithSegments(audioPath: string, opts: Transcribe
     signal: opts.signal,
     itn: opts.itn,
     onProgressLine: opts.onProgressLine,
+    onWarning: opts.onWarning,
   });
   return { text, segments: [] };
 }
