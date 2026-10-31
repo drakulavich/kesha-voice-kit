@@ -2,7 +2,8 @@
 
 Every install path delivers the same `kesha` CLI. None of them downloads the Rust
 engine or the models: `kesha install` does that, explicitly, into the Kesha cache
-(~2.5 GB for speech-to-text). The canonical path is Bun:
+(~2.5 GB for speech-to-text on Linux and Windows, ~0.6 GB on Apple Silicon). The
+canonical path is Bun:
 
 ```bash
 bun add -g @drakulavich/kesha-voice-kit
@@ -47,7 +48,7 @@ is never committed. `kesha install` refuses any download that does not match it.
 
 ## Homebrew
 
-The formula installs the Bun-based CLI and depends on Bun from the official tap:
+The formula depends on Bun from the official tap:
 
 ```bash
 brew tap oven-sh/bun
@@ -55,8 +56,8 @@ brew install drakulavich/tap/kesha-voice-kit
 kesha install
 ```
 
-It installs the TypeScript CLI, its production Bun dependencies and the `kesha`
-command. `kesha install` still downloads release assets into the Kesha cache, as
+The formula installs the TypeScript CLI, its production Bun dependencies and the
+`kesha` command. `kesha install` still downloads release assets into the Kesha cache, as
 on every other path.
 
 ### Maintainer validation
@@ -65,7 +66,7 @@ The source formula lives in `packaging/homebrew/Formula/kesha-voice-kit.rb`; the
 `homebrew` job of `release.yml` mirrors it into `drakulavich/homebrew-tap` on a
 stable release, using the `HOMEBREW_TAP_TOKEN` secret. Its committed
 `url`/`sha256` name the real release tarball. CI's `homebrew-formula` lane does
-**not** trust that pin: it stages a throwaway tap copy whose `url` is a
+not trust that pin: it stages a throwaway tap copy whose `url` is a
 `git archive` of HEAD, so the install block is exercised against the checkout
 under review (#924). To do the same locally:
 
@@ -143,7 +144,7 @@ node .github/scripts/build-linux-packages.mjs
 The installer fetches the pinned nFPM release binary and refuses it unless its
 SHA-256 matches. CI runs the same three commands through
 `.github/actions/linux-packages`, from `ci.yml` (on a pull request that touches
-packaging, and on `main`) and from `release.yml`'s `packages` job (on a stable
+packaging, and on a `main` push that changes what the package is built from) and from `release.yml`'s `packages` job (on a stable
 tag, which is what publishes them).
 
 ## Nix
@@ -161,7 +162,7 @@ nix develop github:drakulavich/kesha-voice-kit   # pinned rustc/cargo, bun, prot
 ```
 
 The flake also defines `packages.kesha` (the CLI wired to the flake-built
-engine), but it **cannot build as committed**: its Bun dependency closure is a
+engine), but it cannot build as committed: its Bun dependency closure is a
 fixed-output derivation whose `outputHash` is a placeholder (`lib.fakeHash`), so
 `nix run`, `nix build .#kesha` and `nix profile install` fail with a hash
 mismatch. Populating it (or adopting `bun2nix`) is tracked in

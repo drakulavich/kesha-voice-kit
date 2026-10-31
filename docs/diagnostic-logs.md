@@ -1,8 +1,8 @@
-# Diagnostic Logs
+# Diagnostic logs
 
 Kesha diagnostic logs are local, rotated NDJSON event logs for install, engine,
 and runtime troubleshooting. They are separate from Kesha Stats: Stats stores
-aggregate timings in SQLite after explicit opt-in, while diagnostic logs keep a
+per-run timings in SQLite after explicit opt-in, while diagnostic logs keep a
 small local ring buffer of structured events.
 
 Diagnostic logs default to `retain-on-failure`: passing commands leave no log
@@ -28,14 +28,13 @@ Diagnostic logs follow a Playwright-style retention model:
   if the command fails. This is the default.
 
 `kesha logs enable` is shorthand for `kesha logs mode on`; `kesha logs disable`
-is shorthand for `kesha logs mode off`. `retain-on-failure` keeps passing runs
-artifact-free while failed runs keep enough context to debug.
+is shorthand for `kesha logs mode off`.
 
 `kesha logs status --json` prints the same local status as a stable JSON object:
 `dir`, `activePath`, `statePath`, `exists`, `activeSizeBytes`, `rotatedFiles`,
 `totalSizeBytes`, `mode`, `maxBytes`, and `retain`.
 
-## Privacy Contract
+## Privacy contract
 
 Diagnostic logs are content-free. Event payloads are built from an allowlist of
 typed fields such as command name, app version, platform, backend, feature flags,
@@ -46,8 +45,7 @@ lifecycle events such as `command.start`, `input.audio`, `input.missing`,
 `engine.exit`, `engine.debug` (the Engine's own `KESHA_DEBUG` timeline, carrying
 its event name and typed fields but never its message text), and `command.finish`.
 These events use only counts, booleans, format extensions, duration milliseconds,
-and bucket labels. In the default `retain-on-failure` mode, successful runs still
-leave no log file behind.
+and bucket labels.
 
 Diagnostic logs must not store:
 
@@ -75,7 +73,8 @@ Default paths:
 
 Set `KESHA_LOG_DIR` to override the directory. The active file is
 `kesha.ndjson`; rotated files are named `kesha.1.ndjson`, `kesha.2.ndjson`, and
-so on.
+so on. Logs rotate at 10 MB and keep 5 rotated files. `kesha logs reset`
+deletes Kesha log files but preserves the selected mode.
 
 ## Where Kesha keeps its files
 
@@ -84,7 +83,7 @@ when set, otherwise the path under `KESHA_HOME` when that is set, otherwise the
 platform default. `KESHA_HOME` uses one layout on every platform, so a test run,
 a CI job or a second profile needs exactly one variable to leave your real
 models, logs and Stats untouched. Nothing is moved when you set it: a fresh
-`KESHA_HOME` starts with an empty cache, and `kesha install` fills it. Two roots FluidAudio owns stay outside it on darwin-arm64: the Kokoro ANE bundles and voice packs under `~/.cache/fluidaudio`, and its Silero VAD copy under `~/Library/Application Support/FluidAudio`; `status --disk` reports both as external roots, and `kesha install --tts` stages into the first regardless of `KESHA_HOME`.
+`KESHA_HOME` starts with an empty cache, and `kesha install` fills it.
 
 | What | Default (macOS / Windows / Linux) | Under `KESHA_HOME` | Own variable |
 |---|---|---|---|
@@ -92,6 +91,19 @@ models, logs and Stats untouched. Nothing is moved when you set it: a fresh
 | Diagnostic log directory | `~/Library/Logs/kesha` / `%LOCALAPPDATA%\kesha\logs` / `$XDG_STATE_HOME/kesha/logs` | `<home>/logs` | `KESHA_LOG_DIR` |
 | Stats DB | `~/Library/Application Support/kesha/stats.sqlite` / `%APPDATA%\kesha\stats.sqlite` / `$XDG_DATA_HOME/kesha/stats.sqlite` | `<home>/stats.sqlite` | `KESHA_STATS_DB` |
 | MCP audio (`kesha mcp` synthesis output) | `<tmpdir>/kesha-mcp` | `<home>/mcp-audio` | none |
+
+On darwin-arm64, some FluidAudio files stay outside `KESHA_HOME`:
+
+- the Kokoro G2P bundle under `~/.cache/fluidaudio/Models/kokoro`, which FluidAudio
+  reads only from there, so `kesha install --tts` stages it there whatever
+  `KESHA_HOME` says;
+- FluidAudio's own Silero VAD copy under
+  `~/Library/Application Support/FluidAudio`, which FluidAudio places itself;
+- a usable Kokoro ANE, Parakeet or Sortformer bundle that an older install left in
+  FluidAudio's default folders, which is read where it is instead of being
+  downloaded again.
+
+`kesha status --disk` lists each of these as an external root.
 
 `kesha status --json` and `kesha doctor --json` report every path together with
 the rule that decided it (`default`, `KESHA_HOME`, or the variable name), so an
@@ -104,14 +116,9 @@ KESHA_HOME=/tmp/kesha-ci kesha status --json | jq .paths
 An empty variable counts as unset; a relative path is resolved against the
 working directory when the command starts. The engine itself reads only
 `KESHA_CACHE_DIR`, so the CLI hands it the resolved cache root under that name
-whenever `KESHA_HOME` decided it. FluidAudio's own Silero VAD copy under
-`~/Library/Application Support/FluidAudio` is placed by FluidAudio and stays
-outside `KESHA_HOME`; `kesha status --disk` lists it as an external root.
+whenever `KESHA_HOME` decided it.
 
-The first implementation rotates at 10 MB and keeps 5 rotated files. `kesha logs
-reset` deletes Kesha log files but preserves the selected mode.
-
-## Support Bundles
+## Support bundles
 
 `kesha support-bundle` does not include diagnostic log contents by default. Use
 `kesha support-bundle --include-logs` to add a bounded tail of the active

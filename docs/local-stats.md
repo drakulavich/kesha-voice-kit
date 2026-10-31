@@ -1,4 +1,4 @@
-# Local Stats — privacy & lifecycle
+# Local Stats: privacy and lifecycle
 
 Kesha Stats is disabled by default. When you opt in with `kesha stats enable`,
 Kesha writes a local SQLite database only on your machine:
@@ -33,7 +33,8 @@ errors while preserving settings such as enabled state and retention.
 
 If the database file cannot be opened, every `kesha stats` action, `disable`
 and `reset` included, fails with `E_INTERNAL` naming the file, and each
-`kesha` run warns once that it is continuing without Stats. When the file is
+`kesha <audio>` or `kesha say` run warns once that it is continuing without
+Stats. When the file is
 not SQLite or is damaged, delete it to start over; Stats stays off until
 `kesha stats enable` creates a new database. Any other failure, such as a
 permission error or a read-only disk, leaves the file alone: make the file and

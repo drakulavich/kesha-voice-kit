@@ -40,12 +40,12 @@ When audio language detection is at least 0.95 sure the speech is in a language 
 
 ## Text-to-speech
 
-On macOS, Kesha auto-picks a voice from the text's language; pass `--voice <id>` to choose. On Linux and Windows, pass `--lang <code>` for the language's default voice or `--voice <id>` for a specific one. Run `kesha say --list-voices` to see the voices kesha knows; some need `kesha install --tts <lang>` first. Full voice catalogue and SSML details: [tts.md](tts.md).
+On macOS, Kesha auto-picks a voice from the text's language; pass `--voice <id>` to choose. On Linux and Windows, mostly-Cyrillic text still gets `ru-vosk-m02`; for other languages, pass `--lang <code>` for the language's default voice or `--voice <id>` for a specific one. Run `kesha say --list-voices` to see the voices kesha knows; some need `kesha install --tts <lang>` first. Full voice catalogue and SSML details: [tts.md](tts.md).
 
 TTS models are installed per-language via `kesha install --tts <codes>`. Bare `--tts` defaults to English only. Re-running is additive. `kesha init` presents a multi-select of available languages.
 
 ```bash
-kesha install --tts              # English only (~326 MB)
+kesha install --tts              # English only (~326 MB on Linux/Windows, ~105 MB on Apple Silicon)
 kesha install --tts en ru        # add Russian (~937 MB)
 kesha install --tts es fr it pt  # Romance languages (all platforms)
 ```
@@ -55,7 +55,7 @@ Languages marked **darwin-arm64** below require a darwin-arm64 engine build (Flu
 | # | Language | Code | | Engine (voice prefix) | Platform | Notes |
 |---:|----------|------|---|------------------------|----------|-------|
 | 1 | English | `en` | 🇬🇧 | Kokoro (`en-*`) | all | default `en-am_michael` |
-| 2 | Russian | `ru` | 🇷🇺 | Vosk-TTS (`ru-*`) | all | default `ru-vosk-m02`; macOS also offers `macos-*` Milena |
+| 2 | Russian | `ru` | 🇷🇺 | Vosk-TTS (`ru-*`) | all | default `ru-vosk-m02` on Linux/Windows; on macOS the default is the AVSpeech voice Milena (`macos-*`, no model download) |
 | 3 | Spanish | `es` | 🇪🇸 | Kokoro (`es-*`) | all | FluidAudio CoreML on darwin-arm64, CharsiuG2P ONNX elsewhere |
 | 4 | French | `fr` | 🇫🇷 | Kokoro (`fr-*`) | all | female voice only (`fr-ff_siwis`) |
 | 5 | Italian | `it` | 🇮🇹 | Kokoro (`it-*`) | all | FluidAudio CoreML on darwin-arm64, CharsiuG2P ONNX elsewhere |
