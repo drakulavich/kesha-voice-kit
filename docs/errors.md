@@ -52,7 +52,7 @@ code never needs sanitizing.
 - Another install overwrote the engine during our run: the recorded version or the binary's own `--version` names something else.
 - Another install still holds the cache and we gave up waiting for it. Nothing is written in this case.
 
-Concurrent jobs can also get just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`. To fail sooner than the 6 h ceiling, set `KESHA_INSTALL_LOCK_WAIT_SECS` (seconds, positive numbers only). A lock held by an install on another host or container is taken over only once it is 6 h old, so a shorter wait gives up on such a lock instead of taking it over ([concurrent installs](architecture.md#runtime-data-flow)). If the message names a lock no install owns, delete the `.lock` directory it names.
+Concurrent jobs can also get just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`. To fail sooner than the 6 h ceiling, set `KESHA_INSTALL_LOCK_WAIT_SECS` (seconds, positive numbers only). A lock held by an install on another host or container is taken over only once it is 6 h old, so a shorter wait can give up before such a lock reaches that age ([concurrent installs](architecture.md#runtime-data-flow)). If the message names a lock no install owns, delete the `.lock` directory it names.
 
 ### `E_INVALID_ARG`
 
