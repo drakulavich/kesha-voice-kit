@@ -373,7 +373,7 @@ kesha say --voice en-am_michael --format ogg-opus --out intro.ogg "Welcome to th
 **Russian narration with emphasis:**
 
 ```bash
-kesha say --ssml --voice ru-vosk-m02 --format ogg-opus --out narration.ogg "<speak><prosody rate='medium'>Добро пожаловать в мир локального <emphasis>син+теза</emphasis> речи</prosody></speak>"
+kesha say --ssml --voice ru-vosk-m02 --format ogg-opus --out narration.ogg "<speak><prosody rate='medium'>Добро пожаловать в мир локального <emphasis>с+интеза</emphasis> речи</prosody></speak>"
 ```
 
 **Slow down for accessibility:**
