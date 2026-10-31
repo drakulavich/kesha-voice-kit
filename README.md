@@ -22,7 +22,7 @@
   <img src="https://github.com/drakulavich/kesha-voice-kit/raw/main/docs/assets/demo.webp" alt="kesha demo: an English voice message transcribed, a Russian one as JSON with automatic language detection, then text-to-speech into a wav" width="800">
 </p>
 
-## Quick Start
+## Quick start
 
 Runtime: **[Bun](https://bun.sh)** >= 1.4.0.
 
@@ -81,10 +81,6 @@ kesha --format json audio.ogg              # full JSON with lang fields
 kesha --json --timestamps audio.ogg        # JSON with timestamped segments
 kesha --itn audio.ogg                      # spelled-out numbers -> digits
 kesha --toon audio.ogg                     # compact LLM-friendly TOON
-kesha status                               # show installed backend info
-kesha status --disk                        # + recursive cache disk usage
-kesha status --json                        # machine-readable, for scripts
-kesha status --check                       # exit 1 unless engine + ASR model are installed
 ```
 
 Multiple files get `head`-style headers; stdout is the transcript, stderr is errors — pipe-friendly:
@@ -98,14 +94,14 @@ $ kesha freedom.ogg tahiti.ogg
 Таити, Таити! Не были мы ни в какой Таити! Нас и тут неплохо кормят.
 ```
 
-- **Record from the mic (macOS):** `kesha record --out hello.wav` writes microphone audio to a WAV file (`kesha hello.wav` transcribes it). macOS prompts for microphone access on first use — grant it under System Settings → Privacy & Security → Microphone if it was denied. On Linux/Windows or headless boxes, pass any existing audio file straight to `kesha` instead.
-- **Dictate straight to text (darwin-arm64):** `kesha record --live` transcribes the mic as it captures and prints the transcript to stdout — no WAV in between, so it pipes (`kesha record --live | pbcopy`). To end after trailing silence, explicitly install VAD then opt in: `kesha install --vad && kesha record --live --auto-stop`. The defaults are 1,000 ms of silence after 250 ms of speech; tune them with `--auto-stop-silence-ms`, `--auto-stop-min-speech-ms`, and `--auto-stop-threshold`. Progress goes to stderr. Linux and Windows do not capture the microphone; pass an existing audio file to `kesha` to transcribe it. An interruption is recoverable: Ctrl-C (or SIGTERM) stops the session, still prints what you dictated, and exits 130/143, and the audio is spilled to a recovery WAV under `~/.cache/kesha/recordings/` — named on stderr when the session starts, deleted once the transcript has actually been delivered, kept if anything — a signal, a crash, a closed terminal, a dead pipe — got in the way first ([#962](https://github.com/drakulavich/kesha-voice-kit/issues/962)).
+- **Record from the mic (macOS):** `kesha record --out hello.wav`, then `kesha hello.wav`. Linux and Windows do not capture the microphone; pass an existing audio file instead. See [docs/stt.md](docs/stt.md#recording-from-the-microphone-macos).
+- **Live dictation (darwin-arm64):** `kesha record --live | pbcopy` prints the transcript as you speak; `--auto-stop` ends it after silence once VAD is installed. Ctrl-C still prints what you dictated. See [docs/stt.md](docs/stt.md#live-dictation-darwin-arm64).
 - **Long / silence-heavy audio:** install VAD (`kesha install --vad`); Kesha auto-uses it past 120 s. Without VAD, long audio falls back to fixed ASR chunks. See [docs/vad.md](docs/vad.md).
-- **Speaker diarization** (darwin-arm64): `kesha install --diarize` (which installs VAD too), then `kesha --json --speakers meeting.m4a` stamps each segment with a `speaker` id. `--speakers` engages VAD windowing itself at any duration, so it cannot be combined with `--no-vad`. Linux/Windows return a clear "darwin-arm64 only" error ([#199](https://github.com/drakulavich/kesha-voice-kit/issues/199)).
-- **Word-level timestamps** (every platform): `kesha --json --timestamps audio.ogg` adds a `words` array to each segment — `{ "word": "email", "start": 0.72, "end": 1.12 }` — on the same file-relative clock as the segment, so a word always lies inside the segment carrying it. Read them off the decoder's own frame grid, so: times are quantised to 0.08 s, consecutive spans may overlap (each `end` is a per-word duration prediction, not the next word's `start`), `end >= start` rather than strictly greater, and punctuation stays attached to its word. The key is simply absent where a segment has none — any segment `--itn` rewrote, for one — so check the `transcribe.words` capability rather than expecting an empty array ([#720](https://github.com/drakulavich/kesha-voice-kit/issues/720)).
-- **Text-language detection:** JSON and TOON results include `textLanguage` with a language code, confidence, and its `source`. On macOS Kesha uses Apple `NLLanguageRecognizer`; elsewhere it uses the bundled `tinyld` fallback, whose confidence scale is different. This is separate from `audioLanguage`, which identifies the spoken audio when available.
-- **Written-form numbers:** `--itn` rewrites what the model spells out — `"two hundred thirty two"` → `"232"`, `"five dollars and fifty cents"` → `"$5.50"`. Opt-in, every platform, timestamps untouched. English-only in practice; Russian and the rest pass through unchanged. Spoken punctuation names stay words (`"dot"`, `"comma"`, `"the period of growth"`) because Kesha transcribes speech rather than dictation — so `"example dot com"` keeps its words too ([#822](https://github.com/drakulavich/kesha-voice-kit/issues/822)). A sentence `"and"` survives the number that follows it (`"cats and three dogs"` → `"cats and 3 dogs"`), while an `"and"` the number owns still joins it (`"three hundred and five"` → `"305"`) ([#1000](https://github.com/drakulavich/kesha-voice-kit/issues/1000)) — and no longer splits the number around it (`"two hundred and thirty two"` → `"232"`, not `"230 2"`) ([#1006](https://github.com/drakulavich/kesha-voice-kit/issues/1006)). A hyphenated number reads the same as the spaced form (`"twenty-five apples"` → `"25 apples"`), while a hyphen between ordinary words is left alone (`"well-known"`, `"state-of-the-art"`, `"twenty-something"`) ([#1004](https://github.com/drakulavich/kesha-voice-kit/issues/1004)).
-- **A file name starting with `-`:** write it as `./-file.wav`, or put an option before `--` (`kesha --json -- -file.wav`). A bare `kesha -- -file.wav` fails with `unknown option`, because Bun drops a `--` that comes right after the command name ([#1464](https://github.com/drakulavich/kesha-voice-kit/issues/1464)).
+- **Speaker diarization (darwin-arm64):** `kesha install --diarize`, then `kesha --json --speakers meeting.m4a` stamps each segment with a `speaker` id. See [docs/stt.md](docs/stt.md#speaker-diarization-darwin-arm64).
+- **Word-level timestamps (every platform):** `kesha --json --timestamps audio.ogg` adds a `words` array to each segment. See [docs/stt.md](docs/stt.md#word-level-timestamps-every-platform).
+- **Text-language detection:** JSON and TOON results include `textLanguage`, separate from the spoken `audioLanguage`. See [docs/stt.md](docs/stt.md#text-language-detection).
+- **Written-form numbers:** `--itn` turns spelled-out English numbers into digits (`"two hundred thirty two"` → `"232"`). See [docs/stt.md](docs/stt.md#written-form-numbers---itn).
+- **A file name starting with `-`:** write it as `./-file.wav`. See [docs/stt.md](docs/stt.md#a-file-name-starting-with--).
 
 ## Text-to-speech
 
@@ -146,7 +142,7 @@ Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md). The c
 
 ## Other install methods
 
-All of these install the Bun CLI wrapper; engine + models still download explicitly via `kesha install`. (Nix is the exception — it currently builds only the engine from source; see below.)
+Except Nix, these install the Bun CLI wrapper; engine + models still download explicitly via `kesha install`.
 
 - **Homebrew** — `brew install drakulavich/tap/kesha-voice-kit` · [docs/distribution.md](docs/distribution.md#homebrew)
 - **Linux packages** (`.deb`/`.rpm`, x64) — published on stable releases, see [docs/distribution.md](docs/distribution.md#linux-packages)
@@ -160,7 +156,8 @@ All of these install the Bun CLI wrapper; engine + models still download explici
 - [Use cases](docs/use-cases.md) — copy-paste recipes (transcribe a meeting, speak from OpenClaw, run offline, move the cache).
 - [Product positioning](docs/product-positioning.md) — supported workflows, non-goals, maturity labels, platform matrix.
 - [Changelog](CHANGELOG.md) — every release, with the behaviour changes spelled out.
-- **Diagnostics:** `kesha doctor`, `kesha support-bundle` (redacted `.tar.gz` for issues), and `kesha logs` produce local, content-free diagnostics — see [docs/diagnostic-logs.md](docs/diagnostic-logs.md). One variable, `KESHA_HOME`, moves everything Kesha writes (models, logs, stats) into a directory of your choice — see [where Kesha keeps its files](docs/diagnostic-logs.md#where-kesha-keeps-its-files). Every failure prints a stable `error [CODE]: …` line and a documented [process exit code](docs/errors.md#process-exit-codes).
+- **Diagnostics:** `kesha status` (`--disk` for cache usage, `--json` for scripts, `--check` exits 1 unless the engine and ASR model are installed), `kesha doctor`, `kesha support-bundle` (redacted `.tar.gz` for issues), and `kesha logs` produce local, content-free diagnostics — see [docs/diagnostic-logs.md](docs/diagnostic-logs.md). Every failure prints a stable `error [CODE]: …` line and a documented [process exit code](docs/errors.md#process-exit-codes).
+- **Moving the files:** one variable, `KESHA_HOME`, moves everything Kesha writes (models, logs, stats) into a directory of your choice — see [where Kesha keeps its files](docs/diagnostic-logs.md#where-kesha-keeps-its-files).
 - **Scripting & CI:** `--json` (or `--toon`) for machine-readable output, `--include-errors` (with either) to get per-file failures on stdout alongside the results, `--quiet`/`-q` to silence progress, and `--no-color` (or `NO_COLOR=1`) for plain logs. Colors switch off automatically when `CI=true`.
 - **Privacy / Local Stats:** Stats are **off by default** and fully local. Opt in with `kesha stats enable` to record content-free operational metrics in a local SQLite database — never networked, never storing audio, transcripts, text, or paths. Full commands & lifecycle: [docs/local-stats.md](docs/local-stats.md).
 
