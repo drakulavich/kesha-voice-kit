@@ -89,10 +89,12 @@ language (`lang_for_fluid_id`) and passes it to `init_kokoro(voice, lang)`. The 
 Swift bridge (`fluidaudio-rs`, version pinned in `rust/Cargo.toml`) maps it to a `KokoroAneVariant`:
 `zh` → `.mandarin` (tone-aware G2P: jieba + g2pw + bopomofo + tone sandhi), everything
 else → `.english` (en plus Latin-script es/fr/it/pt, which the English G2P handles
-acceptably). The `.mandarin` variant fetches its own `ANE-zh/` bundle (nested
-`voices/<id>.bin`) on first synth — zh voices are therefore **not** staged in
-`models/manifest.rs::ANE_KOKORO_VOICES` and are exempt from the staging-coverage test (like
-`af_heart`). Default zh voice: `zh-zm_050` (male). Native-script `hi`/`ja` on the Kokoro
+acceptably). The `.mandarin` variant reads its own `ANE-zh/` bundle (nested
+`voices/<id>.bin`), which `kesha install --tts zh` stages and SHA-256-checks up front
+(`models/staging.rs::stage_fluidaudio_kokoro_assets`, `models/manifest.rs::ANE_ZH_FILES`);
+nothing is fetched at synthesis (#823). zh voices live in `ANE_ZH_FILES`, not
+`ANE_KOKORO_VOICES`, and the staging-coverage test counts them there (like `af_heart` in
+`ANE_EN_FILES`). Default zh voice: `zh-zm_050` (male). Native-script `hi`/`ja` on the Kokoro
 voices still fail fast (`E_SCRIPT_UNSUPPORTED`) — no FluidAudio KokoroAne variant for them
 yet; with no `--voice`, `src/voice-routing.ts::resolveSayVoice` routes that text on darwin to
 an installed AVSpeech voice (Lekha `hi-IN`, Otoya `ja-JP`) instead. The
