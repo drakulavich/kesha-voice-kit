@@ -28,7 +28,7 @@ Runtime: **[Bun](https://bun.sh)** >= 1.4.0.
 
 ```bash
 # 1. Install Bun (skip if you have it)
-curl -fsSL https://bun.sh/install | bash        # macOS/Linux — or: brew install oven-sh/bun/bun
+curl -fsSL https://bun.sh/install | bash        # macOS/Linux — or: brew install bun
 powershell -c "irm bun.sh/install.ps1 | iex"    # Windows
 
 # 2. Install Kesha
@@ -144,7 +144,7 @@ Full per-file breakdown (Russian + English): [BENCHMARK.md](BENCHMARK.md). The c
 
 Except Nix, these install the Bun CLI wrapper; engine + models still download explicitly via `kesha install`.
 
-- **Homebrew** — `brew install drakulavich/tap/kesha-voice-kit` after trusting the Bun tap (`brew tap oven-sh/bun && brew trust oven-sh/bun`) · [docs/distribution.md](docs/distribution.md#homebrew)
+- **Homebrew** — `brew install drakulavich/tap/kesha-voice-kit` · [docs/distribution.md](docs/distribution.md#homebrew)
 - **Linux packages** (`.deb`/`.rpm`, x64) — published on stable releases, see [docs/distribution.md](docs/distribution.md#linux-packages)
 - **Docker** (GHCR image) — [docs/docker.md](docs/docker.md)
 - **Nix** (`aarch64-darwin` / `x86_64-linux`) — builds the engine from source (`nix build github:drakulavich/kesha-voice-kit#kesha-engine`). The full `kesha` CLI via `nix run` / `nix profile install` is **not yet available** — it needs a maintainer with Nix to populate a build hash ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)). · [docs/distribution.md](docs/distribution.md#nix)

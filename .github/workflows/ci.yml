@@ -393,14 +393,6 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: 🍞 Tap Bun formula
-        run: |
-          brew tap oven-sh/bun
-          # Homebrew Tap-Trust now refuses to load formulae from untrusted
-          # taps (the kesha-voice-kit formula depends on oven-sh/bun/bun).
-          # Trust the tap so the formula can be loaded below.
-          brew trust oven-sh/bun
-
       - name: 🧪 Create local test tap
         run: |
           brew tap-new local/kesha
