@@ -27,7 +27,7 @@ The product promise is not "one model for every audio problem." The promise is a
 | Integrate with OpenClaw as a local voice model | Stable integration surface, user-configured route | `docs/openclaw.md` |
 | Integrate with Hermes Agent as local STT/TTS commands | Stable CLI surface, user-configured route | `docs/hermes.md` |
 | Use Raycast actions for selected-file transcription or clipboard speech | Beta, macOS only | `raycast/` extension |
-| Install through Nix instead of Bun/npm | Beta, selected systems | `docs/distribution.md#nix` |
+| Build the engine through Nix | Engine only, selected systems; the CLI still installs with Bun/npm ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)) | `docs/distribution.md#nix` |
 
 ## Non-goals
 
@@ -54,11 +54,11 @@ The product promise is not "one model for every audio problem." The promise is a
 | Raycast extension | Beta | Convenience UI over the CLI; macOS-only. |
 | OpenClaw plugin | Stable integration surface | Discovery is packaged; actual audio route remains explicit user config. |
 | Hermes Agent command provider | Stable CLI surface | Hermes owns the command-provider lifecycle; Kesha supplies the local STT/TTS commands. |
-| Nix flake | Beta | Builds the engine only; the CLI package does not build yet ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)), so install the CLI with Bun/npm. |
+| Nix flake | Engine only | Builds the engine only; the CLI package does not build yet ([#946](https://github.com/drakulavich/kesha-voice-kit/issues/946)), so install the CLI with Bun/npm. |
 
 ## Platform matrix
 
-| Capability | macOS arm64 | macOS x64 | Linux x64 | Windows x64 | Nix path |
+| Capability | macOS arm64 | macOS x64 | Linux x64 | Windows x64 | Nix path (engine only) |
 |---|---|---|---|---|---|
 | STT | Supported, CoreML path | Not shipped | Supported, ONNX CPU path | Supported, ONNX CPU path | `aarch64-darwin`, `x86_64-linux` |
 | Audio language detection | Supported | Not shipped | Supported | Supported | Supported where the flake builds |
