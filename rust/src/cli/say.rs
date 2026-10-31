@@ -47,7 +47,7 @@ pub struct SayArgs {
     pub voice_file: Option<PathBuf>,
     /// Long-lived loop: read newline-delimited JSON requests on stdin,
     /// reuse loaded engines across calls, write framed binary responses
-    /// on stdout. See `docs/tts-stdin-loop.md`. Issue #213.
+    /// on stdout. Protocol: `rust/src/say_loop.rs`. Issue #213.
     #[arg(long = "stdin-loop", hide = true)]
     pub stdin_loop: bool,
     /// Disable acronym auto-expansion on `ru-vosk-*` voices (ФСБ → "эф эс бэ")

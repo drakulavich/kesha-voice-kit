@@ -826,6 +826,13 @@ impl SegmentSink for VoskSink<'_> {
     }
     // ru::normalize_segments expands Spell upstream.
     fn unit(&mut self, seg: Speakable<'_>) -> Result<Option<String>, TtsError> {
+        if matches!(seg, Speakable::Ipa { .. }) {
+            crate::tts::warn::warn_once(
+                "ipa-vosk",
+                "SSML <phoneme alphabet=\"ipa\"> is not supported on ru-vosk-* voices \
+                 (internal G2P only); reading the contained text instead",
+            );
+        }
         Ok(no_ipa_unit(seg).map(str::to_string))
     }
     fn synth(&mut self, unit: &str, speed: f32) -> Result<Vec<f32>, TtsError> {
@@ -1138,6 +1145,27 @@ mod tests {
         );
         assert_eq!(no_ipa_unit(Speakable::Text("hello")), Some("hello"));
         assert_eq!(no_ipa_unit(Speakable::Spell("ВОЗ")), Some("ВОЗ"));
+    }
+
+    #[test]
+    fn vosk_warns_that_it_ignores_phoneme_ipa_and_speaks_the_wrapped_text() {
+        let mut cache = sessions::VoskCache::new();
+        let mut sink = VoskSink {
+            cache: &mut cache,
+            model_dir: Path::new("unused"),
+            speaker_id: 0,
+        };
+        let unit = sink
+            .unit(Speakable::Ipa {
+                ph: "zamok",
+                text: "замок",
+            })
+            .unwrap();
+        assert_eq!(unit.as_deref(), Some("замок"));
+        assert!(
+            crate::tts::warn::was_warned("ipa-vosk"),
+            "ru-vosk-* dropped the ph override without saying so"
+        );
     }
 
     fn walked(
