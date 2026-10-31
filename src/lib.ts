@@ -4,7 +4,7 @@ import { KeshaError } from "./engine/events";
 import { assertPlatformCanInstall, installEngine } from "./engine-install";
 import { errorMessage } from "./error-utils";
 import { installableTtsLangs, probeCapabilitiesForInstall, resolveEngineVersionFlag, resolveTtsLangs, unavailableBackendRefusal } from "./cli/install";
-import { detectTextLanguageFallback, routeLanguage } from "./language-routing";
+import { detectTextLanguageFallback, routeLanguage, TINYLD_FALLBACK } from "./language-routing";
 import { say as synthesize, type SayOptions } from "./synth";
 import { log } from "./log";
 import { assertAudioFileArgument, transcribeWithSegments, truncatedWavWarning, type TranscribeOptions } from "./transcribe";
@@ -56,7 +56,7 @@ export function transcribe(audioPath: string, options: TranscribeOptions = {}): 
     if (truncated) log.warn(truncated);
     const startedAt = performance.now();
     const { text, segments } = await transcribeWithSegments(audioPath, options);
-    const engineText = await detectTextLanguageEngine(text, { signal: options.signal });
+    const engineText = await detectTextLanguageEngine(text, { signal: options.signal }, TINYLD_FALLBACK);
     const textLanguage = engineText?.code ? { ...engineText, source: "engine" as const } : detectTextLanguageFallback(text);
     const result: TranscribeResult = {
       file: audioPath,

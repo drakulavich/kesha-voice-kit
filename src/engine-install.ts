@@ -873,6 +873,8 @@ export interface EngineInstallRequest extends InstallOptions {
  *
  * `platform` and `arch` are a seam for the unit tests, which stage CoreML-shaped engines on every CI runner; production callers take the process.
  */
+const IDLE_STAGING_MS = 10 * 60 * 1000;
+
 export async function installEngine(request: EngineInstallRequest = {}, platform: string = process.platform, arch: string = process.arch): Promise<string> {
   assertPlatformCanInstall(request, platform, arch);
   const binPath = getEngineBinPath();
@@ -880,8 +882,8 @@ export async function installEngine(request: EngineInstallRequest = {}, platform
   ensureEngineDirCreatable(binPath);
   const release = await acquireInstallLock(binPath);
   try {
-    // Holding the lock means no other install writes here, so any staging file left is an orphan (#1581).
-    if (release.held) for (const dest of [binPath, ...SIDECARS.map((s) => join(dirname(binPath), s.fileBasename))]) sweepStagingFiles(dest, 0);
+    // A stale-lock takeover can overlap a live install on another host, so only files idle for minutes are orphans (#1581).
+    if (release.held) for (const dest of [binPath, ...SIDECARS.map((s) => join(dirname(binPath), s.fileBasename))]) sweepStagingFiles(dest, IDLE_STAGING_MS);
     return await installLockedEngine(binPath, request);
   } finally {
     release();

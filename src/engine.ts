@@ -546,13 +546,13 @@ export async function detectAudioLanguageEngine(audioPath: string, opts: RunEngi
   return parseLangResult(run.stdout);
 }
 
-export async function detectTextLanguageEngine(text: string, opts: RunEngineOptions = {}): Promise<LangDetectResult | null> {
+export async function detectTextLanguageEngine(text: string, opts: RunEngineOptions = {}, fallback = "the default voice"): Promise<LangDetectResult | null> {
   if (text.trim().length === 0) return null;
   if (!isEngineInstalled()) return null;
   assertEngineSupported(getEngineBinPath());
   const run = await runEngine(["detect-text-lang"], { ...opts, stdin: text });
   if (reportedFailure(run)) {
-    const warning = textLangFailureWarning(run.stderr);
+    const warning = textLangFailureWarning(run.stderr, process.platform, fallback);
     if (warning) log.warn(warning);
     return null;
   }
@@ -565,10 +565,10 @@ export async function detectTextLanguageEngine(text: string, opts: RunEngineOpti
  * On darwin a failure means a broken `kesha-textlang` sidecar, and swallowing it routed
  * `kesha say` to the default voice with no hint that detection had stopped working (#770).
  */
-export function textLangFailureWarning(stderr: string, platform: string = process.platform): string | null {
+export function textLangFailureWarning(stderr: string, platform: string = process.platform, fallback = "the default voice"): string | null {
   if (platform !== "darwin") return null;
   return (
     `Text language detection failed${stderr ? `: ${stderr}` : ""}\n` +
-    "  Falling back to the default voice. Fix: run `kesha install` to reinstall the kesha-textlang sidecar."
+    `  Falling back to ${fallback}. Fix: run \`kesha install\` to reinstall the kesha-textlang sidecar.`
   );
 }

@@ -30,7 +30,7 @@ import { diagnosticSizeBucket } from "../diagnostic-events";
 import { runCommandSession, type CommandSession } from "./command-session";
 import type { CliContext } from "./context";
 import { exitCodeFor, KeshaError } from "../engine/events";
-import { detectTextLanguageFallback, routeLanguage, unsupportedAudioLanguageWarning } from "../language-routing";
+import { detectTextLanguageFallback, routeLanguage, TINYLD_FALLBACK, unsupportedAudioLanguageWarning } from "../language-routing";
 import { langFlagError, renderInvalidArg } from "./options";
 
 // Hand-curated ordering and per-command argument hints; every key in SUBCOMMANDS (dispatch.ts)
@@ -253,7 +253,7 @@ async function detectLanguages(
   let textLanguage: TextLangDetectResult | undefined;
 
   if (wantsLangId) {
-    const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text));
+    const engineTextResult = await stats.timeStage("lang_id_text", () => detectTextLanguageEngine(text, {}, TINYLD_FALLBACK));
     if (engineTextResult?.code) {
       textLanguage = { ...engineTextResult, source: "engine" };
     }

@@ -24,6 +24,7 @@ import { SIDECARS } from "../../src/engine-install";
 import { isDarwinArm64 } from "../../src/engine-targets";
 import { defaultBackendForPlatform } from "../../src/cli/install";
 import { engineVersion } from "../../src/package-info";
+import { repoPath } from "../helpers/repo";
 import { tempDir } from "../helpers/temp-dir";
 import { waitForPidExit, waitForPidFile } from "../helpers/process";
 
@@ -265,6 +266,20 @@ describe("transcribe() resolves to a TranscribeResult", () => {
       expect(result.lang).toBe("en");
       expect(result.textLanguage).toEqual({ code: "en", confidence: 0.9, source: "engine" });
     });
+  });
+
+  // Only darwin ships a text detector, so only there does its failure warn.
+  (process.platform === "darwin" ? it : it.skip)("names tinyld, not a voice, when the text detector fails during transcription (#1581)", () => {
+    const audio = join(tempDir("kesha-lib-textlang-fail-audio-"), "note.wav");
+    writeFileSync(audio, "");
+    const script = `const { transcribe } = await import(${JSON.stringify(repoPath("src/lib.ts"))}); console.log((await transcribe(process.argv[1])).lang);`;
+    const run = Bun.spawnSync([process.execPath, "-e", script, audio], {
+      env: { ...process.env, KESHA_ENGINE_BIN: englishEngine(), NO_COLOR: "1" },
+    });
+
+    expect(run.stdout.toString()).toBe("en\n");
+    expect(run.stderr.toString()).toContain("Falling back to the bundled tinyld guess.");
+    expect(run.stderr.toString()).not.toContain("default voice");
   });
 
   fakeEngineIt("carries the segments when timestamps are requested", async () => {

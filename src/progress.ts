@@ -224,7 +224,7 @@ export function sweepStagingFiles(destPath: string, maxAgeMs = STALE_STAGING_MS)
     if (!name.startsWith(prefix)) continue;
     const path = join(dir, name);
     try {
-      if (maxAgeMs > 0 && statSync(path).mtimeMs > cutoffMs) continue;
+      if (statSync(path).mtimeMs > cutoffMs) continue;
       rmSync(path, { force: true });
       log.debug(`Cleaned up orphaned download staging: ${name}`);
     } catch (err) {

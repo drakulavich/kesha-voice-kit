@@ -74,6 +74,8 @@ export function routeLanguage(input: { audioLanguage?: LangDetectResult; textLan
   return { lang: "", source: null, belowFloor };
 }
 
+export const TINYLD_FALLBACK = "the bundled tinyld guess";
+
 /**
  * The CLI-side `tinyld` fallback, tagged `source: "tinyld"` so a consumer can
  * tell it apart from an Engine detection instead of reading the placeholder
