@@ -48,10 +48,9 @@ is never committed. `kesha install` refuses any download that does not match it.
 
 ## Homebrew
 
-The formula depends on Bun from the official tap:
+The formula depends on Bun from homebrew/core:
 
 ```bash
-brew tap oven-sh/bun
 brew install drakulavich/tap/kesha-voice-kit
 kesha install
 ```
@@ -71,8 +70,8 @@ not trust that pin: it stages a throwaway tap copy whose `url` is a
 under review (#924). To do the same locally:
 
 ```bash
-brew tap oven-sh/bun
 brew tap-new local/tap
+brew trust local/tap    # Homebrew refuses formulae from an untrusted tap
 # Audit the committed pin first — --strict rejects the file:// url the stage step
 # writes, so it must run before staging, exactly as CI does.
 cp packaging/homebrew/Formula/kesha-voice-kit.rb \

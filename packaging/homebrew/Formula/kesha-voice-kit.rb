@@ -7,7 +7,7 @@ class KeshaVoiceKit < Formula
   sha256 "92531aaad3537b8e27322f425d8af9fa3fc8cb9592796893155c6bed0ef90b67"
   license "MIT"
 
-  depends_on "oven-sh/bun/bun"
+  depends_on "bun"
 
   def install
     libexec.install "bin", "src", "completions", "man", "model-plan.json", "package.json", "bun.lock", "tsconfig.json"
@@ -20,7 +20,7 @@ class KeshaVoiceKit < Formula
 
     (bin/"kesha").write <<~EOS
       #!/bin/bash
-      exec "#{formula_opt_bin("oven-sh/bun/bun")}/bun" "#{libexec}/bin/kesha.js" "$@"
+      exec "#{formula_opt_bin("bun")}/bun" "#{libexec}/bin/kesha.js" "$@"
     EOS
   end
 

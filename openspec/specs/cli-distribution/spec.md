@@ -94,9 +94,9 @@ The CLI package SHALL declare Bun >= 1.4.0 as its required runtime, and every wr
 - THEN startup fails, because the CLI uses Bun-native APIs and ships no
   compatibility layer
 
-> *Technical Note — `package.json#engines.bun` is `>=1.4.0`.
+> *Technical Note — `package.json#engines.bun` is `>=1.4.4`.
 > `packaging/homebrew/Formula/kesha-voice-kit.rb` declares
-> `depends_on "oven-sh/bun/bun"`. The `Dockerfile` pins
+> `depends_on "bun"` (homebrew/core, which Tap-Trust never refuses). The `Dockerfile` pins
 > `oven/bun:1.4.3-slim`. The Linux binary is compiled for `bun-linux-x64`
 > (glibc); `docs/distribution.md` states the musl limitation and points at the
 > container image.*

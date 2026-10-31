@@ -28,7 +28,7 @@ Runtime: **[Bun](https://bun.sh)** >= 1.4.0.
 
 ```bash
 # 1. Install Bun (skip if you have it)
-curl -fsSL https://bun.sh/install | bash        # macOS/Linux — or: brew install oven-sh/bun/bun
+curl -fsSL https://bun.sh/install | bash        # macOS/Linux — or: brew install bun
 powershell -c "irm bun.sh/install.ps1 | iex"    # Windows
 
 # 2. Install Kesha
