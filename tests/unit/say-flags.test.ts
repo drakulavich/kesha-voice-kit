@@ -123,6 +123,11 @@ describe("resolveSayFlags: --bitrate and --sample-rate", () => {
     expect(err({ format: "ogg-opus", "sample-rate": "44100" })).toBe("--sample-rate must be one of 8000, 12000, 16000, 24000, 48000.");
   });
 
+  test("a non-numeric bitrate or sample rate names the unit or the allowed values", () => {
+    expect(err({ format: "ogg-opus", bitrate: "12k" })).toBe("--bitrate must be a number of bits per second, such as 32000.");
+    expect(err({ format: "ogg-opus", "sample-rate": "24k" })).toBe("--sample-rate must be one of 8000, 12000, 16000, 24000, 48000.");
+  });
+
   test("rejects opus-only flags on lossless formats", () => {
     const expected = "--bitrate and --sample-rate are only valid with --format ogg-opus";
     expect(err({ format: "wav", bitrate: "32000" })).toBe(expected);

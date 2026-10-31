@@ -68,7 +68,8 @@ const MAX_OPUS_BITRATE = 510000;
 
 function parseBitrateFlag(value: unknown): Parsed<number> {
   const bitrate = parseFiniteNumberFlag("--bitrate", value);
-  if (!bitrate.ok || bitrate.value === undefined) return bitrate;
+  if (!bitrate.ok) return { ok: false, error: "--bitrate must be a number of bits per second, such as 32000." };
+  if (bitrate.value === undefined) return bitrate;
   if (!Number.isInteger(bitrate.value) || bitrate.value <= 0) {
     return { ok: false, error: "--bitrate must be a positive integer." };
   }
@@ -80,8 +81,8 @@ function parseBitrateFlag(value: unknown): Parsed<number> {
 
 function parseSampleRateFlag(value: unknown): Parsed<number> {
   const sampleRate = parseFiniteNumberFlag("--sample-rate", value);
-  if (!sampleRate.ok || sampleRate.value === undefined) return sampleRate;
-  if (!Number.isInteger(sampleRate.value) || !SUPPORTED_SAMPLE_RATES.includes(sampleRate.value as (typeof SUPPORTED_SAMPLE_RATES)[number])) {
+  if (sampleRate.ok && sampleRate.value === undefined) return sampleRate;
+  if (!sampleRate.ok || !Number.isInteger(sampleRate.value) || !SUPPORTED_SAMPLE_RATES.includes(sampleRate.value as (typeof SUPPORTED_SAMPLE_RATES)[number])) {
     return {
       ok: false,
       error: `--sample-rate must be one of ${SUPPORTED_SAMPLE_RATES.join(", ")}.`,
