@@ -171,7 +171,7 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
    the engine via `src/engine.ts`, which locates the binary
    (`KESHA_ENGINE_BIN` override → installed cache path) and spawns it with
    `Bun.spawn`.
-3. The CLI checks every spawn against the engine's own description:
+3. The CLI reads the engine's own description and talks to it in protocol-4 events:
    - It reads `kesha-engine describe` once per binary path (cached by path
      + mtime) through `getDescribe` in `src/engine.ts`.
    - Before spawning, it validates the argv of every flag-carrying spawn on the
