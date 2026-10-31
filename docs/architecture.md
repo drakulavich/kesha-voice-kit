@@ -7,7 +7,7 @@ see the baseline specs under [`openspec/specs/`](../openspec/specs/); for the
 
 ## Two-process model
 
-Kesha is two programs, not one:
+Kesha is two programs:
 
 - **`kesha` CLI** — a thin Bun/TypeScript wrapper (`src/`). Parses commands,
   formats stdout/stderr, downloads pinned assets *only* when explicitly asked,
@@ -95,22 +95,25 @@ same code for the same situation: another install holds this cache, nothing was
 written, and re-running once it is quiet is the fix
 ([#1018](https://github.com/drakulavich/kesha-voice-kit/issues/1018)).
 `KESHA_INSTALL_LOCK_WAIT_SECS` sets that ceiling in seconds, for a job that
-would rather fail than sit behind a holder it cannot outlast; unset, it is 6 h —
-the slowest legitimate install, a cold 2.4 GB bundle on a thin link — and a
-value that is not a positive number is rejected with `E_INVALID_ARG` rather than
-read as "do not wait". Lowering it trades away the self-healing retry: a wait
-that runs out at the default has by then outlived the lock's own staleness
-ceiling, so a single retry takes the lock over, whereas a short wait can expire
-against a lock that is still fresh — and a caller that retries on
-`E_INSTALL_RACE` will keep timing out until the holder finishes.
+would rather fail than sit behind a holder it cannot outlast. Unset, it is 6 h,
+the slowest legitimate install (a cold 2.4 GB bundle on a thin link). A value
+that is not a positive number is rejected with `E_INVALID_ARG` rather than read
+as "do not wait".
+
+Lowering it trades away the self-healing retry. A wait that runs out at the
+default has by then outlived the lock's own staleness ceiling, so a single retry
+takes the lock over. A short wait can expire against a lock that is still fresh,
+and a caller that retries on `E_INSTALL_RACE` will keep timing out until the
+holder finishes.
 
 ## Models
 
 | Model | Task | Size | Source |
 |---|---|---|---|
-| NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~2.5GB | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
+| NVIDIA Parakeet TDT 0.6B v3 | Speech-to-text | ~2.5 GB ONNX, ~0.5 GB CoreML | [HuggingFace](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) |
 | SpeechBrain ECAPA-TDNN | Audio language detection | ~86MB | [HuggingFace](https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa) |
-| Apple NLLanguageRecognizer | Text language detection | built-in | macOS system framework |
+| Apple NLLanguageRecognizer | Text language detection (macOS) | built-in | macOS system framework |
+| tinyld | Text language detection (elsewhere) | bundled | [tinyld](https://github.com/komodojp/tinyld), called from `src/language-routing.ts` |
 | Silero VAD v5 (opt-in) | Voice activity detection | ~2.3MB | [snakers4/silero-vad](https://github.com/snakers4/silero-vad) |
 | Kokoro-82M / Vosk-TTS (opt-in) | Text-to-speech | English by default; size differs per platform — preview: `kesha install --plan` | [FluidAudio Kokoro](https://github.com/FluidInference/FluidAudio) on darwin-arm64 (staged into FluidAudio's cache by `kesha install --tts`, hash-verified like every other pin since [#856](https://github.com/drakulavich/kesha-voice-kit/pull/856)); ONNX Kokoro elsewhere · [Vosk-TTS](https://github.com/alphacep/vosk-tts) |
 
@@ -149,7 +152,8 @@ rust/src/             kesha-engine (Rust)
   vad.rs             Silero VAD v5
   backend/           ASR backends — onnx.rs, fluidaudio.rs (coreml), mod.rs (trait)
   transcribe/        transcribe pipeline + diarize.rs
-  tts/               kokoro.rs (en), vosk.rs (ru), avspeech.rs (macos), g2p, ssml/, en/, ru/
+  tts/               kokoro.rs (ONNX Kokoro), fluid_kokoro.rs (darwin Kokoro), vosk.rs (ru),
+                     avspeech.rs (macos), charsiu/ (es/fr/it/pt G2P), g2p, ssml/, en/, ru/
 
 tests/                bun tests — unit/, integration/, fixtures/, helpers/
 rust/tests/           nextest integration binaries (tts_e2e, diarize_e2e, ssml_integration, ...)
@@ -163,24 +167,25 @@ SKILL.md              OpenClaw skill manifest (shipped in the npm package)
 ## CLI ↔ engine boundary
 
 1. A `kesha <cmd>` call is parsed in `src/cli.ts` / `src/cli/dispatch.ts`.
-2. Commands that need inference (`transcribe`, `say`, `detect-lang`) forward to
+2. Commands that need inference (`transcribe`, `say`, `detect-lang`, `record`) forward to
    the engine via `src/engine.ts`, which locates the binary
    (`KESHA_ENGINE_BIN` override → installed cache path) and spawns it with
    `Bun.spawn`.
-3. The CLI reads `kesha-engine describe` once per binary path (cached by path
-   + mtime) through `getDescribe` in `src/engine.ts`, and validates the argv of
-   every flag-carrying spawn on the parsed path (`transcribe`, `say`, MCP
-   `list_voices`) and of `record` against that document with `validateArgv`
-   (`src/engine/describe.ts`) before spawning. The parsed spawns read stderr as protocol-4
-   NDJSON events (`readEvents` in `src/engine/events.ts`), as do the Kokoro
-   warmup and CLI `say --list-voices`. `recordEngine` and the model-install spawn
-   pipe stderr too; the install keeps stdin and stdout inherited, while
-   `recordEngine` also pipes stdout and relays it byte for byte so a live
-   transcript cannot land inside the open ticker row. Their repeating progress
-   repaints one row via `createLiveStatus` and stays silent when stderr is
-   redirected or `--quiet` is set.
-   `getEngineCapabilities` is a thin view over the describe document kept
-   for the status/doctor/install screens that predate `describe`.
+3. The CLI checks every spawn against the engine's own description:
+   - It reads `kesha-engine describe` once per binary path (cached by path
+     + mtime) through `getDescribe` in `src/engine.ts`.
+   - Before spawning, it validates the argv of every flag-carrying spawn on the
+     parsed path (`transcribe`, `say`, MCP `list_voices`) and of `record` against
+     that document with `validateArgv` (`src/engine/describe.ts`).
+   - The parsed spawns read stderr as protocol-4 NDJSON events (`readEvents` in
+     `src/engine/events.ts`), as do the Kokoro warmup and CLI `say --list-voices`.
+   - `recordEngine` and the model-install spawn pipe stderr too. The install keeps
+     stdin and stdout inherited; `recordEngine` also pipes stdout and relays it
+     byte for byte so a live transcript cannot land inside the open ticker row.
+     Their repeating progress repaints one row via `createLiveStatus` and stays
+     silent when stderr is redirected or `--quiet` is set.
+   - `getEngineCapabilities` is a thin view over the describe document kept
+     for the status/doctor/install screens that predate `describe`.
 4. **stdout is the result** (transcript / JSON / WAV bytes); **stderr is
    progress + errors**. This keeps stdout pipe-friendly.
 5. **Assets are install-only.** `kesha install` (and opt-in `--tts` / `--vad` /
@@ -200,8 +205,12 @@ per-platform variants selected by cargo features: every `build` row of
   module level (`backend/mod.rs` trait, `onnx.rs`, `fluidaudio.rs`).
 - `lang_id.rs` always uses ONNX regardless of ASR backend.
 - TTS (`tts` feature): routed by **voice-id prefix** in
-  `tts/voices.rs::resolve_voice` — `en-*` → Kokoro (`kokoro.rs`),
-  `ru-*` → Vosk-TTS (`vosk.rs`), `macos-*` → AVSpeech (`avspeech.rs`).
+  `tts/voices.rs::resolve_voice`:
+  - `en-*` → ONNX Kokoro (`kokoro.rs`), or FluidAudio Kokoro (`fluid_kokoro.rs`) on darwin-arm64 `system_kokoro`;
+  - `es-*` `fr-*` `it-*` `pt-*` → ONNX Kokoro with CharsiuG2P (`charsiu/`), or FluidAudio Kokoro on darwin-arm64;
+  - `hi-*` `ja-*` `zh-*` → FluidAudio Kokoro, darwin-arm64 only;
+  - `ru-*` → Vosk-TTS (`vosk.rs`);
+  - `macos-*` → AVSpeech (`avspeech.rs`).
 
 **Sidecars** are resolved at runtime sibling-first (next to the engine binary,
 then build-time `$OUT_DIR`): the `say-avspeech` Swift helper (`system_tts`,
@@ -261,7 +270,7 @@ rather than choices:
 | Path | Why |
 |---|---|
 | `~/Library/Application Support/FluidAudio/Models/silero-vad` | The bridge accepts a root for ASR, Kokoro and the compiled diarizer only; VAD and the offline diarizer are not plumbed yet. ~1 MB. |
-| `~/.cache/fluidaudio/Models/kokoro` | Kokoro's G2P assets. `KokoroAneManager` passes `nil` for these deliberately — `G2PModel.shared` is a singleton pinned to this path, so honouring a custom directory would download to a path it cannot read. ~24 MB. |
+| `~/.cache/fluidaudio/Models/kokoro` | Kokoro's G2P assets. `KokoroAneManager` passes `nil` for these deliberately — `G2PModel.shared` is a singleton pinned to this path, so honouring a custom directory would download to a path it cannot read. ~12 MB. |
 
 So a full uninstall is `rm -rf ~/.cache/kesha` plus those two, and on a
 pre-#688 install also `~/Library/Application Support/FluidAudio`,
@@ -298,14 +307,13 @@ pre-#688 install also `~/Library/Application Support/FluidAudio`,
 
 | If you're changing… | Touch | Verify with |
 |---|---|---|
-| A CLI flag / output format | `src/cli.ts`, `src/cli/*`, `src/format.ts` | `bun test && bun check` |
+| A CLI flag / output format | `src/cli.ts`, `src/cli/*`, `src/format.ts` | `just check` |
 | ASR pipeline | `rust/src/backend/`, `rust/src/transcribe/` | `just rust-test` + `cargo check --features coreml --no-default-features` |
 | A TTS voice/engine | `rust/src/tts/`, `src/voice-routing.ts` | `just rust-test`; `cargo nextest run --features tts tts_` |
-| A model version/pin | `rust/src/models/manifest.rs` | `verify-pin-bump` skill; `cargo test models::manifest` |
+| A model version/pin | `rust/src/models/manifest.rs` | `verify-pin-bump` skill; `cargo nextest run models::manifest` |
 | Shell completions / manpage | regenerate, don't hand-edit | `bun run generate:shell-artifacts` |
 | A GitHub workflow | `.github/workflows/*` | `bun run check:workflows` + `actionlint` |
 | The OpenClaw skill | `SKILL.md` | cross-check against live `kesha <cmd> --help` |
 
-When in doubt, the agent-facing rules in [CLAUDE.md](../CLAUDE.md) capture the
-hard constraints (bun-only, no auto-download, male default voices, pinned
-hashes, isolated worktrees) that this map only summarizes.
+When in doubt, [CLAUDE.md](../CLAUDE.md) lists the traps in this codebase that
+no check catches yet.
