@@ -1,6 +1,6 @@
 # Text-to-Speech
 
-Kesha speaks back via Kokoro-82M (English, Spanish, French, Italian and Portuguese on every build; Hindi, Japanese and Chinese on Apple Silicon) and Vosk-TTS (Russian). On macOS the voice is picked from the input text's own language; on Linux and Windows pass `--lang` or `--voice` (precedence below). On darwin-arm64 release builds, Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path. See [where the files live](#where-the-files-live).
+Kesha speaks back via Kokoro-82M (English, Spanish, French, Italian and Portuguese on every build; Hindi, Japanese and Chinese on Apple Silicon) and Vosk-TTS (Russian). On macOS the voice is picked from the input text's own language; on Linux and Windows mostly-Cyrillic text still gets `ru-vosk-m02`, and other languages need `--lang` or `--voice` (precedence below). On darwin-arm64 release builds, Kokoro runs through FluidAudio CoreML instead of the ONNX Kokoro model; Linux/Windows keep the ONNX path. See [where the files live](#where-the-files-live).
 
 ```bash
 kesha say "Hello, world" > hello.wav
@@ -13,7 +13,7 @@ kesha say --lang es "Hola, mundo" > hola.wav   # route by stated language, skip 
 kesha say --list-voices
 ```
 
-Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → engine default (`en-am_michael`). A `--lang` whose language has no mapped voice on the current platform (e.g. `hi` on Linux) falls to the engine default rather than re-detecting.
+Voice selection precedence: `--voice <id>` (explicit) → `--lang <code>` (route to that language's default voice, skipping detection — also the way to route on Linux/Windows, where text-language detection is macOS-only) → macOS text-language auto-detection → Russian when detection is inconclusive or unavailable and most words are Cyrillic ([#1387](https://github.com/drakulavich/kesha-voice-kit/issues/1387)) → engine default (`en-am_michael`). A `--lang` whose language has no mapped voice on the current platform (e.g. `hi` on Linux) falls to the engine default rather than re-detecting.
 
 Output format: WAV (default, mono float32 — 24 kHz for Kokoro, 22.05 kHz for Vosk), OGG/Opus (`--format ogg-opus`), and FLAC (`--format flac`) are all supported. An `--out` extension other than `.wav`, `.ogg`, `.opus`, `.oga` or `.flac` (such as `.mp3`) is refused with `E_INVALID_ARG`; a name with no extension gets WAV. MP3/AAC output were evaluated and rejected on licensing/patent grounds — see [docs/decision-log.md](decision-log.md).
 
@@ -166,7 +166,7 @@ kesha say --ssml --voice ru-vosk-m02 '<speak>Привет <break time="1s"/> м�
 | `<say-as interpret-as="cardinal\|ordinal\|date\|telephone\|...">` | ⚠️ stripped with stderr warning (contained text still synthesized); separate concern |
 | `<emphasis>` | ✅ honored on `ru-vosk-*` (#233) — `+vowel` markers shift stress; `level="none"` suppresses. Stripped + warned on Kokoro (no `+`-marker analog); AVSpeech rejects every SSML request with `E_SSML_UNSUPPORTED` |
 | `<phoneme alphabet="ipa" ph="…">` | ✅ honored on ONNX Kokoro — bypasses G2P, feeds IPA directly to inference (#193). Darwin FluidAudio Kokoro has no IPA input: the tag is stripped with one warning and the wrapped text is spoken. |
-| `<prosody rate>` | ✅ honored on `ru-vosk-*`, ONNX `en-*` and Darwin FluidAudio Kokoro voices when wrapping the whole utterance — see [Speech rate](#speech-rate-prosody-rate) (#236). Mid-utterance / sibling-flanked: warned + stripped. |
+| `<prosody rate>` | ✅ honored on `ru-vosk-*`, ONNX Kokoro and Darwin FluidAudio Kokoro voices when wrapping the whole utterance — see [Speech rate](#speech-rate-prosody-rate) (#236). Mid-utterance / sibling-flanked: warned + stripped. |
 | `<prosody pitch/volume>` | ⚠️ stripped with stderr warning; tracked in [#236](https://github.com/drakulavich/kesha-voice-kit/issues/236) |
 | `<!DOCTYPE>` | ❌ rejected (hardening against XXE) |
 
