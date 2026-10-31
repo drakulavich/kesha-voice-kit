@@ -50,7 +50,7 @@ pub struct SayArgs {
     /// on stdout. See `docs/tts-stdin-loop.md`. Issue #213.
     #[arg(long = "stdin-loop", hide = true)]
     pub stdin_loop: bool,
-    /// Disable acronym auto-expansion on `ru-vosk-*` voices (ВОЗ → "вэ о зэ")
+    /// Disable acronym auto-expansion on `ru-vosk-*` voices (ФСБ → "эф эс бэ")
     /// and English on ONNX Kokoro builds (FBI → "ef bee eye"). No effect on
     /// FluidAudio Kokoro, `macos-*` or non-English voices, which spell
     /// initialisms in their own G2P; those paths warn on stderr instead (#842).

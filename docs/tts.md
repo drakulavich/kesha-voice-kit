@@ -59,7 +59,7 @@ Default voices are **male**, because Kesha is a male name: `en-am_michael` for E
 **Supported voices:**
 - English: `en-am_michael` (default). Darwin FluidAudio builds expose the supported FluidAudio Kokoro English voices via `kesha say --list-voices`; ONNX builds also see any `.bin` voice you add under `~/.cache/kesha/models/kokoro-82m/voices/`.
 - Apple Silicon Kokoro multilingual voices: `es-em_alex`, `hi-hm_omega`, `it-im_nicola`, `ja-jm_kumo`, `pt-pm_alex`, `zh-zm_050`, and `fr-ff_siwis`. The Spanish, Hindi, Italian, Japanese, Portuguese, and Chinese defaults are male; French auto-routes to `fr-ff_siwis` (female) because upstream Kokoro ships no native male French voice.
-- Russian: 5 Vosk-TTS speakers baked into the multi-speaker model — `ru-vosk-m02` (default, male), `ru-vosk-m01` (male), `ru-vosk-f01`/`f02`/`f03` (female).
+- Russian: 5 Vosk-TTS speakers baked into the multi-speaker model — `ru-vosk-m02` (default, male), `ru-vosk-m01` (male), `ru-vosk-f01`/`f02`/`f03` (female). Each `kesha say` call loads the Vosk model afresh, which takes about 20 s on an Apple Silicon Mac before any audio (23 s for «Да.» on 2.4.0).
 - macOS system voices: `macos-<identifier-or-language>`, see [below](#macos-system-voices).
 
 ### Where the files live
