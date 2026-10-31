@@ -215,7 +215,7 @@ async function detectLanguages(
   options: {
     wantsLangId: boolean;
     expectedLang?: string;
-    progress: FileProgress;
+    warn: (message: string) => void;
     stats: StatsRecorder;
     transcriptDurationSeconds: number | null;
   },
@@ -225,7 +225,7 @@ async function detectLanguages(
   lang: string;
   ranAudioLangId: boolean;
 }> {
-  const { wantsLangId, expectedLang, progress, stats, transcriptDurationSeconds } = options;
+  const { wantsLangId, expectedLang, warn, stats, transcriptDurationSeconds } = options;
 
   let audioResult: LangDetectResult | null = null;
   if (shouldRunAudioLanguageDetection({ wantsLangId, transcriptDurationSeconds })) {
@@ -245,7 +245,7 @@ async function detectLanguages(
   if (audioLanguage && expectedLang && audioLanguage.confidence > 0.8) {
     const mismatch = checkLanguageMismatch(expectedLang, audioLanguage.code);
     if (mismatch) {
-      warnAboveProgress(progress, `${file}: ${mismatch} (from audio)`);
+      warn(`${file}: ${mismatch} (from audio)`);
     }
   }
 
@@ -261,7 +261,7 @@ async function detectLanguages(
 
   const unsupportedWarning = unsupportedAudioLanguageWarning(audioLanguage, textLanguage ?? tinyldResult);
   if (unsupportedWarning) {
-    warnAboveProgress(progress, `${file}: ${unsupportedWarning}`);
+    warn(`${file}: ${unsupportedWarning}`);
   }
 
   const route = routeLanguage({ audioLanguage, textLanguage: textLanguage ?? tinyldResult });
@@ -270,7 +270,7 @@ async function detectLanguages(
   // A lang taken from audio was already judged by the audio check above; warning again would double it.
   const mismatchWarning = route.source === "audio" ? null : checkLanguageMismatch(expectedLang, lang);
   if (mismatchWarning) {
-    warnAboveProgress(progress, `${file}: ${mismatchWarning}`);
+    warn(`${file}: ${mismatchWarning}`);
   }
 
   return {
@@ -362,8 +362,12 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
     return { ok: false, error: { file, code: err.code, message: err.message }, exitCode: failureExitCode(err) };
   }
 
+  const warnings: string[] = [];
   const truncated = truncatedWavWarning(file);
-  if (truncated) log.warn(truncated);
+  if (truncated) {
+    warnings.push(truncated);
+    log.warn(truncated);
+  }
 
   const inputArtifact = artifactFromFile(file, "input_audio");
   if (inputArtifact) {
@@ -406,7 +410,10 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
     const { audioLanguage, textLanguage, lang, ranAudioLangId } = await detectLanguages(file, text, {
       wantsLangId,
       expectedLang,
-      progress,
+      warn: (message) => {
+        warnings.push(message);
+        warnAboveProgress(progress, message);
+      },
       stats,
       transcriptDurationSeconds,
     });
@@ -423,6 +430,7 @@ async function processFile(file: string, options: ProcessFileOptions, recorders:
     if (timestamps || speakers) {
       result.segments = segments;
     }
+    if (warnings.length > 0) result.warnings = warnings;
 
     diagnosticLog.event("engine.exit", {
       command: "transcribe",

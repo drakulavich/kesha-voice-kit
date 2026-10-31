@@ -1,4 +1,4 @@
-import { getDescribe } from "./engine";
+import { detectTextLanguageEngine, getDescribe } from "./engine";
 import type { DescribeDocument } from "./engine/describe";
 import { KeshaError } from "./engine/events";
 import { assertPlatformCanInstall, installEngine } from "./engine-install";
@@ -48,7 +48,7 @@ async function coded<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Transcribes one audio file. `segments` is present only when `timestamps` or `speakers` is set; `lang` comes from the transcript text. */
+/** Transcribes one audio file. `segments` is present only when `timestamps` or `speakers` is set; `lang` comes from the transcript text, read by the same detector as the CLI. */
 export function transcribe(audioPath: string, options: TranscribeOptions = {}): Promise<TranscribeResult> {
   return coded(async () => {
     assertAudioFileArgument(audioPath);
@@ -56,7 +56,8 @@ export function transcribe(audioPath: string, options: TranscribeOptions = {}): 
     if (truncated) log.warn(truncated);
     const startedAt = performance.now();
     const { text, segments } = await transcribeWithSegments(audioPath, options);
-    const textLanguage = detectTextLanguageFallback(text);
+    const engineText = await detectTextLanguageEngine(text, { signal: options.signal });
+    const textLanguage = engineText?.code ? { ...engineText, source: "engine" as const } : detectTextLanguageFallback(text);
     const result: TranscribeResult = {
       file: audioPath,
       text,

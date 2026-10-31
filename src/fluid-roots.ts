@@ -128,6 +128,10 @@ export function fluidSubsystemDirs(options: FluidRootsOptions = {}): FluidSubsys
   ].map((subsystem) => ({ ...subsystem, inCache: isInsideDir(subsystem.path, cacheRoot) }));
 }
 
+function unreadFluidCopies(homeDir: string): { label: string; path: string }[] {
+  return [{ label: "ASR, older Parakeet copy (not read)", path: `${legacyFluidAsrCachePath(homeDir)}-coreml` }];
+}
+
 /**
  * Every FluidAudio tree holding bytes outside the Kesha cache, with the subsystems still
  * resolved into it. Bytes no subsystem claims stay in `otherBytes` rather than being dropped:
@@ -143,7 +147,7 @@ export function fluidExternalRoots(options: FluidRootsOptions = {}): FluidExtern
     if (isInsideDir(path, cacheRoot)) continue;
     const sizeBytes = dirSizeBytes(path);
     if (sizeBytes === 0) continue;
-    const subsystems = external
+    const subsystems = [...external, ...unreadFluidCopies(homeDir)]
       .filter((s) => isInsideDir(s.path, path))
       .map((s) => ({ label: s.label, path: s.path, sizeBytes: dirSizeBytes(s.path) }))
       .filter((s) => s.sizeBytes > 0);

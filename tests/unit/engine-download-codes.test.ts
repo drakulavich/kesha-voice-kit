@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { basename, dirname, join } from "node:path";
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { install, KeshaError } from "../../src/lib";
 import { getEngineBinPath } from "../../src/engine";
 import { engineChecksums, installEngine } from "../../src/engine-install";
@@ -120,6 +120,19 @@ describe("an engine download failure carries a code and a hint", () => {
     }, 30_000);
   }
 });
+
+test("installEngine removes a fresh staging file an interrupted install left, once it holds the lock (#1581)", async () => {
+  const binPath = getEngineBinPath();
+  mkdirSync(dirname(binPath), { recursive: true });
+  const orphan = `${stagingPrefix(binPath)}4242.0`;
+  writeFileSync(orphan, ENGINE.slice(0, 5));
+  expectServedBody(() => ENGINE);
+  globalThis.fetch = FAILURES[0]!.fetch;
+
+  await rejectionOf(installEngine());
+
+  expect(existsSync(orphan)).toBe(false);
+}, 30_000);
 
 const CLI_CASES = [
   {

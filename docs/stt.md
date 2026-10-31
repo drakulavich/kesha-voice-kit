@@ -35,6 +35,10 @@ The key is simply absent where a segment has none — any segment `--itn` rewrot
 
 JSON and TOON results include `textLanguage` with a language code, confidence, and its `source`. On macOS Kesha uses Apple `NLLanguageRecognizer`; elsewhere it uses the bundled `tinyld` fallback, whose confidence scale is different. This is separate from `audioLanguage`, which identifies the spoken audio when available.
 
+## Warnings in JSON and TOON
+
+In `--json` and `--toon` output, a file's entry carries `warnings`: the warnings Kesha printed to stderr for that file, verbatim, such as a truncated WAV or a `--lang` mismatch. The field is absent when there were none ([#1581](https://github.com/drakulavich/kesha-voice-kit/issues/1581)).
+
 ## Written-form numbers (`--itn`)
 
 `--itn` rewrites what the model spells out — `"two hundred thirty two"` → `"232"`, `"five dollars and fifty cents"` → `"$5.50"`. Opt-in, every platform, timestamps untouched. English-only in practice; Russian and the rest pass through unchanged.

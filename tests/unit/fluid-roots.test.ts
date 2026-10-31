@@ -144,6 +144,20 @@ describe("fluidExternalRoots", () => {
     });
   });
 
+  test("the older -coreml Parakeet copy beside the one FluidAudio reads is named, not left unattributed (#1581)", () => {
+    withHome((home, cacheRoot) => {
+      writeCompleteAsr(legacy.asr(home));
+      write(join(`${legacy.asr(home)}-coreml`, "Encoder.mlmodelc", "model.mil"), 70);
+
+      const [root] = fluidExternalRoots({ homeDir: home, cacheRoot });
+      expect(root!.subsystems.map((s) => [s.label, s.sizeBytes])).toEqual([
+        ["ASR (Parakeet)", 50],
+        ["ASR, older Parakeet copy (not read)", 70],
+      ]);
+      expect(root!.otherBytes).toBe(0);
+    });
+  });
+
   test("a root the engine no longer reads is still counted, with no subsystem named", () => {
     withHome((home, cacheRoot) => {
       // A relocated install: the bundle the engine reads is in the cache, the old copy is not.
@@ -177,7 +191,7 @@ describe("fluidExternalRoots", () => {
     withHome((home, cacheRoot) => {
       writeCompleteAsr(legacy.asr(home));
       const root = join(home, "Library", "Application Support", "FluidAudio");
-      write(join(root, "Models", "parakeet-tdt-0.6b-v3-coreml", "Encoder.mlmodelc"), 70);
+      write(join(root, "Models", "some-other-model", "Encoder.mlmodelc"), 70);
       write(join(root, "Models", "silero-vad", "model.mlmodelc"), 5);
 
       const roots = fluidExternalRoots({ homeDir: home, cacheRoot });

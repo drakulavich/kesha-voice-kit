@@ -256,6 +256,17 @@ describe("transcribe() resolves to a TranscribeResult", () => {
     });
   });
 
+  fakeEngineIt("takes lang from the engine's text detector when it answers, as the CLI does (#1581)", async () => {
+    const enginePath = writeTranscribingEngine("kesha-lib-textlang-", ["transcribe.segments"], "  printf '%s\\n' 'ok then'", "en");
+    const audio = join(tempDir("kesha-lib-textlang-audio-"), "short-english.wav");
+    writeFileSync(audio, "");
+    await withEngine(enginePath, async () => {
+      const result = await transcribe(audio);
+      expect(result.lang).toBe("en");
+      expect(result.textLanguage).toEqual({ code: "en", confidence: 0.9, source: "engine" });
+    });
+  });
+
   fakeEngineIt("carries the segments when timestamps are requested", async () => {
     const audio = join(tempDir("kesha-lib-result-audio-"), "note.wav");
     writeFileSync(audio, "");

@@ -206,11 +206,11 @@ export function stagingPrefix(destPath: string): string {
 }
 
 /** A Ctrl-C kills the process before any cleanup runs, so last run's staging file is swept by the next one (#770). */
-function sweepStagingFiles(destPath: string): void {
+export function sweepStagingFiles(destPath: string, maxAgeMs = STALE_STAGING_MS): void {
   if (process.platform === "win32") return;
   const dir = dirname(destPath);
   const prefix = basename(stagingPrefix(destPath));
-  const cutoffMs = Date.now() - STALE_STAGING_MS;
+  const cutoffMs = Date.now() - maxAgeMs;
 
   let names: string[];
   try {
@@ -224,7 +224,7 @@ function sweepStagingFiles(destPath: string): void {
     if (!name.startsWith(prefix)) continue;
     const path = join(dir, name);
     try {
-      if (statSync(path).mtimeMs > cutoffMs) continue;
+      if (maxAgeMs > 0 && statSync(path).mtimeMs > cutoffMs) continue;
       rmSync(path, { force: true });
       log.debug(`Cleaned up orphaned download staging: ${name}`);
     } catch (err) {

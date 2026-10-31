@@ -13,7 +13,7 @@ import { log } from "./log";
 import { type AssetPins, engineVersion, injectedEnginePins } from "./package-info";
 import { PATH_ERRNOS } from "./path-errnos";
 import { keshaCacheDir } from "./paths";
-import { createLiveStatus, streamResponseToFile } from "./progress";
+import { createLiveStatus, streamResponseToFile, sweepStagingFiles } from "./progress";
 import { interruptedRun } from "./process-tree";
 import { DEFAULT_VOICE_ID } from "./voice-routing";
 import { getVersionMarkerPath, readInstalledEngineVersion, writeInstalledEngineVersion } from "./engine-version-marker";
@@ -880,6 +880,8 @@ export async function installEngine(request: EngineInstallRequest = {}, platform
   ensureEngineDirCreatable(binPath);
   const release = await acquireInstallLock(binPath);
   try {
+    // Holding the lock means no other install writes here, so any staging file left is an orphan (#1581).
+    if (release.held) for (const dest of [binPath, ...SIDECARS.map((s) => join(dirname(binPath), s.fileBasename))]) sweepStagingFiles(dest, 0);
     return await installLockedEngine(binPath, request);
   } finally {
     release();
