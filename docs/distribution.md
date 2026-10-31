@@ -71,7 +71,9 @@ under review (#924). To do the same locally:
 
 ```bash
 brew tap oven-sh/bun
+brew trust oven-sh/bun
 brew tap-new local/tap
+brew trust local/tap
 # Audit the committed pin first — --strict rejects the file:// url the stage step
 # writes, so it must run before staging, exactly as CI does.
 cp packaging/homebrew/Formula/kesha-voice-kit.rb \
