@@ -51,6 +51,7 @@ The formula installs the Bun-based CLI and depends on Bun from the official tap:
 
 ```bash
 brew tap oven-sh/bun
+brew trust oven-sh/bun    # Homebrew loads a dependency only from a trusted tap
 brew install drakulavich/tap/kesha-voice-kit
 kesha install
 ```
