@@ -1,6 +1,8 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { tmpdir, userInfo } from "node:os";
 import { delimiter, dirname, join } from "node:path";
+import { isInsideDir } from "../../src/cache-layout";
+import { resolveStatePaths } from "../../src/state-paths";
 
 const DEFAULT_CWD = `${import.meta.dir}/../..`;
 // Headroom for macOS scanning the fake engine each scenario mints; measured at ~1 s
@@ -27,6 +29,28 @@ function stubGhOnPath(): string {
 }
 
 const STUB_BIN_DIR = stubGhOnPath();
+
+/**
+ * The developer's own Model cache: the preload pins `KESHA_CACHE_DIR` to it so engine tests find
+ * the installed engine (harness-home.ts), and the default sits under the real home whatever `HOME`
+ * a test sets. Read at import, before any test rewrites `process.env`.
+ */
+const REAL_CACHES = [resolveStatePaths(process.env, process.platform, userInfo().homedir).cacheDir.path, join(userInfo().homedir, ".cache", "kesha")];
+
+/**
+ * A scenario that runs `kesha uninstall` without a private cache of its own would delete the
+ * developer's real one; it did once, engine, models and recordings (#1631).
+ */
+export function refuseRealCache(args: string[], env: Record<string, string | undefined>, protectedCaches: string[], cwd: string): void {
+  if (!args.includes("uninstall") || args.includes("--help") || args.includes("-h")) return;
+  const cache = resolveStatePaths(env, process.platform, env.HOME ?? userInfo().homedir, tmpdir(), cwd).cacheDir.path;
+  const hit = protectedCaches.find((real) => isInsideDir(real, cache) || isInsideDir(cache, real));
+  if (hit) {
+    throw new Error(
+      `refusing \`kesha ${args.join(" ")}\`: its Model cache ${cache} is the real cache ${hit}; give the scenario its own KESHA_CACHE_DIR (#1631)`,
+    );
+  }
+}
 
 interface CliScenarioArtifactRequest {
   name?: string;
@@ -109,16 +133,18 @@ export async function runCliScenario(args: string[], opts: CliScenarioOptions = 
     FORCE_COLOR: "0",
     ...(opts.env ?? {}),
   };
+  const env = {
+    ...process.env,
+    PATH: [STUB_BIN_DIR, dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
+    ...envOverrides,
+  };
+  refuseRealCache(args, env, REAL_CACHES, opts.cwd ?? DEFAULT_CWD);
   const proc = Bun.spawn([process.execPath, "run", join(DEFAULT_CWD, "src/cli-entry.ts"), ...args], {
     stdin: resolveStdin(opts.stdin),
     stdout: "pipe",
     stderr: "pipe",
     cwd: opts.cwd ?? DEFAULT_CWD,
-    env: {
-      ...process.env,
-      PATH: [STUB_BIN_DIR, dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
-      ...envOverrides,
-    },
+    env,
   });
 
   if (typeof opts.stdin === "object" && "openAfter" in opts.stdin) {
