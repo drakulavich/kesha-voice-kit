@@ -25,5 +25,5 @@
 - [x] `bun bin/kesha.js uninstall </dev/null | cat` exits 2 with `E_INVALID_ARG` naming `kesha uninstall --yes`, and the cache under the test's `KESHA_HOME` is unchanged
 - [x] `bun test tests/unit/uninstall-plan.test.ts --randomize` passes, covering every scenario in the delta; `just mutate` on the foreign-entry check reports PINNED
 - [x] `bun test tests/integration/cli-contracts.test.ts --randomize` passes with the uninstall cases, including the read-only entry (exit 1, `E_UNINSTALL_PARTIAL`, the other entries gone); `just mutate` turning continue-past-failure into a stop reports PINNED
-- [ ] On the maintainer's Mac, after `kesha uninstall --yes`, `kesha status --disk` lists no Kesha component and no external root with Kesha files
-- [ ] `openspec validate add-uninstall --strict` and `bun run check:fast` pass
+- [x] On the maintainer's Mac, after `kesha uninstall --yes`, `kesha status --disk` lists no Kesha component and no external root with Kesha files
+- [x] `openspec validate add-uninstall --strict` and `bun run check:fast` pass
