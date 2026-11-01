@@ -57,18 +57,21 @@ const codeOf = (e: unknown): string | undefined => (e as NodeJS.ErrnoException).
  */
 export function removeAround(path: string, protectedPaths: string[], failures: RemovalFailure[]): string[] {
   if (protectedPaths.includes(path)) return [];
-  if (!protectedPaths.some((p) => isInsideDir(p, path))) {
+  const remove = (): string[] => {
     try {
       rmSync(path, { recursive: true, force: true });
     } catch (e) {
       failures.push({ path, reason: errorMessage(e) });
     }
     return [];
-  }
+  };
+  if (!protectedPaths.some((p) => isInsideDir(p, path))) return remove();
   let names: string[];
   try {
     names = readdirSync(path);
   } catch (e) {
+    if (codeOf(e) === "ENOENT") return [];
+    if (codeOf(e) === "ENOTDIR") return remove();
     failures.push({ path, reason: errorMessage(e) });
     return [];
   }

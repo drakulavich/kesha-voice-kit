@@ -24,3 +24,24 @@ describe("removeAround", () => {
     expect(walked).toEqual([engine, join(engine, "bin")]);
   });
 });
+
+describe("removeAround on a path that changed after the plan", () => {
+  test("a directory that is already gone is not a failure", () => {
+    const gone = join(tempDir("kesha-uninstall-gone-"), "engine");
+    const failures: RemovalFailure[] = [];
+
+    expect(removeAround(gone, [join(gone, "bin", "kesha-engine.lock")], failures)).toEqual([]);
+    expect(failures).toEqual([]);
+  });
+
+  test("a file where the directory was is removed like any entry", () => {
+    const file = join(tempDir("kesha-uninstall-file-"), "engine");
+    writeFileSync(file, "x");
+    const failures: RemovalFailure[] = [];
+
+    removeAround(file, [join(file, "bin", "kesha-engine.lock")], failures);
+
+    expect(failures).toEqual([]);
+    expect(existsSync(file)).toBe(false);
+  });
+});
