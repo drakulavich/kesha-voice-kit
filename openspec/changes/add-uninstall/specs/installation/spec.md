@@ -69,6 +69,13 @@
 
 `kesha uninstall` SHALL print the uninstall plan (each entry with its size and whether it is removed or kept) to stderr before removing anything, and in a terminal SHALL ask once for confirmation. `--yes` SHALL skip the question. When stdin or stdout is not a TTY and `--yes` is not given, it SHALL print the plan, refuse with `E_INVALID_ARG` (exit 2) and a hint naming `kesha uninstall --yes`, and remove nothing.
 
+#### Scenario: Maks confirms
+
+- GIVEN Maks runs `kesha uninstall` in a terminal
+- WHEN the plan is shown and Maks answers yes
+- THEN the plan listed every removed and kept entry with its size before the question
+- AND exactly the entries marked removed are gone, and the process exits 0
+
 #### Scenario: Ira runs it from a script without `--yes`
 
 - GIVEN stdout is a pipe
@@ -88,6 +95,13 @@
 
 `kesha uninstall` SHALL take the install lock of the Engine path in effect before it removes anything, without waiting. When an install holds it, uninstall SHALL fail with `E_INSTALL_RACE` naming the lock directory, exit 1, and remove nothing. When the lock cannot be created or read, it SHALL fail the same way instead of continuing unlocked.
 
+#### Scenario: No install is running
+
+- GIVEN no process holds the install lock of the Engine path in effect
+- WHEN Ira runs `kesha uninstall --yes`
+- THEN uninstall takes the lock, removes the planned entries and releases the lock
+- AND no lock directory is left behind and the process exits 0
+
 #### Scenario: An install is still downloading
 
 - GIVEN Maks's `kesha install --tts` holds the install lock
@@ -105,6 +119,13 @@
 ### Requirement: An entry that cannot be removed is reported, and the rest are still removed
 
 When an entry cannot be removed, `kesha uninstall` SHALL report it with `E_UNINSTALL_PARTIAL`, the path, the reason and what to do (make the path writable or remove it by hand), continue with the remaining entries, and exit 1.
+
+#### Scenario: Every entry is removable
+
+- GIVEN every planned entry and its parent directory are writable
+- WHEN Ira runs `kesha uninstall --yes`
+- THEN every entry marked removed is gone and stderr carries no `E_UNINSTALL_PARTIAL`
+- AND the process exits 0
 
 #### Scenario: The log directory is read-only
 
