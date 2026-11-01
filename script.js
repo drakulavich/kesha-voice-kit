@@ -115,28 +115,11 @@
   // --- Release versions (best effort, same API; the span keeps its text on failure)
   const versionsEl = document.getElementById('release-versions');
   if (versionsEl) {
-    fetch('https://api.github.com/repos/drakulavich/kesha-voice-kit/releases?per_page=100')
+    fetch('https://api.github.com/repos/drakulavich/kesha-voice-kit/releases/latest')
       .then((r) => (r.ok ? r.json() : null))
-      .then((releases) => {
-        if (!Array.isArray(releases)) return;
-        const stable = releases.filter(
-          (rel) =>
-            rel &&
-            !rel.draft &&
-            !rel.prerelease &&
-            typeof rel.tag_name === 'string' &&
-            typeof rel.published_at === 'string'
-        );
-        const latest = (pattern) =>
-          stable
-            .filter((rel) => pattern.test(rel.tag_name))
-            .reduce((best, rel) => (!best || rel.published_at > best.published_at ? rel : best), null);
-        const cli = latest(/^v\d+\.\d+\.\d+-cli$/);
-        const engine = latest(/^v\d+\.\d+\.\d+$/);
-        if (!cli || !engine) return;
-        const cliVersion = cli.tag_name.replace(/^v/, '').replace(/-cli$/, '');
-        const engineVersion = engine.tag_name.replace(/^v/, '');
-        versionsEl.textContent = `v${engineVersion} engine · v${cliVersion} Bun CLI · ${versionsEl.textContent}`;
+      .then((rel) => {
+        if (!rel || typeof rel.tag_name !== 'string' || !/^v\d+\.\d+\.\d+$/.test(rel.tag_name)) return;
+        versionsEl.textContent = `${rel.tag_name} · ${versionsEl.textContent}`;
       })
       .catch(() => {});
   }

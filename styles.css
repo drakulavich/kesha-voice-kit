@@ -729,9 +729,10 @@ button,
 /* Layout sequence:
    row 1: feature--lg — Speech-to-text (span 6)
    row 2: feature--lg — Speaker diarization (span 6)
-   rows 3–5: 9 features (each span 2 = 18)
-   row 6: feature--wide (4) + one feature (2) = 6
-   row 7: feature--rust (4) + feature--openclaw (2) = 6 */
+   row 3: feature--wide MCP (4) + one feature (2) = 6
+   rows 4–6: 9 features (each span 2 = 18)
+   row 7: feature--wide (4) + one feature (2) = 6
+   row 8: feature--rust (4) + feature--openclaw (2) = 6 */
 
 .badge-new {
   position: absolute;
@@ -1152,6 +1153,7 @@ button,
   gap: var(--space-3);
   transition: all var(--transition-interactive);
 }
+.integration-card--new { position: relative; }
 .integration-card:hover {
   border-color: var(--color-primary);
   transform: translateY(-3px);
