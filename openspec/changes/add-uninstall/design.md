@@ -23,7 +23,7 @@ This table is the one list of what is removed. Every location follows one rule: 
 | Location | Removed (everything else is `keep` and named) |
 |---|---|
 | Model cache | `engine/`, `models/`, `fluidaudio/`, `recordings/` |
-| Diagnostic log directory | `kesha.ndjson` and `kesha.<n>.ndjson` |
+| Diagnostic log directory | `kesha.ndjson`, `kesha.<n>.ndjson` and the `diagnostic-logs.json` settings file `kesha logs enable` writes |
 | Stats DB | the file and its `-wal` and `-shm` siblings |
 | MCP audio directory | `<uuid>.<ext>` files Kesha wrote |
 | `KESHA_HOME` | its `cache`, `logs`, `stats.sqlite` and `mcp-audio` children, by the rows above |

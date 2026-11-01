@@ -30,8 +30,8 @@
 > *Technical Note — locations come from `src/state-paths.ts::resolveStatePaths`,
 > `src/mcp/audio-output.ts::audioDir` and `src/fluid-roots.ts` (both the legacy and the
 > in-cache candidate of each subsystem, not only the one `fluidSubsystemDirs` resolves).
-> Kesha's names: logs `kesha.ndjson` and `kesha.<n>.ndjson` (`src/diagnostic-log.ts:11`,
-> `:180`), MCP audio `<uuid>.<ext>` (`src/mcp/audio-output.ts:26`). The ownership table
+> Kesha's names: logs `kesha.ndjson`, `kesha.<n>.ndjson` and `diagnostic-logs.json`
+> (`src/diagnostic-log.ts:11-12`, `:180`), MCP audio `<uuid>.<ext>` (`src/mcp/audio-output.ts:26`). The ownership table
 > in design.md is the one list of what is removed.*
 
 ### Requirement: Uninstall keeps what Kesha did not create and names it
@@ -42,7 +42,7 @@
 
 - GIVEN `KESHA_LOG_DIR=$HOME` and `$HOME` holds Maks's own files next to `kesha.ndjson`
 - WHEN Maks runs `kesha uninstall --yes`
-- THEN only `kesha.ndjson` and any `kesha.<n>.ndjson` are removed
+- THEN only `kesha.ndjson`, any `kesha.<n>.ndjson` and `diagnostic-logs.json` are removed
 - AND `$HOME` and everything else in it remain
 
 #### Scenario: Another FluidAudio app shares the root
