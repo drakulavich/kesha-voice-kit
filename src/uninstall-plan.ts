@@ -3,7 +3,6 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isInsideDir } from "./cache-layout";
 import { dirSizeBytes } from "./diagnostic-paths";
-import { errorMessage } from "./error-utils";
 import { fluidLegacyRootPaths, fluidLegacySubsystemDirs } from "./fluid-roots";
 import { resolveStatePaths } from "./state-paths";
 
@@ -21,8 +20,6 @@ export interface UninstallPlan {
   emptyDirs: string[];
   /** The Engine path in effect, whose install lock uninstall takes. */
   engineBin: string;
-  /** Directories that exist but could not be listed, so what Kesha left in them is unknown. */
-  unreadable: { path: string; reason: string }[];
 }
 
 export interface UninstallPlanOptions {
@@ -50,13 +47,10 @@ export function buildUninstallPlan(options: UninstallPlanOptions = {}): Uninstal
   const statsDb = state.statsDbPath.path;
   const engineBin = env.KESHA_ENGINE_BIN || join(cacheDir, "engine", "bin", platform === "win32" ? "kesha-engine.exe" : "kesha-engine");
 
-  const unreadable = new Map<string, string>();
   const list = (dir: string): string[] => {
     try {
       return readdirSync(dir);
-    } catch (e) {
-      const code = (e as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT" && code !== "ENOTDIR") unreadable.set(dir, errorMessage(e));
+    } catch {
       return [];
     }
   };
@@ -109,5 +103,12 @@ export function buildUninstallPlan(options: UninstallPlanOptions = {}): Uninstal
   }
 
   const emptyDirs = [...new Set(stateDirs)].sort((a, b) => b.length - a.length);
-  return { entries, emptyDirs, engineBin, unreadable: [...unreadable].map(([path, reason]) => ({ path, reason })) };
+  // rm -rf of an entry would take a kept file inside it along.
+  for (const e of entries) {
+    if (e.action === "remove" && entries.some((k) => k.action === "keep" && isInsideDir(k.path, e.path))) {
+      e.action = "keep";
+      e.reason = "holds files Kesha did not create";
+    }
+  }
+  return { entries, emptyDirs, engineBin };
 }

@@ -17,7 +17,7 @@
 
 ## 4. Plain removal
 
-- [ ] 4.1 An entry holding a `keep` is `keep`; `engine/` goes last, after the lock is released; emptied directories go with a plain `rmdir`. The edge cases dropped from #1626 are in #1628
+- [x] 4.1 An entry holding a `keep` is `keep`; `engine/` goes last, after the lock is released; emptied directories go with a plain `rmdir`. The edge cases dropped from #1626 are in #1628
 
 ## Definition of Done
 

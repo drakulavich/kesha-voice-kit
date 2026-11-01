@@ -153,6 +153,21 @@ describe("buildUninstallPlan", () => {
     expect(p.entries.find((e) => e.action === "keep")?.bytes).toBe(6);
   });
 
+  test("an entry that holds a kept file is kept itself, so rm -rf cannot take that file along", () => {
+    const home = tempHome("keep-wins");
+    const models = join(home, ".cache", "kesha", "models");
+    const logDir = join(models, "logs");
+    put(join(models, "asr", "model.onnx"));
+    put(join(logDir, "kesha.ndjson"));
+    put(join(logDir, "notes.txt"));
+
+    const p = plan(home, { KESHA_LOG_DIR: logDir });
+
+    expect(p.entries.find((e) => e.path === models)).toMatchObject({ action: "keep", reason: "holds files Kesha did not create" });
+    expect(kept(p)).toContain(join(logDir, "notes.txt"));
+    expect(removed(p)).toEqual([join(logDir, "kesha.ndjson")]);
+  });
+
   test("an Engine that KESHA_ENGINE_BIN points at outside the Model cache is kept", () => {
     const home = tempHome("custom-engine");
     const engine = join(home, "opt", "kesha", "kesha-engine");
