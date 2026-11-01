@@ -11,48 +11,51 @@ function put(path: string, bytes = 3): void {
   writeFileSync(path, "x".repeat(bytes));
 }
 
-function plan(home: string, env: Record<string, string> = {}) {
-  return buildUninstallPlan({ env: { HOME: home, ...env }, platform: "darwin", homeDir: home, tmpDir: join(home, "tmp"), cwd: home });
+function plan(home: string, env: Record<string, string> = {}, platform = process.platform) {
+  return buildUninstallPlan({ env: { HOME: home, ...env }, platform, homeDir: home, tmpDir: join(home, "tmp"), cwd: home });
 }
 
 const removed = (p: ReturnType<typeof plan>) => p.entries.filter((e) => e.action === "remove").map((e) => e.path);
 const kept = (p: ReturnType<typeof plan>) => p.entries.filter((e) => e.action === "keep").map((e) => e.path);
 
 describe("buildUninstallPlan", () => {
-  test("a default macOS install lists every Kesha location, recordings included", () => {
-    const home = tempHome("default");
-    const cache = join(home, ".cache", "kesha");
-    put(join(cache, "engine", "bin", "kesha-engine"), 10);
-    put(join(cache, "models", "parakeet", "model.onnx"), 20);
-    put(join(cache, "recordings", "live-1.wav"), 7);
-    put(join(home, "Library", "Logs", "kesha", "kesha.ndjson"));
-    put(join(home, "Library", "Logs", "kesha", "kesha.2.ndjson"));
-    put(join(home, "Library", "Logs", "kesha", "diagnostic-logs.json"));
-    put(join(home, "Library", "Application Support", "kesha", "stats.sqlite"));
-    put(join(home, "tmp", "kesha-mcp", "0b6c5a1e-2f7d-4c1a-9e3b-5d8f7a6c4b21.ogg"));
-    put(join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad", "vad.mlmodelc"));
-    put(join(home, ".cache", "fluidaudio", "Models", "kokoro", "g2p.bin"));
+  test.skipIf(process.platform === "win32")(
+    "a default macOS install lists every Kesha location, recordings included (the darwin layout needs POSIX paths)",
+    () => {
+      const home = tempHome("default");
+      const cache = join(home, ".cache", "kesha");
+      put(join(cache, "engine", "bin", "kesha-engine"), 10);
+      put(join(cache, "models", "parakeet", "model.onnx"), 20);
+      put(join(cache, "recordings", "live-1.wav"), 7);
+      put(join(home, "Library", "Logs", "kesha", "kesha.ndjson"));
+      put(join(home, "Library", "Logs", "kesha", "kesha.2.ndjson"));
+      put(join(home, "Library", "Logs", "kesha", "diagnostic-logs.json"));
+      put(join(home, "Library", "Application Support", "kesha", "stats.sqlite"));
+      put(join(home, "tmp", "kesha-mcp", "0b6c5a1e-2f7d-4c1a-9e3b-5d8f7a6c4b21.ogg"));
+      put(join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad", "vad.mlmodelc"));
+      put(join(home, ".cache", "fluidaudio", "Models", "kokoro", "g2p.bin"));
 
-    const p = plan(home);
+      const p = plan(home, {}, "darwin");
 
-    expect(removed(p).sort()).toEqual(
-      [
-        join(cache, "engine"),
-        join(cache, "models"),
-        join(cache, "recordings"),
-        join(home, "Library", "Logs", "kesha", "kesha.ndjson"),
-        join(home, "Library", "Logs", "kesha", "kesha.2.ndjson"),
-        join(home, "Library", "Logs", "kesha", "diagnostic-logs.json"),
-        join(home, "Library", "Application Support", "kesha", "stats.sqlite"),
-        join(home, "tmp", "kesha-mcp", "0b6c5a1e-2f7d-4c1a-9e3b-5d8f7a6c4b21.ogg"),
-        join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad"),
-        join(home, ".cache", "fluidaudio", "Models", "kokoro"),
-      ].sort(),
-    );
-    expect(p.entries.find((e) => e.path === join(cache, "recordings"))?.bytes).toBe(7);
-    expect(kept(p)).toEqual([]);
-    expect(p.engineBin).toBe(join(cache, "engine", "bin", "kesha-engine"));
-  });
+      expect(removed(p).sort()).toEqual(
+        [
+          join(cache, "engine"),
+          join(cache, "models"),
+          join(cache, "recordings"),
+          join(home, "Library", "Logs", "kesha", "kesha.ndjson"),
+          join(home, "Library", "Logs", "kesha", "kesha.2.ndjson"),
+          join(home, "Library", "Logs", "kesha", "diagnostic-logs.json"),
+          join(home, "Library", "Application Support", "kesha", "stats.sqlite"),
+          join(home, "tmp", "kesha-mcp", "0b6c5a1e-2f7d-4c1a-9e3b-5d8f7a6c4b21.ogg"),
+          join(home, "Library", "Application Support", "FluidAudio", "Models", "silero-vad"),
+          join(home, ".cache", "fluidaudio", "Models", "kokoro"),
+        ].sort(),
+      );
+      expect(p.entries.find((e) => e.path === join(cache, "recordings"))?.bytes).toBe(7);
+      expect(kept(p)).toEqual([]);
+      expect(p.engineBin).toBe(join(cache, "engine", "bin", "kesha-engine"));
+    },
+  );
 
   test("KESHA_HOME plus KESHA_LOG_DIR removes the Stats journal and leaves both roots to the empty-directory pass", () => {
     const home = tempHome("relocated");

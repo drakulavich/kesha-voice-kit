@@ -99,6 +99,7 @@ Running `kesha-engine describe` SHALL print a single JSON object to stdout and e
 > | `E_ENGINE_SPAWN` | platform | no | cli | Engine binary not installed or failed to start |
 > | `E_ENGINE_PROTOCOL` | platform | no | cli | Engine speaks a protocol this CLI does not |
 > | `E_INTERRUPTED` | platform | no | cli | The run was cancelled by a signal or by its caller |
+> | `E_UNINSTALL_PARTIAL` | platform | no | cli | kesha uninstall could not remove an entry |
 > | `E_TEXT_EMPTY` | tts | no | both | Empty synthesis text |
 > | `E_TEXT_TOO_LONG` | tts | no | both | Synthesis text too long |
 > | `E_VOICE_UNKNOWN` | tts | no | engine | Unknown voice id |
