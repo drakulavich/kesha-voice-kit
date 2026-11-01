@@ -2,6 +2,7 @@ import { confirm, isCancel } from "@clack/prompts";
 import { defineCommand } from "citty";
 import { existsSync, rmdirSync, rmSync } from "node:fs";
 import { dirname } from "node:path";
+import { isInsideDir } from "../cache-layout";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { errorMessage } from "../error-utils";
 import { humanBytes } from "../format";
@@ -113,15 +114,15 @@ export const uninstallCommand = defineCommand({
       throw e;
     }
 
-    // engine/ holds the lock, so it goes after the release.
-    const engineDir = dirname(dirname(plan.engineBin));
+    // The entry holding the lock (engine/) goes after the release.
+    const holdsLock = (path: string): boolean => isInsideDir(`${plan.engineBin}.lock`, path);
     let removed = 0;
     try {
-      for (const e of removing) if (e.path !== engineDir && remove(e.path)) removed++;
+      for (const e of removing) if (!holdsLock(e.path) && remove(e.path)) removed++;
     } finally {
       release();
     }
-    for (const e of removing) if (e.path === engineDir && remove(e.path)) removed++;
+    for (const e of removing) if (holdsLock(e.path) && remove(e.path)) removed++;
     for (const d of [...lockCreates, ...plan.emptyDirs]) removeIfEmpty(d);
 
     log.notice(removed === removing.length ? `Removed ${entries(removed)}.` : `Removed ${removed} of ${entries(removing.length)}.`);
