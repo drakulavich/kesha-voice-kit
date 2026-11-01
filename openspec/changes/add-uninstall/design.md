@@ -12,7 +12,7 @@ interface UninstallEntry {
   label: string;       // "Model cache", "Diagnostic logs", "TTS (Kokoro G2P)", ...
   bytes: number;       // dirSizeBytes / fileSize at plan time
   action: "remove" | "keep";
-  reason?: string;     // for "keep": "not created by Kesha", "recovery recordings", "KESHA_ENGINE_BIN outside the Model cache"
+  reason?: string;     // for "keep": "not created by Kesha", "KESHA_ENGINE_BIN outside the Model cache"
 }
 ```
 
@@ -22,7 +22,7 @@ This table is the one list of what is removed. Every location follows one rule: 
 
 | Location | Removed (everything else is `keep` and named) |
 |---|---|
-| Model cache | `engine/`, `models/`, `fluidaudio/`. `recordings/` is `keep` (see Open Questions). |
+| Model cache | `engine/`, `models/`, `fluidaudio/`, `recordings/` |
 | Diagnostic log directory | `kesha.ndjson` and `kesha.<n>.ndjson` |
 | Stats DB | the file and its `-wal` and `-shm` siblings |
 | MCP audio directory | `<uuid>.<ext>` files Kesha wrote |
@@ -41,7 +41,4 @@ This table is the one list of what is removed. Every location follows one rule: 
 
 - Another FluidAudio-based app may share Parakeet in `~/Library/Application Support/FluidAudio/Models`. Removing Kesha's subsystem directories makes that app download it again. Accepted by the maintainer in #1625: only Kesha's directories go, the rest stays.
 - A stray `KESHA_HOME` or specific variable can point at a user directory. Only Kesha-named entries are removed and a directory only when empty, so the worst case is a user file that happens to carry a Kesha name, such as `kesha.ndjson`.
-
-## Open Questions
-
-- Recovery recordings (`<Model cache>/recordings/`) hold the user's own audio from interrupted `kesha record` runs. This design keeps and lists them. Confirm, or decide they are removed with the rest.
+- Recovery recordings (`<Model cache>/recordings/`) are the user's own audio from interrupted `kesha record` runs. The maintainer decided they are removed with the rest (#1626); the plan lists them with their size before the question, so they are never removed unseen.

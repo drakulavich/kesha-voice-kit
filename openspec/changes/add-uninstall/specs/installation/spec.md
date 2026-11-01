@@ -6,7 +6,7 @@
 
 #### Scenario: Maks removes a default macOS install
 
-- GIVEN Maks installed Kesha with `--tts --vad --diarize`, set no state variable, and has no recovery recording
+- GIVEN Maks installed Kesha with `--tts --vad --diarize`, set no state variable, and has a recovery recording from an interrupted `kesha record`
 - WHEN Maks runs `kesha uninstall` in a terminal and answers yes
 - THEN `~/.cache/kesha`, `~/Library/Logs/kesha`, `~/Library/Application Support/kesha` and `<tmpdir>/kesha-mcp` are gone
 - AND the Silero VAD and Kokoro G2P directories under the shared FluidAudio roots are gone, and so is every subsystem directory a pre-#688 install left there
@@ -36,7 +36,7 @@
 
 ### Requirement: Uninstall keeps what Kesha did not create and names it
 
-`kesha uninstall` SHALL NOT remove an entry Kesha did not create: an unknown entry in any of the four state locations, an entry of a shared FluidAudio root that is not a Kesha subsystem directory, an Engine that `KESHA_ENGINE_BIN` points at outside the Model cache, recovery recordings, or the CLI package. It SHALL list each kept entry with its size on stderr and print how to remove the CLI package.
+`kesha uninstall` SHALL NOT remove an entry Kesha did not create: an unknown entry in any of the four state locations, an entry of a shared FluidAudio root that is not a Kesha subsystem directory, an Engine that `KESHA_ENGINE_BIN` points at outside the Model cache, or the CLI package. It SHALL list each kept entry with its size on stderr and print how to remove the CLI package.
 
 #### Scenario: A log variable points at a shared directory
 
@@ -52,11 +52,12 @@
 - THEN Kesha's subsystem directories in that root are gone
 - AND `other-model` and the root remain, and stderr names `other-model` as kept
 
-#### Scenario: A recovery recording and a planted file survive
+#### Scenario: A planted file survives, a recovery recording does not
 
 - GIVEN the Model cache holds `recordings/live-1.wav` and Ira's `notes.txt`
 - WHEN Ira runs `kesha uninstall --yes`
-- THEN both remain, are named on stderr as kept, and the Model cache directory stays because it is not empty
+- THEN `recordings/live-1.wav` is gone, `notes.txt` remains and is named on stderr as kept
+- AND the Model cache directory stays because it is not empty
 - AND every other Kesha entry in the Model cache is gone
 
 #### Scenario: A custom Engine is left alone

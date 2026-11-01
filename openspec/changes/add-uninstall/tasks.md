@@ -1,7 +1,7 @@
 ## 1. Plan
 
-- [ ] 1.1 `src/uninstall-plan.ts`: build `UninstallEntry[]` by the design.md ownership table: only Kesha-named entries are `remove`, each directory only if then empty; both candidates of every FluidAudio subsystem; `recordings/`, foreign entries and an outside `KESHA_ENGINE_BIN` are `keep`
-- [ ] 1.2 Unit tests over a temp home: default layout, `KESHA_HOME` plus `KESHA_LOG_DIR`, `KESHA_LOG_DIR` at a shared directory, Stats `-wal`/`-shm`, a planted file and a recording in the cache, a foreign entry and a partial legacy Parakeet in a FluidAudio root, nothing installed
+- [ ] 1.1 `src/uninstall-plan.ts`: build `UninstallEntry[]` by the design.md ownership table: only Kesha-named entries are `remove`, each directory only if then empty; both candidates of every FluidAudio subsystem; `recordings/` is `remove`; foreign entries and an outside `KESHA_ENGINE_BIN` are `keep`
+- [ ] 1.2 Unit tests over a temp home: default layout, `KESHA_HOME` plus `KESHA_LOG_DIR`, `KESHA_LOG_DIR` at a shared directory, Stats `-wal`/`-shm`, a planted file in the cache (kept) and a recovery recording (removed), a foreign entry and a partial legacy Parakeet in a FluidAudio root, nothing installed
 
 ## 2. Command
 
