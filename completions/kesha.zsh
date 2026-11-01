@@ -16,6 +16,7 @@ _kesha() {
     'stats:Manage local anonymous Kesha Stats'
     'status:Show backend installation status'
     'support-bundle:Create a redacted diagnostics archive for support'
+    'uninstall:Remove the engine, models, logs, stats and MCP audio Kesha created (the CLI package stays)'
   )
 
   if (( CURRENT == 2 )); then
@@ -138,6 +139,11 @@ _kesha() {
         '-h[Show help]' \
         '--output=[Write archive to this .tar.gz path]:output:' \
         '--include-logs[Include a bounded tail of privacy-safe diagnostic logs]'
+      ;;
+    uninstall)
+      _arguments '--help[Show help]' \
+        '-h[Show help]' \
+        '--yes[Remove without asking; required without a terminal]'
       ;;
     *)
       _arguments '--help[Show help]' \

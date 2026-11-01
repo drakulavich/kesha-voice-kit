@@ -305,6 +305,7 @@ Commands:
   say             Synthesize speech from text.
   stats           Manage local anonymous performance stats.
   support-bundle  Create a redacted diagnostics archive.
+  uninstall       Remove the engine, models and state Kesha wrote.
  (kesha v<version>)
 
 USAGE kesha [OPTIONS] [AUDIO_FILE]

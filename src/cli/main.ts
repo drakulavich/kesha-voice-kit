@@ -49,7 +49,8 @@ const USAGE_MESSAGE =
   "       kesha status\n" +
   "       kesha say <text>\n" +
   "       kesha stats [enable|disable|status|week|errors|export|reset|vacuum|retention]\n" +
-  "       kesha support-bundle [--output path.tar.gz]";
+  "       kesha support-bundle [--output path.tar.gz]\n" +
+  "       kesha uninstall [--yes]";
 
 interface MainCommandArgs {
   _: string[];
@@ -553,7 +554,8 @@ export function createMainCommand(context: CliContext = { quiet: false, disableC
         "  status          Inspect installed backend.\n" +
         "  say             Synthesize speech from text.\n" +
         "  stats           Manage local anonymous performance stats.\n" +
-        "  support-bundle  Create a redacted diagnostics archive.\n",
+        "  support-bundle  Create a redacted diagnostics archive.\n" +
+        "  uninstall       Remove the engine, models and state Kesha wrote.\n",
     },
     args: {
       audio_file: {

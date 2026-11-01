@@ -181,7 +181,9 @@ describe("capability pact — recordings", () => {
       }
     }
     expect(raised.size).toBeGreaterThan(8);
-    const cliOnly = ["E_ENGINE_PROTOCOL", "E_ENGINE_SPAWN", "E_INSTALL_RACE", "E_INTERRUPTED"];
+    const cliOnly = ["E_ENGINE_PROTOCOL", "E_ENGINE_SPAWN", "E_INSTALL_RACE", "E_INTERRUPTED", "E_UNINSTALL_PARTIAL"];
+    // Published by Engines newer than the recorded v2.5.0 (#1625); a re-recorded pact that carries one fails below until it leaves this list.
+    const unrecorded = ["E_UNINSTALL_PARTIAL"];
     const shared = [...raised].filter((c) => !cliOnly.includes(c)).sort();
     for (const t of TARGETS) {
       const byOrigin = (origin: string) =>
@@ -189,7 +191,8 @@ describe("capability pact — recordings", () => {
           .filter((e) => e.origin === origin)
           .map((e) => e.code)
           .sort();
-      expect(byOrigin("cli")).toEqual(cliOnly);
+      expect(byOrigin("cli")).toEqual(cliOnly.filter((c) => !unrecorded.includes(c)));
+      for (const code of unrecorded) expect(t.pact.errors.map((e) => e.code)).not.toContain(code);
       expect(byOrigin("both")).toEqual(shared);
       expect(byOrigin("cli").length + byOrigin("both").length + byOrigin("engine").length).toBe(t.pact.errors.length);
     }

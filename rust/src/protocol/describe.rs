@@ -258,6 +258,12 @@ const CLI_ONLY: &[(&str, &str, Category, bool)] = &[
         Category::Platform,
         false,
     ),
+    (
+        "E_UNINSTALL_PARTIAL",
+        "kesha uninstall could not remove an entry",
+        Category::Platform,
+        false,
+    ),
 ];
 
 fn origin_of(code: ErrorCode) -> Origin {
@@ -473,9 +479,10 @@ mod tests {
                 "E_ENGINE_SPAWN",
                 "E_INSTALL_RACE",
                 "E_INTERRUPTED",
+                "E_UNINSTALL_PARTIAL",
             ]
         );
-        assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 4);
+        assert_eq!(d.errors.len(), crate::errors::ErrorCode::ALL.len() + 5);
     }
 
     #[test]

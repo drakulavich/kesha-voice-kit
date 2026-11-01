@@ -11,6 +11,7 @@ import { recordCommand } from "./cli/record";
 import { sayCommand } from "./cli/say";
 import { statsCommand } from "./cli/stats";
 import { statusCommand } from "./cli/status";
+import { uninstallCommand } from "./cli/uninstall";
 import { supportBundleCommand } from "./cli/support-bundle";
 
 type Shell = "bash" | "zsh" | "fish";
@@ -57,6 +58,7 @@ const CLI_COMMANDS: CliCommand[] = [
   { name: "stats", command: statsCommand },
   { name: "status", command: statusCommand },
   { name: "support-bundle", command: supportBundleCommand },
+  { name: "uninstall", command: uninstallCommand },
 ];
 
 const ROOT_BUILT_INS: CliOption[] = [

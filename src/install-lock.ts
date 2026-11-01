@@ -279,3 +279,28 @@ export async function acquireInstallLock(binPath: string, maxWaitMs = configured
     delay = Math.min(delay * 2, POLL_MAX_MS);
   }
 }
+
+/**
+ * The install lock for a run that must not overlap an install and must not run unserialised
+ * either (`kesha uninstall`): it never waits, and a lock it cannot create is a failure.
+ */
+export function takeInstallLockNow(binPath: string, purpose: string): () => void {
+  const lockDir = `${binPath}.lock`;
+  const owner: LockOwner = { token: randomUUID(), pid: process.pid, host: hostname(), startedAt: Date.now() };
+  let outcome = publishLock(lockDir, owner);
+  if (outcome === "held") {
+    const stale = readOwner(lockDir);
+    if (lockIsStale(stale) && clearLock(lockDir, stale?.token ?? null)) outcome = publishLock(lockDir, owner);
+  }
+  if (outcome === "acquired") return () => releaseIfOwned(lockDir, owner.token);
+  if (outcome === "impossible") {
+    throw new KeshaError("E_INSTALL_RACE", `cannot create the install lock ${lockDir}, so ${purpose} would not be serialised against \`kesha install\``, {
+      hint: `make ${dirname(binPath)} writable, then re-run`,
+    });
+  }
+  const holder = readOwner(lockDir);
+  const who = holder?.kind === "live" ? ` (pid ${holder.owner.pid} on ${holder.owner.host})` : "";
+  throw new KeshaError("E_INSTALL_RACE", `another \`kesha install\`${who} holds the install lock ${lockDir}`, {
+    hint: `wait for it to finish and re-run; if no install is running, delete ${lockDir}`,
+  });
+}

@@ -132,6 +132,18 @@ function unreadFluidCopies(homeDir: string): { label: string; path: string }[] {
   return [{ label: "ASR, older Parakeet copy (not read)", path: `${legacyFluidAsrCachePath(homeDir)}-coreml` }];
 }
 
+/** The FluidAudio directories outside the cache that Kesha reads or once read; each subsystem's in-cache side lives under `<cache>/fluidaudio`. */
+export function fluidLegacySubsystemDirs(homeDir = diagnosticHomeDir()): { label: string; path: string }[] {
+  return [
+    { label: "ASR (Parakeet)", path: legacyFluidAsrCachePath(homeDir) },
+    ...unreadFluidCopies(homeDir),
+    { label: "VAD (Silero, FluidAudio)", path: fluidVadDir(homeDir) },
+    { label: "TTS (Kokoro ANE)", path: legacyKokoroAneDir(homeDir) },
+    { label: "TTS (Kokoro G2P)", path: kokoroG2pDir(homeDir) },
+    { label: "Diarization (Sortformer)", path: legacySortformerDir(homeDir) },
+  ];
+}
+
 /**
  * Every FluidAudio tree holding bytes outside the Kesha cache, with the subsystems still
  * resolved into it. Bytes no subsystem claims stay in `otherBytes` rather than being dropped:
