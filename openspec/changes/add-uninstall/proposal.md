@@ -14,7 +14,7 @@ Vera ships this as `vera uninstall` (`VeraTools/Vera`, `crates/vera-cli/src/comm
 - It takes the install lock, so it cannot run while `kesha install` writes into the same Model cache.
 - It never removes the CLI package; it prints how to remove it.
 - `docs/architecture.md`, the README and the `kesha status --disk` reset hint (`src/status.ts:241`, today `rm -rf <cache>`) point at the command.
-- A new CLI-only Error code, `E_UNINSTALL_PARTIAL`, for an entry that could not be removed.
+- A new Error code, `E_UNINSTALL_PARTIAL`, for an entry that could not be removed. Only the CLI raises it; the Engine publishes it in `describe` with `origin: cli`.
 
 ## Non-goals
 
@@ -35,4 +35,5 @@ Vera ships this as `vera uninstall` (`VeraTools/Vera`, `crates/vera-cli/src/comm
 - New `src/cli/uninstall.ts` and `src/uninstall-plan.ts`; reuses `src/state-paths.ts`, `src/fluid-roots.ts`, `src/diagnostic-paths.ts` and `src/install-lock.ts`.
 - `src/cli/main.ts` command table, shell completions and the man page (`bun run generate:shell-artifacts`).
 - `docs/architecture.md:275`, README, `docs/errors.md` if a new message needs a row.
+- `rust/src/protocol/describe.rs` publishes the new code; the capability pact test lists it as not yet recorded.
 - Refs #1625.

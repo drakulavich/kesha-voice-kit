@@ -13,6 +13,7 @@
 
 - [ ] 3.1 `docs/architecture.md:275` and the README point at `kesha uninstall`
 - [ ] 3.2 `docs/errors.md` row for `E_UNINSTALL_PARTIAL`; the `kesha status --disk` reset hint names `kesha uninstall`
+- [ ] 3.3 `rust/src/protocol/describe.rs::CLI_ONLY` publishes `E_UNINSTALL_PARTIAL`; `tests/unit/capabilities-pact.test.ts` lists it as not yet recorded and fails once a re-recorded pact carries it
 
 ## Definition of Done
 

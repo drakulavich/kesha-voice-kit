@@ -34,7 +34,7 @@ This table is the one list of what is removed. Every location follows one rule: 
 
 - **Plan first, then delete.** The plan is computed and shown before anything is removed, so the question and a refused non-terminal run show the same list.
 - **Install lock.** The lock is `<Engine path>.lock` (`src/install-lock.ts:239`), so uninstall locks the Engine path in effect, as install does. It takes it without waiting, and unlike `acquireInstallLock` it fails when the lock cannot be created (`src/install-lock.ts:250` continues unserialised; uninstall must not). A held lock fails with `E_INSTALL_RACE` before any deletion.
-- **Partial failure continues.** An entry that cannot be removed is reported as a new CLI-only code, `E_UNINSTALL_PARTIAL`, with the path, the reason and the remedy; the rest are still removed; the exit code is 1. It is CLI-only like `E_INTERRUPTED`, so the Engine taxonomy does not change.
+- **Partial failure continues.** An entry that cannot be removed is reported as a new CLI-only code, `E_UNINSTALL_PARTIAL`, with the path, the reason and the remedy; the rest are still removed; the exit code is 1. Like `E_INTERRUPTED` it is raised only by the CLI, and the Engine still publishes it in `describe` with `origin: cli` (`rust/src/protocol/describe.rs::CLI_ONLY`), because the capability pact requires every code the CLI raises to be published. The pact fixtures are recorded from the v2.5.0 Engines, so `tests/unit/capabilities-pact.test.ts` lists the code as not yet recorded until the pacts are re-recorded from a release that has it.
 - **No `--plan`.** The question already shows the plan.
 
 ## Risks
