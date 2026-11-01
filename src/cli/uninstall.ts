@@ -1,6 +1,6 @@
 import { confirm, isCancel } from "@clack/prompts";
 import { defineCommand } from "citty";
-import { existsSync, readdirSync, rmdirSync, rmSync } from "node:fs";
+import { existsSync, lstatSync, readdirSync, rmdirSync, rmSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { isInsideDir } from "../cache-layout";
 import { exitCodeFor, KeshaError } from "../engine/events";
@@ -53,9 +53,10 @@ const codeOf = (e: unknown): string | undefined => (e as NodeJS.ErrnoException).
 
 /**
  * Removes `path` except the protected paths inside it and the directories leading to them,
- * which it returns so they can go once empty.
+ * which it returns so they can go once empty. A symbolic link leading to a protected path is
+ * never walked; it goes into `links`, to be removed as a link once the lock is released.
  */
-export function removeAround(path: string, protectedPaths: string[], failures: RemovalFailure[]): string[] {
+export function removeAround(path: string, protectedPaths: string[], failures: RemovalFailure[], links: string[] = []): string[] {
   if (protectedPaths.includes(path)) return [];
   const remove = (): string[] => {
     try {
@@ -68,14 +69,27 @@ export function removeAround(path: string, protectedPaths: string[], failures: R
   if (!protectedPaths.some((p) => isInsideDir(p, path))) return remove();
   let names: string[];
   try {
+    const st = lstatSync(path);
+    if (st.isSymbolicLink()) {
+      links.push(path);
+      return [];
+    }
+    if (!st.isDirectory()) return remove();
     names = readdirSync(path);
   } catch (e) {
     if (codeOf(e) === "ENOENT") return [];
-    if (codeOf(e) === "ENOTDIR") return remove();
     failures.push({ path, reason: errorMessage(e) });
     return [];
   }
-  return [path, ...names.flatMap((name) => removeAround(join(path, name), protectedPaths, failures))];
+  return [path, ...names.flatMap((name) => removeAround(join(path, name), protectedPaths, failures, links))];
+}
+
+function isEmptyDir(dir: string): boolean {
+  try {
+    return readdirSync(dir).length === 0;
+  } catch {
+    return false;
+  }
 }
 
 /** Removes each directory a listing shows empty, deepest first; anything but "missing" or "not empty" is a failure. */
@@ -117,8 +131,13 @@ export const uninstallCommand = defineCommand({
     // An unreadable directory is already reported above.
     const emptyDirs = plan.emptyDirs.filter((d) => !plan.unreadable.some((u) => u.path === d));
     if (removing.length === 0) {
-      removeEmptyDirs(emptyDirs, failures);
-      for (const f of failures) reportFailure(f);
+      const empty = emptyDirs.filter(isEmptyDir);
+      if (args.yes) {
+        removeEmptyDirs(empty, failures);
+        for (const f of failures) reportFailure(f);
+      } else if (empty.length > 0) {
+        log.notice(`Empty Kesha directories remain: ${empty.join(", ")}. Run \`kesha uninstall --yes\` to remove them.`);
+      }
       log.notice("Nothing to remove: no Kesha engine, models, logs, stats or MCP audio found.");
       log.notice(CLI_PACKAGE_HINT);
       return;
@@ -160,15 +179,23 @@ export const uninstallCommand = defineCommand({
 
     const protectedPaths = [...plan.entries.filter((e) => e.action === "keep").map((e) => e.path), lockDir];
     const walked: string[] = [];
+    const links: string[] = [];
     let failedEntries = 0;
     try {
       for (const entry of removing) {
         const before = failures.length;
-        walked.push(...removeAround(entry.path, protectedPaths, failures));
+        walked.push(...removeAround(entry.path, protectedPaths, failures, links));
         if (failures.length > before) failedEntries++;
       }
     } finally {
       release();
+    }
+    for (const link of links) {
+      try {
+        unlinkSync(link);
+      } catch (e) {
+        if (codeOf(e) !== "ENOENT") failures.push({ path: link, reason: errorMessage(e) });
+      }
     }
     removeEmptyDirs([...walked, ...lockCreates, ...emptyDirs], failures);
     for (const f of failures) reportFailure(f);

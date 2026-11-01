@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { MAX_TEXT_CHARS } from "../../src/synth";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { engineVersion } from "../../src/package-info";
@@ -1987,6 +1987,35 @@ process.exit(99);
       expect(existsSync(join(env.KESHA_CACHE_DIR, "models", "asr"))).toBe(false);
       expect(existsSync(join(env.KESHA_CACHE_DIR, "engine"))).toBe(false);
     });
+
+    test("without --yes, empty state directories stay and are named, exit 0", async () => {
+      const env = isolatedEnv();
+      mkdirSync(env.KESHA_CACHE_DIR);
+      const run = await runCli(["uninstall"], { env });
+      expectContract(run, {
+        exitCode: 0,
+        stdoutEmpty: true,
+        stderrContains: [`Empty Kesha directories remain: ${env.KESHA_CACHE_DIR}`, "kesha uninstall --yes"],
+      });
+      expect(existsSync(env.KESHA_CACHE_DIR)).toBe(true);
+    });
+
+    test.skipIf(process.platform === "win32")(
+      "an engine/bin that links to a shared directory goes as a link, and the shared files stay (needs POSIX symlinks)",
+      async () => {
+        const env = isolatedEnv();
+        const shared = join(env.HOME, "shared-bin");
+        mkdirSync(shared);
+        writeFileSync(join(shared, "mine.txt"), "mine");
+        mkdirSync(join(env.KESHA_CACHE_DIR, "engine"), { recursive: true });
+        symlinkSync(shared, join(env.KESHA_CACHE_DIR, "engine", "bin"));
+        const run = await runCli(["uninstall", "--yes"], { env });
+        expectContract(run, { exitCode: 0, stdoutEmpty: true, stderrNotContains: ["E_UNINSTALL_PARTIAL"] });
+        expect(readFileSync(join(shared, "mine.txt"), "utf8")).toBe("mine");
+        expect(readdirSync(shared)).toEqual(["mine.txt"]);
+        expect(existsSync(join(env.KESHA_CACHE_DIR, "engine"))).toBe(false);
+      },
+    );
 
     test("only empty state directories left are removed, exit 0", async () => {
       const env = isolatedEnv();

@@ -18,7 +18,7 @@
 ## 4. Protected removal
 
 - [x] 4.1 Removal walks around protected paths (every `keep` entry and the lock), reports every non-missing, non-empty rm/rmdir failure as `E_UNINSTALL_PARTIAL`, and removes empty state directories on every run that is not refused; cli-contracts cases for a log directory inside `models/`, an emptied directory under a read-only parent and a run with only empty directories left; a test that the lock survives the removal of `engine/`
-- [ ] 4.2 A symbolic link is never walked; one leading to the lock is removed as a link after release. With nothing left to remove, empty directories go only with `--yes`; without it stderr names them. A unit test for the link and cli-contracts cases for both empty-directory outcomes
+- [x] 4.2 A symbolic link is never walked; one leading to the lock is removed as a link after release. With nothing left to remove, empty directories go only with `--yes`; without it stderr names them. A unit test for the link and cli-contracts cases for both empty-directory outcomes
 
 ## Definition of Done
 
