@@ -3,6 +3,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { isInsideDir } from "./cache-layout";
 import { dirSizeBytes } from "./diagnostic-paths";
+import { errorMessage } from "./error-utils";
 import { fluidLegacyRootPaths, fluidLegacySubsystemDirs } from "./fluid-roots";
 import { resolveStatePaths } from "./state-paths";
 
@@ -20,6 +21,8 @@ export interface UninstallPlan {
   emptyDirs: string[];
   /** The Engine path in effect, whose install lock uninstall takes. */
   engineBin: string;
+  /** Directories that exist but could not be listed, so what Kesha left in them is unknown. */
+  unreadable: { path: string; reason: string }[];
 }
 
 export interface UninstallPlanOptions {
@@ -35,14 +38,6 @@ const LOG_FILE = /^kesha(\.\d+)?\.ndjson$|^diagnostic-logs\.json$/;
 const MCP_AUDIO_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(wav|ogg|flac)$/;
 const NOT_KESHA = "not created by Kesha";
 
-function list(dir: string): string[] {
-  try {
-    return readdirSync(dir);
-  } catch {
-    return [];
-  }
-}
-
 /** The uninstall plan: what Kesha created in each state location and FluidAudio root, and what else is there (design.md ownership table). */
 export function buildUninstallPlan(options: UninstallPlanOptions = {}): UninstallPlan {
   const env = options.env ?? process.env;
@@ -54,6 +49,17 @@ export function buildUninstallPlan(options: UninstallPlanOptions = {}): Uninstal
   const mcpDir = state.mcpAudioDir.path;
   const statsDb = state.statsDbPath.path;
   const engineBin = env.KESHA_ENGINE_BIN || join(cacheDir, "engine", "bin", platform === "win32" ? "kesha-engine.exe" : "kesha-engine");
+
+  const unreadable = new Map<string, string>();
+  const list = (dir: string): string[] => {
+    try {
+      return readdirSync(dir);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") unreadable.set(dir, errorMessage(e));
+      return [];
+    }
+  };
 
   const removals: { path: string; label: string }[] = [
     ...CACHE_CHILDREN.map((name) => ({ path: join(cacheDir, name), label: `Model cache: ${name}/` })),
@@ -103,5 +109,5 @@ export function buildUninstallPlan(options: UninstallPlanOptions = {}): Uninstal
   }
 
   const emptyDirs = [...new Set(stateDirs)].sort((a, b) => b.length - a.length);
-  return { entries, emptyDirs, engineBin };
+  return { entries, emptyDirs, engineBin, unreadable: [...unreadable].map(([path, reason]) => ({ path, reason })) };
 }

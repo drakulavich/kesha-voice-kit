@@ -64,13 +64,19 @@ export const uninstallCommand = defineCommand({
   async run({ args }: { args: { yes: boolean } }) {
     const plan = buildUninstallPlan();
     const removing = plan.entries.filter((e) => e.action === "remove");
+    if (plan.entries.length > 0) renderPlan(plan);
+    for (const dir of plan.unreadable) {
+      fail(
+        new KeshaError("E_UNINSTALL_PARTIAL", `could not read ${dir.path}, so Kesha files in it stay: ${dir.reason}`, {
+          hint: "make the directory readable and re-run `kesha uninstall`, or remove its kesha* files by hand",
+        }),
+      );
+    }
     if (removing.length === 0) {
-      if (plan.entries.length > 0) renderPlan(plan);
       log.notice("Nothing to remove: no Kesha engine, models, logs, stats or MCP audio found.");
       log.notice(CLI_PACKAGE_HINT);
       return;
     }
-    renderPlan(plan);
 
     if (!args.yes) {
       if (process.stdin.isTTY !== true || process.stdout.isTTY !== true) {

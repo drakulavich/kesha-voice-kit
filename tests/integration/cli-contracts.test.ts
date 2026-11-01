@@ -1972,6 +1972,27 @@ process.exit(99);
         expect(existsSync(join(env.KESHA_LOG_DIR, "kesha.ndjson"))).toBe(true);
       },
     );
+
+    test.skipIf(process.platform === "win32")(
+      "an unreadable log directory is E_UNINSTALL_PARTIAL, exit 1, not an empty one (needs POSIX permissions)",
+      async () => {
+        const env = isolatedEnv();
+        installedState(env);
+        chmodSync(env.KESHA_LOG_DIR, 0o000);
+        try {
+          const run = await runCli(["uninstall", "--yes"], { env });
+          expectContract(run, {
+            exitCode: 1,
+            stdoutEmpty: true,
+            stderrContains: [`error [E_UNINSTALL_PARTIAL]: could not read ${env.KESHA_LOG_DIR}`, "make the directory readable"],
+          });
+        } finally {
+          chmodSync(env.KESHA_LOG_DIR, 0o755);
+        }
+        expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
+        expect(existsSync(join(env.KESHA_LOG_DIR, "kesha.ndjson"))).toBe(true);
+      },
+    );
   });
 
   test("diagnostic logs record failed install events without content, and a coded engine failure exits with the engine's status (#1186)", async () => {
