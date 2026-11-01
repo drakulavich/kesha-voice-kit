@@ -41,9 +41,9 @@ const REAL_CACHES = [process.env.KESHA_CACHE_DIR, join(userInfo().homedir, ".cac
  * A scenario that runs `kesha uninstall` without a private cache of its own would delete the
  * developer's real one; it did once, engine, models and recordings (#1631).
  */
-export function refuseRealCache(args: string[], env: Record<string, string | undefined>, protectedCaches: string[]): void {
+export function refuseRealCache(args: string[], env: Record<string, string | undefined>, protectedCaches: string[], cwd: string): void {
   if (!args.includes("uninstall")) return;
-  const cache = resolveStatePaths(env, process.platform, env.HOME ?? userInfo().homedir).cacheDir.path;
+  const cache = resolveStatePaths(env, process.platform, env.HOME ?? userInfo().homedir, tmpdir(), cwd).cacheDir.path;
   const hit = protectedCaches.find((real) => isInsideDir(real, cache) || isInsideDir(cache, real));
   if (hit) {
     throw new Error(
@@ -138,7 +138,7 @@ export async function runCliScenario(args: string[], opts: CliScenarioOptions = 
     PATH: [STUB_BIN_DIR, dirname(process.execPath), process.env.PATH].filter(Boolean).join(delimiter),
     ...envOverrides,
   };
-  refuseRealCache(args, env, REAL_CACHES);
+  refuseRealCache(args, env, REAL_CACHES, opts.cwd ?? DEFAULT_CWD);
   const proc = Bun.spawn([process.execPath, "run", join(DEFAULT_CWD, "src/cli-entry.ts"), ...args], {
     stdin: resolveStdin(opts.stdin),
     stdout: "pipe",
