@@ -15,6 +15,10 @@
 - [x] 3.2 `docs/errors.md` row for `E_UNINSTALL_PARTIAL`; the `kesha status --disk` reset hint names `kesha uninstall`
 - [x] 3.3 `rust/src/protocol/describe.rs::CLI_ONLY` publishes `E_UNINSTALL_PARTIAL`; `tests/unit/capabilities-pact.test.ts` lists it as not yet recorded and fails once a re-recorded pact carries it
 
+## 4. Protected removal
+
+- [ ] 4.1 Removal walks around protected paths (every `keep` entry and the lock), reports every non-missing, non-empty rm/rmdir failure as `E_UNINSTALL_PARTIAL`, and removes empty state directories on every run that is not refused; cli-contracts cases for a log directory inside `models/`, an emptied directory under a read-only parent and a run with only empty directories left; a test that the lock survives the removal of `engine/`
+
 ## Definition of Done
 
 - [x] `bun bin/kesha.js uninstall --help` exits 0 and prints usage naming `--yes`
