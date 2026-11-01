@@ -36,6 +36,12 @@ describe("refuseRealCache (#1631)", () => {
     );
   });
 
+  test("uninstall --help removes nothing and may use the real cache", () => {
+    const real = join(tempDir("kesha-guard-pinned-"), "kesha");
+
+    expect(() => refuseRealCache(["uninstall", "--help"], { HOME: tempDir("kesha-guard-home-"), KESHA_CACHE_DIR: real }, [real], process.cwd())).not.toThrow();
+  });
+
   test("other commands may use the real cache", () => {
     const real = join(tempDir("kesha-guard-pinned-"), "kesha");
 

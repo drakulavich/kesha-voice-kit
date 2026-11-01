@@ -35,14 +35,14 @@ const STUB_BIN_DIR = stubGhOnPath();
  * the installed engine (harness-home.ts), and the default sits under the real home whatever `HOME`
  * a test sets. Read at import, before any test rewrites `process.env`.
  */
-const REAL_CACHES = [process.env.KESHA_CACHE_DIR, join(userInfo().homedir, ".cache", "kesha")].filter((c): c is string => !!c);
+const REAL_CACHES = [resolveStatePaths(process.env, process.platform, userInfo().homedir).cacheDir.path, join(userInfo().homedir, ".cache", "kesha")];
 
 /**
  * A scenario that runs `kesha uninstall` without a private cache of its own would delete the
  * developer's real one; it did once, engine, models and recordings (#1631).
  */
 export function refuseRealCache(args: string[], env: Record<string, string | undefined>, protectedCaches: string[], cwd: string): void {
-  if (!args.includes("uninstall")) return;
+  if (!args.includes("uninstall") || args.includes("--help") || args.includes("-h")) return;
   const cache = resolveStatePaths(env, process.platform, env.HOME ?? userInfo().homedir, tmpdir(), cwd).cacheDir.path;
   const hit = protectedCaches.find((real) => isInsideDir(real, cache) || isInsideDir(cache, real));
   if (hit) {
