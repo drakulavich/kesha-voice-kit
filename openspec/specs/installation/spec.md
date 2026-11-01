@@ -1148,8 +1148,9 @@ A value that is not an exact SemVer 2.0 version SHALL be rejected before any net
 > `src/mcp/audio-output.ts::audioDir` and `src/fluid-roots.ts` (both the legacy and the
 > in-cache candidate of each subsystem, not only the one `fluidSubsystemDirs` resolves).
 > Kesha's names: logs `kesha.ndjson`, `kesha.<n>.ndjson` and `diagnostic-logs.json`
-> (`src/diagnostic-log.ts:11-12`, `:180`), MCP audio `<uuid>.<ext>` (`src/mcp/audio-output.ts:26`). The ownership table
-> in design.md is the one list of what is removed.*
+> (`src/diagnostic-log.ts::ACTIVE_LOG_FILE`, `STATE_FILE`, `listRotatedLogFiles`), MCP audio `<uuid>.<ext>`
+> (`src/mcp/audio-output.ts::allocAudioPath`). The ownership table in
+> [design.md](../../changes/archive/2026-11-02-add-uninstall/design.md) is the one list of what is removed.*
 
 ### Requirement: Uninstall keeps what Kesha did not create and names it
 
