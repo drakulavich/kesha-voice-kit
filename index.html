@@ -192,7 +192,7 @@
               <span class="stat-label">Detection langs</span>
             </li>
             <li>
-              <span class="stat-num">~65 MB</span>
+              <span class="stat-num">~67-74 MB</span>
               <span class="stat-label">Published engine binary</span>
             </li>
             <li>
@@ -230,7 +230,7 @@
               <h3>Speech-to-text</h3>
               <p>
                 25 languages via NVIDIA Parakeet TDT. ~19× faster than Whisper on Apple Silicon,
-                ~2.5× on CPU. Auto language detection, optional VAD for long audio,
+                ~10× on an x86 CPU. Auto language detection, optional VAD for long audio,
                 word-level timestamps, plain text, or LLM-friendly TOON output.
               </p>
               <ul class="chip-row" role="list">
@@ -254,10 +254,10 @@
               <h3>Speaker diarization</h3>
               <p>
                 Drop a meeting recording in, get back timestamped segments tagged with a stable
-                speaker ID. Powered by FluidAudio’s Sortformer model running on the Apple Neural
-                Engine via a Swift sidecar — ~4.6× real-time on a 71-minute Zoom call. The cold
-                ANE warmup gets extra headroom so the first <code>--speakers</code> call on a
-                fresh process does not hit a false timeout.
+                speaker ID. Powered by FluidAudio’s Sortformer model on the Apple Neural Engine,
+                running inside the engine process. <code>kesha install --diarize</code> installs
+                it with VAD and warms the compiled model, so the first <code>--speakers</code>
+                run skips the cold compile.
               </p>
               <ul class="chip-row" role="list">
                 <li>--speakers</li>
@@ -265,6 +265,49 @@
                 <li>Sortformer (CoreML)</li>
                 <li>opt-in install</li>
               </ul>
+            </article>
+
+            <article class="feature feature--wide">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M9 7V3M15 7V3" />
+                  <path d="M6 7h12v4a6 6 0 0 1-12 0z" />
+                  <path d="M12 17v4" />
+                </svg>
+              </div>
+              <span class="badge-new">New</span>
+              <h3>MCP server</h3>
+              <p>
+                <code>kesha mcp</code> runs a local Model Context Protocol server over stdio with
+                four tools: <code>transcribe_audio</code>, <code>synthesize_speech</code>,
+                <code>list_voices</code> and <code>list_languages</code>. Add it to Claude Code
+                with <code>claude mcp add kesha -- kesha mcp</code>, or to Claude Desktop, Codex,
+                Gemini CLI or Cursor with one config entry. A missing engine or model fails the
+                tool with a <code>kesha install</code> hint; nothing downloads on its own.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>kesha mcp</li>
+                <li>stdio</li>
+                <li>Claude · Codex · Gemini · Cursor</li>
+              </ul>
+            </article>
+
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M12 3v12" />
+                  <path d="M7 10l5 5 5-5" />
+                  <path d="M4 21h16" />
+                </svg>
+              </div>
+              <span class="badge-new">New</span>
+              <h3>First-run install offer</h3>
+              <p>
+                Run <code>kesha audio.ogg</code> before installing anything and, in a terminal,
+                Kesha shows the install plan, asks once, and on yes installs and transcribes in
+                the same run. Piped and non-interactive runs keep the error and its install
+                hint.
+              </p>
             </article>
 
             <article class="feature">
@@ -281,8 +324,9 @@
               <p>
                 Kokoro runs through CoreML/ANE on Apple Silicon and ONNX on Linux and Windows;
                 Vosk-TTS covers Russian, and macOS system voices need no model download. macOS
-                auto-routes from the text language; Linux and Windows use <code>--lang</code> or
-                <code>--voice</code>. Kokoro (ANE or ONNX) and Vosk support SSML
+                auto-routes from the text language. On Linux and Windows mostly-Cyrillic text
+                still goes to <code>ru-vosk-m02</code>; other languages use <code>--lang</code>
+                or <code>--voice</code>. Kokoro (ANE or ONNX) and Vosk support SSML
                 <code>&lt;prosody rate&gt;</code> and <code>&lt;break&gt;</code>;
                 <code>&lt;emphasis&gt;</code> is Vosk-only. macOS system voices reject
                 <code>--ssml</code>.
@@ -299,13 +343,15 @@
               </div>
               <h3>OGG/Opus voice notes</h3>
               <p>
-                Synthesize straight into the format Telegram, WhatsApp, Signal and Discord
-                expect for inline voice messages — ~24× smaller than WAV. Pick a bitrate; the
-                engine handles the OggOpus container, no ffmpeg required.
+                Synthesize straight into a Telegram-ready voice note, ~24× smaller than WAV.
+                The default is 32 kbps; <code>--bitrate</code> takes 6000 to 510000 bits/s and
+                <code>--sample-rate</code> takes 8000, 12000, 16000, 24000 or 48000. The engine
+                handles the OggOpus container, no ffmpeg required.
               </p>
               <ul class="chip-row" role="list">
                 <li>--format ogg-opus</li>
-                <li>16 / 32 / 64 kbps</li>
+                <li>32 kbps default</li>
+                <li>--bitrate</li>
               </ul>
             </article>
 
@@ -359,22 +405,6 @@
             <article class="feature">
               <div class="feature__icon" aria-hidden="true">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M4 4h16v6H4z" />
-                  <path d="M4 14h16v6H4z" />
-                  <path d="M8 7h.01M8 17h.01" />
-                </svg>
-              </div>
-              <h3>Persistent <code>--stdin-loop</code></h3>
-              <p>
-                One TTS process, many requests. Models stay in memory across calls so each
-                synthesis hits ~10 ms cold-start instead of ~800 ms. Ideal for chatbots,
-                live agents, and long agentic loops.
-              </p>
-            </article>
-
-            <article class="feature">
-              <div class="feature__icon" aria-hidden="true">
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
                   <rect x="9" y="3" width="6" height="12" rx="3" />
                   <path d="M5 11a7 7 0 0 0 14 0" />
                   <path d="M12 18v3" />
@@ -407,10 +437,11 @@
               </div>
               <h3>Privacy-safe diagnostic logs</h3>
               <p>
-                Opt-in local-only command events with paths and user-supplied text redacted.
-                <code>kesha doctor</code> surfaces status; <code>kesha logs</code> manages them;
-                <code>kesha support-bundle</code> bundles them for support. Mode
-                <code>retain-on-failure</code> keeps logs only when a command actually fails.
+                Local-only command events with paths and user-supplied text redacted. The
+                default mode, <code>retain-on-failure</code>, writes a log only when a command
+                fails, so passing commands leave no file. <code>kesha doctor</code> surfaces
+                status; <code>kesha logs</code> manages them; <code>kesha support-bundle</code>
+                bundles them for support.
               </p>
               <ul class="chip-row" role="list">
                 <li>kesha doctor</li>
@@ -448,6 +479,32 @@
               </ul>
             </article>
 
+            <article class="feature">
+              <div class="feature__icon" aria-hidden="true">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <path d="M3 10.5 12 3l9 7.5" />
+                  <path d="M5 9.5V21h14V9.5" />
+                  <path d="M10 21v-6h4v6" />
+                </svg>
+              </div>
+              <h3>One home for every state file</h3>
+              <p>
+                Set <code>KESHA_HOME</code> and the model cache, diagnostic logs, the stats
+                database, and MCP audio all live under one directory with the same layout on
+                every platform: <code>cache/</code>, <code>logs/</code>,
+                <code>stats.sqlite</code>, <code>mcp-audio/</code>. A per-location variable such
+                as <code>KESHA_CACHE_DIR</code> still wins; unset, nothing changes and nothing is
+                migrated. <code>kesha status --json</code> and <code>kesha doctor --json</code>
+                report each path with its source. On darwin-arm64 some FluidAudio files still
+                stay outside <code>KESHA_HOME</code>.
+              </p>
+              <ul class="chip-row" role="list">
+                <li>KESHA_HOME</li>
+                <li>cache · logs · stats</li>
+                <li>status --json paths</li>
+              </ul>
+            </article>
+
             <article class="feature feature--wide">
               <div class="feature__icon" aria-hidden="true">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -456,7 +513,6 @@
                   <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
                 </svg>
               </div>
-              <span class="badge-new">New</span>
               <h3>Structured errors and events</h3>
               <p>
                 Every failure path prints a stable, machine-readable <code>error [CODE]: …</code>
@@ -479,27 +535,19 @@
             <article class="feature">
               <div class="feature__icon" aria-hidden="true">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
-                  <path d="M3 10.5 12 3l9 7.5" />
-                  <path d="M5 9.5V21h14V9.5" />
-                  <path d="M10 21v-6h4v6" />
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <path d="M7 12l3 3 7-7" />
                 </svg>
               </div>
               <span class="badge-new">New</span>
-              <h3>One home for every state file</h3>
+              <h3><code>kesha status --check</code></h3>
               <p>
-                Set <code>KESHA_HOME</code> and the model cache, diagnostic logs, the stats
-                database, and MCP audio all live under one directory with the same layout on
-                every platform: <code>cache/</code>, <code>logs/</code>,
-                <code>stats.sqlite</code>, <code>mcp-audio/</code>. A per-location variable such
-                as <code>KESHA_CACHE_DIR</code> still wins; unset, nothing changes and nothing is
-                migrated. <code>kesha status --json</code> and <code>kesha doctor --json</code>
-                report each path with its source.
+                Readiness by exit code, for scripts. It exits 0 with no output when the engine
+                and the ASR model are installed. Otherwise it exits 1 with
+                <code>E_MODEL_MISSING</code> or <code>E_ENGINE_SPAWN</code>, or with
+                <code>E_ENGINE_PROTOCOL</code> when the engine does not answer within 15 seconds.
+                Plain <code>status</code> and <code>status --json</code> still exit 0.
               </p>
-              <ul class="chip-row" role="list">
-                <li>KESHA_HOME</li>
-                <li>cache · logs · stats</li>
-                <li>status --json paths</li>
-              </ul>
             </article>
 
             <article class="feature feature--rust">
@@ -513,10 +561,11 @@
               <h3>Rust engine, zero deps</h3>
               <p>
                 A single Rust binary for macOS arm64, Linux x64, and Windows x64. FluidAudio
-                (CoreML) on Apple Silicon via dedicated sidecars (diarization, TTS, language
-                detection); ort (ONNX) elsewhere. Symphonia decodes WAV, MP3, OGG/Opus, FLAC,
-                AAC, M4A, AIFF; pure-Rust <code>opus</code> + <code>flacenc</code> handle encode
-                — royalty-free codecs, no C dep, no patent exposure. Linux <code>.deb</code> and
+                (CoreML) runs in-process on Apple Silicon; two Swift sidecars cover macOS system
+                voices (<code>say-avspeech</code>) and text-language detection
+                (<code>kesha-textlang</code>); ort (ONNX) elsewhere. Kesha reads ogg, opus, mp3,
+                m4a, aac, wav, flac, aiff and webm. Encoding uses one statically linked libopus
+                and pure-Rust FLAC: royalty-free codecs, no patent exposure. Linux <code>.deb</code> and
                 <code>.rpm</code> packages signed with Sigstore.
                 <strong>No ffmpeg. No Python. No native Node addons.</strong>
               </p>
@@ -552,8 +601,7 @@
             </h2>
             <p class="section-sub">
               Real output from <code>kesha say</code> — Kokoro-82M for English, Vosk-TTS for Russian.
-              SSML <code>&lt;prosody rate&gt;</code> renders the same text at different speeds without
-              resampling artifacts. Kokoro and Vosk honor <code>&lt;prosody&gt;</code> and
+              SSML <code>&lt;prosody rate&gt;</code> renders the same text at different speeds. Kokoro and Vosk honor <code>&lt;prosody&gt;</code> and
               <code>&lt;break&gt;</code>; <code>&lt;emphasis&gt;</code> is Vosk-only.
             </p>
           </header>
@@ -583,7 +631,7 @@
                 >
               </header>
               <p class="audio-card__text">
-                Same text, x-fast prosody. Tempo only — pitch and timbre unchanged.
+                Same text, x-fast prosody.
               </p>
               <div
                 class="audio-player"
@@ -645,8 +693,9 @@
               </h2>
               <p class="section-sub">
                 Compared against Whisper <code>large-v3-turbo</code> across Russian and English
-                clips — every engine left to auto-detect language. CoreML on M-series lands at roughly
-                19× real-time; the ONNX path on x86 still beats Whisper by ~2.5×.
+                clips — every engine left to auto-detect language. CoreML on M-series is roughly
+                19× faster than openai-whisper; the ONNX path on an x86 CPU is ~10× faster than
+                openai-whisper and ~2.5× faster than faster-whisper.
               </p>
               <ul class="bench-stats" role="list">
                 <li>
@@ -654,11 +703,11 @@
                   <span>vs openai-whisper · M-series</span>
                 </li>
                 <li>
-                  <strong>~2.5×</strong>
+                  <strong>~10×</strong>
                   <span>vs openai-whisper · CPU x86</span>
                 </li>
                 <li>
-                  <strong>~7×</strong>
+                  <strong>~30-38×</strong>
                   <span>vs faster-whisper · M-series</span>
                 </li>
               </ul>
@@ -695,7 +744,7 @@
               <span class="serif italic">Three commands</span> to a working transcript.
             </h2>
             <p class="section-sub">
-              Requires <a href="https://bun.sh" target="_blank" rel="noopener">Bun</a> ≥ 1.3 on
+              Requires <a href="https://bun.sh" target="_blank" rel="noopener">Bun</a> ≥ 1.4.4 on
               macOS arm64, Linux x64, or Windows x64. Engine and models download only when you
               ask them to.
             </p>
@@ -726,10 +775,12 @@
               <div class="step__num">02</div>
               <h3>Install Kesha</h3>
               <p>
-                Preview the size, then explicitly download the engine and base STT models.
-                Progress and recovery hints go to stderr; Kesha never downloads them while you
-                transcribe or speak. Add <code>--tts</code> or <code>--vad</code> only when those
-                workflows need them.
+                Preview the size, then explicitly download the engine and base STT models: about
+                0.6 GB on Apple Silicon, 2.5 GB on Linux and Windows. <code>kesha init</code> is
+                the guided alternative. Progress and recovery hints go to stderr. Skip this step
+                and the first <code>kesha audio.ogg</code> in a terminal shows the plan and asks
+                once before it downloads; piped runs keep the error. Add <code>--tts</code> or
+                <code>--vad</code> only when those workflows need them.
               </p>
               <div class="code-block">
                 <pre><code><span class="muted">$</span> bun add -g @drakulavich/kesha-voice-kit
@@ -786,7 +837,7 @@ kesha install --plan && kesha install" aria-label="Copy">
 <span class="muted">$</span> kesha --json --timestamps interview.ogg
 
 <span class="cm"># Meeting transcript with speaker IDs (darwin-arm64)</span>
-<span class="muted">$</span> kesha --json --vad --speakers meeting.m4a
+<span class="muted">$</span> kesha install --diarize && kesha --json --speakers meeting.m4a
 
 <span class="cm"># Warn if detected language differs</span>
 <span class="muted">$</span> kesha --lang en interview.wav
@@ -827,17 +878,24 @@ kesha install --plan && kesha install" aria-label="Copy">
 
             <div class="tabs__panel" data-panel="api">
               <div class="code-block code-block--lg">
-                <pre><code><span class="kw">import</span> { transcribe, downloadModel } <span class="kw">from</span> <span class="str">"@drakulavich/kesha-voice-kit/core"</span>;
+                <pre><code><span class="kw">import</span> { install, transcribe, say, KeshaError } <span class="kw">from</span> <span class="str">"@drakulavich/kesha-voice-kit/core"</span>;
 
-<span class="cm">// One-time install</span>
-<span class="kw">await</span> downloadModel();
+<span class="cm">// The one call that downloads: engine, ASR models, English TTS</span>
+<span class="kw">await</span> install({ tts: [<span class="str">"en"</span>] });
 
-<span class="cm">// Transcribe a file</span>
-<span class="kw">const</span> text = <span class="kw">await</span> transcribe(<span class="str">"audio.ogg"</span>);
+<span class="cm">// Transcribe a file: resolves to a TranscribeResult</span>
+<span class="kw">const</span> { text, lang } = <span class="kw">await</span> transcribe(<span class="str">"audio.ogg"</span>);
 
-<span class="cm">// With detection metadata</span>
-<span class="kw">const</span> result = <span class="kw">await</span> transcribe(<span class="str">"audio.ogg"</span>, { format: <span class="str">"json"</span> });
-console.<span class="fn">log</span>(result.language, result.confidence);</code></pre>
+<span class="cm">// Speak: resolves to the audio bytes</span>
+<span class="kw">const</span> wav = <span class="kw">await</span> say({ text: <span class="str">"Hello"</span> });
+
+<span class="cm">// Every rejection is a KeshaError with a stable code</span>
+<span class="kw">try</span> {
+  <span class="kw">await</span> transcribe(<span class="str">"note.ogg"</span>);
+} <span class="kw">catch</span> (err) {
+  <span class="kw">if</span> (err <span class="kw">instanceof</span> KeshaError && err.code === <span class="str">"E_ENGINE_SPAWN"</span>) console.<span class="fn">error</span>(err.hint);
+  <span class="kw">else throw</span> err;
+}</code></pre>
               </div>
             </div>
 
@@ -874,12 +932,12 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
           <header class="section-head">
             <p class="section-eyebrow">What's inside</p>
             <h2 class="section-title">
-              <span class="serif italic">Nine models,</span> one runtime.
+              <span class="serif italic">Every model,</span> one runtime.
             </h2>
             <p class="section-sub">
-              Each model is best-in-class for its task and runs through
-              <code>kesha-engine</code> — Rust, with CoreML sidecars on Apple Silicon and ONNX
-              everywhere else. Nine multilingual voices ship in one bundle.
+              Each model runs through <code>kesha-engine</code>, written in Rust: CoreML
+              in-process on Apple Silicon and ONNX everywhere else. Text-to-speech covers nine
+              languages across Kokoro and Vosk.
             </p>
           </header>
 
@@ -893,7 +951,7 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
             <div class="models-table__row" role="row">
               <span class="model-name">NVIDIA Parakeet TDT 0.6B v3</span>
               <span class="model-task">Speech-to-text</span>
-              <span class="model-size">~2.5 GB</span>
+              <span class="model-size">~2.5 GB ONNX, ~0.5 GB CoreML</span>
               <span>
                 <a
                   href="https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3"
@@ -918,9 +976,19 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
             </div>
             <div class="models-table__row" role="row">
               <span class="model-name">Apple NLLanguageRecognizer</span>
-              <span class="model-task">Text language detection</span>
+              <span class="model-task">Text language detection (macOS)</span>
               <span class="model-size">built-in</span>
               <span>macOS framework</span>
+            </div>
+            <div class="models-table__row" role="row">
+              <span class="model-name">tinyld</span>
+              <span class="model-task">Text language detection (elsewhere)</span>
+              <span class="model-size">bundled</span>
+              <span>
+                <a href="https://github.com/komodojp/tinyld" target="_blank" rel="noopener"
+                  >komodojp/tinyld ↗</a
+                >
+              </span>
             </div>
             <div class="models-table__row" role="row">
               <span class="model-name">Silero VAD v5 <em>(opt-in)</em></span>
@@ -934,8 +1002,8 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
             </div>
             <div class="models-table__row" role="row">
               <span class="model-name">Kokoro-82M <em>(opt-in)</em></span>
-              <span class="model-task">Text-to-speech · English</span>
-              <span class="model-size">~990 MB</span>
+              <span class="model-task">Text-to-speech (ONNX) · en, es, fr, it, pt</span>
+              <span class="model-size">~326 MB</span>
               <span>
                 <a
                   href="https://huggingface.co/hexgrad/Kokoro-82M"
@@ -946,9 +1014,22 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
               </span>
             </div>
             <div class="models-table__row" role="row">
+              <span class="model-name">CharsiuG2P <em>(opt-in)</em></span>
+              <span class="model-task">Phonemes for es, fr, it, pt (ONNX)</span>
+              <span class="model-size">~106 MB</span>
+              <span>
+                <a
+                  href="https://huggingface.co/klebster/g2p_multilingual_byT5_tiny_onnx"
+                  target="_blank"
+                  rel="noopener"
+                  >HuggingFace ↗</a
+                >
+              </span>
+            </div>
+            <div class="models-table__row" role="row">
               <span class="model-name">Vosk-TTS <em>(opt-in)</em></span>
               <span class="model-task">Text-to-speech · Russian</span>
-              <span class="model-size">bundled</span>
+              <span class="model-size">~937 MB</span>
               <span>
                 <a href="https://github.com/alphacep/vosk-tts" target="_blank" rel="noopener"
                   >alphacep/vosk-tts ↗</a
@@ -969,9 +1050,9 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
               </span>
             </div>
             <div class="models-table__row" role="row">
-              <span class="model-name">FluidAudio Kokoro — multilingual <em>(opt-in, darwin-arm64)</em></span>
-              <span class="model-task">Text-to-speech (CoreML) · en + native zh; es/fr/it/pt via Eng G2P</span>
-              <span class="model-size">~990 MB</span>
+              <span class="model-name">FluidAudio Kokoro, multilingual <em>(opt-in, darwin-arm64)</em></span>
+              <span class="model-task">Text-to-speech (CoreML) · en, es, fr, it, pt, hi, ja, zh</span>
+              <span class="model-size">~105 MB for en; zh adds ~253 MB</span>
               <span>
                 <a
                   href="https://github.com/FluidInference/FluidAudio"
@@ -987,8 +1068,8 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
             Audio decoding via
             <a href="https://github.com/pdeljanov/Symphonia" target="_blank" rel="noopener"
               >Symphonia</a
-            >
-            — WAV, MP3, OGG/Opus, FLAC, AAC, M4A, AIFF.
+            >, with a libopus adapter for Opus: ogg, opus, mp3, m4a, aac, wav, flac, aiff and
+            webm.
           </p>
         </div>
       </section>
@@ -1082,29 +1163,37 @@ console.<span class="fn">log</span>(result.language, result.confidence);</code><
               </div>
               <h3>Raycast</h3>
               <p>
-                macOS launcher commands: transcribe selected audio, speak the clipboard. From the
-                <code>raycast/</code> directory.
+                <em>Dictate to Clipboard</em> on macOS: records with a live meter, auto-stops on
+                silence, transcribes locally, and copies the text.
               </p>
               <a
-                href="https://github.com/drakulavich/kesha-voice-kit/tree/main/raycast"
+                href="https://www.raycast.com/drakulavich/kesha-voice-kit"
                 target="_blank"
                 rel="noopener"
-                >Source &amp; install →</a
+                >Raycast Store →</a
               >
             </article>
 
-            <article class="integration-card">
+            <article class="integration-card integration-card--new">
               <div class="integration-card__icon" aria-hidden="true">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
                   <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" />
                 </svg>
               </div>
-              <h3>Programmatic API</h3>
+              <span class="badge-new">New</span>
+              <h3>Core API v2</h3>
               <p>
-                Import <code>transcribe()</code> and <code>downloadModel()</code> directly into any
-                Bun/Node project.
+                Import <code>transcribe()</code>, <code>say()</code>, <code>install()</code> and
+                <code>capabilities()</code> into a Bun program. <code>transcribe()</code>
+                resolves to a <code>TranscribeResult</code>, and every rejection is a
+                <code>KeshaError</code> with a stable code.
               </p>
-              <a href="#install">See examples →</a>
+              <a
+                href="https://github.com/drakulavich/kesha-voice-kit/blob/main/docs/api.md"
+                target="_blank"
+                rel="noopener"
+                >API docs →</a
+              >
             </article>
 
             <article class="integration-card">
