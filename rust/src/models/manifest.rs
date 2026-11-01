@@ -457,7 +457,7 @@ macro_rules! ane_en_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/2568276a60ff6e7f312afce3dc9e3f07521cb48d/",
                 "ANE/",
                 $rel
             ),
@@ -536,24 +536,20 @@ pub(super) const ANE_EN_FILES: &[ModelFile] = &[
         "2e7d69128b59d615fc3d3cf85637a687235fc086b1eb136359adb11a61615f6b"
     ),
     ane_en_file!(
-        "KokoroProsody.mlmodelc/analytics/coremldata.bin",
-        "7708aab83deabd72539512acd850447fa955187608d9710a828943aa8498c6b8"
+        "KokoroProsody_v2.mlmodelc/analytics/coremldata.bin",
+        "804d7d2e9a8fed345cedb57da61bd27fdd95db22a070cfa7d42ccd4f8e80a443"
     ),
     ane_en_file!(
-        "KokoroProsody.mlmodelc/coremldata.bin",
-        "d65d87f246a6546c0fb7af6efe020106c38604e5c2b9ca00a78561c115dda33e"
+        "KokoroProsody_v2.mlmodelc/coremldata.bin",
+        "db8776a4896f690fd254cdb68a4551c168411c9b3fb98219630215bc3c357986"
     ),
     ane_en_file!(
-        "KokoroProsody.mlmodelc/metadata.json",
-        "a780887a790fe54e2ad14d26b2d936eca4fc6ab9f727e60f7e01f0c208163eef"
+        "KokoroProsody_v2.mlmodelc/model.mil",
+        "e6acad9f44d70b1dba0aea6a5d25ee4edf68fe8f2933399ee81f70ace61cbc8b"
     ),
     ane_en_file!(
-        "KokoroProsody.mlmodelc/model.mil",
-        "e6b332f1ed1b22178a406a16c9767c0eed2d64b7f0c17c86ccb2b6abf863b1ed"
-    ),
-    ane_en_file!(
-        "KokoroProsody.mlmodelc/weights/weight.bin",
-        "d3c2670eb0c528802f0815d917dcb77bf17faf063bd2bc09cfd0970e2bc1444c"
+        "KokoroProsody_v2.mlmodelc/weights/weight.bin",
+        "70eea4cd2523992fa1fea840e31ab6f4fdd69c1598e220985a2ae6ea5da1e944"
     ),
     ane_en_file!(
         "KokoroNoise_v2.mlmodelc/analytics/coremldata.bin",
@@ -631,7 +627,7 @@ macro_rules! kokoro_g2p_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/2568276a60ff6e7f312afce3dc9e3f07521cb48d/",
                 "",
                 $rel
             ),
@@ -706,7 +702,7 @@ macro_rules! ane_zh_file {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/2568276a60ff6e7f312afce3dc9e3f07521cb48d/",
                 "ANE-zh/",
                 $rel
             ),
@@ -717,13 +713,11 @@ macro_rules! ane_zh_file {
 
 /// The Mandarin (`ANE-zh/`) chain, staged only when `zh` is requested.
 ///
-/// Carries `g2pw/g2pw.mlmodelc` (159 MB) because upstream lists it in
-/// `requiredModelsZh`, even though the g2pW disambiguator cannot currently
-/// activate: `ensureMandarinG2pw` needs `ANE-zh/g2pw/vocab.txt`, which upstream
-/// has not published (404 at this pin), so Mandarin G2P runs dict-only either
-/// way. It is staged anyway because `ensureModels` checks the whole required set
-/// before it will load anything: omit the bundle and Mandarin stops working
-/// entirely under offline mode. Staging an empty directory would satisfy that
+/// Carries `g2pw/g2pw.mlmodelc` (159 MB) and `g2pw/vocab.txt`: upstream lists the
+/// bundle in `requiredModelsZh`, and `ensureMandarinG2pw` fetches the vocab when
+/// it is missing, so both are staged to keep synthesis offline. `ensureModels`
+/// checks the whole required set before it will load anything: omit the bundle
+/// and Mandarin stops working entirely under offline mode. Staging an empty directory would satisfy that
 /// check and then be purged by the next `kesha install`, which repairs
 /// `.mlmodelc` bundles missing `model.mil` (#709).
 #[cfg(all(system_kokoro, target_arch = "aarch64"))]
@@ -789,24 +783,20 @@ pub(super) const ANE_ZH_FILES: &[ModelFile] = &[
         "2e7d69128b59d615fc3d3cf85637a687235fc086b1eb136359adb11a61615f6b"
     ),
     ane_zh_file!(
-        "KokoroProsody.mlmodelc/analytics/coremldata.bin",
-        "3c90a008bfe021f8c24f39d26706a894cffb3cc6d5dca1ad131f54547f0554a1"
+        "KokoroProsody_v2.mlmodelc/analytics/coremldata.bin",
+        "623c7ad069ba684c8d58d545de23e72456d66deeb5ce84c59ae2f70ccbaa37a2"
     ),
     ane_zh_file!(
-        "KokoroProsody.mlmodelc/coremldata.bin",
-        "7f1932bc07f52171e0fff898ae0e9c289a8c73aaf0a2ac06b2352b8ef58afc61"
+        "KokoroProsody_v2.mlmodelc/coremldata.bin",
+        "ae6eb6035b2e24124753a6fe42a66972723da55630d966def4dc3fc655f3e1ff"
     ),
     ane_zh_file!(
-        "KokoroProsody.mlmodelc/metadata.json",
-        "dea9dbc84c8b96cd0e17961f4bd5eb6972d762e9b18f0a08ceee4b4e1cdb49ab"
+        "KokoroProsody_v2.mlmodelc/model.mil",
+        "b44105f7428f17dcb8f0b1544f08b3ce038927610180ad726c3ff5aec693fa7e"
     ),
     ane_zh_file!(
-        "KokoroProsody.mlmodelc/model.mil",
-        "df6b4852bbade0f94c63721ad2e05171efbe915bcc9bbd59d05cdbda8cda17d7"
-    ),
-    ane_zh_file!(
-        "KokoroProsody.mlmodelc/weights/weight.bin",
-        "0d7229d31a47e1d5c054c24b7aed8ce0df20460523472a55ff998f5939a75cf8"
+        "KokoroProsody_v2.mlmodelc/weights/weight.bin",
+        "9835a7d16162985bbac5cde1ad206b1092e935ffc958146a4d137ab83eeae82f"
     ),
     ane_zh_file!(
         "KokoroNoise_v2.mlmodelc/analytics/coremldata.bin",
@@ -903,6 +893,11 @@ pub(super) const ANE_ZH_FILES: &[ModelFile] = &[
         "g2pw/g2pw.mlmodelc/weights/weight.bin",
         "95b5d709600e2133f8ea5139268ed2b5e539787d37e1f69d8bed37ba2cdc5aaa"
     ),
+    // Published at 2568276; FluidAudio 0.18 fetches it in `ensureMandarinG2pw` when absent.
+    ane_zh_file!(
+        "g2pw/vocab.txt",
+        "45bbac6b341c319adc98a532532882e91a9cefc0329aa57bac9ae761c27b291c"
+    ),
 ];
 
 #[cfg(all(system_kokoro, target_arch = "aarch64"))]
@@ -911,7 +906,7 @@ macro_rules! ane_zh_asset {
         ModelFile {
             rel_path: $rel,
             url: concat!(
-                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/",
+                "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/2568276a60ff6e7f312afce3dc9e3f07521cb48d/",
                 $remote
             ),
             sha256: $sha,
@@ -1458,7 +1453,7 @@ mod tts_tests {
             "KokoroAlbert.mlmodelc",
             "KokoroPostAlbert.mlmodelc",
             "KokoroAlignment.mlmodelc",
-            "KokoroProsody.mlmodelc",
+            "KokoroProsody_v2.mlmodelc",
             "KokoroNoise_v2.mlmodelc",
             "KokoroVocoder.mlmodelc",
             "KokoroTail_v2.mlmodelc",
@@ -1475,7 +1470,11 @@ mod tts_tests {
         let has = |m: &[ModelFile], p: &str| m.iter().any(|f| f.rel_path == p);
 
         for bundle in CHAIN {
-            for part in PARTS {
+            // Upstream publishes KokoroProsody_v2 without metadata.json.
+            for part in PARTS
+                .iter()
+                .filter(|p| !(bundle == "KokoroProsody_v2.mlmodelc" && **p == "metadata.json"))
+            {
                 let rel = format!("{bundle}/{part}");
                 assert!(has(ANE_EN_FILES, &rel), "English chain is missing {rel}");
                 assert!(has(ANE_ZH_FILES, &rel), "Mandarin chain is missing {rel}");
@@ -1499,6 +1498,10 @@ mod tts_tests {
                 "requiredModelsZh lists g2pw.mlmodelc, so it must be staged whole"
             );
         }
+        assert!(
+            has(ANE_ZH_FILES, "g2pw/vocab.txt"),
+            "ensureMandarinG2pw fetches g2pw/vocab.txt at synthesis unless it is staged"
+        );
         for required in [
             "G2PEncoder.mlmodelc/model.mil",
             "G2PDecoder.mlmodelc/model.mil",
@@ -1550,7 +1553,7 @@ mod tts_tests {
                 );
                 assert!(
                     f.url.starts_with(
-                        "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/1804dbc0aa6507daa4b5d150e2c76963902a67f9/"
+                        "https://huggingface.co/FluidInference/kokoro-82m-coreml/resolve/2568276a60ff6e7f312afce3dc9e3f07521cb48d/"
                     ),
                     "{f:?} must come from the FluidInference repo FluidAudio itself uses"
                 );
