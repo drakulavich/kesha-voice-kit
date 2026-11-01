@@ -1973,6 +1973,52 @@ process.exit(99);
       },
     );
 
+    test("a log directory inside models/ keeps the file Kesha did not create and the directories leading to it", async () => {
+      const env = isolatedEnv();
+      const logDir = join(env.KESHA_CACHE_DIR, "models", "logs");
+      installedState(env);
+      mkdirSync(logDir, { recursive: true });
+      writeFileSync(join(logDir, "kesha.ndjson"), "x");
+      writeFileSync(join(logDir, "notes.txt"), "mine");
+      const run = await runCli(["uninstall", "--yes"], { env: { ...env, KESHA_LOG_DIR: logDir } });
+      expectContract(run, { exitCode: 0, stdoutEmpty: true, stderrContains: [`${join(logDir, "notes.txt")} (not created by Kesha)`] });
+      expect(readFileSync(join(logDir, "notes.txt"), "utf8")).toBe("mine");
+      expect(existsSync(join(logDir, "kesha.ndjson"))).toBe(false);
+      expect(existsSync(join(env.KESHA_CACHE_DIR, "models", "asr"))).toBe(false);
+      expect(existsSync(join(env.KESHA_CACHE_DIR, "engine"))).toBe(false);
+    });
+
+    test("only empty state directories left are removed, exit 0", async () => {
+      const env = isolatedEnv();
+      mkdirSync(env.KESHA_CACHE_DIR);
+      mkdirSync(env.KESHA_LOG_DIR);
+      const run = await runCli(["uninstall", "--yes"], { env });
+      expectContract(run, { exitCode: 0, stdoutEmpty: true, stderrContains: ["Nothing to remove"] });
+      expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
+      expect(existsSync(env.KESHA_LOG_DIR)).toBe(false);
+    });
+
+    test.skipIf(process.platform === "win32")(
+      "an emptied log directory under a read-only parent is E_UNINSTALL_PARTIAL, exit 1 (needs POSIX permissions)",
+      async () => {
+        const env = isolatedEnv();
+        const parent = join(env.HOME, "ro");
+        const logDir = join(parent, "logs");
+        installedState(env);
+        mkdirSync(logDir, { recursive: true });
+        writeFileSync(join(logDir, "kesha.ndjson"), "x");
+        chmodSync(parent, 0o555);
+        try {
+          const run = await runCli(["uninstall", "--yes"], { env: { ...env, KESHA_LOG_DIR: logDir } });
+          expectContract(run, { exitCode: 1, stdoutEmpty: true, stderrContains: [`error [E_UNINSTALL_PARTIAL]: could not remove ${logDir}:`] });
+        } finally {
+          chmodSync(parent, 0o755);
+        }
+        expect(existsSync(join(logDir, "kesha.ndjson"))).toBe(false);
+        expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
+      },
+    );
+
     test.skipIf(process.platform === "win32")(
       "an unreadable log directory is E_UNINSTALL_PARTIAL, exit 1, not an empty one (needs POSIX permissions)",
       async () => {

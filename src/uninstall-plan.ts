@@ -7,7 +7,7 @@ import { errorMessage } from "./error-utils";
 import { fluidLegacyRootPaths, fluidLegacySubsystemDirs } from "./fluid-roots";
 import { resolveStatePaths } from "./state-paths";
 
-export interface UninstallEntry {
+interface UninstallEntry {
   path: string;
   label: string;
   bytes: number;
