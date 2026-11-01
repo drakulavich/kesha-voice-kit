@@ -77,7 +77,8 @@
 
 - GIVEN `<Model cache>/engine/bin` is a symbolic link to a directory holding Maks's own files
 - WHEN Maks runs `kesha uninstall --yes`
-- THEN the link is gone and every file in the directory it pointed to remains
+- THEN every file in the directory it points to remains, and the link stays
+- AND stderr carries `E_UNINSTALL_PARTIAL` naming the link with the hint to remove it by hand, and the process exits 1
 
 #### Scenario: A custom Engine is left alone
 
