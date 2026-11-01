@@ -57,6 +57,25 @@ describe("buildUninstallPlan", () => {
     },
   );
 
+  test.skipIf(process.platform !== "win32")(
+    "a default Windows install lists the AppData locations and their kesha parents (the win32 layout needs win32 paths)",
+    () => {
+      const home = tempHome("windows");
+      const local = join(home, "AppData", "Local", "kesha");
+      const roaming = join(home, "AppData", "Roaming", "kesha");
+      put(join(home, ".cache", "kesha", "engine", "bin", "kesha-engine.exe"));
+      put(join(local, "logs", "kesha.ndjson"));
+      put(join(roaming, "stats.sqlite"));
+
+      const p = plan(home, {}, "win32");
+
+      expect(removed(p).sort()).toEqual([join(home, ".cache", "kesha", "engine"), join(local, "logs", "kesha.ndjson"), join(roaming, "stats.sqlite")].sort());
+      expect(p.emptyDirs).toContain(local);
+      expect(p.emptyDirs).toContain(roaming);
+      expect(p.engineBin).toBe(join(home, ".cache", "kesha", "engine", "bin", "kesha-engine.exe"));
+    },
+  );
+
   test("KESHA_HOME plus KESHA_LOG_DIR removes the Stats journal and leaves both roots to the empty-directory pass", () => {
     const home = tempHome("relocated");
     const keshaHome = join(home, "kesha-ci");
