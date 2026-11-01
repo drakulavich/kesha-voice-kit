@@ -25,6 +25,7 @@
 - GIVEN an earlier run removed every entry but `~/.cache/kesha` is still there and empty
 - WHEN Ira runs `kesha uninstall --yes`
 - THEN `~/.cache/kesha` is gone and the process exits 0
+- AND without `--yes` it stays, stderr names it with the hint `kesha uninstall --yes`, and the process exits 0
 
 #### Scenario: Nothing is installed
 
@@ -71,6 +72,12 @@
 - GIVEN `KESHA_LOG_DIR` points inside `<Model cache>/models`, which also holds Maks's `notes.txt` in that log directory
 - WHEN Maks runs `kesha uninstall --yes`
 - THEN `notes.txt` and the directories leading to it remain, and every other entry under `models/` is gone
+
+#### Scenario: The Engine directory links to a shared directory
+
+- GIVEN `<Model cache>/engine/bin` is a symbolic link to a directory holding Maks's own files
+- WHEN Maks runs `kesha uninstall --yes`
+- THEN the link is gone and every file in the directory it pointed to remains
 
 #### Scenario: A custom Engine is left alone
 
