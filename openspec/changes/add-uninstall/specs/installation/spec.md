@@ -20,13 +20,6 @@
 - THEN `/tmp/kesha-ci/cache`, `/tmp/kesha-ci/stats.sqlite`, its `-wal` and `-shm` files, `/tmp/kesha-ci/mcp-audio` and the `kesha*.ndjson` logs in `/var/log/kesha` are gone
 - AND `/tmp/kesha-ci` and `/var/log/kesha` are removed only if nothing else is left in them
 
-#### Scenario: Only empty directories are left
-
-- GIVEN an earlier run removed every entry but `~/.cache/kesha` is still there and empty
-- WHEN Ira runs `kesha uninstall --yes`
-- THEN `~/.cache/kesha` is gone and the process exits 0
-- AND without `--yes` it stays, stderr names it with the hint `kesha uninstall --yes`, and the process exits 0
-
 #### Scenario: Nothing is installed
 
 - GIVEN none of the locations exists
@@ -69,16 +62,9 @@
 
 #### Scenario: A log directory inside the Model cache
 
-- GIVEN `KESHA_LOG_DIR` points inside `<Model cache>/models`, which also holds Maks's `notes.txt` in that log directory
+- GIVEN `KESHA_LOG_DIR` points inside `<Model cache>/models`, and that log directory also holds Maks's `notes.txt`
 - WHEN Maks runs `kesha uninstall --yes`
-- THEN `notes.txt` and the directories leading to it remain, and every other entry under `models/` is gone
-
-#### Scenario: The Engine directory links to a shared directory
-
-- GIVEN `<Model cache>/engine/bin` is a symbolic link to a directory holding Maks's own files
-- WHEN Maks runs `kesha uninstall --yes`
-- THEN every file in the directory it points to remains, and the link stays
-- AND stderr carries `E_UNINSTALL_PARTIAL` naming the link with the hint to remove it by hand, and the process exits 1
+- THEN `models/` is kept and named on stderr as holding a file Kesha did not create, and `notes.txt` remains
 
 #### Scenario: A custom Engine is left alone
 
@@ -121,7 +107,6 @@
 - GIVEN no process holds the install lock of the Engine path in effect
 - WHEN Ira runs `kesha uninstall --yes`
 - THEN uninstall takes the lock, removes the planned entries and releases the lock
-- AND the lock stays in place until the last entry is removed, even though it lives inside `engine/`
 - AND no lock directory is left behind and the process exits 0
 
 #### Scenario: An install is still downloading
@@ -148,12 +133,6 @@ When an entry cannot be removed, `kesha uninstall` SHALL report it with `E_UNINS
 - WHEN Ira runs `kesha uninstall --yes`
 - THEN every entry marked removed is gone and stderr carries no `E_UNINSTALL_PARTIAL`
 - AND the process exits 0
-
-#### Scenario: An emptied directory cannot be removed
-
-- GIVEN the Diagnostic log directory is writable but its parent is not
-- WHEN Ira runs `kesha uninstall --yes`
-- THEN the log files are gone, stderr carries `E_UNINSTALL_PARTIAL` naming the log directory, and the process exits 1
 
 #### Scenario: The log directory is read-only
 

@@ -1,7 +1,7 @@
 import { confirm, isCancel } from "@clack/prompts";
 import { defineCommand } from "citty";
-import { existsSync, lstatSync, readdirSync, rmdirSync, rmSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, rmdirSync, rmSync } from "node:fs";
+import { dirname } from "node:path";
 import { isInsideDir } from "../cache-layout";
 import { exitCodeFor, KeshaError } from "../engine/events";
 import { errorMessage } from "../error-utils";
@@ -14,22 +14,9 @@ const CLI_PACKAGE_HINT = "The kesha CLI itself stays: remove it with the package
 
 const entries = (n: number): string => `${n} ${n === 1 ? "entry" : "entries"}`;
 
-export interface RemovalFailure {
-  path: string;
-  reason: string;
-}
-
 function fail(err: KeshaError): void {
   log.error(errorMessage(err));
   process.exitCode = exitCodeFor(err);
-}
-
-function reportFailure(f: RemovalFailure): void {
-  fail(
-    new KeshaError("E_UNINSTALL_PARTIAL", `could not remove ${f.path}: ${f.reason}`, {
-      hint: "make the path writable or remove it by hand, then re-run `kesha uninstall`",
-    }),
-  );
 }
 
 function renderPlan(plan: UninstallPlan): void {
@@ -49,58 +36,26 @@ function missingDirs(path: string): string[] {
   return missing;
 }
 
-const codeOf = (e: unknown): string | undefined => (e as NodeJS.ErrnoException).code;
-
-/**
- * Removes `path` except the protected paths inside it and the directories leading to them,
- * which it returns so they can go once empty. A symbolic link leading to a protected path is
- * never walked and stays, reported as a failure.
- */
-export function removeAround(path: string, protectedPaths: string[], failures: RemovalFailure[]): string[] {
-  if (protectedPaths.includes(path)) return [];
-  const remove = (): string[] => {
-    try {
-      rmSync(path, { recursive: true, force: true });
-    } catch (e) {
-      failures.push({ path, reason: errorMessage(e) });
-    }
-    return [];
-  };
-  if (!protectedPaths.some((p) => isInsideDir(p, path))) return remove();
-  let names: string[];
+/** Removes `path`; false (and an E_UNINSTALL_PARTIAL line) when it could not. */
+function remove(path: string): boolean {
   try {
-    const st = lstatSync(path);
-    if (st.isSymbolicLink()) {
-      failures.push({ path, reason: "it is a symbolic link the install lock is reached through; remove it once no install is running" });
-      return [];
-    }
-    if (!st.isDirectory()) return remove();
-    names = readdirSync(path);
+    rmSync(path, { recursive: true, force: true });
+    return true;
   } catch (e) {
-    if (codeOf(e) === "ENOENT") return [];
-    failures.push({ path, reason: errorMessage(e) });
-    return [];
-  }
-  return [path, ...names.flatMap((name) => removeAround(join(path, name), protectedPaths, failures))];
-}
-
-function isEmptyDir(dir: string): boolean {
-  try {
-    return readdirSync(dir).length === 0;
-  } catch {
+    fail(
+      new KeshaError("E_UNINSTALL_PARTIAL", `could not remove ${path}: ${errorMessage(e)}`, {
+        hint: "make the path writable or remove it by hand, then re-run `kesha uninstall`",
+      }),
+    );
     return false;
   }
 }
 
-/** Removes each directory a listing shows empty, deepest first; anything but "missing" or "not empty" is a failure. */
-export function removeEmptyDirs(dirs: string[], failures: RemovalFailure[]): void {
-  for (const dir of [...new Set(dirs)].sort((a, b) => b.length - a.length)) {
-    try {
-      if (readdirSync(dir).length > 0) continue;
-      rmdirSync(dir);
-    } catch (e) {
-      if (!["ENOENT", "ENOTDIR", "ENOTEMPTY", "EEXIST"].includes(codeOf(e) ?? "")) failures.push({ path: dir, reason: errorMessage(e) });
-    }
+function removeIfEmpty(dir: string): void {
+  try {
+    rmdirSync(dir);
+  } catch {
+    // Not empty or already gone; #1628 lists the other reasons that stay unreported.
   }
 }
 
@@ -120,23 +75,7 @@ export const uninstallCommand = defineCommand({
     const plan = buildUninstallPlan();
     const removing = plan.entries.filter((e) => e.action === "remove");
     if (plan.entries.length > 0) renderPlan(plan);
-    for (const dir of plan.unreadable) {
-      fail(
-        new KeshaError("E_UNINSTALL_PARTIAL", `could not read ${dir.path}, so Kesha files in it stay: ${dir.reason}`, {
-          hint: "make the directory readable and re-run `kesha uninstall`, or remove its kesha* files by hand",
-        }),
-      );
-    }
-    const failures: RemovalFailure[] = [];
-    // An unreadable directory is already reported above.
-    const emptyDirs = plan.emptyDirs.filter((d) => !plan.unreadable.some((u) => u.path === d));
     if (removing.length === 0) {
-      if (args.yes) {
-        removeEmptyDirs(emptyDirs, failures);
-        for (const f of failures) reportFailure(f);
-      } else if (emptyDirs.some(isEmptyDir)) {
-        log.notice(`Empty Kesha directories remain: ${emptyDirs.filter(isEmptyDir).join(", ")}. Run \`kesha uninstall --yes\` to remove them.`);
-      }
       log.notice("Nothing to remove: no Kesha engine, models, logs, stats or MCP audio found.");
       log.notice(CLI_PACKAGE_HINT);
       return;
@@ -165,33 +104,28 @@ export const uninstallCommand = defineCommand({
       }
     }
 
-    const lockDir = `${plan.engineBin}.lock`;
     const lockCreates = missingDirs(dirname(plan.engineBin));
     let release: () => void;
     try {
       release = takeInstallLockNow(plan.engineBin, "kesha uninstall");
     } catch (e) {
-      removeEmptyDirs(lockCreates, []);
+      for (const d of lockCreates) removeIfEmpty(d);
       if (e instanceof KeshaError) return fail(e);
       throw e;
     }
 
-    const protectedPaths = [...plan.entries.filter((e) => e.action === "keep").map((e) => e.path), lockDir];
-    const walked: string[] = [];
-    let failedEntries = 0;
+    // The entry holding the lock (engine/) goes after the release.
+    const holdsLock = (path: string): boolean => isInsideDir(`${plan.engineBin}.lock`, path);
+    let removed = 0;
     try {
-      for (const entry of removing) {
-        const before = failures.length;
-        walked.push(...removeAround(entry.path, protectedPaths, failures));
-        if (failures.length > before) failedEntries++;
-      }
+      for (const e of removing) if (!holdsLock(e.path) && remove(e.path)) removed++;
     } finally {
       release();
     }
-    removeEmptyDirs([...walked, ...lockCreates, ...emptyDirs], failures);
-    for (const f of failures) reportFailure(f);
+    for (const e of removing) if (holdsLock(e.path) && remove(e.path)) removed++;
+    for (const d of [...lockCreates, ...plan.emptyDirs]) removeIfEmpty(d);
 
-    log.notice(failedEntries === 0 ? `Removed ${entries(removing.length)}.` : `Removed ${removing.length - failedEntries} of ${entries(removing.length)}.`);
+    log.notice(removed === removing.length ? `Removed ${entries(removed)}.` : `Removed ${removed} of ${entries(removing.length)}.`);
     log.notice(CLI_PACKAGE_HINT);
   },
 });

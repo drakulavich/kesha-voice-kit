@@ -15,11 +15,9 @@
 - [x] 3.2 `docs/errors.md` row for `E_UNINSTALL_PARTIAL`; the `kesha status --disk` reset hint names `kesha uninstall`
 - [x] 3.3 `rust/src/protocol/describe.rs::CLI_ONLY` publishes `E_UNINSTALL_PARTIAL`; `tests/unit/capabilities-pact.test.ts` lists it as not yet recorded and fails once a re-recorded pact carries it
 
-## 4. Protected removal
+## 4. Plain removal
 
-- [x] 4.1 Removal walks around protected paths (every `keep` entry and the lock), reports every non-missing, non-empty rm/rmdir failure as `E_UNINSTALL_PARTIAL`, and removes empty state directories on every run that is not refused; cli-contracts cases for a log directory inside `models/`, an emptied directory under a read-only parent and a run with only empty directories left; a test that the lock survives the removal of `engine/`
-- [x] 4.2 A symbolic link is never walked; one leading to the lock is removed as a link after release. With nothing left to remove, empty directories go only with `--yes`; without it stderr names them. A unit test for the link and cli-contracts cases for both empty-directory outcomes
-- [x] 4.3 A link leading to the lock stays and is `E_UNINSTALL_PARTIAL`; with `--yes` and nothing left to remove, every empty state directory goes, a parent emptied by its children included
+- [x] 4.1 An entry holding a `keep` is `keep`; `engine/` goes last, after the lock is released; emptied directories go with a plain `rmdir`. The edge cases dropped from #1626 are in #1628
 
 ## Definition of Done
 
