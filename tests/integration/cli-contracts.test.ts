@@ -2,7 +2,7 @@ import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { MAX_TEXT_CHARS } from "../../src/synth";
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { engineVersion } from "../../src/package-info";
 import { engineTarget } from "../../src/engine-targets";
@@ -1871,6 +1871,109 @@ process.exit(99);
     expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
   });
 
+  describe("kesha uninstall (#1625)", () => {
+    function installedState(env: ReturnType<typeof isolatedEnv>): string[] {
+      const files = [
+        join(env.KESHA_CACHE_DIR, "engine", "bin", "kesha-engine"),
+        join(env.KESHA_CACHE_DIR, "models", "asr", "model.onnx"),
+        join(env.KESHA_LOG_DIR, "kesha.ndjson"),
+        env.KESHA_STATS_DB,
+      ];
+      for (const f of files) {
+        mkdirSync(dirname(f), { recursive: true });
+        writeFileSync(f, "x");
+      }
+      return files;
+    }
+
+    test("--yes removes every planned entry and its emptied directories, exit 0, stdout empty", async () => {
+      const env = isolatedEnv();
+      installedState(env);
+      const run = await runCli(["uninstall", "--yes"], { env });
+      expectContract(run, { exitCode: 0, stdoutEmpty: true, stderrContains: ["Removed 4 entries."], stderrNotContains: ["E_UNINSTALL_PARTIAL"] });
+      expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
+      expect(existsSync(env.KESHA_LOG_DIR)).toBe(false);
+      expect(existsSync(env.KESHA_STATS_DB)).toBe(false);
+    });
+
+    test("without a terminal and without --yes it prints the plan, refuses with exit 2 and removes nothing", async () => {
+      const env = isolatedEnv();
+      const files = installedState(env);
+      const run = await runCli(["uninstall"], { env });
+      expectContract(run, {
+        exitCode: 2,
+        stdoutEmpty: true,
+        stderrContains: [
+          "Kesha uninstall plan:",
+          "error [E_INVALID_ARG]: kesha uninstall asks before removing anything and needs a terminal",
+          "kesha uninstall --yes",
+        ],
+      });
+      for (const f of files) expect(existsSync(f)).toBe(true);
+    });
+
+    test("an install holding the lock fails it with E_INSTALL_RACE, exit 1, and nothing is removed", async () => {
+      const env = isolatedEnv();
+      const files = installedState(env);
+      // A live install's lock: the state `kesha install` holds while it downloads, which no command can leave behind on purpose.
+      const lockDir = join(env.KESHA_CACHE_DIR, "engine", "bin", "kesha-engine.lock");
+      mkdirSync(lockDir);
+      writeFileSync(join(lockDir, "owner-test.json"), JSON.stringify({ token: "test", pid: process.pid, host: hostname(), startedAt: Date.now() }));
+      const run = await runCli(["uninstall", "--yes"], { env });
+      expectContract(run, { exitCode: 1, stdoutEmpty: true, stderrContains: ["error [E_INSTALL_RACE]", lockDir] });
+      for (const f of files) expect(existsSync(f)).toBe(true);
+    });
+
+    test.skipIf(process.platform === "win32")(
+      "an Engine directory that cannot hold a lock fails with E_INSTALL_RACE, exit 1, and nothing is removed (needs POSIX permissions)",
+      async () => {
+        const env = isolatedEnv();
+        const files = installedState(env);
+        const engineDir = join(env.HOME, "opt");
+        mkdirSync(engineDir);
+        writeFileSync(join(engineDir, "kesha-engine"), "x");
+        chmodSync(engineDir, 0o555);
+        try {
+          const run = await runCli(["uninstall", "--yes"], { env: { ...env, KESHA_ENGINE_BIN: join(engineDir, "kesha-engine") } });
+          expectContract(run, {
+            exitCode: 1,
+            stdoutEmpty: true,
+            stderrContains: ["error [E_INSTALL_RACE]: cannot create the install lock", join(engineDir, "kesha-engine.lock")],
+          });
+        } finally {
+          chmodSync(engineDir, 0o755);
+        }
+        for (const f of files) expect(existsSync(f)).toBe(true);
+        expect(existsSync(join(engineDir, "kesha-engine"))).toBe(true);
+      },
+    );
+
+    test.skipIf(process.platform === "win32")(
+      "a read-only log directory is E_UNINSTALL_PARTIAL, exit 1, and the other entries are still removed (needs POSIX permissions)",
+      async () => {
+        const env = isolatedEnv();
+        installedState(env);
+        chmodSync(env.KESHA_LOG_DIR, 0o555);
+        try {
+          const run = await runCli(["uninstall", "--yes"], { env });
+          expectContract(run, {
+            exitCode: 1,
+            stdoutEmpty: true,
+            stderrContains: [
+              `error [E_UNINSTALL_PARTIAL]: could not remove ${join(env.KESHA_LOG_DIR, "kesha.ndjson")}`,
+              "make the path writable or remove it by hand",
+            ],
+          });
+        } finally {
+          chmodSync(env.KESHA_LOG_DIR, 0o755);
+        }
+        expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
+        expect(existsSync(env.KESHA_STATS_DB)).toBe(false);
+        expect(existsSync(join(env.KESHA_LOG_DIR, "kesha.ndjson"))).toBe(true);
+      },
+    );
+  });
+
   test("diagnostic logs record failed install events without content, and a coded engine failure exits with the engine's status (#1186)", async () => {
     const dir = makeTempDir("kesha-cli-contract-install-diagnostic-failure-");
     const enginePath = createFakeEngine(dir);
@@ -3395,6 +3498,34 @@ const STDOUT_PURITY_SWEEP: Record<string, SweepEntry> = {
         args: (dir) => ["support-bundle", "--output", join(dir, "bundle.tar.gz")],
         exitCode: 0,
         stderr: "Created support bundle: ",
+        stdout: "empty",
+      },
+    ],
+  },
+  uninstall: {
+    errors: [
+      {
+        name: "no terminal and no --yes",
+        args: () => ["uninstall"],
+        env: (dir) => {
+          writeFileSync(join(dir, "stats.sqlite"), "x");
+          return isolatedEnv(dir);
+        },
+        exitCode: 2,
+        stderr: "kesha uninstall --yes",
+      },
+      extraArgument(() => ["uninstall", "--yes", "extra"]),
+    ],
+    progress: [
+      {
+        name: "--yes",
+        args: () => ["uninstall", "--yes"],
+        env: (dir) => {
+          writeFileSync(join(dir, "stats.sqlite"), "x");
+          return isolatedEnv(dir);
+        },
+        exitCode: 0,
+        stderr: "Removed 1 entry.",
         stdout: "empty",
       },
     ],

@@ -238,7 +238,7 @@ function showDiskUsage(disk: StatusDiskUsage): void {
   logExternalRoots(disk);
   if (disk.staleSortformerBytes > 0) log.info(staleSortformerHint(disk.staleSortformerBytes));
   log.info("");
-  log.info(pc.dim(`  To reset cache: rm -rf ${disk.cachePath} — next \`kesha install\` re-downloads.`));
+  log.info(pc.dim("  To remove everything Kesha installed and wrote: `kesha uninstall`; `kesha install` downloads it again."));
   log.info("");
 }
 

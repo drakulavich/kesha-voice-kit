@@ -1,19 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { buildUninstallPlan } from "../../src/uninstall-plan";
+import { tempDir } from "../helpers/temp-dir";
 
-const homes: string[] = [];
-afterEach(() => {
-  for (const h of homes.splice(0)) rmSync(h, { recursive: true, force: true });
-});
-
-function tempHome(name: string): string {
-  const home = mkdtempSync(join(tmpdir(), `kesha-uninstall-${name}-`));
-  homes.push(home);
-  return home;
-}
+const tempHome = (name: string): string => tempDir(`kesha-uninstall-${name}-`);
 
 function put(path: string, bytes = 3): void {
   mkdirSync(dirname(path), { recursive: true });
@@ -148,9 +139,7 @@ describe("buildUninstallPlan", () => {
     const p = plan(home, { KESHA_ENGINE_BIN: engine });
 
     expect(p.engineBin).toBe(engine);
-    expect(p.entries).toEqual([
-      { path: engine, label: "Not Kesha's", bytes: 3, action: "keep", reason: "KESHA_ENGINE_BIN outside the Model cache" },
-    ]);
+    expect(p.entries).toEqual([{ path: engine, label: "Not Kesha's", bytes: 3, action: "keep", reason: "KESHA_ENGINE_BIN outside the Model cache" }]);
   });
 
   test("nothing installed yields an empty plan", () => {

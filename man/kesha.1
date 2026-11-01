@@ -46,6 +46,9 @@ Show backend installation status
 .TP
 .B support-bundle
 Create a redacted diagnostics archive for support
+.TP
+.B uninstall
+Remove the engine, models, logs, stats and MCP audio Kesha created (the CLI package stays)
 .SH OPTIONS
 .TP
 .B \-\-json
@@ -234,6 +237,10 @@ Write archive to this .tar.gz path
 .TP
 .B \-\-include\-logs
 Include a bounded tail of privacy\-safe diagnostic logs
+.SS uninstall
+.TP
+.B \-\-yes
+Remove without asking; required without a terminal
 .SH FILES
 .TP
 .B completions/kesha.bash

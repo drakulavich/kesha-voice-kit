@@ -36,6 +36,7 @@ code never needs sanitizing.
 | `E_ENGINE_PROTOCOL` | platform | no | The installed Engine speaks a protocol version this CLI does not (CLI-side). | `kesha install` for a stale Engine; `bun add -g @drakulavich/kesha-voice-kit@latest` for a stale CLI. |
 | `E_INSTALL_RACE` | internal | yes | Another `kesha install` reached the same cache: it overwrote the engine during our run, or it still holds the cache and we gave up waiting. [Details](#e_install_race). | Re-run the install once no other one is in flight; give concurrent jobs private state via `KESHA_HOME`. |
 | `E_INVALID_ARG` | input | no | A CLI flag, argument, or `KESHA_*` value was invalid, or a path given to kesha cannot be used. [All cases](#e_invalid_arg). | See `kesha --help`; for a `KESHA_*` path the message names the setting, the offending value, and what it needs to be. |
+| `E_UNINSTALL_PARTIAL` | platform | no | `kesha uninstall` could not remove one entry (permission denied, a read-only filesystem); it removed the rest and exits 1. The line names the path and the OS reason. | Make the path writable or remove it by hand, then re-run `kesha uninstall`. |
 | `E_INTERRUPTED` | platform | no | The run was cancelled, not failed: a signal reached the CLI, or a Core API or MCP caller cancelled. Exits 130, 143 or 129 by signal, 130 for a programmatic abort. [Details](#e_interrupted). | Nothing to fix: the run was cancelled, not broken. Re-run it if the cancellation was not intended. |
 | `E_INTERNAL` | internal | no | An unexpected or uncoded failure; also a `kesha say` that wrote no audio, a disk error while writing the engine or a support bundle, and a Stats database kesha cannot use. [Details](#e_internal). | Re-run with `KESHA_DEBUG=1`, then file a bug with the `kesha support-bundle` archive; the disk and Stats cases have their own fixes under [details](#e_internal). |
 
@@ -51,6 +52,7 @@ code never needs sanitizing.
 
 - Another install overwrote the engine during our run: the recorded version or the binary's own `--version` names something else.
 - Another install still holds the cache and we gave up waiting for it. Nothing is written in this case.
+- `kesha uninstall` found an install holding the lock, or could not create the lock at all; it never waits and removes nothing.
 
 Concurrent jobs can also get just a private cache via `KESHA_CACHE_DIR` / `KESHA_ENGINE_BIN`. To fail sooner than the 6 h ceiling, set `KESHA_INSTALL_LOCK_WAIT_SECS` (seconds, positive numbers only). A lock held by an install on another host or container is taken over only once it is 6 h old, so a shorter wait can give up before such a lock reaches that age ([concurrent installs](architecture.md#runtime-data-flow)). If the message names a lock no install owns, delete the `.lock` directory it names.
 
@@ -88,11 +90,12 @@ Concurrent jobs can also get just a private cache via `KESHA_CACHE_DIR` / `KESHA
   When the engine also writes a line that is not an event, the CLI reports `E_INTERNAL` quoting
   that line and appends the engine's own transcript, so stderr may show two coded lines; the
   `code` field (JSON output, `KeshaError.code` in the [Core API](api.md#errors)) names one.
-- **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`**, **`E_INSTALL_RACE`** and **`E_INTERRUPTED`** originate
+- **`E_ENGINE_SPAWN`**, **`E_ENGINE_PROTOCOL`**, **`E_INSTALL_RACE`**, **`E_UNINSTALL_PARTIAL`** and **`E_INTERRUPTED`** originate
   only in the TypeScript CLI — the failure to spawn the engine subprocess at all,
   an installed engine whose protocol version the CLI does not speak, an
   install that lost the cache to another one, whether by being overwritten before
-  it could report success or by giving up waiting for the lock, and a run the
+  it could report success or by giving up waiting for the lock, an uninstall that
+  could not remove an entry, and a run the
   CLI's own signal cut short, or a caller cancelled through its `AbortSignal` or MCP
   request cancellation. An engine that exits 130 or 143 because the CLI forwarded the
   signal is reported as `E_INTERRUPTED`, never as `E_INTERNAL`.

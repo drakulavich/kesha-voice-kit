@@ -23,6 +23,7 @@ const SUBCOMMANDS: Record<string, CommandLoader> = {
   say: async () => (await import("./say")).sayCommand,
   stats: async () => (await import("./stats")).statsCommand,
   "support-bundle": async () => (await import("./support-bundle")).supportBundleCommand,
+  uninstall: async () => (await import("./uninstall")).uninstallCommand,
   completions: async () => (await import("./completions")).completionsCommand,
   manpage: async () => (await import("./manpage")).manpageCommand,
   mcp: async () => (await import("./mcp")).mcpCommand,

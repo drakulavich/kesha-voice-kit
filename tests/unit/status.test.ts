@@ -638,9 +638,9 @@ describe("renderStatus turns a report into the states a user acts on", () => {
     expect(output).toContain(fluidRoot);
   });
 
-  test("the reset hint names the directory to remove", () => {
+  test("the reset hint points at kesha uninstall", () => {
     const output = render(report({ disk: diskUsage({ cachePath: "/somewhere/kesha" }) }));
-    expect(output).toContain("rm -rf /somewhere/kesha");
+    expect(output).toContain("To remove everything Kesha installed and wrote: `kesha uninstall`");
   });
 });
 

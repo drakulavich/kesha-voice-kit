@@ -43,7 +43,7 @@ kesha install --plan && kesha install           # manual: preview the sizes, the
 kesha audio.ogg                                 # transcript to stdout
 ```
 
-`kesha install` pulls ~2.5 GB on Linux/Windows and ~0.6 GB on Apple Silicon, whose CoreML engine reads a smaller model set. It is always explicit — nothing downloads behind your back — and reports download progress on stderr. If `bun --version` fails right after step 1, reload your PATH: `exec $SHELL -l`.
+`kesha install` pulls ~2.5 GB on Linux/Windows and ~0.6 GB on Apple Silicon, whose CoreML engine reads a smaller model set. It is always explicit — nothing downloads behind your back — and reports download progress on stderr. If `bun --version` fails right after step 1, reload your PATH: `exec $SHELL -l`. To remove the engine, models and everything else Kesha wrote, run `kesha uninstall`.
 
 Prefer Homebrew or Docker? See [Other install methods](#other-install-methods).
 Air-gapped or behind a corporate mirror? See [docs/model-mirror.md](docs/model-mirror.md).
