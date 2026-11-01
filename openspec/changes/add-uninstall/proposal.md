@@ -13,7 +13,8 @@ Vera ships this as `vera uninstall` (`VeraTools/Vera`, `crates/vera-cli/src/comm
 - `--yes` skips the question. Without a terminal and without `--yes` it refuses, as `kesha init` does.
 - It takes the install lock, so it cannot run while `kesha install` writes into the same Model cache.
 - It never removes the CLI package; it prints how to remove it.
-- `docs/architecture.md` and the README point at the command instead of the manual list.
+- `docs/architecture.md`, the README and the `kesha status --disk` reset hint (`src/status.ts:241`, today `rm -rf <cache>`) point at the command.
+- A new CLI-only Error code, `E_UNINSTALL_PARTIAL`, for an entry that could not be removed.
 
 ## Non-goals
 
