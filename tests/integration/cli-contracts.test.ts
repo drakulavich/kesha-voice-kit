@@ -1,7 +1,20 @@
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { MAX_TEXT_CHARS } from "../../src/synth";
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+  lstatSync,
+} from "node:fs";
 import { hostname, tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { engineVersion } from "../../src/package-info";
@@ -2001,7 +2014,7 @@ process.exit(99);
     });
 
     test.skipIf(process.platform === "win32")(
-      "an engine/bin that links to a shared directory goes as a link, and the shared files stay (needs POSIX symlinks)",
+      "an engine/bin that links to a shared directory stays as E_UNINSTALL_PARTIAL, exit 1, and the shared files stay (needs POSIX symlinks)",
       async () => {
         const env = isolatedEnv();
         const shared = join(env.HOME, "shared-bin");
@@ -2010,20 +2023,29 @@ process.exit(99);
         mkdirSync(join(env.KESHA_CACHE_DIR, "engine"), { recursive: true });
         symlinkSync(shared, join(env.KESHA_CACHE_DIR, "engine", "bin"));
         const run = await runCli(["uninstall", "--yes"], { env });
-        expectContract(run, { exitCode: 0, stdoutEmpty: true, stderrNotContains: ["E_UNINSTALL_PARTIAL"] });
+        const link = join(env.KESHA_CACHE_DIR, "engine", "bin");
+        expectContract(run, {
+          exitCode: 1,
+          stdoutEmpty: true,
+          stderrContains: [`error [E_UNINSTALL_PARTIAL]: could not remove ${link}: it is a symbolic link`],
+        });
         expect(readFileSync(join(shared, "mine.txt"), "utf8")).toBe("mine");
         expect(readdirSync(shared)).toEqual(["mine.txt"]);
-        expect(existsSync(join(env.KESHA_CACHE_DIR, "engine"))).toBe(false);
+        expect(lstatSync(link).isSymbolicLink()).toBe(true);
       },
     );
 
-    test("only empty state directories left are removed, exit 0", async () => {
+    test("only empty state directories left are removed, a parent emptied by its children included, exit 0", async () => {
       const env = isolatedEnv();
-      mkdirSync(env.KESHA_CACHE_DIR);
+      const keshaHome = join(env.HOME, "kesha-home");
+      mkdirSync(join(keshaHome, "cache"), { recursive: true });
+      mkdirSync(join(keshaHome, "mcp-audio"));
       mkdirSync(env.KESHA_LOG_DIR);
-      const run = await runCli(["uninstall", "--yes"], { env });
+      const run = await runCli(["uninstall", "--yes"], {
+        env: { HOME: env.HOME, KESHA_HOME: keshaHome, KESHA_LOG_DIR: env.KESHA_LOG_DIR, KESHA_CACHE_DIR: "", KESHA_STATS_DB: "" },
+      });
       expectContract(run, { exitCode: 0, stdoutEmpty: true, stderrContains: ["Nothing to remove"] });
-      expect(existsSync(env.KESHA_CACHE_DIR)).toBe(false);
+      expect(existsSync(keshaHome)).toBe(false);
       expect(existsSync(env.KESHA_LOG_DIR)).toBe(false);
     });
 

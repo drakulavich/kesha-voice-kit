@@ -47,7 +47,7 @@ describe("removeAround on a path that changed after the plan", () => {
 });
 
 describe("removeAround and symbolic links", () => {
-  test.skipIf(process.platform === "win32")("a link leading to the lock is not walked, so the files behind it stay (needs POSIX symlinks)", () => {
+  test.skipIf(process.platform === "win32")("a link leading to the lock is not walked and stays, reported (needs POSIX symlinks)", () => {
     const root = tempDir("kesha-uninstall-link-");
     const shared = join(root, "shared");
     const engine = join(root, "engine");
@@ -57,14 +57,13 @@ describe("removeAround and symbolic links", () => {
     symlinkSync(shared, join(engine, "bin"));
     writeFileSync(join(engine, "VERSION"), "x");
     const failures: RemovalFailure[] = [];
-    const links: string[] = [];
 
-    const walked = removeAround(engine, [join(engine, "bin", "kesha-engine.lock")], failures, links);
+    const walked = removeAround(engine, [join(engine, "bin", "kesha-engine.lock")], failures);
 
-    expect(failures).toEqual([]);
+    expect(failures.map((f) => f.path)).toEqual([join(engine, "bin")]);
     expect(readFileSync(join(shared, "mine.txt"), "utf8")).toBe("mine");
     expect(existsSync(join(engine, "VERSION"))).toBe(false);
-    expect(links).toEqual([join(engine, "bin")]);
+    expect(existsSync(join(engine, "bin"))).toBe(true);
     expect(walked).toEqual([engine]);
   });
 });
