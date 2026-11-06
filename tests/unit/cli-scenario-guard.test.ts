@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { mkdirSync, symlinkSync } from "node:fs";
 import { join } from "node:path";
 import { refuseRealCache } from "../integration/cli-scenario";
 import { tempDir } from "../helpers/temp-dir";
@@ -18,6 +19,40 @@ describe("refuseRealCache (#1631)", () => {
 
     expect(() => refuseRealCache(["uninstall", "--yes"], { HOME: tempDir("kesha-guard-home-"), KESHA_CACHE_DIR: real }, [real], process.cwd())).toThrow(
       `its Model cache ${real} is the real cache ${real}`,
+    );
+  });
+
+  test("uninstall with KESHA_CACHE_DIR at the target of a symlinked real cache is refused (#1634)", () => {
+    const target = join(tempDir("kesha-guard-target-"), "kesha");
+    mkdirSync(target);
+    const real = join(tempDir("kesha-guard-link-"), "kesha");
+    symlinkSync(target, real, "junction");
+
+    expect(() => refuseRealCache(["uninstall", "--yes"], { HOME: tempDir("kesha-guard-home-"), KESHA_CACHE_DIR: target }, [real], process.cwd())).toThrow(
+      `its Model cache ${target} is the real cache ${real}`,
+    );
+  });
+
+  test("uninstall with KESHA_CACHE_DIR at a symlink to the real cache is refused (#1634)", () => {
+    const real = join(tempDir("kesha-guard-pinned-"), "kesha");
+    mkdirSync(real);
+    const link = join(tempDir("kesha-guard-link-"), "kesha");
+    symlinkSync(real, link, "junction");
+
+    expect(() => refuseRealCache(["uninstall", "--yes"], { HOME: tempDir("kesha-guard-home-"), KESHA_CACHE_DIR: link }, [real], process.cwd())).toThrow(
+      `its Model cache ${link} is the real cache ${real}`,
+    );
+  });
+
+  test("uninstall with KESHA_CACHE_DIR not created yet under a symlinked real cache is refused (#1634)", () => {
+    const target = join(tempDir("kesha-guard-target-"), "kesha");
+    mkdirSync(target);
+    const real = join(tempDir("kesha-guard-link-"), "kesha");
+    symlinkSync(target, real, "junction");
+    const nested = join(real, "not-created");
+
+    expect(() => refuseRealCache(["uninstall", "--yes"], { HOME: tempDir("kesha-guard-home-"), KESHA_CACHE_DIR: nested }, [real], process.cwd())).toThrow(
+      `its Model cache ${nested} is the real cache ${real}`,
     );
   });
 

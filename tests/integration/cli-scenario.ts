@@ -1,7 +1,7 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir, userInfo } from "node:os";
 import { delimiter, dirname, join } from "node:path";
-import { isInsideDir } from "../../src/cache-layout";
+import { existingPath, isInsideDir } from "../../src/cache-layout";
 import { resolveStatePaths } from "../../src/state-paths";
 
 const DEFAULT_CWD = `${import.meta.dir}/../..`;
@@ -44,7 +44,8 @@ const REAL_CACHES = [resolveStatePaths(process.env, process.platform, userInfo()
 export function refuseRealCache(args: string[], env: Record<string, string | undefined>, protectedCaches: string[], cwd: string): void {
   if (!args.includes("uninstall") || args.includes("--help") || args.includes("-h")) return;
   const cache = resolveStatePaths(env, process.platform, env.HOME ?? userInfo().homedir, tmpdir(), cwd).cacheDir.path;
-  const hit = protectedCaches.find((real) => isInsideDir(real, cache) || isInsideDir(cache, real));
+  const overlap = (a: string, b: string) => isInsideDir(a, b) || isInsideDir(b, a);
+  const hit = protectedCaches.find((real) => overlap(real, cache) || overlap(existingPath(real), existingPath(cache)));
   if (hit) {
     throw new Error(
       `refusing \`kesha ${args.join(" ")}\`: its Model cache ${cache} is the real cache ${hit}; give the scenario its own KESHA_CACHE_DIR (#1631)`,
