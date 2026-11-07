@@ -77,7 +77,7 @@ export function cacheTotalBytes(cacheRoot: string, binPath: string): number {
 }
 
 /** Compared by target, so an outside symlink into the cache is not counted twice. */
-function existingPath(path: string): string {
+export function existingPath(path: string): string {
   try {
     return realpathSync(path);
   } catch {
