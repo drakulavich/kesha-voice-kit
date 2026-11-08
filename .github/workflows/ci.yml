@@ -35,7 +35,6 @@ defaults:
 
 jobs:
   size:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -44,13 +43,12 @@ jobs:
       checks: write
     steps:
       - uses: drakulavich/bite-the-diff@eb80a2ef0b21424dc0bd54dd4093c68f2199894b # v1.1.0
+        if: github.event_name == 'pull_request'
         with:
           exclude: rust/vendor/**
 
   changes:
     needs: size
-    # size is skipped on push and schedule; != 'failure' lets the jobs run then.
-    if: ${{ !cancelled() && needs.size.result != 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -389,7 +387,6 @@ jobs:
   # No path filter: a multi-megabyte binary can land in any directory, and this is the only gate between it and main now that Git LFS is gone.
   file-sizes:
     needs: size
-    if: ${{ !cancelled() && needs.size.result != 'failure' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
