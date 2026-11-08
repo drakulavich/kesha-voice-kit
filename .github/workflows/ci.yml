@@ -46,6 +46,7 @@ jobs:
       - uses: drakulavich/bite-the-diff@eb80a2ef0b21424dc0bd54dd4093c68f2199894b # v1.1.0
         with:
           exclude: rust/vendor/**
+          thresholds: 1:fail
 
   changes:
     needs: size
