@@ -46,6 +46,7 @@ jobs:
         if: github.event_name == 'pull_request'
         with:
           exclude: rust/vendor/**
+          thresholds: 1:fail
 
   changes:
     needs: size
