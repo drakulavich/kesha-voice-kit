@@ -11,6 +11,7 @@ import { tempDir } from "../helpers/temp-dir";
 
 const ENGINE = "#!/bin/sh\nexit 0\n";
 const savedFetch = globalThis.fetch;
+const savedRetryDelay = sha256SumsRetry.delayMs;
 let restore: () => void = () => {};
 
 const BROKEN_MID_STREAM = `(() => { let sent = false; return new ReadableStream({ pull(c) { if (sent) { c.error(new TypeError("The socket connection was closed unexpectedly")); return; } sent = true; c.enqueue(new TextEncoder().encode(${JSON.stringify(ENGINE.slice(0, 5))})); } }); })()`;
@@ -75,6 +76,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = savedFetch;
+  sha256SumsRetry.delayMs = savedRetryDelay;
   restore();
 });
 

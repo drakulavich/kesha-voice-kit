@@ -29,6 +29,7 @@ exit 0
 `;
 
 const savedFetch = globalThis.fetch;
+const savedRetryDelay = sha256SumsRetry.delayMs;
 const savedWarn = log.warn;
 let releaseCacheIsolation: () => void = () => {};
 
@@ -68,6 +69,7 @@ afterEach(() => {
   readOnlyDirs = [];
   globalThis.fetch = savedFetch;
   log.warn = savedWarn;
+  sha256SumsRetry.delayMs = savedRetryDelay;
   releaseCacheIsolation();
 });
 
