@@ -368,7 +368,7 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "required": ["name", "title", "description", "icon", "author", "license", "commands", "dependencies"],
+  "required": ["name", "title", "description", "icon", "author", "license", "dependencies"],
   "properties": {
     "icon": {
       "type": "string",
@@ -544,8 +544,8 @@
       },
       "title": "Executable extension's commands",
       "maxItems": 100,
-      "minItems": 1,
-      "description": "List of all commands vended by this extensions. An extension must contain at least one command.",
+      "minItems": 0,
+      "description": "List of commands exposed by this extension. May be omitted or empty for extensions without commands.",
       "uniqueItems": true
     },
     "tools": {
@@ -593,7 +593,7 @@
             "title": "Limits the tool to the specified functionalities",
             "description": "Limits the tool to the specified functionalities. If not specified, the tool can be used in any context (if it matches the requirements for each of them).",
             "items": {
-              "enum": ["AI attachment provider", "AI tool"],
+              "enum": ["AI mention search", "AI tool"],
               "type": "string"
             }
           },
@@ -610,14 +610,157 @@
       "description": "List of all tools that the AI can use to interact with this extension.",
       "uniqueItems": true
     },
+    "resourceProvider": {
+      "type": "string",
+      "title": "Resource provider entrypoint",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^[a-z][\\w_\\-.]*$",
+      "description": "The entrypoint file that reads the extension's resources by URI, such as the items its mention searches offer in the AI Chat composer. A value of \"read-item\" maps to \"src/read-item.ts\" or the compiled \"read-item.js\" file, like command entrypoints."
+    },
     "ai": {
       "type": "object",
       "title": "AI-related information",
       "description": "Additional information related to the AI capabilities of the extension",
       "properties": {
+        "mcp": {
+          "title": "Extension MCP server",
+          "description": "A single MCP server. Its tools are merged with declared tools; declared tools take precedence.",
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["command"],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "enum": ["stdio"]
+                },
+                "command": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "env": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "required": ["url"],
+              "additionalProperties": false,
+              "properties": {
+                "type": {
+                  "enum": ["http", "sse"]
+                },
+                "url": {
+                  "type": "string",
+                  "pattern": "^https?://"
+                },
+                "headers": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "oauth": {
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "required": ["type"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "type": {
+                          "const": "dynamic"
+                        }
+                      }
+                    },
+                    {
+                      "type": "object",
+                      "required": ["type", "clientId"],
+                      "additionalProperties": false,
+                      "properties": {
+                        "type": {
+                          "const": "static"
+                        },
+                        "clientId": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "clientSecret": {
+                          "type": "string"
+                        },
+                        "scopes": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "skills": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "title"],
+            "properties": {
+              "icon": {
+                "type": "string",
+                "title": "The skill's icon",
+                "pattern": "^[^\\s]+(?:[ ]*[^\\s]+)*$",
+                "description": "A 512x512 icon representing the skill. If omitted, the skill inherits the extension's icon. Light and dark themes are supported by appending '@dark' or '@light' to the icon filename.",
+                "contentMediaType": "image/png"
+              },
+              "name": {
+                "type": "string",
+                "title": "The skill's name/identifier",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                "maxLength": 64,
+                "minLength": 1,
+                "description": "The name maps to both the skills/<name> directory and the name in SKILL.md frontmatter."
+              },
+              "title": {
+                "type": "string",
+                "title": "The human-friendly skill name",
+                "pattern": "^[^\\s]+(?: [^\\s]+)*$",
+                "maxLength": 255,
+                "minLength": 2,
+                "description": "The title is displayed when the skill is referenced in Raycast."
+              }
+            },
+            "additionalProperties": false
+          },
+          "title": "Extension's skills",
+          "maxItems": 100,
+          "minItems": 1,
+          "description": "List of Agent Skills bundled from skills. Every bundled skill must be declared here.",
+          "uniqueItems": true
+        },
         "instructions": {
           "type": "string",
           "description": "Additional system instructions added when the tools are used in AI"
+        },
+        "modelProvider": {
+          "type": "string",
+          "title": "AI model provider entrypoint",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[a-z][\\w_\\-.]*$",
+          "description": "The entrypoint file that provides AI models to Raycast. A value of \"models\" maps to \"src/models.ts\" or the compiled \"models.js\" file, like command entrypoints. Using models provided by extensions requires a Raycast Pro plan."
         },
         "evals": {
           "type": "array",
