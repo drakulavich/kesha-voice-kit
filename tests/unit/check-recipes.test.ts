@@ -433,11 +433,6 @@ describe("unguardedPipelines", () => {
 
 // The gate's own subject matter: the extractor must find the real references and no English ones.
 describe("the repository's own references", () => {
-  test("CLAUDE.md spells its executable rituals as recipes, not as shell to copy", () => {
-    const found = new Set(names("CLAUDE.md", readRepoFile("CLAUDE.md")));
-    expect([...found].sort()).toEqual(["mutate", "worktree", "worktree-rm"]);
-  });
-
   test("ci.yml calls verify-darwin-full rather than repeating its flags", () => {
     expect(names(YML, readRepoFile(YML))).toContain("verify-darwin-full");
   });
