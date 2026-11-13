@@ -44,15 +44,31 @@ function unverifiableFix(version: string, pins: AssetPins | undefined): string {
         `\`kesha install\` without --engine-version to install the pinned v${engineVersion}.`;
 }
 
+/** Tests set the delay to 0, the way they replace `fetch`. */
+export const sha256SumsRetry = { attempts: 3, delayMs: 2000 };
+
 async function fetchSha256Sums(version: string, pins: AssetPins | undefined): Promise<Map<string, string>> {
   const url = `https://github.com/${GITHUB_REPO}/releases/download/v${version}/SHA256SUMS`;
-  let res: Response;
-  try {
-    res = await fetch(url, { redirect: "follow" });
-  } catch (e) {
-    throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to fetch SHA256SUMS for release v${version}: ${errorMessage(e)}`, {
-      hint: NETWORK_HINT,
-    });
+  const fetchSums = async (): Promise<Response> => {
+    try {
+      return await fetch(url, { redirect: "follow" });
+    } catch (e) {
+      throw new KeshaError("E_MODEL_DOWNLOAD", `Failed to fetch SHA256SUMS for release v${version}: ${errorMessage(e)}`, {
+        hint: NETWORK_HINT,
+      });
+    }
+  };
+  let res = await fetchSums();
+  for (let attempt = 2; res.status >= 500 && attempt <= sha256SumsRetry.attempts; attempt++) {
+    await Bun.sleep(sha256SumsRetry.delayMs * (attempt - 1));
+    res = await fetchSums();
+  }
+  if (res.status >= 500) {
+    throw new KeshaError(
+      "E_MODEL_DOWNLOAD",
+      `Failed to fetch SHA256SUMS for release v${version}: GitHub answered HTTP ${res.status} on all ${sha256SumsRetry.attempts} attempts.`,
+      { hint: `GitHub's release downloads are failing right now; ${NETWORK_HINT}` },
+    );
   }
   if (!res.ok) {
     throw new KeshaError(

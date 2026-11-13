@@ -13,7 +13,8 @@ case "$(uname -s)" in
       block=(unshare -rn)
     else
       # Ubuntu 24.04's AppArmor can refuse unprivileged user namespaces; root makes the netns, setpriv drops back.
-      block=(sudo --preserve-env env "PATH=$PATH" "HOME=$HOME" unshare --net
+      mapfile -d '' -t vars < <(env -0) # Ubuntu 26.04's sudo-rs ignores --preserve-env and drops KESHA_CACHE_DIR (#1640)
+      block=(sudo env "${vars[@]}" unshare --net
         setpriv "--reuid=$(id -u)" "--regid=$(id -g)" --init-groups --)
     fi
     ;;
