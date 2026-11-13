@@ -3,7 +3,7 @@ import { basename, dirname, join } from "node:path";
 import { existsSync, mkdirSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { install, KeshaError } from "../../src/lib";
 import { getEngineBinPath } from "../../src/engine";
-import { engineChecksums, installEngine } from "../../src/engine-install";
+import { engineChecksums, installEngine, sha256SumsRetry } from "../../src/engine-install";
 import { expectServedBody, isolateEngineCache } from "../helpers/fake-engine";
 import { FAULT_MARKER, failStagingWrites } from "../helpers/failing-writes";
 import { stagingPrefix } from "../../src/progress";
@@ -11,6 +11,7 @@ import { tempDir } from "../helpers/temp-dir";
 
 const ENGINE = "#!/bin/sh\nexit 0\n";
 const savedFetch = globalThis.fetch;
+const savedRetryDelay = sha256SumsRetry.delayMs;
 let restore: () => void = () => {};
 
 const BROKEN_MID_STREAM = `(() => { let sent = false; return new ReadableStream({ pull(c) { if (sent) { c.error(new TypeError("The socket connection was closed unexpectedly")); return; } sent = true; c.enqueue(new TextEncoder().encode(${JSON.stringify(ENGINE.slice(0, 5))})); } }); })()`;
@@ -70,10 +71,12 @@ const FAILURES: Failure[] = [
 
 beforeEach(() => {
   restore = isolateEngineCache();
+  sha256SumsRetry.delayMs = 0;
 });
 
 afterEach(() => {
   globalThis.fetch = savedFetch;
+  sha256SumsRetry.delayMs = savedRetryDelay;
   restore();
 });
 
@@ -211,7 +214,11 @@ describe("kesha install reports an engine download failure by its code", () => {
 
 const SUMS_HINT = ["--engine-version", "https://github.com/drakulavich/kesha-voice-kit/releases"];
 const SUMS_CASES = [
-  { name: "HTTP 503", respond: `new Response("Service Unavailable", { status: 503 })`, hint: SUMS_HINT },
+  {
+    name: "HTTP 503 on every attempt",
+    respond: `new Response("Service Unavailable", { status: 503 })`,
+    hint: ["release downloads are failing", "network connection"],
+  },
   { name: "HTTP 404", respond: `new Response("Not Found", { status: 404 })`, hint: SUMS_HINT },
   { name: "HTTP 200 with an empty body", respond: `new Response("", { status: 200 })`, hint: SUMS_HINT },
   {
@@ -249,8 +256,9 @@ describe("a SHA256SUMS the installer cannot use is E_MODEL_DOWNLOAD with a hint"
       writeFileSync(
         script,
         `import { performInstall } from ${src("cli/install.ts")};\n` +
-          `import { engineChecksums } from ${src("engine-install.ts")};\n` +
+          `import { engineChecksums, sha256SumsRetry } from ${src("engine-install.ts")};\n` +
           `engineChecksums.pins = undefined;\n` +
+          `sha256SumsRetry.delayMs = 0;\n` +
           `globalThis.fetch = (${sumsFetch(c.respond)}) as typeof fetch;\n` +
           `await performInstall({ noCache: false, ttsLangs: [] });\n`,
       );

@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { engineChecksums, getEngineBinaryName, getVersionMarkerPath, installEngine, readInstalledEngineVersion, SIDECARS } from "../../src/engine-install";
+import {
+  engineChecksums,
+  getEngineBinaryName,
+  getVersionMarkerPath,
+  installEngine,
+  readInstalledEngineVersion,
+  sha256SumsRetry,
+  SIDECARS,
+} from "../../src/engine-install";
 import { KeshaError } from "../../src/engine/events";
 import { log } from "../../src/log";
 import { getEngineBinPath } from "../../src/engine";
@@ -21,6 +29,7 @@ exit 0
 `;
 
 const savedFetch = globalThis.fetch;
+const savedRetryDelay = sha256SumsRetry.delayMs;
 const savedWarn = log.warn;
 let releaseCacheIsolation: () => void = () => {};
 
@@ -52,6 +61,7 @@ const PINS = {
 beforeEach(() => {
   releaseCacheIsolation = isolateEngineCache();
   engineChecksums.pins = PINS;
+  sha256SumsRetry.delayMs = 0;
 });
 
 afterEach(() => {
@@ -59,6 +69,7 @@ afterEach(() => {
   readOnlyDirs = [];
   globalThis.fetch = savedFetch;
   log.warn = savedWarn;
+  sha256SumsRetry.delayMs = savedRetryDelay;
   releaseCacheIsolation();
 });
 
@@ -86,6 +97,16 @@ function stubRelease(sums: string | null): string[] {
     return new Response("Not Found", { status: 404 });
   }) as typeof fetch;
   return urls;
+}
+
+/** Like stubRelease, but SHA256SUMS first answers each of `outages` as an HTTP status. */
+function stubSumsOutage(outages: number[], sums: string): void {
+  stubRelease(sums);
+  const release = globalThis.fetch;
+  globalThis.fetch = (async (input: Request | URL | string, init?: RequestInit) => {
+    const status = String(input instanceof Request ? input.url : input).endsWith("/SHA256SUMS") ? outages.shift() : undefined;
+    return status === undefined ? release(input, init) : new Response("Gateway Timeout", { status });
+  }) as typeof fetch;
 }
 
 function sumsLine(hash: string): string {
@@ -140,6 +161,33 @@ describe("the engine binary is installed only when its SHA-256 matches", () => {
       await installEngine({ version: OVERRIDE });
 
       expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
+    },
+    30_000,
+  );
+
+  posixTest(
+    "an overridden release installs when SHA256SUMS answers 504 before it answers",
+    async () => {
+      const binPath = stageEngineDir();
+      stubSumsOutage([504, 502], sumsLine(sha256(ENGINE)));
+
+      await installEngine({ version: OVERRIDE });
+
+      expect(readInstalledEngineVersion(binPath)).toBe(OVERRIDE);
+    },
+    30_000,
+  );
+
+  posixTest(
+    "a SHA256SUMS that keeps answering 5xx reads as an outage, not a missing file",
+    async () => {
+      const binPath = stageEngineDir();
+      stubSumsOutage([503, 503, 503], sumsLine(sha256(ENGINE)));
+
+      await expect(installEngine({ version: OVERRIDE })).rejects.toThrow(
+        `Failed to fetch SHA256SUMS for release v${OVERRIDE}: GitHub answered HTTP 503 on all 3 attempts.`,
+      );
+      expect(existsSync(binPath)).toBe(false);
     },
     30_000,
   );
