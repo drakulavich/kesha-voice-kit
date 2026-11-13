@@ -34,7 +34,21 @@ defaults:
     shell: bash
 
 jobs:
+  size:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+      checks: write
+    steps:
+      - uses: drakulavich/bite-the-diff@eb80a2ef0b21424dc0bd54dd4093c68f2199894b # v1.1.0
+        if: github.event_name == 'pull_request'
+        with:
+          exclude: rust/vendor/**
+
   changes:
+    needs: size
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -372,6 +386,7 @@ jobs:
 
   # No path filter: a multi-megabyte binary can land in any directory, and this is the only gate between it and main now that Git LFS is gone.
   file-sizes:
+    needs: size
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -1498,6 +1513,7 @@ jobs:
     name: 🧪 CI
     if: always()
     needs:
+      - size
       - changes
       - workflow-lint
       - file-sizes
