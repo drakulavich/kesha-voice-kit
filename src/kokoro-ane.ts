@@ -22,7 +22,7 @@ export const KOKORO_ANE_EN_REQUIRED = [
   "KokoroAlignment.mlmodelc",
   "KokoroNoise_v2.mlmodelc",
   "KokoroPostAlbert.mlmodelc",
-  "KokoroProsody.mlmodelc",
+  "KokoroProsody_v2.mlmodelc",
   "KokoroTail_v2.mlmodelc",
   "KokoroVocoder.mlmodelc",
   "af_heart.bin",

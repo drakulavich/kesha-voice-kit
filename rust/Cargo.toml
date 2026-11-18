@@ -79,7 +79,7 @@ ndarray = { version = "0.17" }
 # prepare the program). Retire the fork once both land upstream.
 # `init_kokoro` still takes `lang` → `zh` selects `.mandarin` (tone-aware
 # Mandarin G2P), else `.english` (#492); `--rate` stays model-native (#475).
-fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "81740dd1a343bc10428cd5df071c7cd6fe6a6f6b", optional = true } # FluidAudio Swift 0.15.7 (#709, #1098); contains all of FluidInference/main (ahead 19, behind 0); retire once upstream merges FluidInference/fluidaudio-rs#21 and a with_models_dir change
+fluidaudio-rs = { git = "https://github.com/drakulavich/fluidaudio-rs", rev = "57c7937fbbf9a8dfff8fd8e462bf657585a7565d", optional = true } # FluidAudio Swift 0.18.0 (#709, #1098); drakulavich/fluidaudio-rs#6; retire once upstream takes the fork's remaining bindings (models_dir among them)
 audioadapter-buffers = "5"
 
 # ITN for `--itn` (#710). Called directly: fluidaudio-rs::itn_normalize is a dlsym shim over a libnemo_text_processing nothing links, so it returns its input verbatim.
