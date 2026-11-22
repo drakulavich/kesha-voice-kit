@@ -18,6 +18,12 @@ fn main() {
         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
     }
 
+    // ONNX Runtime 1.31's static CoreML EP calls ___isPlatformVersionAtLeast; release LTO drops std's weak copy (#1647).
+    // Source: https://github.com/pykeio/ort/blob/773d836a/docs/content/perf/execution-providers.mdx
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
+        println!("cargo:rustc-link-arg=-fapple-link-rtlib");
+    }
+
     // `system_tts` (#141): compile the AVSpeechSynthesizer helper on macOS.
     // Writes the sidecar binary to $OUT_DIR/say-avspeech. Silently no-op on
     // other targets so `--features system_tts` works in cross-platform builds.
