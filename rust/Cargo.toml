@@ -66,7 +66,7 @@ rayon = "1"
 
 # ONNX Runtime: always needed for audio language detection (speechbrain);
 # also drives ASR transcription when the `onnx` feature is enabled.
-ort = { version = "2.0.0-rc.12" }
+ort = { version = "2.0.0-rc.15" }
 ndarray = { version = "0.17" }
 
 # FluidAudio (macOS): ASR (CoreML/ANE), native Kokoro TTS, and model-path

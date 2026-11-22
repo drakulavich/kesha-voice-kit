@@ -13,8 +13,6 @@
 
 use std::path::PathBuf;
 
-use ort::session::Session;
-
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -62,7 +60,7 @@ fn the_model_under_test_matches_the_recorded_kokoro_signature() {
         model.display()
     );
 
-    let session = Session::builder()
+    let session = kesha_engine::ort_env::session_builder()
         .expect("ort session builder")
         .commit_from_file(&model)
         .unwrap_or_else(|e| panic!("ort refused {}: {e}", model.display()));
@@ -109,7 +107,7 @@ fn the_mini_declares_itself_a_stand_in() {
 #[test]
 fn the_mini_answers_the_call_kokoro_actually_makes() {
     let model = fixture_dir().join("model.onnx");
-    let mut session = Session::builder()
+    let mut session = kesha_engine::ort_env::session_builder()
         .expect("ort session builder")
         .commit_from_file(&model)
         .expect("mini loads");

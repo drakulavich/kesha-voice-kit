@@ -23,9 +23,13 @@ if !(lo..=hi).contains(&raw) {
 
 `compose_rate` in `rust/src/tts/say.rs` warns with this check against `RATE_RANGE` (`0.5..=2.0`) (#287, #288, #289).
 
-## `ort 2.0.0-rc.12` `Value::from_array` wants owned ndarrays
+## `ort 2.0.0-rc.15` `Value::from_array` wants owned ndarrays
 
-`Value::from_array(arr)` consumes its input; views (`ArrayView2`, `.view()`) don't implement `OwnedTensorArrayData`. `Array2::ones((1, n))` inline at the call site is the cleanest fresh owned construction. `Array2::from_shape_vec((...), buf.clone())` also works at the cost of a clone. `Session::builder()` returns `ort::Result` that converts through `anyhow::Context::context("...")?` cleanly — no `map_err(anyhow::Error::msg)` is needed, contrary to the #123 spike doc. Peer modules (`lang_id.rs`, `vad.rs`, `backend/onnx.rs`, `tts/kokoro.rs`) all use `.context()?`; match that style.
+`Value::from_array(arr)` consumes its input; views (`ArrayView2`, `.view()`) don't implement `OwnedTensorArrayData`. `Array2::ones((1, n))` inline at the call site is the cleanest fresh owned construction. `Array2::from_shape_vec((...), buf.clone())` also works at the cost of a clone. `crate::ort_env::session_builder()` returns `ort::Result` that converts through `anyhow::Context::context("...")?` cleanly — no `map_err(anyhow::Error::msg)` is needed, contrary to the #123 spike doc. Peer modules (`lang_id.rs`, `vad.rs`, `backend/onnx.rs`, `tts/kokoro.rs`) all use `.context()?`; match that style.
+
+## `ort` sessions come from `crate::ort_env`
+
+Since rc.14 `Session::builder` takes an `Environment`, and ONNX Runtime allows one per process: a second `ort::init().build()` fails even after the first is dropped. Build sessions with `crate::ort_env::session_builder()`, and pass `crate::ort_env::environment()` to code outside the crate (the vendored `vosk_tts::Model::new`). The helper also sets `AutoDevicePolicy::PreferCPU`. ort's default, `MaxEfficiency`, puts every session on CoreML on macOS, and the Kokoro mini fails there with a CoreML shape error (#1647). A session built straight from `Session::builder` loses that setting.
 
 ## Clippy `needless_update` blocks `..Default::default()` when every field is spelled
 

@@ -10,6 +10,10 @@
 //!   on the auto-download path; `kesha install --tts` provisions the model
 //!   via `rust/src/models/download.rs::download_verified` (which pins SHA-256s).
 //!
+//! * `Model::new` takes the `ort` `Environment` its sessions are built from
+//!   (ort 2.0.0-rc.14 removed the global environment), and pins them to the
+//!   CPU: ort's default device policy picks CoreML on macOS.
+//!
 //! * The `tokenizers` crate is replaced with the inline WordPiece in
 //!   [`crate::tokenizer`].
 //!
@@ -19,6 +23,8 @@
 use crate::error::{Error, Result};
 use crate::tokenizer::{Encoding, Tokenizer};
 use ndarray::ArrayD;
+use ort::environment::Environment;
+use ort::session::builder::AutoDevicePolicy;
 use ort::session::Session;
 use ort::value::Value;
 use regex::Regex;
@@ -138,6 +144,7 @@ impl Model {
     /// are accepted for upstream API parity but ignored — auto-download was
     /// removed from the vendored crate (see module docs).
     pub fn new(
+        environment: &Environment,
         model_path: Option<&str>,
         _model_name: Option<&str>,
         _lang: Option<&str>,
@@ -156,7 +163,9 @@ impl Model {
         };
 
         // Load ONNX model.
-        let onnx = Session::builder()?
+        let onnx = Session::builder(environment)?
+            .with_auto_device(AutoDevicePolicy::PreferCPU)
+            .map_err(ort::Error::from)?
             .commit_from_file(model_path.join("model.onnx"))
             .map_err(Error::OnnxModelLoad)?;
 
@@ -169,7 +178,9 @@ impl Model {
         let bert_path = model_path.join("bert");
         let (tokenizer, bert_onnx) = if bert_path.join("vocab.txt").exists() {
             let tok = Tokenizer::from_vocab_file(&bert_path.join("vocab.txt"))?;
-            let bert_session = Session::builder()?
+            let bert_session = Session::builder(environment)?
+                .with_auto_device(AutoDevicePolicy::PreferCPU)
+                .map_err(ort::Error::from)?
                 .commit_from_file(bert_path.join("model.onnx"))
                 .ok();
             (Some(tok), bert_session.map(RefCell::new))
