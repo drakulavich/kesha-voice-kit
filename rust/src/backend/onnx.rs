@@ -42,19 +42,19 @@ pub struct OnnxBackend {
 
 impl OnnxBackend {
     pub fn new(model_path: &Path) -> Result<Self> {
-        let preprocessor = Session::builder()
+        let preprocessor = crate::ort_env::session_builder()
             .context("Failed to create preprocessor session builder")
             .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("nemo128.onnx"))
             .map_err(|e| load_failed(&model_path.join("nemo128.onnx"), e))?;
 
-        let encoder = Session::builder()
+        let encoder = crate::ort_env::session_builder()
             .context("Failed to create encoder session builder")
             .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("encoder-model.onnx"))
             .map_err(|e| load_failed(&model_path.join("encoder-model.onnx"), e))?;
 
-        let decoder = Session::builder()
+        let decoder = crate::ort_env::session_builder()
             .context("Failed to create decoder session builder")
             .coded(ErrorCode::ModelLoad)?
             .commit_from_file(model_path.join("decoder_joint-model.onnx"))

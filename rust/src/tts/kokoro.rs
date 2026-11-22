@@ -21,7 +21,7 @@ pub struct Kokoro {
 
 impl Kokoro {
     pub fn load(model_path: &Path) -> anyhow::Result<Self> {
-        let session = super::open_session("Kokoro", model_path, Session::builder())?;
+        let session = super::open_session("Kokoro", model_path, crate::ort_env::session_builder())?;
         Ok(Self { session })
     }
 

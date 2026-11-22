@@ -126,7 +126,7 @@ pub struct VadDetector {
 impl VadDetector {
     pub fn load(model_path: &Path) -> Result<Self> {
         // #990: decoder LSTM rejects >1 frame/call; intra_threads(1) is bit-identical (tuned_session_matches_default_bit_for_bit) — the value itself is pinned only in source (load_pins_intra_threads_one_in_source), since ort has no getter.
-        let session = Session::builder()
+        let session = crate::ort_env::session_builder()
             .context("failed to create VAD session builder")?
             .with_intra_threads(1)
             .map_err(|e| anyhow::anyhow!("failed to configure VAD session threading: {e}"))?
@@ -668,7 +668,7 @@ mod tests {
             return;
         };
 
-        let default_session = Session::builder()
+        let default_session = crate::ort_env::session_builder()
             .expect("session builder")
             .commit_from_file(&path)
             .expect("load VAD (untuned default)");
@@ -781,7 +781,7 @@ mod tests {
         let mut max_abs_delta = 0.0_f32;
 
         for rep in 0..REPS {
-            let default_session = Session::builder()
+            let default_session = crate::ort_env::session_builder()
                 .expect("session builder")
                 .commit_from_file(&path)
                 .expect("load VAD (untuned default)");

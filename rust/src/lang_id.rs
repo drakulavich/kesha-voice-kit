@@ -19,7 +19,7 @@ pub fn detect_audio_language(audio_path: &str) -> Result<LangDetectResult> {
     let dir = lang_id_model_dir(models::cache_dir())?;
 
     // Load ONNX session
-    let mut session = ort::session::Session::builder()
+    let mut session = crate::ort_env::session_builder()
         .context("failed to create lang-id session builder")
         .coded(ErrorCode::ModelLoad)?
         .commit_from_file(dir.join("lang-id-ecapa.onnx"))
